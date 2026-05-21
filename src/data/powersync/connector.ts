@@ -1,20 +1,15 @@
 import { AbstractPowerSyncDatabase, PowerSyncBackendConnector, UpdateType } from '@powersync/web'
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string
-
-export const supabase = createClient(supabaseUrl, supabaseKey)
+import { supabase } from '@/data/supabase/client'
 
 export class SupabaseConnector implements PowerSyncBackendConnector {
   async fetchCredentials() {
     const psUrl = import.meta.env.VITE_POWERSYNC_URL as string
-    if (!psUrl) {
-      // Epic 1: no PowerSync service configured — stay offline
-      throw new Error('VITE_POWERSYNC_URL not set; running in offline-only mode')
-    }
+    // db.ts only calls connect() when VITE_POWERSYNC_URL is set, so this path
+    // is defensive only. Return null signals "not authenticated" to PowerSync
+    // (clean stop), while throwing signals a transient error (retries).
+    if (!psUrl) return null
     const { data, error } = await supabase.auth.getSession()
-    if (error || !data.session) throw new Error('Not authenticated')
+    if (error || !data.session) return null
     return { endpoint: psUrl, token: data.session.access_token }
   }
 
