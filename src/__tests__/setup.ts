@@ -20,5 +20,7 @@ Object.defineProperty(window, 'matchMedia', {
     media: query,
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
+    onchange: null,
+    dispatchEvent: vi.fn(),
   })),
 })

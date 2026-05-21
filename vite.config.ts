@@ -12,7 +12,7 @@ export default defineConfig({
   },
   optimizeDeps: {
     // PowerSync uses WASM + web workers — must be excluded from Vite pre-bundling
-    exclude: ['@powersync/web'],
+    exclude: ['@powersync/web', '@journeyapps/wa-sqlite'],
   },
   worker: {
     format: 'es',
