@@ -8,12 +8,14 @@ export interface DraftLineItem {
 }
 
 export interface SaleDraft {
-  id:                   string   // device_id — one active draft per device
-  device_id:            string
-  shop_id:              string
-  line_items:           DraftLineItem[]
-  locked_exchange_rate: number   // captured on first addLine(); required for correct restore
-  updated_at:           number   // Unix ms; used for 24h purge
+  id:                      string   // device_id — one active draft per device
+  device_id:               string
+  shop_id:                 string
+  line_items:              DraftLineItem[]
+  locked_exchange_rate:    number   // captured on first addLine(); required for correct restore
+  selected_payment_method?: string
+  amount_received_so_far?:  number
+  updated_at:              number   // Unix ms; used for 24h purge
 }
 
 class DraftDatabase extends Dexie {
