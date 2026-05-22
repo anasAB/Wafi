@@ -62,4 +62,14 @@ describe('useSaleStore', () => {
     expect(store.deviceSequence).toBe(before + 1)
     expect(localStorage.getItem('wafi_device_seq')).toBe(String(before + 1))
   })
+
+  it('updateQuantity updates lineTotalUsd; ignores quantity < 1', () => {
+    const store = useSaleStore()
+    store.addLine({ productId: 'p1', nameAr: 'تست', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10 })
+    store.updateQuantity('p1', 3)
+    expect(store.lines[0].quantity).toBe(3)
+    expect(store.lines[0].lineTotalUsd).toBe(30)
+    store.updateQuantity('p1', 0)
+    expect(store.lines[0].quantity).toBe(3) // no-op: quantity < 1 rejected
+  })
 })

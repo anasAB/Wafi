@@ -36,6 +36,7 @@ export const useSaleStore = defineStore('sale', () => {
   }
 
   function updateQuantity(productId: string, quantity: number) {
+    if (quantity < 1) return
     const line = lines.value.find(l => l.productId === productId)
     if (line) {
       line.quantity     = quantity
@@ -57,6 +58,8 @@ export const useSaleStore = defineStore('sale', () => {
   function clear() {
     lines.value              = []
     lockedExchangeRate.value = null
+    // deviceSequence is intentionally NOT reset — it is a monotonically increasing
+    // per-device counter that persists across sales to guarantee unique receipt numbers.
   }
 
   return {
