@@ -27,13 +27,13 @@ describe('useSaleNumber', () => {
 
   it('nextNumber increments store.deviceSequence and returns formatted number', () => {
     const store = useSaleStore()
+    const device = useDeviceStore()
     const before = store.deviceSequence
     const { nextNumber } = useSaleNumber()
     const result = nextNumber()
     expect(store.deviceSequence).toBe(before + 1)
-    expect(result).toContain('-')
-    // The returned number should reflect the incremented sequence
+    // formatNumber adds 1 to the pre-increment sequence, so expected = before + 1 padded
     const expectedSeq = String(before + 1).padStart(6, '0')
-    expect(result).toContain(expectedSeq)
+    expect(result).toBe(`${device.deviceCode}-${expectedSeq}`)
   })
 })
