@@ -1,7 +1,5 @@
-<script setup lang="ts">
-import HelloWorld from './components/HelloWorld.vue'
-</script>
-
 <template>
-  <HelloWorld />
+  <div id="app" dir="rtl" lang="ar" class="min-h-dvh bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-white">
+    <RouterView />
+  </div>
 </template>
