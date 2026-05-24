@@ -12,6 +12,7 @@ export interface SaleLine {
 export const useSaleStore = defineStore('sale', () => {
   const lines               = ref<SaleLine[]>([])
   const lockedExchangeRate  = ref<number | null>(null)
+  const hasRateChangeNotice = ref(false)
   const deviceSequence      = ref<number>(
     parseInt(localStorage.getItem('wafi_device_seq') ?? '0', 10)
   )
@@ -50,6 +51,10 @@ export const useSaleStore = defineStore('sale', () => {
     }
   }
 
+  function setRateChangeNotice(val: boolean) {
+    hasRateChangeNotice.value = val
+  }
+
   function incrementSequence() {
     deviceSequence.value += 1
     localStorage.setItem('wafi_device_seq', String(deviceSequence.value))
@@ -58,6 +63,7 @@ export const useSaleStore = defineStore('sale', () => {
   function clear() {
     lines.value              = []
     lockedExchangeRate.value = null
+    hasRateChangeNotice.value = false
     // deviceSequence is intentionally NOT reset — it is a monotonically increasing
     // per-device counter that persists across sales to guarantee unique receipt numbers.
   }
@@ -65,12 +71,14 @@ export const useSaleStore = defineStore('sale', () => {
   return {
     lines,
     lockedExchangeRate,
+    hasRateChangeNotice,
     deviceSequence,
     totalUsd,
     addLine,
     removeLine,
     updateQuantity,
     setLockedRate,
+    setRateChangeNotice,
     incrementSequence,
     clear,
   }
