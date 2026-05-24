@@ -44,7 +44,7 @@ const totalSyp = computed(() => {
           <button
             type="button"
             class="w-7 h-7 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-sm flex items-center justify-center active:scale-90 transition-transform"
-            @click="store.updateQuantity(line.productId, line.quantity - 1); if (line.quantity - 1 < 1) store.removeLine(line.productId)"
+            @click="line.quantity - 1 < 1 ? store.removeLine(line.productId) : store.updateQuantity(line.productId, line.quantity - 1)"
           >−</button>
           <span class="text-sm font-semibold w-5 text-center">{{ line.quantity }}</span>
           <button

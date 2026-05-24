@@ -1,9 +1,9 @@
-import { computed } from 'vue'
+import { computed, toValue, type MaybeRef } from 'vue'
 import { useSaleStore } from '@/store/sale.store'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 
-export function useSale(currentRate: number | null) {
+export function useSale(currentRateParam: MaybeRef<number | null>) {
   const saleStore = useSaleStore()
 
   const totalSyp = computed(() => {
@@ -13,6 +13,7 @@ export function useSale(currentRate: number | null) {
   })
 
   async function addLine(productId: string) {
+    const currentRate = toValue(currentRateParam)
     if (currentRate === null) throw new Error('Exchange rate not set')
 
     const result = await db.execute(
@@ -35,6 +36,7 @@ export function useSale(currentRate: number | null) {
   }
 
   function checkRateChanged() {
+    const currentRate = toValue(currentRateParam)
     if (saleStore.lines.length > 0 && currentRate !== saleStore.lockedExchangeRate) {
       saleStore.setRateChangeNotice(true)
     }

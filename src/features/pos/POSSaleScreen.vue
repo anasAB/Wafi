@@ -14,7 +14,7 @@ import type { CompletedSale } from '@/features/payment/payment.types'
 
 const router     = useRouter()
 const { currentRate, loadRate } = useExchangeRate()
-const sale       = useSale(currentRate.value)
+const sale       = useSale(currentRate)
 const { scheduleSave } = useSaleDraft()
 const scanner    = useBarcodeScan()
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import type { Product } from './pos.types'
@@ -8,8 +8,9 @@ const props = defineProps<{ searchQuery: string }>()
 const emit  = defineEmits<{ (e: 'product-tap', productId: string): void }>()
 
 const device   = useDeviceStore()
-const products = ref<Product[]>([])
-const flashId  = ref<string | null>(null)
+const products   = ref<Product[]>([])
+const flashId    = ref<string | null>(null)
+const flashTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 
 async function loadProducts() {
   const q = props.searchQuery.trim()
@@ -31,13 +32,24 @@ async function loadProducts() {
 }
 
 onMounted(loadProducts)
-watch(() => props.searchQuery, loadProducts)
+
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+watch(() => props.searchQuery, () => {
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
+  searchDebounceTimer = setTimeout(loadProducts, 250)
+})
 
 function handleTap(productId: string) {
+  if (flashTimer.value) clearTimeout(flashTimer.value)
   flashId.value = productId
-  setTimeout(() => { flashId.value = null }, 200)
+  flashTimer.value = setTimeout(() => { flashId.value = null; flashTimer.value = null }, 200)
   emit('product-tap', productId)
 }
+
+onUnmounted(() => {
+  if (flashTimer.value) clearTimeout(flashTimer.value)
+})
 </script>
 
 <template>
