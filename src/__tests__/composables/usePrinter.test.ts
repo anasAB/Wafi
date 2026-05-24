@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { usePrinter, SimulatedDriver } from '@/composables/usePrinter'
-import type { ReceiptData } from '@/composables/usePrinter'
+import type { ReceiptData, IPrinterDriver } from '@/composables/usePrinter'
 
 const sampleReceipt: ReceiptData = {
   saleId:            'sale-001',
@@ -38,9 +38,19 @@ describe('usePrinter', () => {
   })
 
   it('print() rejects and surfaces error when driver throws', async () => {
-    const failDriver = { print: vi.fn().mockRejectedValue(new Error('Printer disconnected')) }
-    const { print, error } = usePrinter(failDriver as any)
+    const failDriver: IPrinterDriver = { print: vi.fn().mockRejectedValue(new Error('Printer disconnected')) }
+    const { print, error } = usePrinter(failDriver)
     await expect(print(sampleReceipt)).rejects.toThrow('Printer disconnected')
     expect(error.value).toBe('Printer disconnected')
+  })
+
+  it('printing ref is false before and after print, error cleared on success', async () => {
+    const { print, printing, error } = usePrinter(new SimulatedDriver())
+    expect(printing.value).toBe(false)
+    const printPromise = print(sampleReceipt)
+    expect(printing.value).toBe(true)
+    await printPromise
+    expect(printing.value).toBe(false)
+    expect(error.value).toBeNull()
   })
 })
