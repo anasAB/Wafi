@@ -17,9 +17,13 @@ const todaySalesUsd = ref<number | null>(null)
 const showDraftDialog = ref(false)
 
 onMounted(async () => {
-  await Promise.all([loadRate(), loadDraft()])
-  if (hasDraft.value) showDraftDialog.value = true
-  await loadTodaySales()
+  try {
+    await Promise.all([loadRate(), loadDraft()])
+    if (hasDraft.value) showDraftDialog.value = true
+    await loadTodaySales()
+  } catch {
+    if (todaySalesUsd.value === null) todaySalesUsd.value = 0
+  }
 })
 
 async function loadTodaySales() {
@@ -70,6 +74,7 @@ const arabicDate = new Intl.DateTimeFormat('ar-SY', {
       <!-- No rate warning -->
       <div
         v-if="!currentRate"
+        id="no-rate-warning"
         class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 rounded-xl p-4 mb-4 text-sm text-yellow-800 dark:text-yellow-200"
       >
         حدد سعر صرف الدولار من الأعلى قبل البدء في البيع.
@@ -79,6 +84,7 @@ const arabicDate = new Intl.DateTimeFormat('ar-SY', {
       <button
         type="button"
         :disabled="!canStartSale"
+        aria-describedby="no-rate-warning"
         class="w-full h-14 rounded-2xl text-lg font-bold text-white bg-blue-600 hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
         @click="router.push('/pos')"
       >
