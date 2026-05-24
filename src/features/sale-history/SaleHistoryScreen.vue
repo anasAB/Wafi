@@ -9,6 +9,7 @@ const router  = useRouter()
 const { sales, loading, loadHistory, reprint, reprintError } = useSaleHistory()
 const expandedId = ref<string | null>(null)
 const toast      = ref<string | null>(null)
+const toastType  = ref<'info' | 'error'>('info')
 
 onMounted(loadHistory)
 
@@ -23,9 +24,11 @@ const methodLabel: Record<string, string> = {
 async function handleReprint(saleId: string) {
   try {
     await reprint(saleId)
+    toastType.value = 'info'
     toast.value = 'تم إرسال الفاتورة للطباعة'
-  } catch {
-    toast.value = `خطأ: ${reprintError.value}`
+  } catch (e) {
+    toastType.value = 'error'
+    toast.value = `خطأ: ${e instanceof Error ? e.message : String(e)}`
   }
 }
 </script>
@@ -84,5 +87,5 @@ async function handleReprint(saleId: string) {
     </main>
   </div>
 
-  <AppToast v-if="toast" :message="toast" type="info" @dismiss="toast = null" />
+  <AppToast v-if="toast" :message="toast" :type="toastType" @dismiss="toast = null" />
 </template>
