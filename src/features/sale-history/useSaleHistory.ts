@@ -36,6 +36,8 @@ export function useSaleHistory() {
         amountReceivedCurrency: r.amount_received_currency,
         changeDue:           r.change_due,
       }))
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e)
     } finally {
       loading.value = false
     }
