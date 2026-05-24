@@ -8,7 +8,7 @@ const { status, pendingCount, isStale, errorMessage } = useSync()
 <template>
   <div class="flex flex-col items-end">
     <SyncBadge :status="status" :pending-count="pendingCount" />
-    <p v-if="isStale" class="text-xs text-orange-500 mt-0.5">لم تتم المزامنة منذ 24 ساعة</p>
-    <p v-if="errorMessage" class="text-xs text-red-500 mt-0.5 max-w-xs truncate">{{ errorMessage }}</p>
+    <p v-if="isStale" role="alert" class="text-xs text-orange-500 mt-0.5">لم تتم المزامنة منذ 24 ساعة</p>
+    <p v-if="errorMessage" role="alert" class="text-xs text-red-500 mt-0.5 max-w-xs truncate">{{ errorMessage }}</p>
   </div>
 </template>

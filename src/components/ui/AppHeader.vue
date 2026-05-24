@@ -26,7 +26,7 @@ const editorOpen = ref(false)
           aria-label="رجوع"
           @click="emit('back')"
         >
-          ←
+          →
         </button>
         <span class="text-base font-semibold text-gray-900 dark:text-white">{{ title }}</span>
       </div>
