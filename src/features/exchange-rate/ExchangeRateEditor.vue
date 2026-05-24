@@ -25,8 +25,10 @@ async function handleSave() {
 
 async function handleConfirm() {
   await confirmSave()
-  emit('saved')
-  emit('close')
+  if (!error.value) {
+    emit('saved')
+    emit('close')
+  }
 }
 
 function formatRelative(isoDate: string): string {
@@ -41,15 +43,17 @@ function formatRelative(isoDate: string): string {
 
 <template>
   <div class="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-4">
-    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-sm p-6 text-right">
-      <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">سعر صرف الدولار</h2>
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-sm p-6 text-right" role="dialog" aria-modal="true" aria-labelledby="exchange-rate-dialog-title">
+      <h2 id="exchange-rate-dialog-title" class="text-lg font-semibold text-gray-900 dark:text-white mb-4">سعر صرف الدولار</h2>
 
-      <label class="block text-sm text-gray-600 dark:text-gray-300 mb-1">السعر الجديد (ل.س)</label>
+      <label for="exchange-rate-input" class="block text-sm text-gray-600 dark:text-gray-300 mb-1">السعر الجديد (ل.س)</label>
       <input
+        id="exchange-rate-input"
         v-model="input"
         type="number"
         inputmode="numeric"
         min="1"
+        autofocus
         class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-lg text-right bg-white dark:bg-gray-700 text-gray-900 dark:text-white mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
         dir="ltr"
         placeholder="مثال: 14500"
@@ -73,9 +77,10 @@ function formatRelative(isoDate: string): string {
         <button
           type="button"
           :disabled="saving"
+          :aria-busy="saving"
           class="flex-1 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
           @click="handleSave"
-        >{{ saving ? '...' : 'حفظ' }}</button>
+        >{{ saving ? 'جاري الحفظ' : 'حفظ' }}</button>
       </div>
     </div>
   </div>

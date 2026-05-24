@@ -17,13 +17,13 @@ onMounted(loadRate)
         ? 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-100 hover:bg-gray-200 dark:hover:bg-gray-600'
         : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200 animate-pulse',
     ]"
-    :aria-label="currentRate ? `سعر الصرف: ${currentRate?.toLocaleString()} ل.س` : 'سعر الصرف غير محدد — انقر للإضافة'"
+    :aria-label="currentRate ? `سعر الصرف: ${currentRate.toLocaleString()} ل.س` : 'سعر الصرف غير محدد — انقر للإضافة'"
     @click="emit('open-editor')"
   >
     <span v-if="currentRate">{{ currentRate.toLocaleString() }} ل.س</span>
     <span v-else class="flex items-center gap-1">
-      <span class="text-yellow-600">⚠</span> حدد السعر
+      <span class="text-yellow-600" aria-hidden="true">⚠</span> حدد السعر
     </span>
-    <span class="text-gray-400 dark:text-gray-500 text-xs">✎</span>
+    <span class="text-gray-400 dark:text-gray-500 text-xs" aria-hidden="true">✎</span>
   </button>
 </template>
