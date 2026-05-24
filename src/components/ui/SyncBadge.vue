@@ -14,9 +14,9 @@ defineProps<{ status: SyncStatus; pendingCount?: number }>()
                                'bg-red-500',
       ]"
     />
-    <span :class="status === 'online' ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'">
+    <span :class="status === 'online' ? 'text-green-700 dark:text-green-400' : status === 'syncing' ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400'">
       {{ status === 'online' ? 'متصل' : status === 'syncing' ? 'جارٍ المزامنة' : 'غير متصل' }}
     </span>
-    <span v-if="pendingCount && pendingCount > 0" class="text-gray-400">({{ pendingCount }})</span>
+    <span v-if="(pendingCount ?? 0) > 0" class="text-gray-400">({{ pendingCount }})</span>
   </span>
 </template>

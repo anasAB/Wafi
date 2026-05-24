@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, onUnmounted } from 'vue'
 
 const props = defineProps<{ message: string; type?: 'info' | 'error' | 'success' }>()
 const emit  = defineEmits<{ (e: 'dismiss'): void }>()
 
+let timer: ReturnType<typeof setTimeout>
 onMounted(() => {
-  setTimeout(() => emit('dismiss'), 4000)
+  timer = setTimeout(() => emit('dismiss'), 4000)
 })
+onUnmounted(() => clearTimeout(timer))
 
 const colorClass = {
   info:    'bg-blue-600',
@@ -24,6 +26,7 @@ const colorClass = {
     <div class="flex items-center justify-between gap-3">
       <span>{{ message }}</span>
       <button
+        type="button"
         class="shrink-0 opacity-70 hover:opacity-100 text-lg leading-none"
         aria-label="إغلاق"
         @click="emit('dismiss')"
