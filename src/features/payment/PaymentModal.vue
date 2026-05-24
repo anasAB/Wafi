@@ -51,18 +51,18 @@ function handleCancel() {
 
   <!-- Sheet -->
   <div class="fixed bottom-0 left-0 right-0 sm:inset-0 sm:flex sm:items-center sm:justify-center z-50">
-    <div class="bg-white dark:bg-gray-900 rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md max-h-[90dvh] overflow-y-auto">
+    <div role="dialog" aria-modal="true" aria-labelledby="payment-modal-title" class="bg-white dark:bg-gray-900 rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md max-h-[90dvh] overflow-y-auto">
 
       <!-- Method selection -->
       <div v-if="state === 'method-selection'" class="p-6">
         <div class="flex items-center justify-between mb-6">
-          <h2 class="text-lg font-bold text-gray-900 dark:text-white">طريقة الدفع</h2>
+          <h2 id="payment-modal-title" class="text-lg font-bold text-gray-900 dark:text-white">طريقة الدفع</h2>
           <button type="button" class="text-gray-400 text-2xl leading-none" @click="handleCancel">×</button>
         </div>
 
         <div class="mb-4 text-center">
-          <p class="text-3xl font-bold text-gray-900 dark:text-white">${{ totalUsd.value.toFixed(2) }}</p>
-          <p class="text-sm text-gray-400 mt-1">{{ totalSyp.value.toLocaleString() }} ل.س</p>
+          <p class="text-3xl font-bold text-gray-900 dark:text-white">${{ totalUsd.toFixed(2) }}</p>
+          <p class="text-sm text-gray-400 mt-1">{{ totalSyp.toLocaleString() }} ل.س</p>
         </div>
 
         <div class="grid grid-cols-3 gap-3">
@@ -85,14 +85,14 @@ function handleCancel() {
       <!-- Amount entry (cash only) -->
       <div v-else-if="state === 'amount-entry'" class="p-6">
         <div class="flex items-center gap-3 mb-4">
-          <button type="button" class="text-gray-400 hover:text-gray-700" @click="back">←</button>
+          <button type="button" class="text-gray-400 hover:text-gray-700" @click="back">→</button>
           <h2 class="text-lg font-bold text-gray-900 dark:text-white">المبلغ المستلم</h2>
         </div>
 
         <div class="bg-gray-50 dark:bg-gray-800 rounded-xl p-4 mb-2 text-center">
           <p class="text-sm text-gray-500 mb-1">{{ method === 'cash_syp' ? 'المجموع بالليرة' : 'المجموع بالدولار' }}</p>
           <p class="text-2xl font-bold text-gray-900 dark:text-white">
-            {{ method === 'cash_syp' ? `${totalSyp.value.toLocaleString()} ل.س` : `$${totalUsd.value.toFixed(2)}` }}
+            {{ method === 'cash_syp' ? `${totalSyp.toLocaleString()} ل.س` : `$${totalUsd.toFixed(2)}` }}
           </p>
         </div>
 
@@ -100,8 +100,8 @@ function handleCancel() {
           <p class="text-3xl font-mono font-bold text-gray-900 dark:text-white">
             {{ amountStr || '0' }}
           </p>
-          <p v-if="changeDue.value !== null && changeDue.value > 0" class="text-sm text-green-600 dark:text-green-400 mt-1">
-            الباقي: {{ method === 'cash_syp' ? `${changeDue.value.toLocaleString()} ل.س` : `$${changeDue.value.toFixed(2)}` }}
+          <p v-if="changeDue !== null && changeDue > 0" class="text-sm text-green-600 dark:text-green-400 mt-1">
+            الباقي: {{ method === 'cash_syp' ? `${changeDue.toLocaleString()} ل.س` : `$${changeDue.toFixed(2)}` }}
           </p>
         </div>
 

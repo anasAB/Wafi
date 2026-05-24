@@ -10,7 +10,7 @@ import type { ReceiptData } from '@/composables/usePrinter'
 const router  = useRouter()
 const device  = useDeviceStore()
 const printer = usePrinter()
-const toast   = ref<string | null>(null)
+const toast   = ref<{ message: string; type: 'success' | 'error' } | null>(null)
 
 const sale = (history.state as any)?.sale as CompletedSale | undefined
 
@@ -38,9 +38,9 @@ async function handlePrint() {
   }
   try {
     await printer.print(receipt)
-    toast.value = 'تم إرسال الفاتورة للطباعة'
+    toast.value = { message: 'تم إرسال الفاتورة للطباعة', type: 'success' }
   } catch {
-    toast.value = `خطأ في الطباعة: ${printer.error.value}`
+    toast.value = { message: `خطأ في الطباعة: ${printer.error.value}`, type: 'error' }
   }
 }
 </script>
@@ -105,5 +105,5 @@ async function handlePrint() {
     </button>
   </div>
 
-  <AppToast v-if="toast" :message="toast" type="success" @dismiss="toast = null" />
+  <AppToast v-if="toast" :message="toast.message" :type="toast.type" @dismiss="toast = null" />
 </template>
