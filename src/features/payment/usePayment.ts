@@ -14,7 +14,6 @@ export function usePayment() {
   const isOpen      = ref(true)
   const method      = ref<PaymentMethod | null>(null)
   const amountReceived = ref<number | null>(null)
-  const confirming  = ref(false)
   const error       = ref<string | null>(null)
 
   const totalUsd = computed(() => saleStore.totalUsd)
@@ -56,7 +55,6 @@ export function usePayment() {
   async function confirm(): Promise<CompletedSale> {
     if (!method.value) throw new Error('No payment method selected')
     state.value      = 'confirming'
-    confirming.value = true
     error.value      = null
 
     const saleId     = uuidv4()
@@ -115,7 +113,6 @@ export function usePayment() {
       return sale
     } catch (err) {
       error.value      = err instanceof Error ? err.message : 'Payment failed'
-      confirming.value = false
       state.value      = method.value === 'card' ? 'card-confirm' : 'amount-entry'
       throw err
     }

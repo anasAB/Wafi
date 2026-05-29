@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 
+// USB scanner threshold: ≥ 30 chars/sec means < 33ms between keystrokes
 const SCANNER_INTERVAL_MS = 33
 
 type ScanCallback = (barcode: string) => void

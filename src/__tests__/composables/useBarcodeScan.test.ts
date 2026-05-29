@@ -67,6 +67,27 @@ describe('useBarcodeScan focus guard', () => {
     events.slice(1).forEach(e => {
       expect(e.preventDefault).toHaveBeenCalled()
     })
+    expect(events[0].preventDefault).not.toHaveBeenCalled()
+    destroy()
+  })
+
+  it('does NOT call e.preventDefault() on Enter after a short burst (< 4 chars)', () => {
+    const { onScan, destroy } = useBarcodeScan()
+    onScan(() => {})
+
+    const now = 0
+    ;['1','2','3'].forEach((key, i) => {
+      const e = new KeyboardEvent('keydown', { key })
+      Object.defineProperty(e, 'timeStamp', { value: now + i * 10 })
+      document.dispatchEvent(e)
+    })
+
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true })
+    Object.defineProperty(enter, 'timeStamp', { value: now + 3 * 10 })
+    enter.preventDefault = vi.fn()
+    document.dispatchEvent(enter)
+
+    expect(enter.preventDefault).not.toHaveBeenCalled()
     destroy()
   })
 
