@@ -4,11 +4,16 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+/* Dark background intentional — v1 ships dark-first; light toggles via .dark removal */
 body { margin: 0; background: #05080F; }
 #app { min-height: 100svh; }
 
-/* Text size scaling — all Tailwind rem utilities cascade from this */
+/* Explicit default — rem cascade is deterministic before store sets data-text-size */
+html              { font-size: 16px; }
 html[data-text-size="small"]   { font-size: 14px; }
 html[data-text-size="default"] { font-size: 16px; }
 html[data-text-size="large"]   { font-size: 18px; }
 html[data-text-size="xlarge"]  { font-size: 20px; }
+
+/* Adapts scrollbars and OS controls to dark mode */
+html.dark { color-scheme: dark; }
