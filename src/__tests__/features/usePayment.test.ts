@@ -79,5 +79,6 @@ describe('usePayment', () => {
     expect(completed.lines[0].nameAr).toBe('منتج')
     expect(completed.lines[0].quantity).toBe(1)
     expect(completed.lines[0].unitPriceUsd).toBe(10)
+    expect(completed.lines[0].lineTotalUsd).toBe(10)
   })
 })
