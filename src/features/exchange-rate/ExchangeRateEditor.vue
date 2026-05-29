@@ -7,6 +7,7 @@ const emit = defineEmits<{ (e: 'close'): void; (e: 'saved'): void }>()
 const { currentRate, rateHistory, needsConfirmation, pendingRate, saving, error, loadRate, saveRate, confirmSave } = useExchangeRate()
 
 const input = ref('')
+const validationError = ref<string | null>(null)
 
 onMounted(async () => {
   await loadRate()
@@ -15,7 +16,11 @@ onMounted(async () => {
 
 async function handleSave() {
   const val = parseFloat(input.value)
-  if (isNaN(val) || val <= 0) return
+  if (isNaN(val) || val <= 0) {
+    validationError.value = 'السعر يجب أن يكون أكبر من صفر'
+    return
+  }
+  validationError.value = null
   await saveRate(val)
   if (!needsConfirmation.value && !error.value) {
     emit('saved')
@@ -59,7 +64,8 @@ function formatRelative(isoDate: string): string {
         placeholder="مثال: 14500"
       />
 
-      <p v-if="error" class="text-red-600 text-sm mb-3">{{ error }}</p>
+      <p v-if="validationError" class="text-red-600 text-sm mb-3">{{ validationError }}</p>
+      <p v-else-if="error"      class="text-red-600 text-sm mb-3">{{ error }}</p>
 
       <ul v-if="rateHistory.length" class="mb-4 text-xs text-gray-500 dark:text-gray-400 space-y-1">
         <li v-for="r in rateHistory" :key="r.setAt" class="flex justify-between">

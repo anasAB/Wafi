@@ -29,7 +29,7 @@ onMounted(async () => {
     if (productId) {
       await handleProductTap(productId)
     } else {
-      toast.value = { message: `لم يُعثر على باركود: ${barcode}`, type: 'error' }
+      toast.value = { message: 'الباركود غير معروف', type: 'error' }
     }
   })
 })
