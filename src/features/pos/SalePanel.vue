@@ -15,16 +15,29 @@ const totalSyp = computed(() => {
 const showClearDialog  = ref(false)
 const swipedProductId  = ref<string | null>(null)
 let   touchStartX      = 0
+let   touchStartY      = 0
 
 function onTouchStart(e: TouchEvent, productId: string) {
   touchStartX = e.touches[0].clientX
+  touchStartY = e.touches[0].clientY
   if (swipedProductId.value !== productId) swipedProductId.value = null
 }
 
 function onTouchEnd(e: TouchEvent, productId: string) {
   const dx = touchStartX - e.changedTouches[0].clientX
-  if (dx > 50)  swipedProductId.value = productId
+  const dy = touchStartY - e.changedTouches[0].clientY
+  if (Math.abs(dx) < Math.abs(dy)) return   // vertical scroll wins — ignore
+  if (dx > 50)       swipedProductId.value = productId
   else if (dx < -20) swipedProductId.value = null
+}
+
+function onTouchCancel() {
+  swipedProductId.value = null
+}
+
+function handleDeleteLine(productId: string) {
+  store.removeLine(productId)
+  swipedProductId.value = null
 }
 
 function handleClearSale() {
@@ -64,13 +77,14 @@ function handleClearSale() {
         class="relative overflow-hidden border-b border-gray-100 dark:border-gray-700"
         @touchstart="(e) => onTouchStart(e, line.productId)"
         @touchend="(e) => onTouchEnd(e, line.productId)"
+        @touchcancel="onTouchCancel"
       >
         <!-- Delete button revealed on swipe -->
         <div class="absolute inset-y-0 start-0 w-20 flex items-center justify-center bg-red-600">
           <button
             type="button"
             class="text-white text-sm font-medium w-full h-full"
-            @click="store.removeLine(line.productId); swipedProductId = null"
+            @click="handleDeleteLine(line.productId)"
           >حذف</button>
         </div>
 
