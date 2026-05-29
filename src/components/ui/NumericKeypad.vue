@@ -1,5 +1,6 @@
 <script setup lang="ts">
-const emit = defineEmits<{
+const props = defineProps<{ confirmDisabled?: boolean }>()
+const emit  = defineEmits<{
   (e: 'digit',   d: string): void
   (e: 'delete'):              void
   (e: 'confirm'):             void
@@ -26,7 +27,11 @@ const keys = ['7','8','9','4','5','6','1','2','3','.',  '0', '⌫']
     <button
       type="button"
       aria-label="تأكيد"
-      class="col-span-3 h-12 rounded-xl bg-blue-600 text-white text-base font-semibold active:scale-95 transition-transform"
+      :disabled="props.confirmDisabled"
+      :class="[
+        'col-span-3 h-12 rounded-xl bg-blue-600 text-white text-base font-semibold',
+        'active:scale-95 transition-transform disabled:opacity-40 disabled:cursor-not-allowed',
+      ]"
       @click="emit('confirm')"
     >تأكيد</button>
   </div>

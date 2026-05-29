@@ -37,17 +37,14 @@ export function usePayment() {
 
   function selectMethod(m: PaymentMethod) {
     method.value = m
-    if (m === 'card') {
-      state.value = 'confirming'
-    } else {
-      state.value = 'amount-entry'
-    }
+    state.value  = m === 'card' ? 'card-confirm' : 'amount-entry'
   }
 
   function back() {
-    if (state.value === 'amount-entry') {
+    if (state.value === 'amount-entry' || state.value === 'card-confirm') {
       amountReceived.value = null
-      state.value = 'method-selection'
+      method.value         = null
+      state.value          = 'method-selection'
     }
   }
 

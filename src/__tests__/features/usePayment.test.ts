@@ -27,10 +27,10 @@ describe('usePayment', () => {
     expect(state.value).toBe('amount-entry')
   })
 
-  it('selectMethod transitions directly to confirming for card', () => {
+  it('selectMethod transitions to card-confirm state for card', () => {
     const { state, selectMethod } = usePayment()
     selectMethod('card')
-    expect(state.value).toBe('confirming')
+    expect(state.value).toBe('card-confirm')
   })
 
   it('back() from amount-entry returns to method-selection and clears amount', () => {

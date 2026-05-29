@@ -9,7 +9,7 @@ const emit = defineEmits<{
   (e: 'close'):                          void
 }>()
 
-const { state, method, amountReceived, totalUsd, totalSyp, changeDue, confirming, error,
+const { state, method, amountReceived, totalUsd, totalSyp, changeDue, error,
         selectMethod, back, cancel, confirm } = usePayment()
 
 const amountStr = ref('')
@@ -17,6 +17,14 @@ const amountStr = ref('')
 const displayAmount = computed(() => {
   if (!amountStr.value) return null
   return parseFloat(amountStr.value)
+})
+
+const amountSufficient = computed(() => {
+  const amount = displayAmount.value
+  if (amount === null || isNaN(amount)) return false
+  if (method.value === 'cash_usd') return amount >= totalUsd.value
+  if (method.value === 'cash_syp') return amount >= totalSyp.value
+  return false
 })
 
 function handleDigit(d: string) {
@@ -31,7 +39,9 @@ function handleDelete() {
 }
 
 async function handleConfirm() {
+  if (method.value !== 'card' && !amountSufficient.value) return
   try {
+    state.value = 'confirming'
     const sale = await confirm()
     emit('confirmed', sale)
   } catch {
@@ -51,16 +61,26 @@ function handleCancel() {
 
   <!-- Sheet -->
   <div class="fixed bottom-0 left-0 right-0 sm:inset-0 sm:flex sm:items-center sm:justify-center z-50">
-    <div role="dialog" aria-modal="true" aria-labelledby="payment-modal-title" class="bg-white dark:bg-gray-900 rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md max-h-[90dvh] overflow-y-auto">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="payment-modal-title"
+      class="bg-white dark:bg-gray-900 rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md max-h-[90dvh] overflow-y-auto"
+    >
 
-      <!-- Method selection -->
+      <!-- ── Method selection ── -->
       <div v-if="state === 'method-selection'" class="p-6">
-        <div class="flex items-center justify-between mb-6">
-          <h2 id="payment-modal-title" class="text-lg font-bold text-gray-900 dark:text-white">طريقة الدفع</h2>
-          <button type="button" class="text-gray-400 text-2xl leading-none" @click="handleCancel">×</button>
+        <div class="flex justify-start mb-4">
+          <button type="button" class="text-sm text-blue-600 dark:text-blue-400" @click="handleCancel">
+            إلغاء
+          </button>
         </div>
 
-        <div class="mb-4 text-center">
+        <h2 id="payment-modal-title" class="text-lg font-bold text-gray-900 dark:text-white mb-4 text-center">
+          إجمالي البيع
+        </h2>
+
+        <div class="mb-6 text-center">
           <p class="text-3xl font-bold text-gray-900 dark:text-white">${{ totalUsd.toFixed(2) }}</p>
           <p class="text-sm text-gray-400 mt-1">{{ totalSyp.toLocaleString() }} ل.س</p>
         </div>
@@ -68,8 +88,8 @@ function handleCancel() {
         <div class="grid grid-cols-3 gap-3">
           <button
             v-for="m in [
-              { key: 'cash_usd', label: 'نقداً دولار' },
-              { key: 'cash_syp', label: 'نقداً ليرة' },
+              { key: 'cash_usd', label: 'نقدي دولار' },
+              { key: 'cash_syp', label: 'نقدي ليرة' },
               { key: 'card',     label: 'بطاقة' },
             ]"
             :key="m.key"
@@ -82,21 +102,28 @@ function handleCancel() {
         <p v-if="error" class="mt-4 text-red-600 text-sm text-center">{{ error }}</p>
       </div>
 
-      <!-- Amount entry (cash only) -->
+      <!-- ── Amount entry (cash) ── -->
       <div v-else-if="state === 'amount-entry'" class="p-6">
-        <div class="flex items-center gap-3 mb-4">
-          <button type="button" class="text-gray-400 hover:text-gray-700" @click="back">→</button>
-          <h2 class="text-lg font-bold text-gray-900 dark:text-white">المبلغ المستلم</h2>
+        <div class="flex justify-start mb-4">
+          <button type="button" class="text-sm text-gray-500 dark:text-gray-400" @click="back">
+            رجوع
+          </button>
         </div>
 
+        <h2 id="payment-modal-title" class="text-lg font-bold text-gray-900 dark:text-white mb-4 text-center">
+          المبلغ المستلم
+        </h2>
+
         <div class="bg-gray-50 dark:bg-gray-800 rounded-xl p-4 mb-2 text-center">
-          <p class="text-sm text-gray-500 mb-1">{{ method === 'cash_syp' ? 'المجموع بالليرة' : 'المجموع بالدولار' }}</p>
+          <p class="text-sm text-gray-500 mb-1">
+            {{ method === 'cash_syp' ? 'المجموع بالليرة' : 'المجموع بالدولار' }}
+          </p>
           <p class="text-2xl font-bold text-gray-900 dark:text-white">
             {{ method === 'cash_syp' ? `${totalSyp.toLocaleString()} ل.س` : `$${totalUsd.toFixed(2)}` }}
           </p>
         </div>
 
-        <div class="bg-white dark:bg-gray-900 rounded-xl border-2 border-blue-500 p-4 mb-4 text-center">
+        <div class="bg-white dark:bg-gray-900 rounded-xl border-2 border-blue-500 p-4 mb-2 text-center">
           <p class="text-3xl font-mono font-bold text-gray-900 dark:text-white">
             {{ amountStr || '0' }}
           </p>
@@ -105,17 +132,57 @@ function handleCancel() {
           </p>
         </div>
 
-        <NumericKeypad @digit="handleDigit" @delete="handleDelete" @confirm="handleConfirm" />
+        <p
+          v-if="amountStr && !amountSufficient"
+          class="text-red-600 dark:text-red-400 text-sm text-center mb-2"
+        >
+          المبلغ غير كافٍ
+        </p>
+
+        <NumericKeypad
+          :confirm-disabled="!amountSufficient"
+          @digit="handleDigit"
+          @delete="handleDelete"
+          @confirm="handleConfirm"
+        />
         <p v-if="error" class="text-red-600 text-sm text-center mt-2">{{ error }}</p>
       </div>
 
-      <!-- Confirming -->
+      <!-- ── Card confirm ── -->
+      <div v-else-if="state === 'card-confirm'" class="p-6">
+        <div class="flex justify-start mb-4">
+          <button type="button" class="text-sm text-gray-500 dark:text-gray-400" @click="back">
+            رجوع
+          </button>
+        </div>
+
+        <h2 id="payment-modal-title" class="text-lg font-bold text-gray-900 dark:text-white mb-4 text-center">
+          إجمالي البيع
+        </h2>
+
+        <div class="mb-6 text-center">
+          <p class="text-3xl font-bold text-gray-900 dark:text-white">${{ totalUsd.toFixed(2) }}</p>
+          <p class="text-sm text-gray-400 mt-1">{{ totalSyp.toLocaleString() }} ل.س</p>
+        </div>
+
+        <div class="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 mb-6 text-center">
+          <p class="text-blue-700 dark:text-blue-300 font-medium">💳 بطاقة</p>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">سيتم تسجيل الدفع بالبطاقة</p>
+        </div>
+
+        <button
+          type="button"
+          class="w-full h-12 rounded-xl bg-blue-600 text-white font-semibold active:scale-95 transition-all"
+          @click="handleConfirm"
+        >
+          تأكيد
+        </button>
+      </div>
+
+      <!-- ── Confirming (spinner) ── -->
       <div v-else-if="state === 'confirming'" class="p-6 flex flex-col items-center gap-4">
         <div class="w-10 h-10 rounded-full border-4 border-blue-600 border-t-transparent animate-spin" />
         <p class="text-gray-600 dark:text-gray-300">جارٍ التأكيد...</p>
-        <div v-if="method === 'card'" class="w-full">
-          <div class="hidden" v-once @vue:mounted="handleConfirm()" />
-        </div>
       </div>
 
     </div>
