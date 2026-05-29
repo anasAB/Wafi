@@ -19,19 +19,17 @@ Both decisions affect > 1 component, are hard to replace once integrated (all st
 
 ## Decision
 
-**Adopt `vue-i18n@10` (Composition API mode) as the sole i18n mechanism.**
+**Adopt `vue-i18n@11` (Composition API mode) as the sole i18n mechanism.**
 All UI strings are defined in locale message files under `src/i18n/locales/`. No string literals appear directly in component templates. The `useI18n()` composable is the only access point.
 
 **Adopt `pinia-plugin-persistedstate@4` as the sole localStorage persistence layer for Pinia stores.**
 The plugin is registered once on the Pinia instance. Individual stores opt in via `persist: true` in their `defineStore` options. No store may call `localStorage` directly.
 
-**Note on vue-i18n version:** `vue-i18n@10` is deprecated upstream (v11 is the maintained branch as of May 2026). v10 was chosen because it is the last version with fully stable Composition API support confirmed against Pinia v3 + Vue 3.5 in this project's dependency tree. **This decision must be revisited at the v1.5 milestone** — migrating to v11 before customer count grows is strongly preferred.
-
 ## Alternatives Considered
 
 | Option | Why Rejected |
 |--------|-------------|
-| `vue-i18n@11` | Not yet confirmed compatible with the project's Pinia v3 + Vue 3.5 + Vite 8 combination at the time of this ADR. Revisit at v1.5. |
+| `vue-i18n@9/10` | Older branches; v10 is deprecated upstream. No reason to start on a deprecated version when v11 is confirmed compatible with Pinia v3 + Vue 3.5 + Vite 8. |
 | Hand-rolled i18n (reactive locale object) | No pluralisation, no number/date formatting, no fallback locale, no lazy loading of locale files. Fails as soon as a second language or formatted number is needed. |
 | `@intlify/vue-i18n-bridge` | Bridge layer for migrating v8→v9; irrelevant for a greenfield project. |
 | `vuex-persistedstate` | Tied to Vuex; project uses Pinia. |
@@ -47,7 +45,6 @@ The plugin is registered once on the Pinia instance. Individual stores opt in vi
 - Clear opt-in model: stores not annotated with `persist: true` are never touched, preventing accidental persistence of sensitive data.
 
 **Negative / trade-offs:**
-- `vue-i18n@10` is deprecated upstream. Migration to v11 will be required before v1.5 ships; doing it later at higher customer count is riskier.
 - `pinia-plugin-persistedstate@4` adds a serialisation/deserialisation step on every store write. Acceptable for settings stores; must not be applied to large transactional stores (POS cart, inventory lists).
 - All component tests that render translated strings must call `installI18n()` in their test setup, adding minor test scaffolding overhead.
 
@@ -62,4 +59,4 @@ The plugin is registered once on the Pinia instance. Individual stores opt in vi
 
 ## Review Date
 
-**At v1.5 milestone (months 9-15).** Migrate to `vue-i18n@11` at that point if the v11 + Pinia v3 + Vue 3.5 combination is confirmed stable. If migration has not occurred by the time the customer count reaches 25, escalate to a dedicated sprint.
+**At v1.5 milestone (months 9-15).** No forced migration needed — project is already on v11. Review for minor version upgrades and any breaking changes at that point.
