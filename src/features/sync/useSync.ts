@@ -29,8 +29,9 @@ export function useSync() {
     try {
       syncStore.setStatus('syncing')
       await db.connect(new SupabaseConnector())
-    } catch {
-      // PowerSync will retry automatically; status events update the store
+    } catch (err) {
+      syncStore.setStatus('offline')
+      syncStore.setError(err instanceof Error ? err.message : 'فشل الاتصال')
     }
   }
 

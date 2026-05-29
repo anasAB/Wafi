@@ -29,7 +29,9 @@ async function handleSyncNow() {
   <!-- Tappable badge -->
   <button
     type="button"
-    class="flex flex-col items-end focus:outline-none"
+    aria-label="فتح لوحة المزامنة"
+    :aria-expanded="panelOpen"
+    class="flex flex-col items-end focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded"
     @click="panelOpen = !panelOpen"
   >
     <SyncBadge :status="status" :pending-count="pendingCount" />
@@ -37,10 +39,17 @@ async function handleSyncNow() {
     <p v-if="errorMessage" role="alert" class="text-xs text-red-500 mt-0.5 max-w-xs truncate">{{ errorMessage }}</p>
   </button>
 
-  <!-- Detail panel (inline dropdown below the sticky header) -->
+  <!-- Invisible overlay to catch outside clicks -->
   <div
     v-if="panelOpen"
-    class="absolute top-14 start-0 end-0 z-40 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 shadow-md px-4 py-4 text-right"
+    class="fixed inset-0 z-30"
+    @click="panelOpen = false"
+  />
+
+  <!-- Detail panel (fixed, always below the 56px header) -->
+  <div
+    v-if="panelOpen"
+    class="fixed top-14 start-0 end-0 z-40 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 shadow-md px-4 py-4 text-right"
   >
     <div class="max-w-lg mx-auto space-y-3">
       <div class="flex justify-between text-sm">
