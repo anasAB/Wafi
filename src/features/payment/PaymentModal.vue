@@ -41,7 +41,6 @@ function handleDelete() {
 async function handleConfirm() {
   if (method.value !== 'card' && !amountSufficient.value) return
   try {
-    state.value = 'confirming'
     const sale = await confirm()
     emit('confirmed', sale)
   } catch {

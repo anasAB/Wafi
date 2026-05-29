@@ -55,6 +55,7 @@ export function usePayment() {
 
   async function confirm(): Promise<CompletedSale> {
     if (!method.value) throw new Error('No payment method selected')
+    state.value      = 'confirming'
     confirming.value = true
     error.value      = null
 
@@ -115,12 +116,13 @@ export function usePayment() {
     } catch (err) {
       error.value      = err instanceof Error ? err.message : 'Payment failed'
       confirming.value = false
+      state.value      = method.value === 'card' ? 'card-confirm' : 'amount-entry'
       throw err
     }
   }
 
   return {
-    state, isOpen, method, amountReceived, confirming, error,
+    state, isOpen, method, amountReceived, error,
     totalUsd, totalSyp, changeDue,
     selectMethod, back, cancel, confirm,
   }
