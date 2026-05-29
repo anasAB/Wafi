@@ -1,6 +1,7 @@
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useSyncStore } from '@/store/sync.store'
 import { db } from '@/data/powersync/db'
+import { SupabaseConnector } from '@/data/powersync/connector'
 
 export function useSync() {
   const syncStore = useSyncStore()
@@ -24,6 +25,15 @@ export function useSync() {
     return unsubscribe
   }
 
+  async function syncNow() {
+    try {
+      syncStore.setStatus('syncing')
+      await db.connect(new SupabaseConnector())
+    } catch {
+      // PowerSync will retry automatically; status events update the store
+    }
+  }
+
   let unbind: (() => void) | undefined
 
   onMounted(() => { unbind = bindPowerSync() })
@@ -35,5 +45,6 @@ export function useSync() {
     lastSyncedAt: computed(() => syncStore.lastSyncedAt),
     errorMessage: computed(() => syncStore.errorMessage),
     isStale,
+    syncNow,
   }
 }
