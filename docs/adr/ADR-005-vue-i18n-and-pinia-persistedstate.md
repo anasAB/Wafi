@@ -55,7 +55,7 @@ The plugin is registered once on the Pinia instance. Individual stores opt in vi
 - Register `pinia-plugin-persistedstate` in `src/stores/index.ts` (or `src/main.ts`) via `pinia.use(piniaPluginPersistedstate)`.
 - `persist: true` is allowed only on settings, preferences, and session-identity stores. It is **forbidden** on POS cart, inventory, or any store that holds transactional or large-volume data.
 - No component or composable may import `localStorage` directly for the purpose of persisting store state. All persistence goes through this plugin.
-- When migrating to `vue-i18n@11`, run `npx @intlify/vue-i18n-tools` migration script; update this ADR to Superseded.
+- When upgrading to a future major version of `vue-i18n`, consult the `@intlify/vue-i18n-tools` migration script before proceeding and update this ADR to Superseded.
 
 ## Review Date
 
