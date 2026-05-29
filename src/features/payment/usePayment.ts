@@ -77,6 +77,12 @@ export function usePayment() {
       amountReceivedCurrency: method.value === 'cash_syp' ? 'SYP' : 'USD',
       changeDue:              changeDue.value ?? undefined,
       createdAt:              now,
+      lines:                  saleStore.lines.map(l => ({
+        nameAr:       l.nameAr,
+        quantity:     l.quantity,
+        unitPriceUsd: l.unitPriceUsd,
+        lineTotalUsd: l.lineTotalUsd,
+      })),
     }
 
     try {

@@ -70,4 +70,14 @@ describe('usePayment', () => {
     // lockedRate = 14500, totalUsd = 10
     expect(totalSyp.value).toBe(145000)
   })
+
+  it('confirm() includes sale lines from store', async () => {
+    const { selectMethod, confirm } = usePayment()
+    selectMethod('card')
+    const completed = await confirm()
+    expect(completed.lines).toHaveLength(1)
+    expect(completed.lines[0].nameAr).toBe('منتج')
+    expect(completed.lines[0].quantity).toBe(1)
+    expect(completed.lines[0].unitPriceUsd).toBe(10)
+  })
 })

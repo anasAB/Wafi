@@ -23,18 +23,18 @@ const methodLabels: Record<string, string> = {
 async function handlePrint() {
   if (!sale) return
   const receipt: ReceiptData = {
-    saleId:            sale.saleId,
-    displaySaleNumber: sale.displaySaleNumber,
-    shopName:          device.shopId,
-    createdAt:         sale.createdAt,
-    lines:             [],
-    totalUsd:          sale.totalUsd,
-    totalSyp:          sale.totalSyp,
-    exchangeRate:      sale.exchangeRateAtSale,
-    paymentMethod:     sale.paymentMethod,
-    amountReceived:    sale.amountReceived,
+    saleId:                 sale.saleId,
+    displaySaleNumber:      sale.displaySaleNumber,
+    shopName:               device.shopId,
+    createdAt:              sale.createdAt,
+    lines:                  sale.lines,
+    totalUsd:               sale.totalUsd,
+    totalSyp:               sale.totalSyp,
+    exchangeRate:           sale.exchangeRateAtSale,
+    paymentMethod:          sale.paymentMethod,
+    amountReceived:         sale.amountReceived,
     amountReceivedCurrency: sale.amountReceivedCurrency,
-    changeDue:         sale.changeDue,
+    changeDue:              sale.changeDue,
   }
   try {
     await printer.print(receipt)
@@ -98,10 +98,18 @@ async function handlePrint() {
 
     <button
       type="button"
-      class="text-sm text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
+      class="text-sm text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 mb-2"
       @click="router.push('/history')"
     >
       آخر المبيعات
+    </button>
+
+    <button
+      type="button"
+      class="text-sm text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
+      @click="router.push('/')"
+    >
+      العودة للرئيسية
     </button>
   </div>
 
