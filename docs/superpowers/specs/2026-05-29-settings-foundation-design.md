@@ -62,8 +62,7 @@ src/
 | `App.vue` | Dynamic `:dir`/`:lang`; watchers for theme + text size on `<html>` |
 | `src/components/ui/AppHeader.vue` | Add gear icon (RouterLink) + `showSettings` prop |
 | `src/router/index.ts` | Add `/settings` and `/settings/personal` routes |
-| `tailwind.config.js` | `darkMode: 'class'` |
-| `src/style.css` | `html[data-text-size]` font-size rules |
+| `src/style.css` | Add `@custom-variant dark` for class-based dark mode (Tailwind v4) + `html[data-text-size]` font-size rules |
 
 **Not touched:** Existing POS, home, and sale history screens keep their hardcoded Arabic strings. i18n migration of those screens is deferred — Settings is the first screen built with i18n from day one.
 
@@ -154,14 +153,14 @@ Language change takes effect immediately — no app restart, no navigation. Exis
 
 ## Theme mechanics
 
-**tailwind.config.js:**
+**style.css** (Tailwind v4 uses CSS-first config — no `tailwind.config.js`):
 
-```js
-export default {
-  darkMode: 'class',  // changed from default media strategy
-  // ...
-}
+```css
+/* Enable class-based dark mode — add alongside existing resets */
+@custom-variant dark (&:where(.dark, .dark *));
 ```
+
+This replaces the default media-query dark strategy. All existing `dark:` classes continue to work — they just now respond to the `.dark` class on `<html>` instead of the OS preference directly (the store watcher handles that mapping).
 
 **App.vue:**
 
