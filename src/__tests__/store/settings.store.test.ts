@@ -1,0 +1,63 @@
+import { describe, it, expect, beforeEach } from 'vitest'
+import { setActivePinia, createPinia } from 'pinia'
+import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
+import { useSettingsStore } from '@/features/settings/settings.store'
+
+function makePinia() {
+  const pinia = createPinia()
+  pinia.use(piniaPluginPersistedstate)
+  return pinia
+}
+
+describe('useSettingsStore', () => {
+  beforeEach(() => {
+    setActivePinia(makePinia())
+    localStorage.clear()
+  })
+
+  it('has correct defaults', () => {
+    const store = useSettingsStore()
+    expect(store.language).toBe('ar')
+    expect(store.theme).toBe('auto')
+    expect(store.textSize).toBe('default')
+  })
+
+  it('language can be updated', () => {
+    const store = useSettingsStore()
+    store.language = 'en'
+    expect(store.language).toBe('en')
+  })
+
+  it('theme can be updated', () => {
+    const store = useSettingsStore()
+    store.theme = 'dark'
+    expect(store.theme).toBe('dark')
+  })
+
+  it('textSize can be updated', () => {
+    const store = useSettingsStore()
+    store.textSize = 'large'
+    expect(store.textSize).toBe('large')
+  })
+
+  it('persists language to localStorage', () => {
+    const store = useSettingsStore()
+    store.language = 'en'
+    const saved = JSON.parse(localStorage.getItem('settings') ?? '{}')
+    expect(saved.language).toBe('en')
+  })
+
+  it('restores persisted values on next mount', () => {
+    const store = useSettingsStore()
+    store.language = 'en'
+    store.theme = 'dark'
+    store.textSize = 'xlarge'
+
+    // Simulate app restart: new pinia, same localStorage
+    setActivePinia(makePinia())
+    const restored = useSettingsStore()
+    expect(restored.language).toBe('en')
+    expect(restored.theme).toBe('dark')
+    expect(restored.textSize).toBe('xlarge')
+  })
+})
