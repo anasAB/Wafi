@@ -46,3 +46,47 @@ describe('useBarcodeScan USB detection', () => {
     destroy()
   })
 })
+
+describe('useBarcodeScan focus guard', () => {
+  it('calls e.preventDefault() on burst chars from the 2nd char onward', () => {
+    const { onScan, destroy } = useBarcodeScan()
+    onScan(() => {})
+
+    const events: (KeyboardEvent & { preventDefault: ReturnType<typeof vi.fn> })[] = []
+    const now = 0
+
+    ;['1','2','3','4','5','6','7','8'].forEach((key, i) => {
+      const e = new KeyboardEvent('keydown', { key, cancelable: true })
+      Object.defineProperty(e, 'timeStamp', { value: now + i * 10 })
+      e.preventDefault = vi.fn()
+      events.push(e as any)
+      document.dispatchEvent(e)
+    })
+
+    // Characters 2-8 (index 1-7) must have preventDefault called
+    events.slice(1).forEach(e => {
+      expect(e.preventDefault).toHaveBeenCalled()
+    })
+    destroy()
+  })
+
+  it('calls e.preventDefault() on the terminating Enter of a scanner burst', () => {
+    const { onScan, destroy } = useBarcodeScan()
+    onScan(() => {})
+
+    const now = 0
+    ;['1','2','3','4'].forEach((key, i) => {
+      const e = new KeyboardEvent('keydown', { key })
+      Object.defineProperty(e, 'timeStamp', { value: now + i * 10 })
+      document.dispatchEvent(e)
+    })
+
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true })
+    Object.defineProperty(enter, 'timeStamp', { value: now + 4 * 10 })
+    enter.preventDefault = vi.fn()
+    document.dispatchEvent(enter)
+
+    expect(enter.preventDefault).toHaveBeenCalled()
+    destroy()
+  })
+})
