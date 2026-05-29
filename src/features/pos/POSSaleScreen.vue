@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import AppToast from '@/components/ui/AppToast.vue'
@@ -30,14 +30,7 @@ let   stopCamera: (() => void) | null = null
 
 onMounted(async () => {
   await loadRate()
-  scanner.onScan(async (barcode) => {
-    const productId = await sale.lookupByBarcode(barcode)
-    if (productId) {
-      await handleProductTap(productId)
-    } else {
-      toast.value = { message: 'الباركود غير معروف', type: 'error' }
-    }
-  })
+  scanner.onScan(handleBarcode)
 })
 
 async function handleProductTap(productId: string) {
@@ -52,6 +45,15 @@ async function handleProductTap(productId: string) {
   }
 }
 
+async function handleBarcode(barcode: string) {
+  const productId = await sale.lookupByBarcode(barcode)
+  if (productId) {
+    await handleProductTap(productId)
+  } else {
+    toast.value = { message: 'الباركود غير معروف', type: 'error' }
+  }
+}
+
 async function openCamera() {
   cameraOpen.value  = true
   cameraError.value = null
@@ -59,18 +61,14 @@ async function openCamera() {
   try {
     stopCamera = await scanner.startCamera(videoRef.value!, async (barcode) => {
       closeCamera()
-      const productId = await sale.lookupByBarcode(barcode)
-      if (productId) {
-        await handleProductTap(productId)
-      } else {
-        toast.value = { message: 'الباركود غير معروف', type: 'error' }
-      }
+      await handleBarcode(barcode)
     })
   } catch (err) {
     if (err instanceof DOMException && err.name === 'NotAllowedError') {
       cameraError.value = 'permission-denied'
     } else {
       cameraOpen.value = false
+      toast.value = { message: 'لا يمكن فتح الكاميرا', type: 'error' }
     }
   }
 }
@@ -81,6 +79,8 @@ function closeCamera() {
   cameraOpen.value  = false
   cameraError.value = null
 }
+
+onUnmounted(() => { closeCamera() })
 
 function handlePaymentConfirmed(completedSale: CompletedSale) {
   payOpen.value = false

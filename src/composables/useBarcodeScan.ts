@@ -72,8 +72,12 @@ export function useBarcodeScan() {
     if (!cameraAvailable.value) throw new Error('Camera not available')
     const { BrowserMultiFormatReader } = await import('@zxing/browser')
     const codeReader = new BrowserMultiFormatReader()
-    const controls   = await codeReader.decodeFromVideoDevice(undefined, videoEl, (result) => {
-      if (result) onResult(result.getText())
+    let fired = false
+    const controls = await codeReader.decodeFromVideoDevice(undefined, videoEl, (result) => {
+      if (result && !fired) {
+        fired = true
+        onResult(result.getText())
+      }
     })
     return () => controls.stop()
   }
