@@ -1,8 +1,9 @@
 export default {
   settings: {
-    title:    'الإعدادات',
-    personal: 'شخصي',
-    about:    'حول التطبيق',
+    title:         'الإعدادات',
+    personal:      'شخصي',
+    about:         'حول التطبيق',
+    selectSection: 'اختر قسماً من القائمة',
   },
   personal: {
     preferencesSection: 'التفضيلات',

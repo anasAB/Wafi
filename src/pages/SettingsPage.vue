@@ -1,15 +1,19 @@
 <script setup lang="ts">
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import AppHeader from '@/components/ui/AppHeader.vue'
 
 const router = useRouter()
 const route  = useRoute()
+const { t }  = useI18n()
+
+const APP_VERSION = 'v0.1.0'
 </script>
 
 <template>
   <div class="flex flex-col min-h-dvh">
     <AppHeader
-      title="الإعدادات"
+      :title="t('settings.title')"
       :show-back="true"
       :show-settings="false"
       @back="router.back()"
@@ -19,14 +23,14 @@ const route  = useRoute()
     <main class="flex-1 md:hidden px-4 py-4 max-w-lg mx-auto w-full">
 
       <!-- Personal section -->
-      <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 px-1">شخصي</p>
+      <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 px-1">{{ t('settings.personal') }}</p>
       <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden mb-4">
         <button
           type="button"
           class="w-full flex items-center justify-between px-4 py-3.5 border-b border-gray-100 dark:border-gray-700 text-sm text-gray-900 dark:text-white active:bg-gray-50 dark:active:bg-gray-700"
           @click="router.push('/settings/personal')"
         >
-          <span>اللغة والمظهر</span>
+          <span>{{ t('settings.personal') }}</span>
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-gray-400 rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
           </svg>
@@ -36,17 +40,17 @@ const route  = useRoute()
           class="w-full flex items-center justify-between px-4 py-3.5 text-sm text-red-500 opacity-60 cursor-not-allowed"
           disabled
         >
-          <span>تسجيل الخروج</span>
-          <span class="text-xs text-gray-400 dark:text-gray-500">قريباً</span>
+          <span>{{ t('personal.signOut') }}</span>
+          <span class="text-xs text-gray-400 dark:text-gray-500">{{ t('common.comingSoon') }}</span>
         </button>
       </div>
 
       <!-- About section -->
-      <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 px-1">حول التطبيق</p>
+      <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 px-1">{{ t('settings.about') }}</p>
       <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
         <div class="flex items-center justify-between px-4 py-3.5 text-sm text-gray-900 dark:text-white">
-          <span>الإصدار والدعم</span>
-          <span class="text-xs text-gray-400 dark:text-gray-500">v0.1.0</span>
+          <span>{{ t('personal.aboutVersionLabel') }}</span>
+          <span class="text-xs text-gray-400 dark:text-gray-500">{{ APP_VERSION }}</span>
         </div>
       </div>
 
@@ -65,11 +69,11 @@ const route  = useRoute()
               ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30 font-medium'
               : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'"
           >
-            شخصي
+            {{ t('settings.personal') }}
           </RouterLink>
           <div class="px-4 py-3 text-sm text-gray-400 dark:text-gray-500">
-            حول التطبيق
-            <span class="text-xs mr-1 text-gray-300 dark:text-gray-600">v0.1.0</span>
+            {{ t('settings.about') }}
+            <span class="text-xs mr-1 text-gray-300 dark:text-gray-600">{{ APP_VERSION }}</span>
           </div>
         </div>
       </nav>
@@ -81,7 +85,7 @@ const route  = useRoute()
           v-if="route.path === '/settings'"
           class="flex items-center justify-center h-48 text-sm text-gray-400 dark:text-gray-500"
         >
-          اختر قسماً من القائمة
+          {{ t('settings.selectSection') }}
         </div>
       </div>
 

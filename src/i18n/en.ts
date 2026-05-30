@@ -1,8 +1,9 @@
 export default {
   settings: {
-    title:    'Settings',
-    personal: 'Personal',
-    about:    'About',
+    title:         'Settings',
+    personal:      'Personal',
+    about:         'About',
+    selectSection: 'Select a section',
   },
   personal: {
     preferencesSection: 'Preferences',
