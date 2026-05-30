@@ -51,7 +51,7 @@ The plugin is registered once on the Pinia instance. Individual stores opt in vi
 ## Architecture Guidelines
 
 - Register `vue-i18n` in `src/i18n/index.ts`; import the plugin in `src/main.ts` as `app.use(i18n)`.
-- Locale message files: `src/i18n/locales/ar.ts` (primary), `src/i18n/locales/en.ts` (fallback). Keys use dot-notation namespaced by feature: `pos.addToCart`, `settings.language`.
+- Locale message files: `src/i18n/ar.ts` (primary), `src/i18n/en.ts` (fallback). Keys use dot-notation namespaced by feature: `pos.addToCart`, `settings.language`.
 - Register `pinia-plugin-persistedstate` in `src/stores/index.ts` (or `src/main.ts`) via `pinia.use(piniaPluginPersistedstate)`.
 - `persist: true` is allowed only on settings, preferences, and session-identity stores. It is **forbidden** on POS cart, inventory, or any store that holds transactional or large-volume data.
 - No component or composable may import `localStorage` directly for the purpose of persisting store state. All persistence goes through this plugin.
