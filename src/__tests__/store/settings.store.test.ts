@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { createApp } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
-import { useSettingsStore } from '@/features/settings/settings.store'
+import { useSettingsStore } from '@/features/settings'
 
 function makePinia() {
   const pinia = createPinia()
@@ -19,8 +19,8 @@ function makePinia() {
 
 describe('useSettingsStore', () => {
   beforeEach(() => {
-    setActivePinia(makePinia())
-    localStorage.clear()
+    localStorage.clear()            // clear storage first
+    setActivePinia(makePinia())     // then create fresh Pinia over empty storage
   })
 
   it('has correct defaults', () => {
