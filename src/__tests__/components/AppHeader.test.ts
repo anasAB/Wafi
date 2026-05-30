@@ -3,7 +3,6 @@ import { mount } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { createPinia } from 'pinia'
 import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
-import { createApp } from 'vue'
 import AppHeader from '@/components/ui/AppHeader.vue'
 
 const router = createRouter({
@@ -14,7 +13,6 @@ const router = createRouter({
 function mountHeader(props = {}) {
   const pinia = createPinia()
   pinia.use(piniaPluginPersistedstate)
-  createApp({}).use(pinia)
   return mount(AppHeader, {
     props: { title: 'Test', ...props },
     global: { plugins: [pinia, router] },
