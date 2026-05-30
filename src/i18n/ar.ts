@@ -1,0 +1,41 @@
+export default {
+  settings: {
+    title:    'الإعدادات',
+    personal: 'شخصي',
+    about:    'حول التطبيق',
+  },
+  personal: {
+    preferencesSection: 'التفضيلات',
+    sessionSection:     'الجلسة',
+    language: 'اللغة',
+    theme:    'المظهر',
+    textSize: 'حجم الخط',
+    signOut:  'تسجيل الخروج',
+    signOutConfirmTitle:   'تسجيل الخروج',
+    signOutConfirmMessage: 'هل تريد تسجيل الخروج؟',
+    aboutVersionLabel: 'الإصدار والدعم',
+  },
+  theme: {
+    light: 'فاتح',
+    dark:  'داكن',
+    auto:  'تلقائي',
+  },
+  textSize: {
+    small:   'ص',
+    default: 'ع',
+    large:   'ك',
+    xlarge:  'كك',
+    smallFull:   'صغير',
+    defaultFull: 'عادي',
+    largeFull:   'كبير',
+    xlargeFull:  'كبير جداً',
+  },
+  common: {
+    back:       'رجوع',
+    confirm:    'تأكيد',
+    cancel:     'إلغاء',
+    online:     'متصل',
+    offline:    'غير متصل',
+    comingSoon: 'قريباً',
+  },
+}

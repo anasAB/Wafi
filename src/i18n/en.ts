@@ -1,0 +1,41 @@
+export default {
+  settings: {
+    title:    'Settings',
+    personal: 'Personal',
+    about:    'About',
+  },
+  personal: {
+    preferencesSection: 'Preferences',
+    sessionSection:     'Session',
+    language: 'Language',
+    theme:    'Theme',
+    textSize: 'Text size',
+    signOut:  'Sign out',
+    signOutConfirmTitle:   'Sign out',
+    signOutConfirmMessage: 'Are you sure you want to sign out?',
+    aboutVersionLabel: 'Version & support',
+  },
+  theme: {
+    light: 'Light',
+    dark:  'Dark',
+    auto:  'Auto',
+  },
+  textSize: {
+    small:   'S',
+    default: 'M',
+    large:   'L',
+    xlarge:  'XL',
+    smallFull:   'Small',
+    defaultFull: 'Default',
+    largeFull:   'Large',
+    xlargeFull:  'Extra large',
+  },
+  common: {
+    back:       'Back',
+    confirm:    'Confirm',
+    cancel:     'Cancel',
+    online:     'Online',
+    offline:    'Offline',
+    comingSoon: 'Coming soon',
+  },
+}
