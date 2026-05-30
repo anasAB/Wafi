@@ -17,9 +17,17 @@ export function useSaleHistory() {
     error.value   = null
     try {
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-      const result = await db.execute(
-        `SELECT * FROM sales WHERE shop_id = ? AND created_at >= ? ORDER BY created_at DESC`,
-        [device.shopId, sevenDaysAgo]
+      const [result, crudResult] = await Promise.all([
+        db.execute(
+          `SELECT * FROM sales WHERE shop_id = ? AND created_at >= ? ORDER BY created_at DESC`,
+          [device.shopId, sevenDaysAgo]
+        ),
+        db.execute(
+          `SELECT DISTINCT json_extract(data, '$.id') as sale_id FROM ps_crud WHERE "table" = 'sales'`
+        ).catch(() => ({ rows: { _array: [] } })),
+      ])
+      const pendingIds = new Set<string>(
+        ((crudResult as any).rows._array as any[]).map((r: any) => r.sale_id).filter(Boolean)
       )
       sales.value = ((result as any).rows._array as any[]).map(r => ({
         id:                  r.id,
@@ -35,6 +43,7 @@ export function useSaleHistory() {
         amountReceived:      r.amount_received,
         amountReceivedCurrency: r.amount_received_currency,
         changeDue:           r.change_due,
+        isPending:           pendingIds.has(r.id),
       }))
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)

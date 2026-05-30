@@ -14,6 +14,7 @@ export interface SaleRecord {
   amountReceived?:     number
   amountReceivedCurrency?: 'USD' | 'SYP'
   changeDue?:          number
+  isPending:           boolean
 }
 
 export interface SaleLineRecord {

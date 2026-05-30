@@ -64,6 +64,10 @@ async function handleReprint(saleId: string) {
           >
             <span class="text-sm font-mono text-blue-600 dark:text-blue-400 shrink-0">{{ sale.displaySaleNumber }}</span>
             <span class="flex-1 text-sm font-semibold text-gray-900 dark:text-white">${{ sale.totalUsd.toFixed(2) }}</span>
+            <span
+              v-if="sale.isPending"
+              class="text-xs font-medium text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 px-1.5 py-0.5 rounded shrink-0"
+            >في الانتظار</span>
             <span class="text-xs text-gray-400 shrink-0">{{ formatDate(sale.createdAt) }}</span>
             <span class="text-sm shrink-0">{{ methodLabel[sale.paymentMethod] ?? '?' }}</span>
           </button>
