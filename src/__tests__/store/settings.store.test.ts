@@ -1,11 +1,19 @@
 import { describe, it, expect, beforeEach } from 'vitest'
+import { createApp } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
 import { useSettingsStore } from '@/features/settings/settings.store'
 
 function makePinia() {
   const pinia = createPinia()
+  // Force flush:'sync' on $subscribe so persistence writes land synchronously in tests
+  pinia.use(({ store }) => {
+    const orig = store.$subscribe.bind(store)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    store.$subscribe = (cb: any, opts: any = {}) => orig(cb, { flush: 'sync', ...opts })
+  })
   pinia.use(piniaPluginPersistedstate)
+  createApp({}).use(pinia) // activates the plugin
   return pinia
 }
 
