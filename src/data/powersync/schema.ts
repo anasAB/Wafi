@@ -19,6 +19,7 @@ const products = new Table({
 })
 
 const stock_adjustments = new Table({
+  shop_id:    column.text,
   product_id: column.text,
   old_value:  column.integer,
   new_value:  column.integer,
