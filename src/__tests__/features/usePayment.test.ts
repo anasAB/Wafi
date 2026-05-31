@@ -87,15 +87,17 @@ describe('usePayment', () => {
     // Mock all db.execute calls in order:
     // 1. INSERT INTO sales
     // 2. INSERT INTO sale_line_items (for the one line in beforeEach)
-    // 3. SELECT current_stock (for stock deduction)
-    // 4. UPDATE products (stock deduction)
-    // 5. INSERT INTO stock_adjustments
+    // Note: SELECT is now getOptional, not execute
+    // 3. UPDATE products (stock deduction)
+    // 4. INSERT INTO stock_adjustments
     vi.mocked(db.execute)
       .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sales
       .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sale_line_items
-      .mockResolvedValueOnce({ rows: { _array: [{ current_stock: 10 }] } } as any) // SELECT current_stock
+      // Note: SELECT is now getOptional, not execute
       .mockResolvedValueOnce({ rows: { _array: [] } } as any) // UPDATE products
       .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT stock_adjustments
+
+    vi.mocked(db.getOptional).mockResolvedValueOnce({ current_stock: 10 } as any)
 
     const { selectMethod, confirm } = usePayment()
     selectMethod('card')
@@ -104,5 +106,13 @@ describe('usePayment', () => {
     const calls = vi.mocked(db.execute).mock.calls.map(c => c[0] as string)
     expect(calls.some(sql => sql.includes('UPDATE products') && sql.includes('current_stock'))).toBe(true)
     expect(calls.some(sql => sql.includes('INSERT INTO stock_adjustments'))).toBe(true)
+
+    // Verify the correct numeric values were passed
+    const updateCall = vi.mocked(db.execute).mock.calls.find(c => (c[0] as string).includes('UPDATE products') && (c[0] as string).includes('current_stock'))
+    expect(updateCall?.[1]).toContain(9) // newStock = 10 - 1
+
+    const insertCall = vi.mocked(db.execute).mock.calls.find(c => (c[0] as string).includes('INSERT INTO stock_adjustments'))
+    expect(insertCall?.[1]).toContain(10) // old_value
+    expect(insertCall?.[1]).toContain(9)  // new_value
   })
 })

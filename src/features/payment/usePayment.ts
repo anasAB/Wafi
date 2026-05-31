@@ -8,9 +8,11 @@ import { v4 as uuidv4 } from 'uuid'
 import type { PaymentMethod, PaymentState, CompletedSale } from './payment.types'
 
 export function usePayment() {
-  const saleStore   = useSaleStore()
-  const deviceStore = useDeviceStore()
-  const state       = ref<PaymentState>('method-selection')
+  const saleStore         = useSaleStore()
+  const deviceStore       = useDeviceStore()
+  const { nextNumber }    = useSaleNumber()
+  const { clearDraft }    = useSaleDraft()
+  const state             = ref<PaymentState>('method-selection')
   const isOpen      = ref(true)
   const method      = ref<PaymentMethod | null>(null)
   const amountReceived = ref<number | null>(null)
@@ -59,7 +61,6 @@ export function usePayment() {
 
     const saleId     = uuidv4()
     const now        = new Date().toISOString()
-    const { nextNumber } = useSaleNumber()
     const displayNum = nextNumber()
 
     const sale: CompletedSale = {
@@ -107,13 +108,13 @@ export function usePayment() {
 
       // Deduct stock for each line item
       for (const line of saleStore.lines) {
-        const stockResult = await db.execute(
+        const stockRow = await db.getOptional<{ current_stock: number }>(
           `SELECT current_stock FROM products WHERE id = ?`,
           [line.productId]
         )
-        const currentStock: number =
-          ((stockResult as any).rows._array[0] as any)?.current_stock ?? 0
+        const currentStock = stockRow?.current_stock ?? 0
         const newStock = currentStock - line.quantity
+        // Negative stock is allowed — POS does not block overselling. See Epic 2 spec Story 2.4.
 
         await db.execute(
           `UPDATE products SET current_stock = ?, updated_at = ?, sync_status = 'pending' WHERE id = ?`,
@@ -126,7 +127,6 @@ export function usePayment() {
         )
       }
 
-      const { clearDraft } = useSaleDraft()
       await clearDraft()
       saleStore.clear()
       state.value  = 'confirmed'
