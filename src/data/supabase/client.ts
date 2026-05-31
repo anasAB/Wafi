@@ -1,12 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string
+const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string) || 'http://localhost:54321'
+const supabaseKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || 'placeholder-key'
 
-if (!supabaseUrl || !supabaseKey) {
-  throw new Error(
-    'Missing Supabase env vars. Copy .env.local.example to .env.local and fill in values.'
-  )
+if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
+  console.warn('[Supabase] Env vars not set — running in offline-only mode. Sync and auth will not work.')
 }
 
 export const supabase = createClient(supabaseUrl, supabaseKey)

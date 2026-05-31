@@ -1,0 +1,60 @@
+<h2>كيف تفتح شاشة الإعدادات؟</h2>
+<p class="subtitle">How should Settings open when the user taps the gear icon?</p>
+
+<div class="cards">
+
+  <!-- Option A: Full page -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#0f172a;padding:12px;font-family:sans-serif;direction:rtl;">
+      <!-- Header -->
+      <div style="background:#1e293b;border-radius:8px 8px 0 0;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">
+        <span style="color:#94a3b8;font-size:11px;">← رجوع</span>
+        <span style="color:#f1f5f9;font-size:13px;font-weight:600;">الإعدادات</span>
+        <span style="color:#1e293b;font-size:11px;">.</span>
+      </div>
+      <!-- Sections list -->
+      <div style="background:#1e293b;border-radius:0 0 8px 8px;padding:8px 0;">
+        <div style="padding:9px 12px;border-bottom:1px solid #334155;color:#f1f5f9;font-size:12px;">شخصي</div>
+        <div style="padding:9px 12px;border-bottom:1px solid #334155;color:#f1f5f9;font-size:12px;">الملف التجاري</div>
+        <div style="padding:9px 12px;border-bottom:1px solid #334155;color:#f1f5f9;font-size:12px;">قالب الفاتورة</div>
+        <div style="padding:9px 12px;color:#f1f5f9;font-size:12px;">حول التطبيق</div>
+      </div>
+      <!-- URL bar hint -->
+      <div style="margin-top:8px;background:#0f172a;border:1px solid #334155;border-radius:4px;padding:4px 8px;color:#64748b;font-size:9px;text-align:center;">/settings</div>
+    </div>
+    <div class="card-body">
+      <h3>A — صفحة كاملة (Route)</h3>
+      <p>Settings is a full-screen page at <code>/settings</code>. Back button returns to wherever you came from. Clean, standard, works great on mobile. URL is bookmarkable/deep-linkable.</p>
+    </div>
+  </div>
+
+  <!-- Option B: Bottom Sheet -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#0f172a;padding:12px;font-family:sans-serif;direction:rtl;position:relative;overflow:hidden;">
+      <!-- Underlying page (dimmed) -->
+      <div style="background:#1e293b;border-radius:8px;padding:10px 12px;opacity:0.4;">
+        <div style="color:#94a3b8;font-size:11px;margin-bottom:8px;">الصفحة الحالية</div>
+        <div style="height:40px;background:#334155;border-radius:6px;margin-bottom:6px;"></div>
+        <div style="height:40px;background:#334155;border-radius:6px;margin-bottom:6px;"></div>
+      </div>
+      <!-- Bottom sheet overlay -->
+      <div style="position:absolute;bottom:12px;left:12px;right:12px;background:#1e293b;border-radius:12px 12px 8px 8px;padding:0 0 8px 0;box-shadow:0 -4px 20px rgba(0,0,0,0.5);">
+        <div style="text-align:center;padding:8px;"><div style="width:32px;height:3px;background:#475569;border-radius:2px;display:inline-block;"></div></div>
+        <div style="padding:0 12px;">
+          <div style="padding:8px 0;border-bottom:1px solid #334155;color:#f1f5f9;font-size:11px;">شخصي</div>
+          <div style="padding:8px 0;border-bottom:1px solid #334155;color:#f1f5f9;font-size:11px;">الملف التجاري</div>
+          <div style="padding:8px 0;color:#f1f5f9;font-size:11px;">حول التطبيق</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Bottom Sheet (Modal)</h3>
+      <p>Settings slides up as an overlay. No navigation, no URL change. Feels native on mobile. But sub-screens (e.g. Shop Profile editor) need to push inside the sheet — gets complex with 17 stories' worth of content.</p>
+    </div>
+  </div>
+
+</div>
+
+<div class="section" style="margin-top:16px;">
+  <p class="subtitle" style="font-size:12px;">💡 The epic spec describes a gear icon in the global header that opens a full settings experience with 11 sub-screens. A full-screen route handles that depth much better than a sheet.</p>
+</div>

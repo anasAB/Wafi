@@ -1,4 +1,5 @@
-import { AbstractPowerSyncDatabase, PowerSyncBackendConnector, UpdateType } from '@powersync/web'
+import { AbstractPowerSyncDatabase, UpdateType } from '@powersync/web'
+import type { PowerSyncBackendConnector } from '@powersync/common'
 import { supabase } from '@/data/supabase/client'
 
 export class SupabaseConnector implements PowerSyncBackendConnector {

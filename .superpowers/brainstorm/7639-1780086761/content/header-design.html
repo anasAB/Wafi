@@ -1,0 +1,77 @@
+<h2>AppHeader — Before & After</h2>
+<p class="subtitle">Gear icon added to the right side, next to the title. Mobile-first, desktop centers in max-width container.</p>
+
+<div class="split" style="gap:16px;">
+
+  <!-- Before -->
+  <div class="mockup">
+    <div class="mockup-header">Before (current)</div>
+    <div class="mockup-body" style="padding:0;">
+      <!-- Mobile -->
+      <div style="background:#111827;padding:6px 10px;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;height:48px;direction:rtl;">
+          <span style="color:#f9fafb;font-size:13px;font-weight:600;">وافي</span>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="background:#1f2937;color:#9ca3af;font-size:10px;padding:3px 8px;border-radius:6px;border:1px solid #374151;">8,500 ل.س</span>
+            <span style="color:#22c55e;font-size:14px;">⟳</span>
+          </div>
+        </div>
+        <div style="color:#4b5563;font-size:9px;text-align:center;margin-top:2px;">📱 mobile</div>
+      </div>
+      <!-- Desktop -->
+      <div style="background:#111827;padding:6px 24px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;height:48px;max-width:640px;margin:0 auto;direction:rtl;">
+          <span style="color:#f9fafb;font-size:13px;font-weight:600;">وافي</span>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="background:#1f2937;color:#9ca3af;font-size:10px;padding:3px 8px;border-radius:6px;border:1px solid #374151;">8,500 ل.س</span>
+            <span style="color:#22c55e;font-size:14px;">⟳</span>
+          </div>
+        </div>
+        <div style="color:#4b5563;font-size:9px;text-align:center;margin-top:2px;">🖥 desktop (max-width centered)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- After -->
+  <div class="mockup">
+    <div class="mockup-header">After (with gear)</div>
+    <div class="mockup-body" style="padding:0;">
+      <!-- Mobile -->
+      <div style="background:#111827;padding:6px 10px;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;height:48px;direction:rtl;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <a style="color:#9ca3af;font-size:17px;text-decoration:none;min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;">⚙</a>
+            <span style="color:#f9fafb;font-size:13px;font-weight:600;">وافي</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="background:#1f2937;color:#9ca3af;font-size:10px;padding:3px 8px;border-radius:6px;border:1px solid #374151;">8,500 ل.س</span>
+            <span style="color:#22c55e;font-size:14px;">⟳</span>
+          </div>
+        </div>
+        <div style="color:#4b5563;font-size:9px;text-align:center;margin-top:2px;">📱 mobile — 44×44px tap target</div>
+      </div>
+      <!-- Desktop -->
+      <div style="background:#111827;padding:6px 24px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;height:48px;max-width:640px;margin:0 auto;direction:rtl;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <a style="color:#9ca3af;font-size:17px;text-decoration:none;min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;border-radius:8px;" onmouseover="this.style.background='#1f2937'" onmouseout="this.style.background='transparent'">⚙</a>
+            <span style="color:#f9fafb;font-size:13px;font-weight:600;">وافي</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="background:#1f2937;color:#9ca3af;font-size:10px;padding:3px 8px;border-radius:6px;border:1px solid #374151;">8,500 ل.س</span>
+            <span style="color:#22c55e;font-size:14px;">⟳</span>
+          </div>
+        </div>
+        <div style="color:#4b5563;font-size:9px;text-align:center;margin-top:2px;">🖥 desktop — hover highlight on gear</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="section" style="margin-top:16px;">
+  <h3>Code change</h3>
+  <p class="subtitle">AppHeader gets a <code>showSettings</code> prop (default <code>true</code>). When false (e.g. on the Settings page itself), the gear is hidden. The gear is a <code>&lt;RouterLink to="/settings"&gt;</code> — no emit needed.</p>
+  <br>
+  <p class="subtitle">The existing <code>showBack</code> prop still works. On the Settings page, <code>showBack=true</code> and <code>showSettings=false</code>.</p>
+</div>

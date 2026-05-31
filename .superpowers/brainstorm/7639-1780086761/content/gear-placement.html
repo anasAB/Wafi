@@ -1,0 +1,73 @@
+<h2>أين تضع أيقونة الإعدادات؟</h2>
+<p class="subtitle">Where does the gear icon live in the global header?</p>
+
+<div class="cards">
+
+  <!-- Option A: Far left (end in RTL) -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#0f172a;padding:16px 12px;font-family:sans-serif;direction:rtl;">
+      <div style="background:#1e293b;border-radius:8px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;">
+        <!-- Right: title -->
+        <span style="color:#f1f5f9;font-size:13px;font-weight:600;">وافي</span>
+        <!-- Left: rate + sync + gear -->
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="background:#334155;color:#94a3b8;font-size:10px;padding:3px 7px;border-radius:6px;">8,500 ل.س</span>
+          <span style="color:#22c55e;font-size:13px;">⟳</span>
+          <span style="color:#94a3b8;font-size:15px;">⚙</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Far left (alongside sync)</h3>
+      <p>Gear sits at the far left end, next to the sync indicator. All secondary actions grouped on one side. Compact. Follows the epic spec exactly ("top-end" = left in RTL).</p>
+    </div>
+  </div>
+
+  <!-- Option B: Replace sync indicator area -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#0f172a;padding:16px 12px;font-family:sans-serif;direction:rtl;">
+      <div style="background:#1e293b;border-radius:8px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;">
+        <!-- Right: gear + title -->
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="color:#94a3b8;font-size:15px;">⚙</span>
+          <span style="color:#f1f5f9;font-size:13px;font-weight:600;">وافي</span>
+        </div>
+        <!-- Left: rate + sync -->
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="background:#334155;color:#94a3b8;font-size:10px;padding:3px 7px;border-radius:6px;">8,500 ل.س</span>
+          <span style="color:#22c55e;font-size:13px;">⟳</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Right side, next to title</h3>
+      <p>Gear sits on the right near the title. Exchange rate + sync stay on the left. Keeps the "action" side clean. Gear is more prominent and easier to reach one-handed on RTL layout.</p>
+    </div>
+  </div>
+
+  <!-- Option C: Inside a menu -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#0f172a;padding:16px 12px;font-family:sans-serif;direction:rtl;">
+      <div style="background:#1e293b;border-radius:8px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;">
+        <!-- Right: title -->
+        <span style="color:#f1f5f9;font-size:13px;font-weight:600;">وافي</span>
+        <!-- Left: rate + sync + kebab -->
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="background:#334155;color:#94a3b8;font-size:10px;padding:3px 7px;border-radius:6px;">8,500 ل.س</span>
+          <span style="color:#22c55e;font-size:13px;">⟳</span>
+          <span style="color:#94a3b8;font-size:16px;letter-spacing:1px;">···</span>
+        </div>
+      </div>
+      <!-- Dropdown hint -->
+      <div style="margin-top:6px;background:#1e293b;border-radius:6px;padding:6px 10px;border:1px solid #334155;">
+        <div style="color:#94a3b8;font-size:10px;padding:3px 0;border-bottom:1px solid #334155;">الإعدادات ⚙</div>
+        <div style="color:#94a3b8;font-size:10px;padding:3px 0;">تسجيل الخروج</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Inside a ··· overflow menu</h3>
+      <p>A kebab/overflow menu holds Settings + Sign out. Keeps the header minimal. But adds a tap to reach Settings — slower for an action owners use often.</p>
+    </div>
+  </div>
+
+</div>
