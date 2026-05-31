@@ -1,0 +1,44 @@
+<h2>How should Epic 2 be structured?</h2>
+<p class="subtitle">Three approaches to organizing the feature directory, data layer, and Back Office entry point</p>
+
+<div class="options">
+
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Feature-first (Recommended)</h3>
+      <p>Create <code>src/features/products/</code> with its own composable (<code>useProducts</code>), views, and sub-components. Back Office gets its own page at <code>/back-office</code> linked from the app header. Schema migration extends the existing <code>products</code> table in-place.</p>
+      <div class="pros-cons" style="margin-top:10px">
+        <div class="pros"><h4>Pros</h4><ul><li>Matches existing pattern (sale-history, settings all have feature folders)</li><li>Clean boundary — products composable owns all DB queries</li><li>Easy to add Excel import, Expenses, Reports later</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Requires schema migration (products table has 8 missing fields)</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Extend POS feature folder</h3>
+      <p>Add product management views inside the existing <code>src/features/pos/</code> folder. No new feature directory. Back Office is just a route group under <code>/pos/products</code>.</p>
+      <div class="pros-cons" style="margin-top:10px">
+        <div class="pros"><h4>Pros</h4><ul><li>No new folder structure to create</li><li>ProductGrid.vue already lives here</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Wrong mental model — products management isn't POS</li><li>Folder grows large fast as reports/expenses/shifts come in</li><li>Harder to split later</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Back Office as top-level feature with sub-features</h3>
+      <p><code>src/features/back-office/</code> contains sub-folders: <code>products/</code>, and placeholders for <code>expenses/</code>, <code>reports/</code>. The Back Office hub component lives at the top of this folder.</p>
+      <div class="pros-cons" style="margin-top:10px">
+        <div class="pros"><h4>Pros</h4><ul><li>Most architecturally correct long-term</li><li>Hub and its sub-modules are co-located</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Slightly over-engineered for a single module today — placeholder folders are noise</li><li>Can always be refactored to this from A when a second Back Office module ships</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:20px">Click to select, then confirm in terminal. My recommendation is A.</p>
