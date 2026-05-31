@@ -31,7 +31,7 @@ const toast           = ref<{ message: string; type: 'success' | 'error' } | nul
 
 // Staleness tracking
 const lastSyncedAt = ref<string | null>(localStorage.getItem('wafi_last_synced'))
-const isOnline     = ref(db.status.connected)
+const isOnline     = ref(db.status?.connected ?? false)
 
 let syncTimer: ReturnType<typeof setInterval> | null = null
 
@@ -44,7 +44,7 @@ onMounted(async () => {
 
   // Poll sync status every 60s; update lastSyncedAt when connection is restored
   syncTimer = setInterval(() => {
-    const nowConnected = db.status.connected
+    const nowConnected = db.status?.connected ?? false
     if (nowConnected && !isOnline.value) {
       const now = new Date().toISOString()
       localStorage.setItem('wafi_last_synced', now)
@@ -54,7 +54,7 @@ onMounted(async () => {
   }, 60_000)
 
   // Mark initial sync time if connected at mount
-  if (db.status.connected) {
+  if (db.status?.connected) {
     const now = new Date().toISOString()
     localStorage.setItem('wafi_last_synced', now)
     lastSyncedAt.value = now
