@@ -12,10 +12,12 @@ const route  = useRoute()
 const { products, load } = useProducts()
 const product = ref<Product | undefined>(undefined)
 const toast   = ref<{ message: string; type: 'success' } | null>(null)
+const loaded  = ref(false)
 
 onMounted(async () => {
   await load()
   product.value = products.value.find(p => p.id === (route.params.id as string))
+  loaded.value = true
 })
 
 function handleSaved() {
@@ -33,7 +35,12 @@ function handleSaved() {
       @back="router.push('/products')"
     />
     <main class="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
-      <div v-if="!product" class="flex justify-center py-20 text-gray-400">جارٍ التحميل...</div>
+      <div v-if="!loaded" class="flex justify-center py-20 text-gray-400">جارٍ التحميل...</div>
+      <div v-else-if="!product" class="flex flex-col items-center justify-center py-20 text-gray-400 gap-2">
+        <span class="text-3xl">📦</span>
+        <p class="text-sm">المنتج غير موجود</p>
+        <button type="button" class="text-sm text-blue-600 underline" @click="router.push('/products')">العودة للمنتجات</button>
+      </div>
       <ProductForm
         v-else
         mode="edit"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, computed, ref } from 'vue'
+import { onMounted, onUnmounted, computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import ProductList from './components/ProductList.vue'
@@ -21,6 +21,10 @@ const missedBarcode  = ref<string | null>(null)
 onMounted(() => {
   load()
   scanner.onScan(handleBarcodeScan)
+})
+
+onUnmounted(() => {
+  scanner.offScan(handleBarcodeScan)
 })
 
 function handleBarcodeScan(code: string) {
