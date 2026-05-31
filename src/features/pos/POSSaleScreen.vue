@@ -89,13 +89,14 @@ function handlePaymentConfirmed(completedSale: CompletedSale) {
 </script>
 
 <template>
-  <div class="flex flex-col min-h-dvh">
+  <div class="flex flex-col min-h-dvh bg-bg-void">
     <AppHeader title="بيع جديد" :show-exchange-rate="true" :show-back="true" @back="router.push('/home')" />
 
     <!-- Rate change notice -->
     <div
       v-if="sale.hasRateChangeNotice.value"
-      class="bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300 text-sm px-4 py-2 border-b border-orange-200"
+      class="text-sm px-4 py-2"
+      style="background: rgb(251 146 60 / 0.10); color: rgb(253 186 116); border-bottom: 1px solid rgb(251 146 60 / 0.25)"
     >
       تغيّر سعر الصرف — سيُطبق السعر الجديد على البيع التالي فقط
     </div>
@@ -105,13 +106,14 @@ function handlePaymentConfirmed(completedSale: CompletedSale) {
       <!-- Product area (60%) -->
       <div class="flex flex-col sm:flex-[60]">
         <!-- Search bar with optional camera icon -->
-        <div class="px-3 py-2 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2">
+        <div class="px-3 py-2 flex items-center gap-2" style="background: rgb(255 255 255 / 0.04); border-bottom: 1px solid rgb(255 255 255 / 0.10)">
           <div class="relative flex-1">
             <input
               v-model="searchQuery"
               type="search"
               placeholder="ابحث عن منتج أو باركود..."
-              class="w-full h-10 px-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+              class="w-full h-10 px-3 rounded-lg text-sm text-right focus:outline-none focus:ring-1 focus:ring-gold-primary text-text-primary"
+              style="background: rgb(255 255 255 / 0.06); border: 1px solid rgb(255 255 255 / 0.12)"
               dir="rtl"
             />
           </div>
@@ -119,7 +121,8 @@ function handlePaymentConfirmed(completedSale: CompletedSale) {
             v-if="scanner.cameraAvailable.value"
             type="button"
             aria-label="مسح بالكاميرا"
-            class="w-10 h-10 flex items-center justify-center rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-500 hover:text-blue-600 hover:border-blue-400 transition-colors"
+            class="w-10 h-10 flex items-center justify-center rounded-lg text-text-muted hover:text-gold-primary transition-colors"
+            style="background: rgb(255 255 255 / 0.06); border: 1px solid rgb(255 255 255 / 0.12)"
             @click="openCamera"
           >
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
