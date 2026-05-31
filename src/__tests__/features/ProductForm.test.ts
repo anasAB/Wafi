@@ -80,4 +80,20 @@ describe('ProductForm', () => {
     await new Promise(r => setTimeout(r, 10))
     expect(w.emitted('saved')).toBeTruthy()
   })
+
+  it('saves successfully when user confirms price-below-cost warning', async () => {
+    const w = mountForm()
+    await w.find('[data-testid="name-ar"]').setValue('منتج')
+    await w.find('[data-testid="cost-price"]').setValue('10')
+    await w.find('[data-testid="sale-price"]').setValue('7')
+    await w.find('[data-testid="current-stock"]').setValue('5')
+    await w.find('[data-testid="save-btn"]').trigger('click')
+    // Price warning should be visible
+    expect(w.find('[data-testid="price-warning"]').exists()).toBe(true)
+    // Click the "yes, save" button inside the warning
+    await w.find('[data-testid="confirm-price-warning"]').trigger('click')
+    await new Promise(r => setTimeout(r, 10))
+    // Should have saved (no warning, saved event emitted)
+    expect(w.emitted('saved')).toBeTruthy()
+  })
 })

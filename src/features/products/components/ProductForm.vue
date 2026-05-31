@@ -178,8 +178,8 @@ onMounted(() => {
         class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 rounded-xl px-3 py-2 text-sm text-yellow-800 dark:text-yellow-200">
         سعر البيع أقل من سعر التكلفة — هل أنت متأكد؟
         <div class="flex gap-2 mt-2">
-          <button type="button" class="text-xs font-semibold underline"
-            @click="priceWarning = false; commitSave(Number(stock))">نعم، احفظ</button>
+          <button type="button" class="text-xs font-semibold underline" data-testid="confirm-price-warning"
+            @click="priceWarning = false; commitSave(Number(stock.value))">نعم، احفظ</button>
           <button type="button" class="text-xs" @click="priceWarning = false">لا، تراجع</button>
         </div>
       </div>
