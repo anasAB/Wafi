@@ -1,19 +1,149 @@
 @import "tailwindcss";
 
-/* Class-based dark mode for Tailwind v4 — store controls .dark on <html> */
+/* Class-based dark mode for Tailwind v4 */
 @custom-variant dark (&:where(.dark, .dark *));
 
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-/* Dark background intentional — v1 ships dark-first; light toggles via .dark removal */
-body { margin: 0; background: #05080F; }
-#app { min-height: 100svh; }
+/* ─── Design Tokens ─────────────────────────────────── */
+@theme {
+  /* Colors */
+  --color-gold-primary:   #C9A84C;
+  --color-gold-to:        #A07830;
+  --color-gold-subtle:    rgb(201 168 76 / 0.25);
+  --color-platinum:       #E8E8E8;
+  --color-text-primary:   #F5F0E8;
+  --color-text-muted:     #8A8070;
+  --color-bg-void:        #05080F;
+  --color-surface-glass:  rgb(255 255 255 / 0.06);
+  --color-surface-raised: rgb(255 255 255 / 0.10);
+  --color-border-glass:   rgb(255 255 255 / 0.12);
+  --color-border-gold:    rgb(201 168 76 / 0.30);
 
-/* Explicit default — rem cascade is deterministic before store sets data-text-size */
-html              { font-size: 16px; }
+  /* Typography */
+  --font-display:    'Cormorant Garant', Georgia, serif;
+  --font-display-ar: 'Amiri', serif;
+  --font-body:       'Inter', system-ui, sans-serif;
+}
+
+/* ─── Theme Overrides ────────────────────────────────── */
+[data-luxury-theme="light-ivory"] {
+  --color-gold-primary:   #B8965A;
+  --color-gold-to:        #8B6914;
+  --color-gold-subtle:    rgb(184 150 90 / 0.25);
+  --color-bg-void:        #FAF8F4;
+  --color-surface-glass:  rgb(0 0 0 / 0.04);
+  --color-surface-raised: rgb(0 0 0 / 0.07);
+  --color-border-glass:   rgb(0 0 0 / 0.10);
+  --color-border-gold:    rgb(184 150 90 / 0.30);
+  --color-text-primary:   #1A1410;
+  --color-text-muted:     #6B5A4A;
+}
+
+[data-luxury-theme="deep-jewel"] {
+  --color-gold-primary: #2ECC8F;
+  --color-gold-to:      #1EA870;
+  --color-gold-subtle:  rgb(46 204 143 / 0.20);
+  --color-bg-void:      #080D1A;
+  --color-border-gold:  rgb(46 204 143 / 0.30);
+}
+
+[data-luxury-theme="sapphire"] {
+  --color-gold-primary: #3B7FFF;
+  --color-gold-to:      #1A56DB;
+  --color-gold-subtle:  rgb(59 127 255 / 0.20);
+  --color-bg-void:      #05080F;
+  --color-border-gold:  rgb(59 127 255 / 0.30);
+}
+
+/* ─── Global Reset ───────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body   { margin: 0; background: #05080F; }
+#app   { min-height: 100svh; }
+html                           { font-size: 16px; }
 html[data-text-size="small"]   { font-size: 14px; }
 html[data-text-size="default"] { font-size: 16px; }
 html[data-text-size="large"]   { font-size: 18px; }
 html[data-text-size="xlarge"]  { font-size: 20px; }
-
-/* Adapts scrollbars and OS controls to dark mode */
 html.dark { color-scheme: dark; }
+
+/* ─── Glass Utilities ────────────────────────────────── */
+@utility glass-sm {
+  backdrop-filter: blur(12px) saturate(160%);
+  background-color: rgb(255 255 255 / 0.06);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 1rem;
+}
+@utility glass-md {
+  backdrop-filter: blur(20px) saturate(180%);
+  background-color: rgb(255 255 255 / 0.06);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 1rem;
+}
+@utility glass-lg {
+  backdrop-filter: blur(32px) saturate(200%);
+  background-color: rgb(255 255 255 / 0.06);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 1rem;
+}
+
+/* ─── Button Utilities ───────────────────────────────── */
+@utility btn-gold {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 3.5rem;
+  padding-inline: 2rem;
+  border-radius: 1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #05080F;
+  background: linear-gradient(135deg, var(--color-gold-primary), var(--color-gold-to));
+  box-shadow: 0 0 24px var(--color-gold-subtle);
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  transition: opacity 0.2s ease, transform 0.15s ease;
+}
+@utility btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 3.5rem;
+  padding-inline: 2rem;
+  border-radius: 1rem;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--color-platinum);
+  background: transparent;
+  border: 1px solid rgb(255 255 255 / 0.20);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.2s ease;
+}
+
+/* ─── Animations ─────────────────────────────────────── */
+@keyframes breathe {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50%       { opacity: 0.9; transform: scale(1.15); }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-8px); }
+}
+
+.animate-breathe { animation: breathe 8s ease-in-out infinite; }
+.animate-shimmer {
+  animation: shimmer 3s linear infinite;
+  background-size: 200% 100%;
+}
+.animate-float { animation: float 4s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-breathe,
+  .animate-shimmer,
+  .animate-float,
+  .animate-bounce { animation: none !important; }
+}
