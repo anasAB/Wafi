@@ -55,29 +55,39 @@ const arabicDate = new Intl.DateTimeFormat('ar-SY', {
 </script>
 
 <template>
-  <div class="flex flex-col min-h-dvh">
+  <div class="flex flex-col min-h-dvh bg-bg-void">
     <AppHeader title="وافي" :show-exchange-rate="true" />
 
     <main class="flex-1 px-4 py-6 max-w-lg mx-auto w-full">
-      <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">{{ arabicDate }}</p>
-      <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-6">مرحباً 👋</h1>
+
+      <!-- Date + greeting -->
+      <p class="font-display-ar text-sm text-gold-primary opacity-60 mb-1">{{ arabicDate }}</p>
+      <h1 class="font-display text-2xl font-light text-text-primary mb-6">مرحباً</h1>
 
       <!-- Today sales card -->
-      <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-5 mb-4">
-        <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">مبيعات اليوم</p>
-        <p v-if="todaySalesUsd !== null" class="text-3xl font-bold text-gray-900 dark:text-white">
-          ${{ todaySalesUsd.toFixed(2) }}
+      <div
+        class="glass-md p-5 mb-4 relative overflow-hidden"
+        style="border: 1px solid rgb(201 168 76 / 0.25)"
+      >
+        <p class="text-sm text-text-muted mb-1">مبيعات اليوم</p>
+        <p v-if="todaySalesUsd !== null" class="font-display text-4xl text-text-primary">
+          <span class="text-platinum">$</span>
+          <span class="text-gold-primary">{{ todaySalesUsd.toFixed(2) }}</span>
         </p>
-        <p v-else class="text-gray-400 text-sm">جارٍ التحميل...</p>
+        <p v-else class="text-text-muted text-sm">جارٍ التحميل...</p>
       </div>
 
       <!-- No rate warning -->
       <div
         v-if="!currentRate"
         id="no-rate-warning"
-        class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 rounded-xl p-4 mb-4 text-sm text-yellow-800 dark:text-yellow-200"
+        class="rounded-xl p-4 mb-4 text-sm flex gap-3 items-start"
+        style="background: rgb(251 191 36 / 0.08); border: 1px solid rgb(251 191 36 / 0.30); color: rgb(253 224 132)"
       >
-        حدد سعر صرف الدولار من الأعلى قبل البدء في البيع.
+        <svg class="w-4 h-4 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/>
+        </svg>
+        <span>حدد سعر صرف الدولار من الأعلى قبل البدء في البيع.</span>
       </div>
 
       <!-- New sale button -->
@@ -85,23 +95,25 @@ const arabicDate = new Intl.DateTimeFormat('ar-SY', {
         type="button"
         :disabled="!canStartSale"
         aria-describedby="no-rate-warning"
-        class="w-full h-14 rounded-2xl text-lg font-bold text-white bg-blue-600 hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+        class="btn-gold w-full mb-3 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
         @click="router.push('/pos')"
       >
         بيع جديد
       </button>
 
+      <!-- History button -->
       <button
         type="button"
-        class="w-full mt-3 h-12 rounded-2xl text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+        class="btn-ghost w-full"
         @click="router.push('/history')"
       >
         آخر المبيعات
       </button>
+
     </main>
   </div>
 
-  <!-- Draft recovery dialog -->
+  <!-- Draft recovery dialog (unchanged) -->
   <AppDialog
     v-if="showDraftDialog"
     title="بيع غير مكتمل"
