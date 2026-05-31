@@ -6,9 +6,6 @@ import type { Product } from '@/features/pos/pos.types'
 import type { AdjustmentReason } from '@/features/products/product.types'
 import { rowToProduct, type ProductRow } from '@/features/products/product.utils'
 
-export type { ProductRow }
-export { rowToProduct }
-
 export function useProducts() {
   const products = ref<Product[]>([])
 
