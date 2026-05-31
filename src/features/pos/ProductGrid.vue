@@ -16,19 +16,30 @@ async function loadProducts() {
   const q = props.searchQuery.trim()
   const result = q
     ? await db.execute(
-        `SELECT id, name_ar, name_en, price_usd, barcode FROM products
+        `SELECT id, shop_id, name_ar, name_en, price_usd, cost_price_usd, barcode, category, photo_url, current_stock, low_stock_threshold, is_active, created_at, updated_at FROM products
          WHERE shop_id = ? AND is_active = 1 AND (name_ar LIKE ? OR name_en LIKE ? OR barcode = ?)`,
         [device.shopId, `%${q}%`, `%${q}%`, q]
       )
     : await db.execute(
-        `SELECT id, name_ar, name_en, price_usd, barcode FROM products WHERE shop_id = ? AND is_active = 1`,
+        `SELECT id, shop_id, name_ar, name_en, price_usd, cost_price_usd, barcode, category, photo_url, current_stock, low_stock_threshold, is_active, created_at, updated_at FROM products WHERE shop_id = ? AND is_active = 1`,
         [device.shopId]
       )
 
   products.value = ((result as any).rows._array as any[]).map(r => ({
-    id: r.id, shopId: device.shopId, nameAr: r.name_ar, nameEn: r.name_en,
-    salePriceUsd: r.price_usd, costPriceUsd: 0, barcode: r.barcode, isActive: true,
-    currentStock: 0, lowStockThreshold: 0, createdAt: '', updatedAt: '',
+    id:                r.id,
+    shopId:            r.shop_id,
+    nameAr:            r.name_ar,
+    nameEn:            r.name_en ?? undefined,
+    salePriceUsd:      r.price_usd,
+    costPriceUsd:      r.cost_price_usd ?? 0,
+    barcode:           r.barcode ?? undefined,
+    category:          r.category ?? undefined,
+    photoUrl:          r.photo_url ?? undefined,
+    currentStock:      r.current_stock ?? 0,
+    lowStockThreshold: r.low_stock_threshold ?? 5,
+    isActive:          r.is_active === 1,
+    createdAt:         r.created_at ?? '',
+    updatedAt:         r.updated_at ?? '',
   }))
 }
 
