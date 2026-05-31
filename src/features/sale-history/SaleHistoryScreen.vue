@@ -34,53 +34,67 @@ async function handleReprint(saleId: string) {
 </script>
 
 <template>
-  <div class="flex flex-col min-h-dvh">
+  <div class="flex flex-col min-h-dvh bg-bg-void">
     <AppHeader title="آخر المبيعات" :show-back="true" @back="router.push('/home')" />
 
     <main class="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
+
+      <!-- Loading -->
       <div v-if="loading" class="flex justify-center py-10">
-        <div class="w-8 h-8 rounded-full border-4 border-blue-600 border-t-transparent animate-spin" />
+        <div
+          class="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin"
+          style="border-color: rgb(201 168 76 / 0.6); border-top-color: transparent"
+        />
       </div>
 
+      <!-- Empty state -->
       <div
         v-else-if="sales.length === 0"
-        class="flex flex-col items-center justify-center py-16 text-gray-400 text-sm"
+        class="flex flex-col items-center justify-center py-16 gap-3"
       >
-        <p class="text-3xl mb-3">🧾</p>
-        <p>لا توجد مبيعات في آخر 7 أيام</p>
+        <svg class="w-12 h-12 text-text-muted opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z"/>
+        </svg>
+        <p class="font-display italic text-text-muted text-lg">لا توجد مبيعات في آخر 7 أيام</p>
+        <RouterLink to="/pos" class="btn-ghost text-sm h-10 px-5">بيع جديد</RouterLink>
       </div>
 
+      <!-- Sale list -->
       <div v-else class="space-y-2">
         <div
           v-for="sale in sales"
           :key="sale.id"
-          class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden"
+          class="glass-sm overflow-hidden"
+          :style="sale.isPending ? 'border-right: 2px solid #C9A84C' : ''"
         >
-          <!-- Row -->
           <button
             type="button"
             class="w-full flex items-center gap-3 px-4 min-h-[56px] text-right"
             @click="expandedId = expandedId === sale.id ? null : sale.id"
           >
-            <span class="text-sm font-mono text-blue-600 dark:text-blue-400 shrink-0">{{ sale.displaySaleNumber }}</span>
-            <span class="flex-1 text-sm font-semibold text-gray-900 dark:text-white">${{ sale.totalUsd.toFixed(2) }}</span>
+            <span class="text-sm font-mono text-gold-primary shrink-0">{{ sale.displaySaleNumber }}</span>
+            <span class="flex-1 font-display text-lg text-text-primary">${{ sale.totalUsd.toFixed(2) }}</span>
             <span
               v-if="sale.isPending"
-              class="text-xs font-medium text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 px-1.5 py-0.5 rounded shrink-0"
+              class="text-xs font-medium px-1.5 py-0.5 rounded shrink-0"
+              style="background: rgb(201 168 76 / 0.15); color: #C9A84C"
             >في الانتظار</span>
-            <span class="text-xs text-gray-400 shrink-0">{{ formatDate(sale.createdAt) }}</span>
-            <span class="text-sm shrink-0">{{ methodLabel[sale.paymentMethod] ?? '?' }}</span>
+            <span class="text-xs text-text-muted shrink-0">{{ formatDate(sale.createdAt) }}</span>
+            <span class="text-sm text-text-muted shrink-0">{{ methodLabel[sale.paymentMethod] ?? '?' }}</span>
           </button>
 
-          <!-- Expanded detail -->
-          <div v-if="expandedId === sale.id" class="border-t border-gray-100 dark:border-gray-700 px-4 py-3">
-            <div class="flex justify-between text-xs text-gray-500 mb-2">
+          <div
+            v-if="expandedId === sale.id"
+            class="px-4 py-3"
+            style="border-top: 1px solid rgb(255 255 255 / 0.08)"
+          >
+            <div class="flex justify-between text-xs text-text-muted mb-3">
               <span>بالليرة: {{ sale.totalSyp.toLocaleString() }} ل.س</span>
               <span>السعر: {{ sale.exchangeRateAtSale.toLocaleString() }}</span>
             </div>
             <button
               type="button"
-              class="w-full h-9 rounded-lg border border-gray-300 dark:border-gray-600 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+              class="btn-ghost w-full h-9 text-sm"
               @click="handleReprint(sale.id)"
             >
               إعادة طباعة
@@ -88,6 +102,7 @@ async function handleReprint(saleId: string) {
           </div>
         </div>
       </div>
+
     </main>
   </div>
 
