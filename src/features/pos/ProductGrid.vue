@@ -27,7 +27,8 @@ async function loadProducts() {
 
   products.value = ((result as any).rows._array as any[]).map(r => ({
     id: r.id, shopId: device.shopId, nameAr: r.name_ar, nameEn: r.name_en,
-    priceUsd: r.price_usd, barcode: r.barcode, isActive: true,
+    salePriceUsd: r.price_usd, costPriceUsd: 0, barcode: r.barcode, isActive: true,
+    currentStock: 0, lowStockThreshold: 0, createdAt: '', updatedAt: '',
   }))
 }
 
@@ -74,7 +75,7 @@ onUnmounted(() => {
       @click="handleTap(p.id)"
     >
       <span class="text-sm font-medium text-gray-900 dark:text-white leading-tight">{{ p.nameAr }}</span>
-      <span class="text-xs text-blue-600 dark:text-blue-400 mt-1">${{ p.priceUsd.toFixed(2) }}</span>
+      <span class="text-xs text-blue-600 dark:text-blue-400 mt-1">${{ p.salePriceUsd.toFixed(2) }}</span>
     </button>
   </div>
 </template>
