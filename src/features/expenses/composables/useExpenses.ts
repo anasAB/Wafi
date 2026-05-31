@@ -22,8 +22,13 @@ function rowToExpense(r: ExpenseRow): Expense {
 
 export function useExpenses() {
   const expenses = ref<Expense[]>([])
+  // Store last date range so mutations can reload the same window
+  let lastStart = ''
+  let lastEnd   = ''
 
   async function load(startDate: string, endDate: string) {
+    lastStart = startDate
+    lastEnd   = endDate
     const device = useDeviceStore()
     const rows = await db.getAll<ExpenseRow>(
       `SELECT * FROM expenses WHERE shop_id = ? AND expense_date BETWEEN ? AND ?
@@ -45,11 +50,13 @@ export function useExpenses() {
        data.category, data.expenseDate, data.notes ?? null,
        data.photoUrl ?? null, data.paidInCash ? 1 : 0, now]
     )
+    if (lastStart) await load(lastStart, lastEnd)
   }
 
-  async function softDelete(id: string) {
+  async function deleteExpense(id: string) {
     await db.execute(`DELETE FROM expenses WHERE id = ?`, [id])
+    if (lastStart) await load(lastStart, lastEnd)
   }
 
-  return { expenses, load, save, softDelete }
+  return { expenses, load, save, deleteExpense }
 }

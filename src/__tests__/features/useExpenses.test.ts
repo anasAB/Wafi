@@ -59,9 +59,9 @@ describe('useExpenses', () => {
     expect(call[1]).toContain('SYP')
   })
 
-  it('softDelete removes the expense', async () => {
-    const { softDelete } = useExpenses()
-    await softDelete('e1')
+  it('deleteExpense removes the expense', async () => {
+    const { deleteExpense } = useExpenses()
+    await deleteExpense('e1')
     expect(db.execute).toHaveBeenCalledWith(
       expect.stringContaining('DELETE FROM expenses'),
       expect.arrayContaining(['e1'])
