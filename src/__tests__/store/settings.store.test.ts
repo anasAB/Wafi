@@ -69,3 +69,36 @@ describe('useSettingsStore', () => {
     expect(restored.textSize).toBe('xlarge')
   })
 })
+
+describe('luxuryTheme', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    setActivePinia(makePinia())
+  })
+
+  it('defaults to dark-luxury', () => {
+    const store = useSettingsStore()
+    expect(store.luxuryTheme).toBe('dark-luxury')
+  })
+
+  it('can be updated to light-ivory', () => {
+    const store = useSettingsStore()
+    store.luxuryTheme = 'light-ivory'
+    expect(store.luxuryTheme).toBe('light-ivory')
+  })
+
+  it('persists luxuryTheme to localStorage', () => {
+    const store = useSettingsStore()
+    store.luxuryTheme = 'deep-jewel'
+    const saved = JSON.parse(localStorage.getItem('settings') ?? '{}')
+    expect(saved.luxuryTheme).toBe('deep-jewel')
+  })
+
+  it('restores luxuryTheme on next mount', () => {
+    const store = useSettingsStore()
+    store.luxuryTheme = 'sapphire'
+    setActivePinia(makePinia())
+    const restored = useSettingsStore()
+    expect(restored.luxuryTheme).toBe('sapphire')
+  })
+})
