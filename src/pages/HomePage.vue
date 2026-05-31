@@ -5,6 +5,7 @@ import AppHeader from '@/components/ui/AppHeader.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import { useExchangeRate } from '@/features/exchange-rate'
 import { useSaleDraft } from '@/composables/useSaleDraft'
+import { useLowStockAlerts } from '@/features/products/composables/useLowStockAlerts'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 
@@ -13,12 +14,14 @@ const device       = useDeviceStore()
 const { currentRate, loadRate } = useExchangeRate()
 const { hasDraft, loadDraft, restoreDraft, clearDraft } = useSaleDraft()
 
+const { count: lowStockCount, top3: lowStockTop3, allClear, load: loadAlerts } = useLowStockAlerts()
+
 const todaySalesUsd = ref<number | null>(null)
 const showDraftDialog = ref(false)
 
 onMounted(async () => {
   try {
-    await Promise.all([loadRate(), loadDraft()])
+    await Promise.all([loadRate(), loadDraft(), loadAlerts()])
     if (hasDraft.value) showDraftDialog.value = true
     await loadTodaySales()
   } catch {
@@ -76,6 +79,33 @@ const arabicDate = new Intl.DateTimeFormat('ar-SY', {
         </p>
         <p v-else class="text-text-muted text-sm">جارٍ التحميل...</p>
       </div>
+
+      <!-- Low-stock card -->
+      <RouterLink
+        to="/products?filter=low-stock"
+        class="block bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-5 mb-4 no-underline"
+        data-testid="low-stock-card"
+      >
+        <div class="flex items-center justify-between">
+          <div>
+            <p v-if="allClear" class="text-sm text-green-600 dark:text-green-400 font-medium">
+              ✓ كل المنتجات متوفرة
+            </p>
+            <template v-else>
+              <p class="text-sm text-yellow-600 dark:text-yellow-400 font-semibold mb-1">
+                ⚠ مخزون منخفض ({{ lowStockCount }})
+              </p>
+              <p class="text-xs text-gray-500 dark:text-gray-400">
+                {{ lowStockTop3.map(p => p.nameAr).join('، ') }}
+              </p>
+            </template>
+          </div>
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-gray-400 rtl:rotate-180" fill="none"
+            viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+        </div>
+      </RouterLink>
 
       <!-- No rate warning -->
       <div
