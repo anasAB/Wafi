@@ -1,13 +1,31 @@
 import { column, Schema, Table } from '@powersync/web'
 
 const products = new Table({
-  shop_id:   column.text,
-  name_ar:   column.text,
-  name_en:   column.text,
-  price_usd: column.real,
-  barcode:   column.text,
-  photo_url: column.text,
-  is_active: column.integer,
+  shop_id:             column.text,
+  name_ar:             column.text,
+  name_en:             column.text,
+  price_usd:           column.real,   // sale price — kept for POS backward compat
+  cost_price_usd:      column.real,
+  barcode:             column.text,
+  category:            column.text,
+  photo_url:           column.text,
+  current_stock:       column.integer,
+  low_stock_threshold: column.integer,
+  is_active:           column.integer,
+  deleted:             column.integer,
+  sync_status:         column.text,
+  created_at:          column.text,
+  updated_at:          column.text,
+})
+
+const stock_adjustments = new Table({
+  product_id: column.text,
+  old_value:  column.integer,
+  new_value:  column.integer,
+  reason:     column.text,   // stocktake | damaged | lost | other | sale
+  notes:      column.text,
+  created_at: column.text,
+  device_id:  column.text,
 })
 
 const sales = new Table({
@@ -44,6 +62,7 @@ const exchange_rates = new Table({
 
 export const AppSchema = new Schema({
   products,
+  stock_adjustments,
   sales,
   sale_line_items,
   exchange_rates,
