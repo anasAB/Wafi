@@ -35,7 +35,7 @@ async function handleReprint(saleId: string) {
 
 <template>
   <div class="flex flex-col min-h-dvh">
-    <AppHeader title="آخر المبيعات" :show-back="true" @back="router.push('/')" />
+    <AppHeader title="آخر المبيعات" :show-back="true" @back="router.push('/home')" />
 
     <main class="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
       <div v-if="loading" class="flex justify-center py-10">
