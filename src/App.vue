@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { watch, onMounted, onBeforeUnmount } from 'vue'
 import { useSettingsStore } from '@/features/settings'
+import { useThemePalette } from '@/composables/useThemePalette'
 import { i18n } from '@/i18n'
 import type { Theme } from '@/features/settings'
 
 const settings = useSettingsStore()
+useThemePalette()
 
 // --- Theme ---
 const mq = window.matchMedia('(prefers-color-scheme: dark)')
