@@ -23,7 +23,7 @@ const stock_adjustments = new Table({
   product_id: column.text,
   old_value:  column.integer,
   new_value:  column.integer,
-  reason:     column.text,   // stocktake | damaged | lost | other | sale
+  reason:     column.text,
   notes:      column.text,
   created_at: column.text,
   device_id:  column.text,
@@ -50,6 +50,7 @@ const sale_line_items = new Table({
   product_id:     column.text,
   quantity:       column.integer,
   unit_price_usd: column.real,
+  unit_cost_usd:  column.real,   // cost price at time of sale — for COGS calculation
   line_total_usd: column.real,
 })
 
@@ -61,10 +62,25 @@ const exchange_rates = new Table({
   set_by:    column.text,
 })
 
+const expenses = new Table({
+  shop_id:      column.text,
+  amount:       column.real,   // raw entered amount
+  currency:     column.text,   // USD or SYP
+  amount_usd:   column.real,   // converted at exchange rate on save
+  category:     column.text,
+  expense_date: column.text,   // YYYY-MM-DD — backdatable up to 30 days
+  notes:        column.text,
+  photo_url:    column.text,
+  paid_in_cash: column.integer, // 0/1, default 1
+  created_at:   column.text,
+  sync_status:  column.text,
+})
+
 export const AppSchema = new Schema({
   products,
   stock_adjustments,
   sales,
   sale_line_items,
   exchange_rates,
+  expenses,
 })
