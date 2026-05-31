@@ -105,6 +105,27 @@ export function usePayment() {
         )
       }
 
+      // Deduct stock for each line item
+      for (const line of saleStore.lines) {
+        const stockResult = await db.execute(
+          `SELECT current_stock FROM products WHERE id = ?`,
+          [line.productId]
+        )
+        const currentStock: number =
+          ((stockResult as any).rows._array[0] as any)?.current_stock ?? 0
+        const newStock = currentStock - line.quantity
+
+        await db.execute(
+          `UPDATE products SET current_stock = ?, updated_at = ?, sync_status = 'pending' WHERE id = ?`,
+          [newStock, now, line.productId]
+        )
+        await db.execute(
+          `INSERT INTO stock_adjustments (id, shop_id, product_id, old_value, new_value, reason, notes, created_at, device_id)
+           VALUES (?, ?, ?, ?, ?, 'sale', null, ?, ?)`,
+          [uuidv4(), deviceStore.shopId, line.productId, currentStock, newStock, now, deviceStore.deviceId]
+        )
+      }
+
       const { clearDraft } = useSaleDraft()
       await clearDraft()
       saleStore.clear()

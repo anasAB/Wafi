@@ -5,6 +5,7 @@ vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
 
 import { usePayment } from '@/features/payment/usePayment'
 import { useSaleStore } from '@/store/sale.store'
+import { db } from '@/data/powersync/db'
 
 describe('usePayment', () => {
   beforeEach(() => {
@@ -80,5 +81,28 @@ describe('usePayment', () => {
     expect(completed.lines[0].quantity).toBe(1)
     expect(completed.lines[0].unitPriceUsd).toBe(10)
     expect(completed.lines[0].lineTotalUsd).toBe(10)
+  })
+
+  it('confirm deducts stock and writes stock_adjustments for each sale line', async () => {
+    // Mock all db.execute calls in order:
+    // 1. INSERT INTO sales
+    // 2. INSERT INTO sale_line_items (for the one line in beforeEach)
+    // 3. SELECT current_stock (for stock deduction)
+    // 4. UPDATE products (stock deduction)
+    // 5. INSERT INTO stock_adjustments
+    vi.mocked(db.execute)
+      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sales
+      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sale_line_items
+      .mockResolvedValueOnce({ rows: { _array: [{ current_stock: 10 }] } } as any) // SELECT current_stock
+      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // UPDATE products
+      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT stock_adjustments
+
+    const { selectMethod, confirm } = usePayment()
+    selectMethod('card')
+    await confirm()
+
+    const calls = vi.mocked(db.execute).mock.calls.map(c => c[0] as string)
+    expect(calls.some(sql => sql.includes('UPDATE products') && sql.includes('current_stock'))).toBe(true)
+    expect(calls.some(sql => sql.includes('INSERT INTO stock_adjustments'))).toBe(true)
   })
 })
