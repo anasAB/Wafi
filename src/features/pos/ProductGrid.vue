@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
+import { rowToProduct } from '@/features/products/composables/useProducts'
 import type { Product } from './pos.types'
 
 const props = defineProps<{ searchQuery: string }>()
@@ -25,22 +26,7 @@ async function loadProducts() {
         [device.shopId]
       )
 
-  products.value = ((result as any).rows._array as any[]).map(r => ({
-    id:                r.id,
-    shopId:            r.shop_id,
-    nameAr:            r.name_ar,
-    nameEn:            r.name_en ?? undefined,
-    salePriceUsd:      r.price_usd,
-    costPriceUsd:      r.cost_price_usd ?? 0,
-    barcode:           r.barcode ?? undefined,
-    category:          r.category ?? undefined,
-    photoUrl:          r.photo_url ?? undefined,
-    currentStock:      r.current_stock ?? 0,
-    lowStockThreshold: r.low_stock_threshold ?? 5,
-    isActive:          r.is_active === 1,
-    createdAt:         r.created_at ?? '',
-    updatedAt:         r.updated_at ?? '',
-  }))
+  products.value = ((result as any).rows._array as any[]).map(rowToProduct)
 }
 
 onMounted(loadProducts)

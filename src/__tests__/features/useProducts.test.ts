@@ -81,11 +81,25 @@ describe('useProducts', () => {
     )
   })
 
-  it('adjustStock uses writeTransaction', async () => {
+  it('adjustStock uses writeTransaction and writes both product update and adjustment record', async () => {
     vi.mocked(db.getAll).mockResolvedValue([])
+    // Mock tx.execute responses: first SELECT current_stock, then UPDATE, then INSERT
+    const txExecute = vi.fn()
+      .mockResolvedValueOnce({ rows: { _array: [{ current_stock: 10 }] } }) // SELECT
+      .mockResolvedValueOnce({}) // UPDATE
+      .mockResolvedValueOnce({}) // INSERT
+    vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => {
+      await fn({ execute: txExecute })
+    })
+
     const { adjustStock } = useProducts()
     await adjustStock('p1', 8, 'stocktake')
+
     expect(db.writeTransaction).toHaveBeenCalled()
+    const calls = txExecute.mock.calls.map((c: any[]) => c[0] as string)
+    expect(calls.some((sql: string) => sql.includes('SELECT current_stock'))).toBe(true)
+    expect(calls.some((sql: string) => sql.includes('UPDATE products'))).toBe(true)
+    expect(calls.some((sql: string) => sql.includes('INSERT INTO stock_adjustments'))).toBe(true)
   })
 
   it('getById returns product by id after load', async () => {

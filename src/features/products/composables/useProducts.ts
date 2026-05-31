@@ -5,7 +5,7 @@ import { useDeviceStore } from '@/store/device.store'
 import type { Product } from '@/features/pos/pos.types'
 import type { AdjustmentReason } from '@/features/products/product.types'
 
-type ProductRow = {
+export type ProductRow = {
   id: string; shop_id: string; name_ar: string; name_en: string | null
   price_usd: number; cost_price_usd: number; barcode: string | null
   category: string | null; current_stock: number; low_stock_threshold: number
@@ -13,7 +13,7 @@ type ProductRow = {
   is_active: number; deleted: number; sync_status: string
 }
 
-function rowToProduct(r: ProductRow): Product {
+export function rowToProduct(r: ProductRow): Product {
   return {
     id: r.id, shopId: r.shop_id, nameAr: r.name_ar,
     nameEn: r.name_en ?? undefined, salePriceUsd: r.price_usd,
@@ -32,8 +32,10 @@ export function useProducts() {
   )
 
   async function load() {
+    const device = useDeviceStore()
     const rows = await db.getAll<ProductRow>(
-      'SELECT * FROM products WHERE deleted = 0 OR deleted IS NULL ORDER BY name_ar'
+      'SELECT * FROM products WHERE shop_id = ? AND is_active = 1 AND (deleted = 0 OR deleted IS NULL) ORDER BY name_ar',
+      [device.shopId]
     )
     products.value = rows.map(rowToProduct)
   }
@@ -53,10 +55,10 @@ export function useProducts() {
       await db.execute(
         `UPDATE products SET name_ar=?, name_en=?, barcode=?, category=?,
          price_usd=?, cost_price_usd=?, current_stock=?, low_stock_threshold=?,
-         photo_url=?, updated_at=?, sync_status='pending' WHERE id=?`,
+         photo_url=?, is_active=?, updated_at=?, sync_status='pending' WHERE id=?`,
         [data.nameAr, data.nameEn ?? null, data.barcode ?? null, data.category ?? null,
          data.salePriceUsd, data.costPriceUsd, data.currentStock, data.lowStockThreshold,
-         data.photoUrl ?? null, now, data.id]
+         data.photoUrl ?? null, data.isActive ? 1 : 0, now, data.id]
       )
     } else {
       const id = uuidv4()
@@ -65,10 +67,11 @@ export function useProducts() {
          (id, shop_id, name_ar, name_en, barcode, category, price_usd, cost_price_usd,
           current_stock, low_stock_threshold, photo_url, is_active, deleted,
           sync_status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 'pending', ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'pending', ?, ?)`,
         [id, data.shopId, data.nameAr, data.nameEn ?? null, data.barcode ?? null,
          data.category ?? null, data.salePriceUsd, data.costPriceUsd,
-         data.currentStock, data.lowStockThreshold, data.photoUrl ?? null, now, now]
+         data.currentStock, data.lowStockThreshold, data.photoUrl ?? null,
+         data.isActive ? 1 : 0, now, now]
       )
     }
     await load()
@@ -88,12 +91,17 @@ export function useProducts() {
     reason: AdjustmentReason,
     notes?: string
   ) {
-    const device = useDeviceStore()
-    const old = products.value.find(p => p.id === productId)
-    const oldValue = old?.currentStock ?? 0
     const now = new Date().toISOString()
+    const device = useDeviceStore()
 
     await db.writeTransaction(async (tx) => {
+      // Read current stock from DB to get accurate old value
+      const stockResult = await tx.execute(
+        'SELECT current_stock FROM products WHERE id = ?',
+        [productId]
+      )
+      const oldValue = (stockResult as any).rows._array[0]?.current_stock ?? 0
+
       await tx.execute(
         `UPDATE products SET current_stock = ?, updated_at = ?, sync_status = 'pending' WHERE id = ?`,
         [newValue, now, productId]
