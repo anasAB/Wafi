@@ -45,7 +45,7 @@ const textSizes = computed(() => [
 
     <!-- Preferences group -->
     <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 px-1 md:px-0">{{ t('personal.preferencesSection') }}</p>
-    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden mb-4 md:shadow-none md:rounded-none md:bg-transparent md:dark:bg-transparent">
+    <div class="glass-sm overflow-hidden mb-4 md:bg-transparent md:backdrop-filter-none md:border-0 md:rounded-none">
 
       <!-- Luxury theme -->
       <div class="px-4 py-3.5 border-b border-gray-100 dark:border-gray-700">
@@ -115,7 +115,7 @@ const textSizes = computed(() => [
 
     <!-- Session group -->
     <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 px-1 md:px-0">{{ t('personal.sessionSection') }}</p>
-    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden md:shadow-none md:rounded-none md:bg-transparent md:dark:bg-transparent">
+    <div class="glass-sm overflow-hidden md:bg-transparent md:backdrop-filter-none md:border-0 md:rounded-none">
       <button
         type="button"
         class="w-full flex items-center justify-between px-4 py-3.5 text-sm text-red-500 opacity-60 cursor-not-allowed"
