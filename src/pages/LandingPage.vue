@@ -92,5 +92,122 @@ const stats = [
       </div>
     </section>
 
+    <!-- ── Section 3: Product Story ───────────────────── -->
+    <section data-testid="product-story" class="px-6 py-10 max-w-6xl mx-auto space-y-24">
+
+      <div class="flex flex-col lg:flex-row items-center gap-12">
+        <div class="flex-1 glass-md p-6 aspect-video flex items-center justify-center min-h-[200px]">
+          <span class="text-text-muted text-sm">POS Screen</span>
+        </div>
+        <div class="flex-1">
+          <span class="text-gold-primary text-xs font-medium tracking-widest uppercase mb-3 block">Point of Sale</span>
+          <h2 class="font-display text-3xl lg:text-4xl text-text-primary mb-4 leading-tight">Ring up a sale in under 10 seconds.</h2>
+          <p class="text-text-muted">Barcode scan, product tap, or search. Every second counts behind the counter.</p>
+        </div>
+      </div>
+
+      <div class="flex flex-col lg:flex-row-reverse items-center gap-12">
+        <div class="flex-1 glass-md p-6 aspect-video flex items-center justify-center min-h-[200px]">
+          <span class="text-text-muted text-sm">Dashboard</span>
+        </div>
+        <div class="flex-1">
+          <span class="text-gold-primary text-xs font-medium tracking-widest uppercase mb-3 block">Dashboard</span>
+          <h2 class="font-display text-3xl lg:text-4xl text-text-primary mb-4 leading-tight">Know your numbers before you open the door.</h2>
+          <p class="text-text-muted">Revenue today, profit this month, low stock alerts — all at a glance before the first customer walks in.</p>
+        </div>
+      </div>
+
+      <div class="flex flex-col lg:flex-row items-center gap-12">
+        <div class="flex-1 glass-md p-6 aspect-video flex items-center justify-center min-h-[200px]">
+          <span class="text-text-muted text-sm">Sale History</span>
+        </div>
+        <div class="flex-1">
+          <span class="text-gold-primary text-xs font-medium tracking-widest uppercase mb-3 block">History & Credit</span>
+          <h2 class="font-display text-3xl lg:text-4xl text-text-primary mb-4 leading-tight">Your customers trust you. The numbers prove it.</h2>
+          <p class="text-text-muted">Every sale logged. Every credit tracked. Send statements over WhatsApp in one tap.</p>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ── Section 4: Brand Values ─────────────────────── -->
+    <section data-testid="brand-values" class="px-6 py-24 text-center relative overflow-hidden">
+      <div
+        class="absolute inset-0 pointer-events-none"
+        style="background: radial-gradient(ellipse 80% 60% at 50% 50%, rgb(201 168 76 / 0.06) 0%, transparent 70%)"
+      />
+      <div class="relative z-10 max-w-3xl mx-auto">
+        <h2 class="font-display text-4xl lg:text-6xl text-text-primary mb-8 leading-tight">
+          Built for the Syrian merchant.<br>
+          <span class="text-gold-primary">Engineered for the world.</span>
+        </h2>
+        <div class="flex flex-col items-center gap-4">
+          <p class="text-text-muted">Offline when the power cuts. Online when it returns.</p>
+          <div class="w-px h-5 bg-border-gold" />
+          <p class="text-text-muted">Your currency, your language, your rules.</p>
+          <div class="w-px h-5 bg-border-gold" />
+          <p class="text-text-muted">No setup maze. No salesperson required.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Section 5: By the Numbers ──────────────────── -->
+    <section data-testid="stats" class="px-6 py-16 max-w-4xl mx-auto">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-px bg-border-glass rounded-2xl overflow-hidden">
+        <div v-for="stat in stats" :key="stat.label" class="bg-bg-void px-6 py-8 text-center">
+          <p class="font-display text-4xl text-platinum mb-2">{{ stat.value }}</p>
+          <p class="text-text-muted text-sm">{{ stat.label }}</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Section 6: Founding CTA ─────────────────────── -->
+    <section data-testid="founding-cta" class="px-6 py-20 max-w-2xl mx-auto text-center">
+      <div
+        class="glass-lg p-10 relative overflow-hidden"
+        style="border: 1px solid rgb(201 168 76 / 0.4)"
+      >
+        <h2 class="font-display text-4xl text-text-primary mb-4">Join the founding circle.</h2>
+        <p class="text-text-muted mb-8 max-w-md mx-auto">
+          First 15 merchants get 50% off — permanently. Setup handled personally. Direct line to the founders.
+        </p>
+        <RouterLink to="/home" class="btn-gold">احجز مكانك / Reserve Your Spot</RouterLink>
+        <p class="text-text-muted text-xs mt-4">12 of 15 spots remaining.</p>
+      </div>
+    </section>
+
+    <!-- ── Section 7: Footer ──────────────────────────── -->
+    <footer data-testid="footer" class="px-6 py-12" style="border-top: 1px solid rgb(201 168 76 / 0.30)">
+      <div class="max-w-6xl mx-auto flex flex-col md:flex-row justify-between gap-8 mb-8">
+        <div>
+          <p class="font-display text-xl text-text-primary mb-1">وافي</p>
+          <p class="text-text-muted text-sm">نظام إدارة أعمال متكامل</p>
+        </div>
+        <div class="flex flex-col sm:flex-row gap-8 text-sm text-text-muted">
+          <div class="flex flex-col gap-2">
+            <p class="text-platinum font-medium mb-1">Product</p>
+            <RouterLink to="/home" class="hover:text-gold-primary transition-colors">Dashboard</RouterLink>
+            <RouterLink to="/pos"  class="hover:text-gold-primary transition-colors">Point of Sale</RouterLink>
+          </div>
+          <div class="flex flex-col gap-2">
+            <p class="text-platinum font-medium mb-1">Company</p>
+            <span>About</span>
+            <span>Contact</span>
+          </div>
+        </div>
+      </div>
+      <div
+        class="max-w-6xl mx-auto pt-6 flex justify-between items-center"
+        style="border-top: 1px solid rgb(255 255 255 / 0.08)"
+      >
+        <p class="text-text-muted text-xs">© 2026 وافي. All rights reserved.</p>
+        <div class="flex gap-3 text-xs text-text-muted">
+          <span>USDT</span>
+          <span>Wire</span>
+          <span>Cash</span>
+        </div>
+      </div>
+    </footer>
+
   </div>
 </template>

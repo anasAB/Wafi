@@ -44,4 +44,27 @@ describe('LandingPage', () => {
     expect(wrapper.text()).toContain('Speaks Your Language')
     expect(wrapper.text()).toContain('Any Device You Have')
   })
+
+  it('renders product story section', async () => {
+    const router = makeRouter()
+    await router.push('/')
+    const wrapper = mount(LandingPage, { global: { plugins: [router, makePinia()] } })
+    expect(wrapper.find('[data-testid="product-story"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Ring up a sale in under 10 seconds')
+  })
+
+  it('renders founding CTA section', async () => {
+    const router = makeRouter()
+    await router.push('/')
+    const wrapper = mount(LandingPage, { global: { plugins: [router, makePinia()] } })
+    expect(wrapper.find('[data-testid="founding-cta"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Join the founding circle')
+  })
+
+  it('renders footer', async () => {
+    const router = makeRouter()
+    await router.push('/')
+    const wrapper = mount(LandingPage, { global: { plugins: [router, makePinia()] } })
+    expect(wrapper.find('[data-testid="footer"]').exists()).toBe(true)
+  })
 })
