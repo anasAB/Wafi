@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
-import { rowToProduct } from '@/features/products/composables/useProducts'
+import { rowToProduct } from '@/features/products/product.utils'
 import type { Product } from './pos.types'
 
 const props = defineProps<{ searchQuery: string }>()
