@@ -17,6 +17,8 @@
   --color-surface-raised: rgb(255 255 255 / 0.10);
   --color-border-glass:   rgb(255 255 255 / 0.12);
   --color-border-gold:    rgb(201 168 76 / 0.30);
+  --color-btn-ghost-text:   #E8E8E8;
+  --color-btn-ghost-border: rgb(255 255 255 / 0.20);
 
   /* Typography */
   --font-display:    'Cormorant Garant', Georgia, serif;
@@ -36,6 +38,8 @@
   --color-border-gold:    rgb(184 150 90 / 0.30);
   --color-text-primary:   #1A1410;
   --color-text-muted:     #6B5A4A;
+  --color-btn-ghost-text:   #1A1410;
+  --color-btn-ghost-border: rgb(0 0 0 / 0.20);
 }
 
 [data-luxury-theme="deep-jewel"] {
@@ -56,7 +60,7 @@
 
 /* ─── Global Reset ───────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-body   { margin: 0; background: #05080F; }
+body   { margin: 0; background: var(--color-bg-void); }
 #app   { min-height: 100svh; }
 html                           { font-size: 16px; }
 html[data-text-size="small"]   { font-size: 14px; }
@@ -68,20 +72,20 @@ html.dark { color-scheme: dark; }
 /* ─── Glass Utilities ────────────────────────────────── */
 @utility glass-sm {
   backdrop-filter: blur(12px) saturate(160%);
-  background-color: rgb(255 255 255 / 0.06);
-  border: 1px solid rgb(255 255 255 / 0.12);
+  background-color: var(--color-surface-glass);
+  border: 1px solid var(--color-border-glass);
   border-radius: 1rem;
 }
 @utility glass-md {
   backdrop-filter: blur(20px) saturate(180%);
-  background-color: rgb(255 255 255 / 0.06);
-  border: 1px solid rgb(255 255 255 / 0.12);
+  background-color: var(--color-surface-glass);
+  border: 1px solid var(--color-border-glass);
   border-radius: 1rem;
 }
 @utility glass-lg {
   backdrop-filter: blur(32px) saturate(200%);
-  background-color: rgb(255 255 255 / 0.06);
-  border: 1px solid rgb(255 255 255 / 0.12);
+  background-color: var(--color-surface-glass);
+  border: 1px solid var(--color-border-glass);
   border-radius: 1rem;
 }
 
@@ -112,9 +116,9 @@ html.dark { color-scheme: dark; }
   border-radius: 1rem;
   font-size: 1rem;
   font-weight: 500;
-  color: var(--color-platinum);
+  color: var(--color-btn-ghost-text);
   background: transparent;
-  border: 1px solid rgb(255 255 255 / 0.20);
+  border: 1px solid var(--color-btn-ghost-border);
   cursor: pointer;
   text-decoration: none;
   transition: background 0.2s ease;
