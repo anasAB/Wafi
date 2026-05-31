@@ -37,7 +37,7 @@ async function compressToWebP(file: File): Promise<Blob> {
   do {
     blob = await new Promise<Blob>(res => canvas.toBlob(b => res(b!), 'image/webp', quality))
     quality -= 0.1
-  } while (blob.size > MAX_BYTES && quality > 0.1)
+  } while (blob.size > MAX_BYTES && quality >= 0.1)
 
   return blob
 }
