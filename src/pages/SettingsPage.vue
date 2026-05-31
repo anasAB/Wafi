@@ -23,11 +23,11 @@ const APP_VERSION = 'v0.1.0'
     <main class="flex-1 md:hidden px-4 py-4 max-w-lg mx-auto w-full">
 
       <!-- Personal section -->
-      <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 px-1">{{ t('settings.personal') }}</p>
-      <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden mb-4">
+      <p class="text-xs font-medium text-text-muted mb-2 px-1 tracking-widest uppercase">{{ t('settings.personal') }}</p>
+      <div class="glass-sm overflow-hidden mb-4">
         <button
           type="button"
-          class="w-full flex items-center justify-between px-4 py-3.5 border-b border-gray-100 dark:border-gray-700 text-sm text-gray-900 dark:text-white active:bg-gray-50 dark:active:bg-gray-700"
+          class="w-full flex items-center justify-between px-4 py-3.5 border-b border-border-glass text-sm text-text-primary active:bg-surface-glass"
           @click="router.push('/settings/personal')"
         >
           <span>{{ t('settings.personal') }}</span>
@@ -46,8 +46,8 @@ const APP_VERSION = 'v0.1.0'
       </div>
 
       <!-- About section -->
-      <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 px-1">{{ t('settings.about') }}</p>
-      <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
+      <p class="text-xs font-medium text-text-muted mb-2 px-1 tracking-widest uppercase">{{ t('settings.about') }}</p>
+      <div class="glass-sm overflow-hidden">
         <div class="flex items-center justify-between px-4 py-3.5 text-sm text-gray-900 dark:text-white">
           <span>{{ t('personal.aboutVersionLabel') }}</span>
           <span class="text-xs text-gray-400 dark:text-gray-500">{{ APP_VERSION }}</span>
@@ -61,7 +61,7 @@ const APP_VERSION = 'v0.1.0'
 
       <!-- Sidebar nav -->
       <nav class="w-44 flex-shrink-0">
-        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
+        <div class="glass-sm overflow-hidden">
           <RouterLink
             to="/settings/personal"
             class="block px-4 py-3 text-sm border-b border-gray-100 dark:border-gray-700"
@@ -79,7 +79,7 @@ const APP_VERSION = 'v0.1.0'
       </nav>
 
       <!-- Content panel: sub-screens render here via RouterView on desktop -->
-      <div class="flex-1 bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
+      <div class="flex-1 glass-sm overflow-hidden">
         <RouterView />
         <div
           v-if="route.path === '/settings'"

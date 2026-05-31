@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import { useSettingsStore } from '@/features/settings'
 import type { Language, Theme, TextSize } from '@/features/settings'
+import ThemePickerScreen from './ThemePickerScreen.vue'
 
 const router   = useRouter()
 const settings = useSettingsStore()
@@ -45,6 +46,12 @@ const textSizes = computed(() => [
     <!-- Preferences group -->
     <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 px-1 md:px-0">{{ t('personal.preferencesSection') }}</p>
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden mb-4 md:shadow-none md:rounded-none md:bg-transparent md:dark:bg-transparent">
+
+      <!-- Luxury theme -->
+      <div class="px-4 py-3.5 border-b border-gray-100 dark:border-gray-700">
+        <p class="text-sm text-text-muted mb-3">Luxury Theme</p>
+        <ThemePickerScreen />
+      </div>
 
       <!-- Language -->
       <div class="px-4 py-3.5 border-b border-gray-100 dark:border-gray-700">
