@@ -98,11 +98,17 @@ export function usePayment() {
       )
 
       for (const line of saleStore.lines) {
+        const costRow = await db.getOptional<{ cost_price_usd: number }>(
+          'SELECT cost_price_usd FROM products WHERE id = ?',
+          [line.productId]
+        )
+        const unitCostUsd = costRow?.cost_price_usd ?? 0
+
         await db.execute(
-          `INSERT INTO sale_line_items (id, sale_id, shop_id, product_id, quantity, unit_price_usd, line_total_usd)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO sale_line_items (id, sale_id, shop_id, product_id, quantity, unit_price_usd, unit_cost_usd, line_total_usd)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           [uuidv4(), saleId, deviceStore.shopId, line.productId,
-           line.quantity, line.unitPriceUsd, line.lineTotalUsd]
+           line.quantity, line.unitPriceUsd, unitCostUsd, line.lineTotalUsd]
         )
       }
 

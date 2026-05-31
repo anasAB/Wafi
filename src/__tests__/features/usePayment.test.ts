@@ -97,7 +97,9 @@ describe('usePayment', () => {
       .mockResolvedValueOnce({ rows: { _array: [] } } as any) // UPDATE products
       .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT stock_adjustments
 
-    vi.mocked(db.getOptional).mockResolvedValueOnce({ current_stock: 10 } as any)
+    vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({ cost_price_usd: 0 } as any)   // cost lookup (new)
+      .mockResolvedValueOnce({ current_stock: 10 } as any)   // stock lookup (existing)
 
     const { selectMethod, confirm } = usePayment()
     selectMethod('card')
@@ -114,5 +116,27 @@ describe('usePayment', () => {
     const insertCall = vi.mocked(db.execute).mock.calls.find(c => (c[0] as string).includes('INSERT INTO stock_adjustments'))
     expect(insertCall?.[1]).toContain(10) // old_value
     expect(insertCall?.[1]).toContain(9)  // new_value
+  })
+
+  it('confirm writes unit_cost_usd to sale_line_items from product cost', async () => {
+    vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({ cost_price_usd: 7 } as any)   // cost lookup for p1
+      .mockResolvedValueOnce({ current_stock: 10 } as any)   // stock lookup for p1
+    vi.mocked(db.execute)
+      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sales
+      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sale_line_items
+      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // UPDATE products stock
+      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT stock_adjustments
+
+    const { selectMethod, confirm } = usePayment()
+    selectMethod('card')
+    await confirm()
+
+    const lineInsertCall = vi.mocked(db.execute).mock.calls.find(c =>
+      (c[0] as string).includes('INSERT INTO sale_line_items') &&
+      (c[0] as string).includes('unit_cost_usd')
+    )
+    expect(lineInsertCall).toBeDefined()
+    expect(lineInsertCall?.[1]).toContain(7) // unit_cost_usd = 7
   })
 })
