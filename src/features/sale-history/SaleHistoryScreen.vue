@@ -11,7 +11,7 @@ import { getDateRange } from '@/features/dashboard/composables/periodUtils'
 const router  = useRouter()
 const route   = useRoute()
 const { sales, loading, loadHistory, reprint, reprintError } = useSaleHistory()
-const { period } = usePeriodToggle()
+const { period, setPeriod } = usePeriodToggle()
 const expandedId = ref<string | null>(null)
 const toast      = ref<string | null>(null)
 const toastType  = ref<'info' | 'error'>('info')
@@ -31,7 +31,6 @@ const periodTotal = computed(() =>
 onMounted(async () => {
   if (route.query.period) {
     // Sync singleton to URL param (handles direct navigation)
-    const { setPeriod } = usePeriodToggle()
     const p = route.query.period as string
     if (p === 'today' || p === 'week' || p === 'month') setPeriod(p)
   }

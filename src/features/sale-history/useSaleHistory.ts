@@ -21,6 +21,7 @@ export function useSaleHistory() {
 
       if (dateRange) {
         // Period-based filter using local date (YYYY-MM-DD)
+        // 'localtime' modifier works correctly in PowerSync's wa-sqlite build (maps to browser timezone)
         query  = `SELECT * FROM sales WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ? ORDER BY created_at DESC`
         params = [device.shopId, dateRange.start, dateRange.end]
       } else {
