@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import AppToast from '@/components/ui/AppToast.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
@@ -12,8 +12,9 @@ import { getDateRange } from '@/features/dashboard/composables/periodUtils'
 import type { Expense } from './expense.types'
 
 const router = useRouter()
+const route = useRoute()
 const { expenses, load, deleteExpense } = useExpenses()
-const { period } = usePeriodToggle()
+const { period, setPeriod } = usePeriodToggle()
 
 const editingExpense = ref<Expense | null>(null)
 const deleteTarget   = ref<string | null>(null)
@@ -39,7 +40,13 @@ async function reload() {
   }
 }
 
-onMounted(reload)
+onMounted(async () => {
+  const p = route.query.period as string | undefined
+  if (p === 'today' || p === 'week' || p === 'month') {
+    setPeriod(p)
+  }
+  await reload()
+})
 watch(period, reload)
 
 function formatDate(iso: string): string {
@@ -53,7 +60,6 @@ async function confirmDelete() {
     await deleteExpense(deleteTarget.value)
     deleteTarget.value = null
     toast.value = { message: 'تم حذف المصروف', type: 'success' }
-    await reload()
   } catch {
     toast.value = { message: 'فشل الحذف', type: 'error' }
   }
@@ -62,7 +68,6 @@ async function confirmDelete() {
 function handleExpenseSaved() {
   editingExpense.value = null
   toast.value = { message: 'تم حفظ المصروف', type: 'success' }
-  reload()
 }
 </script>
 
