@@ -3,7 +3,9 @@ import { ref, computed } from 'vue'
 import { useExchangeRate } from '@/features/exchange-rate'
 import { useExpenses } from '@/features/expenses/composables/useExpenses'
 import ExpenseCategoryChips from './ExpenseCategoryChips.vue'
-import type { NewExpense } from '@/features/expenses/expense.types'
+import type { NewExpense, Expense } from '@/features/expenses/expense.types'
+
+const props = defineProps<{ initialExpense?: Expense }>()
 
 const emit = defineEmits<{
   (e: 'saved'):  void
@@ -11,13 +13,13 @@ const emit = defineEmits<{
 }>()
 
 const { currentRate } = useExchangeRate()
-const { save }        = useExpenses()
+const { save, deleteExpense } = useExpenses()
 
-const amount      = ref<number | ''>('')
-const currency    = ref<'USD' | 'SYP'>('USD')
-const category    = ref('')
-const expenseDate = ref(new Date().toISOString().slice(0, 10))
-const notes       = ref('')
+const amount      = ref<number | ''>(props.initialExpense?.amount ?? '')
+const currency    = ref<'USD' | 'SYP'>(props.initialExpense?.currency ?? 'USD')
+const category    = ref(props.initialExpense?.category ?? '')
+const expenseDate = ref(props.initialExpense?.expenseDate ?? new Date().toISOString().slice(0, 10))
+const notes       = ref(props.initialExpense?.notes ?? '')
 const saving      = ref(false)
 const errors      = ref<Record<string, string>>({})
 
@@ -55,6 +57,9 @@ async function handleSave(addAnother = false) {
       paidInCash:  true,
     }
 
+    if (props.initialExpense) {
+      await deleteExpense(props.initialExpense.id)
+    }
     await save(data)
     chipsRef.value?.persistCustom(data.category)
 
@@ -80,7 +85,7 @@ async function handleSave(addAnother = false) {
   >
     <div class="bg-white dark:bg-gray-900 rounded-t-2xl w-full max-w-lg p-6 shadow-xl">
       <div class="w-9 h-1 bg-gray-200 dark:bg-gray-700 rounded-full mx-auto mb-5"></div>
-      <h2 class="text-base font-semibold text-gray-900 dark:text-white mb-4">إضافة مصروف</h2>
+      <h2 class="text-base font-semibold text-gray-900 dark:text-white mb-4">{{ initialExpense ? 'تعديل مصروف' : 'إضافة مصروف' }}</h2>
 
         <!-- Amount -->
         <div class="mb-4">
@@ -168,6 +173,7 @@ async function handleSave(addAnother = false) {
           >{{ saving ? '...' : 'حفظ' }}</button>
 
           <button
+            v-if="!initialExpense"
             type="button"
             data-testid="save-another-btn"
             :disabled="saving"
