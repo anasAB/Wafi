@@ -35,12 +35,12 @@ onMounted(async () => {
     const p = route.query.period as string
     if (p === 'today' || p === 'week' || p === 'month') setPeriod(p)
   }
-  await loadHistory(getDateRange(period.value))
+  await loadHistory(isPeriodDrillDown.value ? getDateRange(period.value) : undefined)
 })
 
 // Reload when period changes (user taps toggle)
 watch(period, async (newPeriod) => {
-  await loadHistory(getDateRange(newPeriod))
+  if (isPeriodDrillDown.value) await loadHistory(getDateRange(newPeriod))
 })
 
 function formatDate(iso: string): string {
