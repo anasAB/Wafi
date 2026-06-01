@@ -11,6 +11,7 @@ import { usePeriodToggle }      from '@/features/dashboard/composables/usePeriod
 import { useDashboardMetrics }  from '@/features/dashboard/composables/useDashboardMetrics'
 import { useBestSellers }       from '@/features/dashboard/composables/useBestSellers'
 import MetricCard               from '@/features/dashboard/components/MetricCard.vue'
+import ProfitSheet             from '@/features/dashboard/components/ProfitSheet.vue'
 import PeriodToggle             from '@/features/dashboard/components/PeriodToggle.vue'
 import BestSellersCard          from '@/features/dashboard/components/BestSellersCard.vue'
 import StalenessBar             from '@/features/dashboard/components/StalenessBar.vue'
@@ -27,7 +28,6 @@ const sellers              = useBestSellers()
 
 const showDraftDialog  = ref(false)
 const showExpenseForm  = ref(false)
-// ProfitSheet component and template wiring added in Task 4
 const showProfitSheet  = ref(false)
 const toast           = ref<{ message: string; type: 'success' | 'error' } | null>(null)
 
@@ -233,6 +233,18 @@ const profitAccent = computed(() => {
     v-if="showExpenseForm"
     @saved="handleExpenseSaved"
     @cancel="showExpenseForm = false"
+  />
+
+  <!-- Profit breakdown sheet -->
+  <ProfitSheet
+    v-if="showProfitSheet"
+    :is-open="showProfitSheet"
+    :revenue-usd="metrics.revenueUsd.value"
+    :cogs-usd="metrics.cogsUsd.value"
+    :expenses-usd="metrics.expensesUsd.value"
+    :profit-usd="metrics.profitUsd.value"
+    :period="period"
+    @close="showProfitSheet = false"
   />
 
   <!-- Toast -->
