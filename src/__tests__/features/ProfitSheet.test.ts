@@ -5,7 +5,6 @@ import ProfitSheet from '@/features/dashboard/components/ProfitSheet.vue'
 function mountSheet(props = {}) {
   return mount(ProfitSheet, {
     props: {
-      isOpen: true,
       revenueUsd: 450,
       cogsUsd: 236,
       expensesUsd: 80,

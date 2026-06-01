@@ -3,7 +3,6 @@ import { computed } from 'vue'
 import type { Period } from '@/features/dashboard/composables/periodUtils'
 
 const props = defineProps<{
-  isOpen:      boolean
   revenueUsd:  number
   cogsUsd:     number
   expensesUsd: number
@@ -39,7 +38,6 @@ function fmt(n: number, sign = false): string {
 
 <template>
   <div
-    v-if="isOpen"
     class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40"
     dir="rtl"
     data-testid="profit-backdrop"

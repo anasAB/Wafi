@@ -238,7 +238,6 @@ const profitAccent = computed(() => {
   <!-- Profit breakdown sheet -->
   <ProfitSheet
     v-if="showProfitSheet"
-    :is-open="showProfitSheet"
     :revenue-usd="metrics.revenueUsd.value"
     :cogs-usd="metrics.cogsUsd.value"
     :expenses-usd="metrics.expensesUsd.value"
