@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { CashMovement } from '@/features/dashboard/composables/useCashDrawer'
 
-const props = defineProps<{
+defineProps<{
   cashUsd:   number
   cashSyp:   number
   movements: CashMovement[]
@@ -59,8 +59,8 @@ function fmtSyp(n: number): string {
         >لا توجد حركات نقدية اليوم</div>
 
         <div
-          v-for="(m, i) in movements"
-          :key="i"
+          v-for="m in movements"
+          :key="m.createdAt + m.type"
           class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-800"
         >
           <div>
