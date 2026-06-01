@@ -27,6 +27,7 @@ const sellers              = useBestSellers()
 
 const showDraftDialog  = ref(false)
 const showExpenseForm  = ref(false)
+// ProfitSheet component and template wiring added in Task 4
 const showProfitSheet  = ref(false)
 const toast           = ref<{ message: string; type: 'success' | 'error' } | null>(null)
 
