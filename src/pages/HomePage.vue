@@ -10,11 +10,14 @@ import { useLowStockAlerts }    from '@/features/products/composables/useLowStoc
 import { usePeriodToggle }      from '@/features/dashboard/composables/usePeriodToggle'
 import { useDashboardMetrics }  from '@/features/dashboard/composables/useDashboardMetrics'
 import { useBestSellers }       from '@/features/dashboard/composables/useBestSellers'
+import { useCashDrawer }        from '@/features/dashboard/composables/useCashDrawer'
 import MetricCard               from '@/features/dashboard/components/MetricCard.vue'
 import ProfitSheet             from '@/features/dashboard/components/ProfitSheet.vue'
 import PeriodToggle             from '@/features/dashboard/components/PeriodToggle.vue'
 import BestSellersCard          from '@/features/dashboard/components/BestSellersCard.vue'
 import StalenessBar             from '@/features/dashboard/components/StalenessBar.vue'
+import CashDrawerBar            from '@/features/dashboard/components/CashDrawerBar.vue'
+import CashDrawerSheet          from '@/features/dashboard/components/CashDrawerSheet.vue'
 import ExpenseForm              from '@/features/expenses/components/ExpenseForm.vue'
 import { db }                   from '@/data/powersync/db'
 
@@ -25,10 +28,12 @@ const { count: lowStockCount, top3: lowStockTop3, allClear, load: loadAlerts } =
 const { period }           = usePeriodToggle()
 const metrics              = useDashboardMetrics()
 const sellers              = useBestSellers()
+const drawer               = useCashDrawer()
 
 const showDraftDialog  = ref(false)
 const showExpenseForm  = ref(false)
 const showProfitSheet  = ref(false)
+const showCashDrawer   = ref(false)
 const toast           = ref<{ message: string; type: 'success' | 'error' } | null>(null)
 
 // Staleness tracking
@@ -41,7 +46,7 @@ onMounted(async () => {
   try {
     await Promise.all([loadRate(), loadDraft(), loadAlerts()])
     if (hasDraft.value) showDraftDialog.value = true
-    await Promise.all([metrics.load(period.value), sellers.load(period.value)])
+    await Promise.all([metrics.load(period.value), sellers.load(period.value), drawer.load()])
   } catch { /* errors shown via toast */ }
 
   // Poll sync status every 60s; update lastSyncedAt when connection is restored
@@ -174,6 +179,14 @@ const profitAccent = computed(() => {
       <!-- Best sellers -->
       <BestSellersCard :items="sellers.items.value" class="mb-4" />
 
+      <!-- Cash drawer summary -->
+      <CashDrawerBar
+        :cash-usd="drawer.cashUsd.value"
+        :cash-syp="drawer.cashSyp.value"
+        class="mb-4"
+        @tap="showCashDrawer = true"
+      />
+
       <!-- Low-stock card (from Epic 2) -->
       <RouterLink
         to="/products?filter=low-stock"
@@ -244,6 +257,15 @@ const profitAccent = computed(() => {
     :profit-usd="metrics.profitUsd.value"
     :period="period"
     @close="showProfitSheet = false"
+  />
+
+  <!-- Cash drawer detail sheet -->
+  <CashDrawerSheet
+    v-if="showCashDrawer"
+    :cash-usd="drawer.cashUsd.value"
+    :cash-syp="drawer.cashSyp.value"
+    :movements="drawer.movements.value"
+    @close="showCashDrawer = false"
   />
 
   <!-- Toast -->
