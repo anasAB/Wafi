@@ -9,7 +9,10 @@ const props = defineProps<{
   warningCount?: number
 }>()
 
-const emit = defineEmits<{ (e: 'warning-tap'): void }>()
+const emit = defineEmits<{
+  (e: 'warning-tap'): void
+  (e: 'tap'):         void
+}>()
 
 const accentClass = computed(() => ({
   blue:   'text-blue-600 dark:text-blue-400',
@@ -35,8 +38,14 @@ const showWarning = computed(() => (props.warningCount ?? 0) > 0)
 
 <template>
   <div
-    class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-4 flex items-start justify-between"
+    class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-4 flex items-start justify-between
+           cursor-pointer active:scale-[0.98] transition-transform select-none"
     dir="rtl"
+    role="button"
+    tabindex="0"
+    data-testid="metric-card"
+    @click="emit('tap')"
+    @keydown.enter="emit('tap')"
   >
     <div>
       <p class="text-xs text-gray-500 dark:text-gray-400 mb-1">{{ label }}</p>
@@ -57,7 +66,7 @@ const showWarning = computed(() => (props.warningCount ?? 0) > 0)
       data-testid="warning-badge"
       class="bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700
              rounded-lg px-2 py-1 text-xs text-amber-700 dark:text-amber-300 shrink-0"
-      @click="emit('warning-tap')"
+      @click.stop="emit('warning-tap')"
     >⚠ {{ warningCount }}</button>
   </div>
 </template>

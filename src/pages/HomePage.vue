@@ -25,8 +25,9 @@ const { period }           = usePeriodToggle()
 const metrics              = useDashboardMetrics()
 const sellers              = useBestSellers()
 
-const showDraftDialog = ref(false)
-const showExpenseForm = ref(false)
+const showDraftDialog  = ref(false)
+const showExpenseForm  = ref(false)
+const showProfitSheet  = ref(false)
 const toast           = ref<{ message: string; type: 'success' | 'error' } | null>(null)
 
 // Staleness tracking
@@ -137,6 +138,7 @@ const profitAccent = computed(() => {
           :syp="revenueSyp"
           accent="blue"
           data-testid="card-revenue"
+          @tap="router.push(`/history?period=${period}`)"
         />
         <MetricCard
           label="المصاريف"
@@ -144,6 +146,7 @@ const profitAccent = computed(() => {
           :syp="expensesSyp"
           accent="orange"
           data-testid="card-expenses"
+          @tap="router.push(`/expenses?period=${period}`)"
         />
         <MetricCard
           label="الربح"
@@ -152,6 +155,7 @@ const profitAccent = computed(() => {
           :accent="profitAccent"
           :warning-count="metrics.missingCostCount.value"
           data-testid="card-profit"
+          @tap="showProfitSheet = true"
           @warning-tap="router.push('/products?filter=missing-cost')"
         />
       </div>
