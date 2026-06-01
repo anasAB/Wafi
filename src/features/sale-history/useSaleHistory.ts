@@ -11,17 +11,27 @@ export function useSaleHistory() {
   const error   = ref<string | null>(null)
   const printer = usePrinter()
 
-  async function loadHistory() {
+  async function loadHistory(dateRange?: { start: string; end: string }) {
     const device = useDeviceStore()
     loading.value = true
     error.value   = null
     try {
-      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+      let query: string
+      let params: string[]
+
+      if (dateRange) {
+        // Period-based filter using local date (YYYY-MM-DD)
+        query  = `SELECT * FROM sales WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ? ORDER BY created_at DESC`
+        params = [device.shopId, dateRange.start, dateRange.end]
+      } else {
+        // Default: last 7 days
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+        query  = `SELECT * FROM sales WHERE shop_id = ? AND created_at >= ? ORDER BY created_at DESC`
+        params = [device.shopId, sevenDaysAgo]
+      }
+
       const [result, crudResult] = await Promise.all([
-        db.execute(
-          `SELECT * FROM sales WHERE shop_id = ? AND created_at >= ? ORDER BY created_at DESC`,
-          [device.shopId, sevenDaysAgo]
-        ),
+        db.execute(query, params),
         db.execute(
           `SELECT DISTINCT json_extract(data, '$.id') as sale_id FROM ps_crud WHERE "table" = 'sales'`
         ).catch(() => ({ rows: { _array: [] } })),
