@@ -116,7 +116,7 @@ const profitAccent = computed(() => {
   <div class="flex flex-col min-h-dvh bg-gray-50 dark:bg-gray-950">
     <AppHeader title="وافي" :show-exchange-rate="true" />
 
-    <main class="flex-1 px-4 py-4 max-w-lg mx-auto w-full pb-24" dir="rtl">
+    <main class="flex-1 px-4 py-4 max-w-lg mx-auto w-full pb-6" dir="rtl">
 
       <!-- Greeting -->
       <p class="text-xs text-gray-400 dark:text-gray-500 mb-0.5">{{ arabicDate }}</p>
@@ -176,6 +176,17 @@ const profitAccent = computed(() => {
         @click="showExpenseForm = true"
       >+ إضافة مصروف</button>
 
+      <!-- Sell button -->
+      <button
+        type="button"
+        :disabled="!canStartSale"
+        aria-describedby="no-rate-warning"
+        class="w-full h-12 rounded-2xl text-base font-bold text-white mb-4
+               bg-blue-600 hover:bg-blue-700 active:scale-95 transition-all
+               disabled:opacity-40 disabled:cursor-not-allowed"
+        @click="router.push('/pos')"
+      >بيع جديد</button>
+
       <!-- Best sellers -->
       <BestSellersCard :items="sellers.items.value" class="mb-4" />
 
@@ -216,18 +227,6 @@ const profitAccent = computed(() => {
 
     </main>
 
-    <!-- Sticky bottom: New Sale button -->
-    <div class="fixed bottom-0 inset-x-0 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 px-4 py-3 z-10">
-      <button
-        type="button"
-        :disabled="!canStartSale"
-        aria-describedby="no-rate-warning"
-        class="w-full h-12 rounded-2xl text-base font-bold text-white bg-blue-600
-               hover:bg-blue-700 active:scale-95 transition-all
-               disabled:opacity-40 disabled:cursor-not-allowed"
-        @click="router.push('/pos')"
-      >بيع جديد</button>
-    </div>
   </div>
 
   <!-- Draft recovery dialog (unchanged from Epic 1) -->
