@@ -71,7 +71,7 @@ async function handleReprint(saleId: string) {
 
 <template>
   <div class="flex flex-col min-h-dvh bg-bg-void">
-    <AppHeader :title="periodTitle" :show-back="true" @back="router.push('/')" />
+    <AppHeader :title="periodTitle" :show-back="isPeriodDrillDown" @back="router.push('/')" />
 
     <div v-if="isPeriodDrillDown" class="px-4 pt-3 max-w-lg mx-auto w-full space-y-2">
       <PeriodToggle />
