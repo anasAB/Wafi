@@ -50,7 +50,7 @@ export function useCustomerBalance(customerId: string) {
         const itemRows = await db.getAll<{ name_ar: string }>(
           `SELECT p.name_ar FROM sale_line_items sli
            JOIN products p ON p.id = sli.product_id
-           WHERE sli.sale_id = ? LIMIT 2`,
+           WHERE sli.sale_id = ? AND (p.deleted = 0 OR p.deleted IS NULL) LIMIT 2`,
           [row.id]
         )
         return {
@@ -66,7 +66,8 @@ export function useCustomerBalance(customerId: string) {
     openInvoices.value = invoicesWithSummary
 
     const paymentRows = await db.getAll<PaymentRow>(
-      `SELECT * FROM customer_payments WHERE customer_id = ? AND shop_id = ? ORDER BY created_at DESC`,
+      `SELECT id, customer_id, sale_id, amount_usd, currency, paid_at, created_at
+       FROM customer_payments WHERE customer_id = ? AND shop_id = ? ORDER BY created_at DESC`,
       [customerId, shopId]
     )
     payments.value = paymentRows.map(r => ({
