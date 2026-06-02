@@ -8,6 +8,7 @@ export default {
   personal: {
     preferencesSection: 'Preferences',
     sessionSection:     'Session',
+    luxuryTheme: 'Color theme',
     language: 'Language',
     theme:    'Theme',
     textSize: 'Text size',

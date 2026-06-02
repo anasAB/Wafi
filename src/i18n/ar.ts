@@ -8,6 +8,7 @@ export default {
   personal: {
     preferencesSection: 'التفضيلات',
     sessionSection:     'الجلسة',
+    luxuryTheme: 'نمط الألوان',
     language: 'اللغة',
     theme:    'المظهر',
     textSize: 'حجم الخط',
