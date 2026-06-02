@@ -1,0 +1,103 @@
+<h2>What goes in the tab bar?</h2>
+<p class="subtitle">Choosing between 4 tabs (clean) vs 5 tabs (everything visible). Settings can live inside Manage or be its own tab.</p>
+
+<div class="options">
+
+  <div class="option" data-choice="4tabs" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>4 Tabs — Home · Sell · History · Manage</h3>
+      <p style="margin-bottom:10px">Settings lives inside Manage. Clean, focused. POS is always one tap away.</p>
+
+      <div class="mockup">
+        <div class="mockup-header">📱 Bottom Tab Bar</div>
+        <div class="mockup-body" style="padding:0">
+          <div style="background:#0f0f1a;border-top:1px solid #333;display:flex;padding:10px 0 6px;font-family:sans-serif;border-radius:0 0 8px 8px">
+            <div style="flex:1;text-align:center">
+              <div style="font-size:20px">🏠</div>
+              <div style="color:#C9A84C;font-size:10px;font-weight:600;margin-top:2px">الرئيسية</div>
+            </div>
+            <div style="flex:1;text-align:center">
+              <div style="font-size:20px">💰</div>
+              <div style="color:#888;font-size:10px;margin-top:2px">بيع</div>
+            </div>
+            <div style="flex:1;text-align:center">
+              <div style="font-size:20px">📋</div>
+              <div style="color:#888;font-size:10px;margin-top:2px">المبيعات</div>
+            </div>
+            <div style="flex:1;text-align:center">
+              <div style="font-size:20px">⊞</div>
+              <div style="color:#888;font-size:10px;margin-top:2px">الإدارة</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mockup" style="margin-top:10px">
+        <div class="mockup-header">🖥 Desktop Sidebar (mirrors tabs + settings always visible)</div>
+        <div class="mockup-body" style="padding:8px 0;font-family:sans-serif">
+          <div style="display:flex;flex-direction:column;gap:2px;max-width:180px">
+            <div style="padding:6px 14px;color:#C9A84C;font-size:12px;background:#1a1a2e;border-radius:6px;margin:0 6px">🏠 الرئيسية</div>
+            <div style="padding:6px 14px;color:#888;font-size:12px;margin:0 6px">💰 بيع جديد</div>
+            <div style="padding:6px 14px;color:#888;font-size:12px;margin:0 6px">📋 المبيعات</div>
+            <div style="padding:6px 14px;color:#888;font-size:12px;margin:0 6px">📦 المنتجات</div>
+            <div style="padding:6px 14px;color:#888;font-size:12px;margin:0 6px;opacity:0.4">📊 التقارير <span style="font-size:10px">قريباً</span></div>
+            <div style="padding:6px 14px;color:#888;font-size:12px;margin:0 6px;opacity:0.4">💵 المصاريف <span style="font-size:10px">قريباً</span></div>
+            <div style="border-top:1px solid #333;margin:4px 6px;padding-top:4px"></div>
+            <div style="padding:6px 14px;color:#888;font-size:12px;margin:0 6px">⚙ الإعدادات</div>
+          </div>
+        </div>
+      </div>
+
+      <ul style="margin-top:10px;color:#888;font-size:12px;padding-right:16px">
+        <li>Desktop sidebar expands the "Manage" section into individual modules (Products, Reports…)</li>
+        <li>No Back-Office launcher page needed on desktop</li>
+        <li>"Sell" tab goes directly to POS</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="option" data-choice="5tabs" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>5 Tabs — Home · Sell · History · Manage · Settings</h3>
+      <p style="margin-bottom:10px">Settings gets its own tab. More taps visible, slightly more crowded on small phones.</p>
+
+      <div class="mockup">
+        <div class="mockup-header">📱 Bottom Tab Bar</div>
+        <div class="mockup-body" style="padding:0">
+          <div style="background:#0f0f1a;border-top:1px solid #333;display:flex;padding:10px 0 6px;font-family:sans-serif;border-radius:0 0 8px 8px">
+            <div style="flex:1;text-align:center">
+              <div style="font-size:18px">🏠</div>
+              <div style="color:#C9A84C;font-size:9px;font-weight:600;margin-top:2px">الرئيسية</div>
+            </div>
+            <div style="flex:1;text-align:center">
+              <div style="font-size:18px">💰</div>
+              <div style="color:#888;font-size:9px;margin-top:2px">بيع</div>
+            </div>
+            <div style="flex:1;text-align:center">
+              <div style="font-size:18px">📋</div>
+              <div style="color:#888;font-size:9px;margin-top:2px">المبيعات</div>
+            </div>
+            <div style="flex:1;text-align:center">
+              <div style="font-size:18px">⊞</div>
+              <div style="color:#888;font-size:9px;margin-top:2px">الإدارة</div>
+            </div>
+            <div style="flex:1;text-align:center">
+              <div style="font-size:18px">⚙️</div>
+              <div style="color:#888;font-size:9px;margin-top:2px">إعدادات</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <ul style="margin-top:10px;color:#888;font-size:12px;padding-right:16px">
+        <li>5 tabs is the max recommended — any more and tabs become too small</li>
+        <li>On a 320px-wide phone (small Android) the labels may truncate</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:14px">My pick: <strong>4 tabs</strong> — settings is not a daily-use screen for a cashier. It belongs in Manage, not the primary tab bar.</p>

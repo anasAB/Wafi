@@ -1,0 +1,44 @@
+<h2>Epic 3 — Architecture approaches</h2>
+<p class="subtitle">How to structure the dashboard data layer and feature folders</p>
+
+<div class="options">
+
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Two feature folders (Recommended)</h3>
+      <p><code>src/features/dashboard/</code> owns the aggregation composables (revenue, profit, best sellers, period toggle). <code>src/features/expenses/</code> owns the expense form, composable, and types. <code>HomePage.vue</code> is rewritten to wire them together. Matches the established Epic 2 pattern exactly.</p>
+      <div class="pros-cons" style="margin-top:10px">
+        <div class="pros"><h4>Pros</h4><ul><li>Clean separation — dashboard queries vs expense CRUD are distinct concerns</li><li>Each folder testable independently</li><li>Matches existing pattern</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Two new folders to scaffold</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Single dashboard feature folder</h3>
+      <p><code>src/features/dashboard/</code> owns everything — aggregation composables, expense form component, and expense composable all live together. One folder, simpler navigation.</p>
+      <div class="pros-cons" style="margin-top:10px">
+        <div class="pros"><h4>Pros</h4><ul><li>One place to look for all home-screen logic</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Expense CRUD doesn't really belong to "dashboard" — it's a standalone feature that will grow (expense list, edit, delete)</li><li>Folder will get large</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Extend existing HomePage inline</h3>
+      <p>Don't create feature folders. Put all composables in <code>src/composables/</code> and build everything inside the rewritten <code>HomePage.vue</code>. Faster to write, harder to test and maintain.</p>
+      <div class="pros-cons" style="margin-top:10px">
+        <div class="pros"><h4>Pros</h4><ul><li>Minimal new structure</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>HomePage becomes a 600+ line god component</li><li>No clear boundaries for testing</li><li>Goes against established pattern</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:20px">Click to select, then confirm in terminal. Recommendation is A.</p>

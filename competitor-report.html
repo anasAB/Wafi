@@ -1,0 +1,1381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Local Ledger Pro — Competitor Analysis Report</title>
+<style>
+  /* ── Reset & Base ─────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --navy:    #0f2044;
+    --navy2:   #1a3260;
+    --accent:  #2563eb;
+    --accent2: #3b82f6;
+    --gold:    #f59e0b;
+    --green:   #10b981;
+    --red:     #ef4444;
+    --purple:  #8b5cf6;
+    --teal:    #0891b2;
+    --text:    #1e293b;
+    --muted:   #64748b;
+    --border:  #e2e8f0;
+    --bg:      #f8fafc;
+    --white:   #ffffff;
+    --card-shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+  }
+
+  html { font-size: 14px; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: var(--text); background: var(--bg); line-height: 1.6; }
+
+  /* ── Typography ───────────────────────────────────────────────── */
+  h1 { font-size: 2.4rem; font-weight: 800; }
+  h2 { font-size: 1.6rem; font-weight: 700; }
+  h3 { font-size: 1.15rem; font-weight: 700; }
+  h4 { font-size: 1rem; font-weight: 600; }
+  p  { margin-bottom: .6rem; }
+
+  /* ── Cover Page ───────────────────────────────────────────────── */
+  .cover {
+    background: linear-gradient(135deg, var(--navy) 0%, var(--navy2) 60%, #1e4080 100%);
+    color: white;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 80px 100px;
+    page-break-after: always;
+    position: relative;
+    overflow: hidden;
+  }
+  .cover::before {
+    content: '';
+    position: absolute; top: -120px; right: -120px;
+    width: 500px; height: 500px;
+    border-radius: 50%;
+    background: rgba(37, 99, 235, .15);
+  }
+  .cover::after {
+    content: '';
+    position: absolute; bottom: -80px; left: -80px;
+    width: 350px; height: 350px;
+    border-radius: 50%;
+    background: rgba(245, 158, 11, .08);
+  }
+  .cover-badge {
+    background: var(--gold);
+    color: var(--navy);
+    font-size: .75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    padding: 4px 14px;
+    border-radius: 99px;
+    margin-bottom: 28px;
+    display: inline-block;
+  }
+  .cover h1 { font-size: 3.6rem; line-height: 1.1; margin-bottom: 16px; }
+  .cover .subtitle { font-size: 1.3rem; color: rgba(255,255,255,.7); margin-bottom: 48px; }
+  .cover-meta { display: flex; gap: 40px; }
+  .cover-meta-item label { font-size: .7rem; text-transform: uppercase; letter-spacing: .1em; color: rgba(255,255,255,.5); display: block; margin-bottom: 4px; }
+  .cover-meta-item span { font-size: 1rem; color: white; font-weight: 600; }
+  .cover-stats {
+    position: absolute; bottom: 60px; right: 100px;
+    display: flex; gap: 32px;
+  }
+  .cover-stat { text-align: center; }
+  .cover-stat .num { font-size: 2.4rem; font-weight: 800; color: var(--gold); display: block; }
+  .cover-stat .lbl { font-size: .7rem; color: rgba(255,255,255,.6); text-transform: uppercase; letter-spacing: .08em; }
+
+  /* ── Section Wrapper ──────────────────────────────────────────── */
+  .section {
+    padding: 60px 80px;
+    page-break-before: always;
+    background: white;
+  }
+  .section-header {
+    display: flex; align-items: center; gap: 16px;
+    margin-bottom: 32px; padding-bottom: 16px;
+    border-bottom: 3px solid var(--accent);
+  }
+  .section-icon {
+    width: 48px; height: 48px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.4rem; flex-shrink: 0;
+  }
+  .section-header h2 { color: var(--navy); }
+  .section-header .section-sub { color: var(--muted); font-size: .9rem; font-weight: 400; margin-top: 2px; }
+
+  /* ── KPI Cards ────────────────────────────────────────────────── */
+  .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
+  .kpi-card { background: var(--navy); color: white; border-radius: 10px; padding: 20px; text-align: center; }
+  .kpi-card .kpi-num { font-size: 2rem; font-weight: 800; color: var(--gold); display: block; }
+  .kpi-card .kpi-lbl { font-size: .75rem; color: rgba(255,255,255,.65); text-transform: uppercase; letter-spacing: .06em; margin-top: 4px; }
+
+  /* ── Exec Cards ───────────────────────────────────────────────── */
+  .exec-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 32px; }
+  .exec-card {
+    background: var(--bg); border-radius: 10px; padding: 20px;
+    border-left: 4px solid var(--accent);
+  }
+  .exec-card h4 { color: var(--navy); margin-bottom: 8px; }
+  .exec-card ul { list-style: none; }
+  .exec-card ul li { padding: 3px 0; color: var(--text); font-size: .88rem; }
+  .exec-card ul li::before { content: '›'; color: var(--accent); margin-right: 8px; font-weight: 700; }
+
+  /* ── Competitor Pricing Table ─────────────────────────────────── */
+  .pricing-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  .pricing-card {
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    box-shadow: var(--card-shadow);
+  }
+  .pricing-card-header {
+    padding: 20px;
+    text-align: center;
+    color: white;
+  }
+  .pricing-tier { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; opacity: .8; }
+  .pricing-price { font-size: 2rem; font-weight: 800; margin: 8px 0 2px; }
+  .pricing-period { font-size: .75rem; opacity: .75; }
+  .pricing-card-body { padding: 16px; background: white; }
+  .pricing-card-body ul { list-style: none; }
+  .pricing-card-body ul li {
+    font-size: .8rem; padding: 5px 0; color: var(--text);
+    border-bottom: 1px solid #f1f5f9; display: flex; align-items: flex-start; gap: 8px;
+  }
+  .pricing-card-body ul li::before { content: '✓'; color: var(--green); font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+  .pricing-card-body .from-tier { font-size: .72rem; color: var(--muted); font-style: italic; }
+  .tier-std  { background: linear-gradient(135deg, #475569 0%, #64748b 100%); }
+  .tier-adv  { background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%); }
+  .tier-prem { background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%); }
+  .tier-ent  { background: linear-gradient(135deg, #92400e 0%, #b45309 100%); }
+  .popular-badge {
+    display: inline-block; background: var(--gold); color: var(--navy);
+    font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+    padding: 2px 8px; border-radius: 99px; margin-bottom: 4px;
+  }
+
+  /* ── Feature Parity Table ─────────────────────────────────────── */
+  .parity-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 32px;
+    font-size: .85rem;
+    box-shadow: var(--card-shadow);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .parity-table thead tr { background: linear-gradient(90deg, var(--navy) 0%, var(--navy2) 100%); color: white; }
+  .parity-table thead th { padding: 14px 16px; text-align: left; font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; }
+  .parity-table thead th:nth-child(2), .parity-table thead th:nth-child(3) { text-align: center; }
+  .parity-table tbody tr { background: white; border-bottom: 1px solid var(--border); }
+  .parity-table tbody tr:nth-child(even) { background: #fafbff; }
+  .parity-table tbody tr:hover { background: #eff6ff; }
+  .parity-table tbody td { padding: 12px 16px; }
+  .parity-table tbody td:nth-child(2), .parity-table tbody td:nth-child(3) { text-align: center; }
+  .parity-table tbody td:nth-child(4) { font-size: .78rem; color: var(--muted); }
+  .check-yes { color: var(--green); font-size: 1.1rem; font-weight: 700; }
+  .check-no  { color: var(--red);   font-size: 1.1rem; font-weight: 700; }
+  .tier-tag {
+    display: inline-block; font-size: .68rem; font-weight: 700; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 99px; letter-spacing: .05em;
+  }
+  .tier-tag.std  { background: #f1f5f9; color: #475569; }
+  .tier-tag.adv  { background: #eff6ff; color: #1d4ed8; }
+  .tier-tag.prem { background: #f5f3ff; color: #6d28d9; }
+  .tier-tag.ent  { background: #fff7ed; color: #92400e; }
+  .category-row td { background: #f8fafc !important; font-weight: 700; font-size: .78rem;
+    text-transform: uppercase; letter-spacing: .07em; color: var(--muted);
+    padding: 8px 16px !important; border-bottom: 2px solid var(--border); }
+
+  /* ── Advantage Cards ──────────────────────────────────────────── */
+  .adv-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 32px; }
+  .adv-card {
+    border-radius: 10px; padding: 18px;
+    border: 1px solid var(--border); background: white;
+    box-shadow: var(--card-shadow); page-break-inside: avoid;
+    border-top: 3px solid var(--green);
+  }
+  .adv-card-icon { font-size: 1.6rem; margin-bottom: 8px; }
+  .adv-card h4 { font-size: .95rem; color: var(--navy); margin-bottom: 6px; }
+  .adv-card p { font-size: .82rem; color: var(--muted); margin-bottom: 0; line-height: 1.5; }
+
+  /* ── Gap Analysis Cards ───────────────────────────────────────── */
+  .gap-card {
+    border-radius: 12px; margin-bottom: 20px; overflow: hidden;
+    box-shadow: var(--card-shadow); page-break-inside: avoid;
+    border: 1px solid var(--border);
+  }
+  .gap-header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 14px 20px;
+  }
+  .gap-num {
+    width: 32px; height: 32px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .85rem; font-weight: 800; flex-shrink: 0;
+    background: rgba(255,255,255,.2); color: white;
+  }
+  .gap-header h3 { font-size: 1rem; color: white; flex: 1; }
+  .priority-badge {
+    font-size: .68rem; font-weight: 700; text-transform: uppercase;
+    padding: 3px 10px; border-radius: 99px; letter-spacing: .06em;
+  }
+  .priority-high   { background: rgba(239,68,68,.25); color: #fca5a5; }
+  .priority-medium { background: rgba(245,158,11,.25); color: #fcd34d; }
+  .priority-low    { background: rgba(16,185,129,.25); color: #6ee7b7; }
+  .gap-body { padding: 16px 20px; background: white; }
+  .gap-desc { font-size: .88rem; color: var(--text); margin-bottom: 14px; line-height: 1.7; }
+  .gap-meta { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  .gap-meta-box { background: var(--bg); border-radius: 8px; padding: 12px; }
+  .gap-meta-box h4 { font-size: .72rem; text-transform: uppercase; letter-spacing: .07em; color: var(--accent); margin-bottom: 6px; }
+  .gap-meta-box p { font-size: .8rem; color: var(--text); margin-bottom: 0; }
+  .effort-bar { height: 6px; border-radius: 3px; background: #e2e8f0; margin-top: 8px; overflow: hidden; }
+  .effort-fill { height: 100%; border-radius: 3px; }
+
+  /* ── Roadmap ──────────────────────────────────────────────────── */
+  .roadmap-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .85rem;
+    box-shadow: var(--card-shadow);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 32px;
+  }
+  .roadmap-table thead tr { background: linear-gradient(90deg, var(--navy) 0%, var(--navy2) 100%); color: white; }
+  .roadmap-table thead th { padding: 14px 16px; text-align: left; font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; }
+  .roadmap-table tbody tr { background: white; border-bottom: 1px solid var(--border); }
+  .roadmap-table tbody tr:nth-child(even) { background: #fafbff; }
+  .roadmap-table tbody td { padding: 13px 16px; }
+  .roadmap-table tbody td:first-child { font-weight: 700; color: var(--navy); }
+  .impact-pill {
+    display: inline-block; font-size: .7rem; font-weight: 700;
+    padding: 2px 10px; border-radius: 99px;
+  }
+  .impact-high   { background: #dcfce7; color: #166534; }
+  .impact-medium { background: #fef9c3; color: #854d0e; }
+  .impact-low    { background: #f1f5f9; color: #475569; }
+  .effort-pill {
+    display: inline-block; font-size: .7rem; font-weight: 700;
+    padding: 2px 10px; border-radius: 99px;
+  }
+  .effort-low    { background: #dcfce7; color: #166534; }
+  .effort-medium { background: #fef9c3; color: #854d0e; }
+  .effort-high   { background: #fee2e2; color: #991b1b; }
+
+  /* ── Color variants ───────────────────────────────────────────── */
+  .c-blue   { background: linear-gradient(90deg, #1d4ed8 0%, #2563eb 100%); }
+  .c-purple { background: linear-gradient(90deg, #6d28d9 0%, #7c3aed 100%); }
+  .c-teal   { background: linear-gradient(90deg, #0e7490 0%, #0891b2 100%); }
+  .c-green  { background: linear-gradient(90deg, #059669 0%, #10b981 100%); }
+  .c-orange { background: linear-gradient(90deg, #b45309 0%, #d97706 100%); }
+  .c-rose   { background: linear-gradient(90deg, #be185d 0%, #db2777 100%); }
+  .c-indigo { background: linear-gradient(90deg, #3730a3 0%, #4f46e5 100%); }
+  .c-sky    { background: linear-gradient(90deg, #0369a1 0%, #0284c7 100%); }
+  .c-slate  { background: linear-gradient(90deg, #334155 0%, #475569 100%); }
+  .c-amber  { background: linear-gradient(90deg, #92400e 0%, #b45309 100%); }
+
+  /* ── Info box ─────────────────────────────────────────────────── */
+  .info-box {
+    background: #eff6ff; border-left: 4px solid var(--accent);
+    border-radius: 6px; padding: 14px 18px; margin-bottom: 20px;
+    font-size: .85rem; color: var(--navy2);
+  }
+  .warn-box {
+    background: #fffbeb; border-left: 4px solid var(--gold);
+    border-radius: 6px; padding: 14px 18px; margin-bottom: 20px;
+    font-size: .85rem; color: #78350f;
+  }
+
+  /* ── Divider ──────────────────────────────────────────────────── */
+  .divider { height: 2px; background: var(--border); margin: 32px 0; }
+
+  /* ── Footer ───────────────────────────────────────────────────── */
+  .page-footer {
+    text-align: center; color: var(--muted); font-size: .75rem;
+    padding: 24px; border-top: 1px solid var(--border); margin-top: 40px;
+  }
+
+  /* ── Conclusion Card ──────────────────────────────────────────── */
+  .conclusion-card {
+    background: linear-gradient(135deg, var(--navy) 0%, var(--navy2) 100%);
+    border-radius: 14px; padding: 40px; color: white; margin-bottom: 24px;
+  }
+  .conclusion-card h3 { font-size: 1.5rem; margin-bottom: 14px; color: var(--gold); }
+  .conclusion-card p { color: rgba(255,255,255,.8); font-size: .95rem; line-height: 1.75; margin-bottom: 0; }
+
+  /* ── Print ────────────────────────────────────────────────────── */
+  @media print {
+    body { background: white; font-size: 11px; }
+    .cover { min-height: 100vh; }
+    .section { page-break-before: always; }
+    .gap-card, .adv-card, .pricing-card { page-break-inside: avoid; box-shadow: none; }
+    a { color: inherit; text-decoration: none; }
+    .kpi-grid { break-inside: avoid; }
+    .pricing-grid { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     COVER PAGE
+══════════════════════════════════════════════════════════════════ -->
+<div class="cover">
+  <div class="cover-badge">Competitive Intelligence Report</div>
+  <h1>Competitor Analysis<br>vs ConnectPOS</h1>
+  <p class="subtitle">Local Ledger Pro · Feature Gap & Opportunity Assessment</p>
+  <div class="cover-meta">
+    <div class="cover-meta-item">
+      <label>Date</label>
+      <span>March 2026</span>
+    </div>
+    <div class="cover-meta-item">
+      <label>Competitor</label>
+      <span>ConnectPOS</span>
+    </div>
+    <div class="cover-meta-item">
+      <label>Version</label>
+      <span>1.0</span>
+    </div>
+    <div class="cover-meta-item">
+      <label>Status</label>
+      <span>Internal</span>
+    </div>
+  </div>
+  <div class="cover-stats">
+    <div class="cover-stat">
+      <span class="num">10</span>
+      <span class="lbl">Shared<br>Features</span>
+    </div>
+    <div class="cover-stat">
+      <span class="num">13</span>
+      <span class="lbl">Our Unique<br>Advantages</span>
+    </div>
+    <div class="cover-stat">
+      <span class="num">10</span>
+      <span class="lbl">Feature<br>Gaps</span>
+    </div>
+    <div class="cover-stat">
+      <span class="num">5</span>
+      <span class="lbl">Priority<br>Opportunities</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SECTION 1: EXECUTIVE SUMMARY
+══════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon" style="background:#eff6ff;">📊</div>
+    <div>
+      <h2>Executive Summary</h2>
+      <div class="section-sub">High-level comparison findings</div>
+    </div>
+  </div>
+
+  <div class="info-box">
+    ConnectPOS is a cloud-based POS platform priced at <strong>$49–$99 per register/month</strong> targeting retail businesses integrated with Magento, Shopify, and WooCommerce. This analysis compares their advertised feature set against Local Ledger Pro's current capabilities.
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <span class="kpi-num">10</span>
+      <div class="kpi-lbl">Features in Common</div>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-num">13</span>
+      <div class="kpi-lbl">Our Unique Strengths</div>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-num">10</span>
+      <div class="kpi-lbl">Gaps to Address</div>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-num">$0</span>
+      <div class="kpi-lbl">Monthly Cost (Offline-First)</div>
+    </div>
+  </div>
+
+  <div class="exec-grid">
+    <div class="exec-card">
+      <h4>Where We Match ConnectPOS Premium</h4>
+      <ul>
+        <li>Offline-first with real-time cloud sync</li>
+        <li>Multi-currency with live exchange rates</li>
+        <li>Advanced staff permissions (per-page, per-employee)</li>
+        <li>Discount rules, bundles, and buy-X-get-Y promotions</li>
+        <li>Stock transfers (warehouse ↔ floor)</li>
+        <li>Full inventory & purchase order management</li>
+      </ul>
+    </div>
+    <div class="exec-card" style="border-left-color: var(--green);">
+      <h4>Where We Outperform</h4>
+      <ul>
+        <li>Full double-entry accounting (Journal, Ledger, CoA)</li>
+        <li>RFM customer segmentation &amp; analytics</li>
+        <li>AI-driven offer suggestions based on inventory data</li>
+        <li>Complete audit log with before/after field diffs</li>
+        <li>Shift management with float &amp; variance tracking</li>
+        <li>Recurring expenses with auto-scheduling</li>
+        <li>Built-in help center &amp; onboarding wizard</li>
+      </ul>
+    </div>
+    <div class="exec-card" style="border-left-color: var(--red);">
+      <h4>Key Gaps vs ConnectPOS</h4>
+      <ul>
+        <li>No customer loyalty / points program</li>
+        <li>No gift card issuance or redemption</li>
+        <li>No eCommerce sync (Shopify / WooCommerce)</li>
+        <li>No customer-facing second screen display</li>
+        <li>No saved quotes or cart estimates</li>
+        <li>No omnichannel / click &amp; collect workflow</li>
+      </ul>
+    </div>
+    <div class="exec-card" style="border-left-color: var(--purple);">
+      <h4>Strategic Positioning</h4>
+      <ul>
+        <li>Offline-first PWA with zero per-register subscription cost</li>
+        <li>Integrated accounting eliminates need for separate software</li>
+        <li>Best fit: independent retailers without eCommerce dependency</li>
+        <li>Loyalty &amp; gift cards are the highest-ROI gaps to close next</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SECTION 2: COMPETITOR PROFILE
+══════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon" style="background:#fff7ed;">🏢</div>
+    <div>
+      <h2>Competitor Profile — ConnectPOS</h2>
+      <div class="section-sub">Pricing tiers and feature breakdown</div>
+    </div>
+  </div>
+
+  <p style="color:var(--muted); margin-bottom:24px; font-size:.9rem;">
+    ConnectPOS is a cloud POS platform built for Magento, Shopify, and WooCommerce merchants. It follows a per-register, per-month pricing model — meaning costs scale linearly with the number of checkout terminals. A 3-register store on their Premium plan costs <strong>$297/month</strong> or <strong>$267/month</strong> billed annually.
+  </p>
+
+  <div class="pricing-grid">
+    <!-- Standard -->
+    <div class="pricing-card">
+      <div class="pricing-card-header tier-std">
+        <div class="pricing-tier">Standard</div>
+        <div class="pricing-price">$49</div>
+        <div class="pricing-period">per register / month</div>
+      </div>
+      <div class="pricing-card-body">
+        <ul>
+          <li>eCommerce integrations</li>
+          <li>Product &amp; order management</li>
+          <li>Unlimited payment gateways</li>
+          <li>Reporting &amp; analytics tools</li>
+          <li>Staff access control</li>
+          <li>Real-time sync &amp; offline mode</li>
+          <li>24/7 support</li>
+        </ul>
+      </div>
+    </div>
+    <!-- Advanced -->
+    <div class="pricing-card">
+      <div class="pricing-card-header tier-adv">
+        <div class="popular-badge">Popular</div>
+        <div class="pricing-tier">Advanced</div>
+        <div class="pricing-price">$79</div>
+        <div class="pricing-period">per register / month</div>
+      </div>
+      <div class="pricing-card-body">
+        <ul>
+          <li class="from-tier">Everything in Standard, plus:</li>
+          <li>Quote &amp; cart management</li>
+          <li>Inventory &amp; shipping control</li>
+          <li>Partial &amp; gift card payments</li>
+          <li>Second screen customer display</li>
+          <li>Advanced checkout experience</li>
+          <li>Loyalty program support</li>
+        </ul>
+      </div>
+    </div>
+    <!-- Premium -->
+    <div class="pricing-card">
+      <div class="pricing-card-header tier-prem">
+        <div class="pricing-tier">Premium</div>
+        <div class="pricing-price">$99</div>
+        <div class="pricing-period">per register / month</div>
+      </div>
+      <div class="pricing-card-body">
+        <ul>
+          <li class="from-tier">Everything in Advanced, plus:</li>
+          <li>Stock transfer &amp; stock-take</li>
+          <li>Multi-source inventory</li>
+          <li>Multi-currency &amp; converter</li>
+          <li>Omnichannel &amp; click &amp; collect</li>
+          <li>Custom staff permissions</li>
+          <li>Discount rules</li>
+          <li>Priority support</li>
+        </ul>
+      </div>
+    </div>
+    <!-- Enterprise -->
+    <div class="pricing-card">
+      <div class="pricing-card-header tier-ent">
+        <div class="pricing-tier">Enterprise</div>
+        <div class="pricing-price">Custom</div>
+        <div class="pricing-period">negotiated pricing</div>
+      </div>
+      <div class="pricing-card-body">
+        <ul>
+          <li class="from-tier">Everything in Premium, plus:</li>
+          <li>Dedicated consultant &amp; assistance</li>
+          <li>Unlimited onboarding</li>
+          <li>Personal account manager</li>
+          <li>API consultation &amp; guidance</li>
+          <li>Manage 100+ global stores</li>
+          <li>Industry customization</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SECTION 3: FEATURE PARITY MATRIX
+══════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon" style="background:#f0fdf4;">⚖️</div>
+    <div>
+      <h2>Feature Parity Matrix</h2>
+      <div class="section-sub">Side-by-side feature comparison across all categories</div>
+    </div>
+  </div>
+
+  <div class="warn-box">
+    ConnectPOS only advertises high-level feature categories — internal sub-features may vary. This comparison is based on publicly listed capabilities on their pricing page (March 2026).
+  </div>
+
+  <table class="parity-table">
+    <thead>
+      <tr>
+        <th style="width:38%">Feature</th>
+        <th style="width:16%">Local Ledger Pro</th>
+        <th style="width:16%">ConnectPOS</th>
+        <th style="width:30%">Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- Core POS -->
+      <tr class="category-row"><td colspan="4">Core POS</td></tr>
+      <tr>
+        <td>Product &amp; inventory management</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-yes">✓</span></td>
+        <td>Standard tier</td>
+      </tr>
+      <tr>
+        <td>Offline mode with sync</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-yes">✓</span></td>
+        <td>We use IndexedDB / Supabase; they use cloud sync</td>
+      </tr>
+      <tr>
+        <td>Multiple payment methods</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-yes">✓</span></td>
+        <td>Standard tier (unlimited gateways)</td>
+      </tr>
+      <tr>
+        <td>Barcode / QR scanning</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-yes">✓</span></td>
+        <td>Both support scanning at POS</td>
+      </tr>
+      <tr>
+        <td>Returns &amp; refunds</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-yes">✓</span></td>
+        <td>We offer full return workflow with stock reversal</td>
+      </tr>
+      <tr>
+        <td>Partial payments</td>
+        <td><span class="check-no">✗</span></td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="tier-tag adv">Advanced</span> — not yet implemented</td>
+      </tr>
+      <tr>
+        <td>Gift card payments</td>
+        <td><span class="check-no">✗</span></td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="tier-tag adv">Advanced</span> — gap to address</td>
+      </tr>
+      <tr>
+        <td>Customer-facing second screen</td>
+        <td><span class="check-no">✗</span></td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="tier-tag adv">Advanced</span> — gap to address</td>
+      </tr>
+      <tr>
+        <td>Quote &amp; cart management</td>
+        <td><span class="check-no">✗</span></td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="tier-tag adv">Advanced</span> — saved quotes / estimates</td>
+      </tr>
+
+      <!-- Inventory & Stock -->
+      <tr class="category-row"><td colspan="4">Inventory &amp; Stock</td></tr>
+      <tr>
+        <td>Purchase orders</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="tier-tag adv">Advanced</span></td>
+      </tr>
+      <tr>
+        <td>Stock transfers</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="tier-tag prem">Premium</span> — we have warehouse ↔ floor transfers</td>
+      </tr>
+      <tr>
+        <td>Multi-source / multi-location inventory</td>
+        <td><span class="check-no">✗</span></td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="tier-tag prem">Premium</span> — multi-branch is planned for us</td>
+      </tr>
+      <tr>
+        <td>Low stock alerts &amp; reorder points</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-yes">✓</span></td>
+        <td>We also have ABC analysis &amp; dead stock detection</td>
+      </tr>
+      <tr>
+        <td>Shipping &amp; delivery management</td>
+        <td><span class="check-no">✗</span></td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="tier-tag adv">Advanced</span> — not in scope currently</td>
+      </tr>
+      <tr>
+        <td>Omnichannel / click &amp; collect</td>
+        <td><span class="check-no">✗</span></td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="tier-tag prem">Premium</span> — not in scope currently</td>
+      </tr>
+
+      <!-- Pricing & Promotions -->
+      <tr class="category-row"><td colspan="4">Pricing &amp; Promotions</td></tr>
+      <tr>
+        <td>Discount rules</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="tier-tag prem">Premium</span> — we have manual + offer-based discounts</td>
+      </tr>
+      <tr>
+        <td>Bundle offers</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-yes">✓</span></td>
+        <td>We support bundles and buy-X-get-Y</td>
+      </tr>
+      <tr>
+        <td>Loyalty &amp; points program</td>
+        <td><span class="check-no">✗</span></td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="tier-tag adv">Advanced</span> — high priority gap</td>
+      </tr>
+
+      <!-- Staff & Access -->
+      <tr class="category-row"><td colspan="4">Staff &amp; Access Control</td></tr>
+      <tr>
+        <td>Role-based access control</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-yes">✓</span></td>
+        <td>Standard tier</td>
+      </tr>
+      <tr>
+        <td>Per-page custom permissions</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="tier-tag prem">Premium</span> — we offer None/Read/Read-Write per page</td>
+      </tr>
+      <tr>
+        <td>Shift management &amp; cash float</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-no">✗</span></td>
+        <td>Our exclusive — opening float, variance, close shift</td>
+      </tr>
+      <tr>
+        <td>Employee time tracking</td>
+        <td><span class="check-no">✗</span></td>
+        <td><span class="check-no">✗</span></td>
+        <td>Neither; we have it on our feature roadmap</td>
+      </tr>
+
+      <!-- Analytics & Reporting -->
+      <tr class="category-row"><td colspan="4">Analytics &amp; Reporting</td></tr>
+      <tr>
+        <td>Sales &amp; revenue reports</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-yes">✓</span></td>
+        <td>Standard tier</td>
+      </tr>
+      <tr>
+        <td>Product / category analytics</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-yes">✓</span></td>
+        <td>Standard tier</td>
+      </tr>
+      <tr>
+        <td>RFM customer segmentation</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-no">✗</span></td>
+        <td>Our exclusive — Champion, Loyal, At-Risk, Lost segments</td>
+      </tr>
+      <tr>
+        <td>eCommerce integrations</td>
+        <td><span class="check-no">✗</span></td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="tier-tag std">Standard</span> — Shopify, WooCommerce, Magento</td>
+      </tr>
+      <tr>
+        <td>Custom report builder</td>
+        <td><span class="check-no">✗</span></td>
+        <td><span class="check-no">✗</span></td>
+        <td>Neither; we have it on our feature roadmap</td>
+      </tr>
+
+      <!-- Accounting & Finance -->
+      <tr class="category-row"><td colspan="4">Accounting &amp; Finance</td></tr>
+      <tr>
+        <td>Double-entry accounting</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-no">✗</span></td>
+        <td>Our exclusive — full Journal, Ledger, CoA, A/R, A/P</td>
+      </tr>
+      <tr>
+        <td>P&amp;L financial reports</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-no">✗</span></td>
+        <td>Our exclusive — gross profit, net profit, expense breakdown</td>
+      </tr>
+      <tr>
+        <td>Invoicing</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-no">✗</span></td>
+        <td>Our exclusive — with multi-currency &amp; status tracking</td>
+      </tr>
+      <tr>
+        <td>Recurring expenses</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-no">✗</span></td>
+        <td>Our exclusive — auto-scheduled recurring cost tracking</td>
+      </tr>
+      <tr>
+        <td>Accounts payable / receivable</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-no">✗</span></td>
+        <td>Our exclusive — with payment recording &amp; overdue tracking</td>
+      </tr>
+
+      <!-- Multi-Currency & Localization -->
+      <tr class="category-row"><td colspan="4">Multi-Currency &amp; Localization</td></tr>
+      <tr>
+        <td>Multi-currency support</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="tier-tag prem">Premium</span> — we include live exchange rates + history</td>
+      </tr>
+      <tr>
+        <td>Arabic / RTL language support</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-no">✗</span></td>
+        <td>Our exclusive — full RTL layout &amp; Arabic translations</td>
+      </tr>
+
+      <!-- Compliance & Audit -->
+      <tr class="category-row"><td colspan="4">Compliance &amp; Audit</td></tr>
+      <tr>
+        <td>Audit log</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-no">✗</span></td>
+        <td>Our exclusive — before/after field diffs, price override tracking</td>
+      </tr>
+      <tr>
+        <td>Price override audit trail</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-no">✗</span></td>
+        <td>Our exclusive — minimum margin protection with logging</td>
+      </tr>
+
+      <!-- Platform -->
+      <tr class="category-row"><td colspan="4">Platform &amp; Integration</td></tr>
+      <tr>
+        <td>PWA / installable app</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-no">✗</span></td>
+        <td>Our exclusive — works offline, installable on device</td>
+      </tr>
+      <tr>
+        <td>API / webhooks</td>
+        <td><span class="check-no">✗</span></td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="tier-tag ent">Enterprise</span> — not yet implemented</td>
+      </tr>
+      <tr>
+        <td>Bulk import / export (Excel, CSV, JSON)</td>
+        <td><span class="check-yes">✓</span></td>
+        <td><span class="check-no">✗</span></td>
+        <td>Our exclusive — all entities exportable</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SECTION 4: OUR COMPETITIVE ADVANTAGES
+══════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon" style="background:#f0fdf4;">⭐</div>
+    <div>
+      <h2>Our Competitive Advantages</h2>
+      <div class="section-sub">13 capabilities Local Ledger Pro has that ConnectPOS does not advertise</div>
+    </div>
+  </div>
+
+  <div class="info-box">
+    These are features exclusive to Local Ledger Pro — either not present in ConnectPOS at any tier, or representing significantly deeper functionality than their equivalent.
+  </div>
+
+  <div class="adv-grid">
+    <div class="adv-card">
+      <div class="adv-card-icon">📒</div>
+      <h4>Full Double-Entry Accounting</h4>
+      <p>Journal entries, General Ledger, Chart of Accounts, and Accounts Payable/Receivable — ConnectPOS is POS-only with no accounting module.</p>
+    </div>
+    <div class="adv-card">
+      <div class="adv-card-icon">📈</div>
+      <h4>P&amp;L Financial Reports</h4>
+      <p>Gross revenue, COGS, gross profit, operating expenses, and net profit with period comparison and monthly trend charts — not available in ConnectPOS.</p>
+    </div>
+    <div class="adv-card">
+      <div class="adv-card-icon">🧠</div>
+      <h4>AI-Driven Offer Suggestions</h4>
+      <p>Score-based recommendations powered by inventory velocity and dead stock detection — ConnectPOS has no equivalent AI recommendation engine.</p>
+    </div>
+    <div class="adv-card">
+      <div class="adv-card-icon">👥</div>
+      <h4>RFM Customer Segmentation</h4>
+      <p>Champion, Loyal, At-Risk, Lost, and New customer segments with visual breakdowns — ConnectPOS has no RFM or behavioral segmentation.</p>
+    </div>
+    <div class="adv-card">
+      <div class="adv-card-icon">🔍</div>
+      <h4>Complete Audit Log</h4>
+      <p>Every CREATE/UPDATE/DELETE action logged with before/after field diffs, user, timestamp, and entity tracking — ConnectPOS has no audit trail.</p>
+    </div>
+    <div class="adv-card">
+      <div class="adv-card-icon">🔒</div>
+      <h4>Price Override Audit Trail</h4>
+      <p>Minimum margin protection with logged overrides — ConnectPOS has discount rules but no margin floor or price change audit capability.</p>
+    </div>
+    <div class="adv-card">
+      <div class="adv-card-icon">🕐</div>
+      <h4>Shift Management</h4>
+      <p>Opening float, running cash totals, expected vs actual cash, variance tracking on close — ConnectPOS has no shift register module.</p>
+    </div>
+    <div class="adv-card">
+      <div class="adv-card-icon">🔄</div>
+      <h4>Recurring Expenses</h4>
+      <p>Weekly/monthly/yearly auto-scheduled expense tracking with pause/resume — ConnectPOS has no expense management at all.</p>
+    </div>
+    <div class="adv-card">
+      <div class="adv-card-icon">🌐</div>
+      <h4>Arabic / RTL Language Support</h4>
+      <p>Full Arabic translation with RTL layout switching — ConnectPOS targets Western eCommerce markets with no RTL language support.</p>
+    </div>
+    <div class="adv-card">
+      <div class="adv-card-icon">📱</div>
+      <h4>Offline-First PWA</h4>
+      <p>Installable as a PWA with full offline capability via IndexedDB — ConnectPOS is cloud-native and cannot operate without internet for extended periods.</p>
+    </div>
+    <div class="adv-card">
+      <div class="adv-card-icon">📥</div>
+      <h4>Bulk Import / Export</h4>
+      <p>All entities (products, customers, providers, ledger) exportable as Excel, CSV, or JSON — ConnectPOS has no data portability features advertised.</p>
+    </div>
+    <div class="adv-card">
+      <div class="adv-card-icon">📘</div>
+      <h4>Built-in Help Center</h4>
+      <p>Full handbook with module-by-module guides, tips, and deep links — ConnectPOS relies on external support teams for onboarding.</p>
+    </div>
+    <div class="adv-card">
+      <div class="adv-card-icon">🧾</div>
+      <h4>Invoicing Module</h4>
+      <p>Create, send, and track invoices with multi-currency support, due dates, and payment status — ConnectPOS has no invoicing capability.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SECTION 5: GAP ANALYSIS
+══════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon" style="background:#fff1f2;">🚧</div>
+    <div>
+      <h2>Gap Analysis</h2>
+      <div class="section-sub">Features ConnectPOS offers that Local Ledger Pro does not yet have</div>
+    </div>
+  </div>
+
+  <!-- Gap 1: Loyalty Program -->
+  <div class="gap-card">
+    <div class="gap-header c-purple">
+      <div class="gap-num">1</div>
+      <h3>Customer Loyalty &amp; Points Program</h3>
+      <span class="priority-badge priority-high">High Priority</span>
+    </div>
+    <div class="gap-body">
+      <p class="gap-desc">ConnectPOS Advanced includes a loyalty program. Customers earn points per purchase and can redeem them at checkout. This is one of the most effective retention tools in retail and is already on our suggested features list. Implementing it would close a key gap vs ConnectPOS Advanced ($79/register) while strengthening our customer retention story.</p>
+      <div class="gap-meta">
+        <div class="gap-meta-box">
+          <h4>ConnectPOS Tier</h4>
+          <p><span class="tier-tag adv">Advanced — $79/register</span></p>
+        </div>
+        <div class="gap-meta-box">
+          <h4>Implementation Complexity</h4>
+          <p>Medium — new Points entity, POS integration, customer balance display</p>
+          <div class="effort-bar"><div class="effort-fill" style="width:55%; background:var(--gold);"></div></div>
+        </div>
+        <div class="gap-meta-box">
+          <h4>Business Impact</h4>
+          <p>High — repeat purchase incentive, direct competitive parity</p>
+          <div class="effort-bar"><div class="effort-fill" style="width:85%; background:var(--green);"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gap 2: Gift Cards -->
+  <div class="gap-card">
+    <div class="gap-header c-rose">
+      <div class="gap-num">2</div>
+      <h3>Gift Card Issuance &amp; Redemption</h3>
+      <span class="priority-badge priority-high">High Priority</span>
+    </div>
+    <div class="gap-body">
+      <p class="gap-desc">ConnectPOS Advanced supports gift card payments at checkout. Gift cards drive revenue by bringing in new customers and encouraging higher spending. They require a new Gift Card entity (code, balance, expiry), issuance flow, and redemption integration at the POS checkout screen.</p>
+      <div class="gap-meta">
+        <div class="gap-meta-box">
+          <h4>ConnectPOS Tier</h4>
+          <p><span class="tier-tag adv">Advanced — $79/register</span></p>
+        </div>
+        <div class="gap-meta-box">
+          <h4>Implementation Complexity</h4>
+          <p>Medium — gift card entity, balance tracking, POS payment method</p>
+          <div class="effort-bar"><div class="effort-fill" style="width:50%; background:var(--gold);"></div></div>
+        </div>
+        <div class="gap-meta-box">
+          <h4>Business Impact</h4>
+          <p>High — new revenue stream, customer acquisition tool</p>
+          <div class="effort-bar"><div class="effort-fill" style="width:80%; background:var(--green);"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gap 3: Saved Quotes -->
+  <div class="gap-card">
+    <div class="gap-header c-teal">
+      <div class="gap-num">3</div>
+      <h3>Saved Quotes &amp; Cart Management</h3>
+      <span class="priority-badge priority-medium">Medium Priority</span>
+    </div>
+    <div class="gap-body">
+      <p class="gap-desc">ConnectPOS Advanced supports quote creation and saved carts. This allows sales staff to build a cart, save it as a quote, share it with a customer, and convert it to a sale later. Particularly valuable in B2B or made-to-order retail scenarios where customers browse and decide later.</p>
+      <div class="gap-meta">
+        <div class="gap-meta-box">
+          <h4>ConnectPOS Tier</h4>
+          <p><span class="tier-tag adv">Advanced — $79/register</span></p>
+        </div>
+        <div class="gap-meta-box">
+          <h4>Implementation Complexity</h4>
+          <p>Medium — Quote entity, save/resume cart flow, quote-to-sale conversion</p>
+          <div class="effort-bar"><div class="effort-fill" style="width:55%; background:var(--gold);"></div></div>
+        </div>
+        <div class="gap-meta-box">
+          <h4>Business Impact</h4>
+          <p>Medium — improves B2B sales workflow</p>
+          <div class="effort-bar"><div class="effort-fill" style="width:60%; background:var(--green);"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gap 4: Customer Display -->
+  <div class="gap-card">
+    <div class="gap-header c-sky">
+      <div class="gap-num">4</div>
+      <h3>Second Screen / Customer Display</h3>
+      <span class="priority-badge priority-medium">Medium Priority</span>
+    </div>
+    <div class="gap-body">
+      <p class="gap-desc">ConnectPOS Advanced supports a customer-facing second screen that shows cart contents, totals, and payment confirmation during checkout. This improves trust and transparency at the point of sale. Could be implemented as a second browser tab or window showing a read-only checkout view.</p>
+      <div class="gap-meta">
+        <div class="gap-meta-box">
+          <h4>ConnectPOS Tier</h4>
+          <p><span class="tier-tag adv">Advanced — $79/register</span></p>
+        </div>
+        <div class="gap-meta-box">
+          <h4>Implementation Complexity</h4>
+          <p>Low-Medium — customer display route/tab showing live cart state via BroadcastChannel</p>
+          <div class="effort-bar"><div class="effort-fill" style="width:35%; background:var(--green);"></div></div>
+        </div>
+        <div class="gap-meta-box">
+          <h4>Business Impact</h4>
+          <p>Medium — improves customer trust and checkout experience</p>
+          <div class="effort-bar"><div class="effort-fill" style="width:55%; background:var(--green);"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gap 5: eCommerce Sync -->
+  <div class="gap-card">
+    <div class="gap-header c-indigo">
+      <div class="gap-num">5</div>
+      <h3>eCommerce Sync (Shopify / WooCommerce)</h3>
+      <span class="priority-badge priority-medium">Medium Priority</span>
+    </div>
+    <div class="gap-body">
+      <p class="gap-desc">ConnectPOS Standard natively integrates with Shopify, WooCommerce, and Magento — syncing products, orders, and stock in real-time. This is their core value proposition for online + in-store retailers. Already on our suggested features list. Would require webhook/API integration with major eCommerce platforms.</p>
+      <div class="gap-meta">
+        <div class="gap-meta-box">
+          <h4>ConnectPOS Tier</h4>
+          <p><span class="tier-tag std">Standard — $49/register</span></p>
+        </div>
+        <div class="gap-meta-box">
+          <h4>Implementation Complexity</h4>
+          <p>High — platform API integrations, sync conflict resolution, webhooks</p>
+          <div class="effort-bar"><div class="effort-fill" style="width:85%; background:var(--red);"></div></div>
+        </div>
+        <div class="gap-meta-box">
+          <h4>Business Impact</h4>
+          <p>Medium — high for online retailers; not needed for pure brick-and-mortar</p>
+          <div class="effort-bar"><div class="effort-fill" style="width:65%; background:var(--green);"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gap 6: Omnichannel -->
+  <div class="gap-card">
+    <div class="gap-header c-green">
+      <div class="gap-num">6</div>
+      <h3>Omnichannel &amp; Click &amp; Collect</h3>
+      <span class="priority-badge priority-low">Lower Priority</span>
+    </div>
+    <div class="gap-body">
+      <p class="gap-desc">ConnectPOS Premium supports click &amp; collect — customers place orders online and pick up in-store. Requires integration with an eCommerce platform and an order fulfillment workflow. Only relevant once eCommerce sync is implemented.</p>
+      <div class="gap-meta">
+        <div class="gap-meta-box">
+          <h4>ConnectPOS Tier</h4>
+          <p><span class="tier-tag prem">Premium — $99/register</span></p>
+        </div>
+        <div class="gap-meta-box">
+          <h4>Implementation Complexity</h4>
+          <p>High — depends on eCommerce sync; requires order fulfillment workflow</p>
+          <div class="effort-bar"><div class="effort-fill" style="width:90%; background:var(--red);"></div></div>
+        </div>
+        <div class="gap-meta-box">
+          <h4>Business Impact</h4>
+          <p>Low-Medium — niche use case for our target market</p>
+          <div class="effort-bar"><div class="effort-fill" style="width:40%; background:var(--gold);"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gap 7: Multi-source inventory -->
+  <div class="gap-card">
+    <div class="gap-header c-orange">
+      <div class="gap-num">7</div>
+      <h3>Multi-Source / Multi-Location Inventory</h3>
+      <span class="priority-badge priority-high">High Priority</span>
+    </div>
+    <div class="gap-body">
+      <p class="gap-desc">ConnectPOS Premium offers multi-source inventory management for businesses with multiple physical locations. This is already our top suggested feature (multi-branch support) and has a detailed 4-phase implementation plan documented separately.</p>
+      <div class="gap-meta">
+        <div class="gap-meta-box">
+          <h4>ConnectPOS Tier</h4>
+          <p><span class="tier-tag prem">Premium — $99/register</span></p>
+        </div>
+        <div class="gap-meta-box">
+          <h4>Implementation Complexity</h4>
+          <p>High — branch entity, per-branch data scoping, cross-branch transfers, consolidated reporting</p>
+          <div class="effort-bar"><div class="effort-fill" style="width:90%; background:var(--red);"></div></div>
+        </div>
+        <div class="gap-meta-box">
+          <h4>Business Impact</h4>
+          <p>High — unlocks growing businesses with 2+ locations</p>
+          <div class="effort-bar"><div class="effort-fill" style="width:90%; background:var(--green);"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gap 8: Shipping -->
+  <div class="gap-card">
+    <div class="gap-header c-slate">
+      <div class="gap-num">8</div>
+      <h3>Shipping &amp; Delivery Management</h3>
+      <span class="priority-badge priority-low">Lower Priority</span>
+    </div>
+    <div class="gap-body">
+      <p class="gap-desc">ConnectPOS Advanced includes shipping and delivery control — tracking shipments linked to orders. This is primarily relevant for businesses that fulfill eCommerce orders from their store, making it a dependency on eCommerce sync.</p>
+      <div class="gap-meta">
+        <div class="gap-meta-box">
+          <h4>ConnectPOS Tier</h4>
+          <p><span class="tier-tag adv">Advanced — $79/register</span></p>
+        </div>
+        <div class="gap-meta-box">
+          <h4>Implementation Complexity</h4>
+          <p>Medium — delivery entity, carrier integration, status tracking</p>
+          <div class="effort-bar"><div class="effort-fill" style="width:55%; background:var(--gold);"></div></div>
+        </div>
+        <div class="gap-meta-box">
+          <h4>Business Impact</h4>
+          <p>Low for pure brick-and-mortar; depends on eCommerce roadmap</p>
+          <div class="effort-bar"><div class="effort-fill" style="width:30%; background:var(--gold);"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gap 9: Partial Payments -->
+  <div class="gap-card">
+    <div class="gap-header c-amber">
+      <div class="gap-num">9</div>
+      <h3>Partial Payment Support</h3>
+      <span class="priority-badge priority-medium">Medium Priority</span>
+    </div>
+    <div class="gap-body">
+      <p class="gap-desc">ConnectPOS Advanced allows customers to pay a portion of the total at checkout and settle the remainder later. Useful for layaway or B2B accounts. We currently track accounts receivable separately but don't support split payment at POS checkout.</p>
+      <div class="gap-meta">
+        <div class="gap-meta-box">
+          <h4>ConnectPOS Tier</h4>
+          <p><span class="tier-tag adv">Advanced — $79/register</span></p>
+        </div>
+        <div class="gap-meta-box">
+          <h4>Implementation Complexity</h4>
+          <p>Medium — partial payment flow at POS, remaining balance ledger entry</p>
+          <div class="effort-bar"><div class="effort-fill" style="width:45%; background:var(--gold);"></div></div>
+        </div>
+        <div class="gap-meta-box">
+          <h4>Business Impact</h4>
+          <p>Medium — useful for credit sales and layaway</p>
+          <div class="effort-bar"><div class="effort-fill" style="width:55%; background:var(--green);"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gap 10: API -->
+  <div class="gap-card">
+    <div class="gap-header c-blue">
+      <div class="gap-num">10</div>
+      <h3>Public API &amp; Webhooks</h3>
+      <span class="priority-badge priority-low">Lower Priority</span>
+    </div>
+    <div class="gap-body">
+      <p class="gap-desc">ConnectPOS Enterprise includes API consultation and guidance for custom integrations. A public REST/webhook API would allow third-party integrations (accounting software, ERP, delivery platforms). Currently out of scope for our offline-first architecture but valuable for enterprise customers.</p>
+      <div class="gap-meta">
+        <div class="gap-meta-box">
+          <h4>ConnectPOS Tier</h4>
+          <p><span class="tier-tag ent">Enterprise — Custom</span></p>
+        </div>
+        <div class="gap-meta-box">
+          <h4>Implementation Complexity</h4>
+          <p>High — API design, authentication, rate limiting, documentation</p>
+          <div class="effort-bar"><div class="effort-fill" style="width:85%; background:var(--red);"></div></div>
+        </div>
+        <div class="gap-meta-box">
+          <h4>Business Impact</h4>
+          <p>Low for current SMB target; essential for enterprise expansion</p>
+          <div class="effort-bar"><div class="effort-fill" style="width:35%; background:var(--gold);"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SECTION 6: IMPLEMENTATION ROADMAP
+══════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon" style="background:#fff7ed;">🗺️</div>
+    <div>
+      <h2>Implementation Roadmap</h2>
+      <div class="section-sub">Top gap-closing opportunities ranked by effort vs impact</div>
+    </div>
+  </div>
+
+  <div class="info-box">
+    Ranked by the ratio of business impact to implementation effort. High-impact, low-effort items are prioritized first to deliver competitive parity quickly.
+  </div>
+
+  <table class="roadmap-table">
+    <thead>
+      <tr>
+        <th style="width:4%">#</th>
+        <th style="width:26%">Feature</th>
+        <th style="width:14%">Impact</th>
+        <th style="width:14%">Effort</th>
+        <th style="width:12%">Closes Tier</th>
+        <th style="width:30%">Key Implementation Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td>Customer Loyalty &amp; Points Program</td>
+        <td><span class="impact-pill impact-high">High</span></td>
+        <td><span class="effort-pill effort-medium">Medium</span></td>
+        <td><span class="tier-tag adv">Advanced</span></td>
+        <td>New Points entity; POS integration; customer balance display; tier levels (Bronze/Silver/Gold)</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td>Gift Card Issuance &amp; Redemption</td>
+        <td><span class="impact-pill impact-high">High</span></td>
+        <td><span class="effort-pill effort-medium">Medium</span></td>
+        <td><span class="tier-tag adv">Advanced</span></td>
+        <td>GiftCard entity with code + balance; issuance page; redemption as payment method at POS</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td>Multi-Branch / Multi-Location Inventory</td>
+        <td><span class="impact-pill impact-high">High</span></td>
+        <td><span class="effort-pill effort-high">High</span></td>
+        <td><span class="tier-tag prem">Premium</span></td>
+        <td>Branch entity; per-branch scoping; BranchContext; cross-branch transfers; consolidated dashboard</td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td>Second Screen / Customer Display</td>
+        <td><span class="impact-pill impact-medium">Medium</span></td>
+        <td><span class="effort-pill effort-low">Low</span></td>
+        <td><span class="tier-tag adv">Advanced</span></td>
+        <td>New /customer-display route; BroadcastChannel or SharedWorker to push live cart state</td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td>Saved Quotes &amp; Cart Management</td>
+        <td><span class="impact-pill impact-medium">Medium</span></td>
+        <td><span class="effort-pill effort-medium">Medium</span></td>
+        <td><span class="tier-tag adv">Advanced</span></td>
+        <td>Quote entity; save cart at POS; quote list page; convert quote → sale with one click</td>
+      </tr>
+      <tr>
+        <td>6</td>
+        <td>Partial Payments at POS</td>
+        <td><span class="impact-pill impact-medium">Medium</span></td>
+        <td><span class="effort-pill effort-medium">Medium</span></td>
+        <td><span class="tier-tag adv">Advanced</span></td>
+        <td>Split payment UI at checkout; remaining balance auto-creates A/R entry; linked to customer account</td>
+      </tr>
+      <tr>
+        <td>7</td>
+        <td>eCommerce Sync (Shopify / WooCommerce)</td>
+        <td><span class="impact-pill impact-medium">Medium</span></td>
+        <td><span class="effort-pill effort-high">High</span></td>
+        <td><span class="tier-tag std">Standard</span></td>
+        <td>Platform API connectors; product/order/stock sync; webhook listeners; conflict resolution</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SECTION 7: CONCLUSION
+══════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon" style="background:#f0fdf4;">🏁</div>
+    <div>
+      <h2>Conclusion &amp; Positioning</h2>
+      <div class="section-sub">Strategic takeaways and recommended focus</div>
+    </div>
+  </div>
+
+  <div class="conclusion-card">
+    <h3>Local Ledger Pro vs ConnectPOS — The Verdict</h3>
+    <p>
+      Local Ledger Pro already matches or exceeds ConnectPOS's <strong>Premium tier</strong> ($99/register/month) in inventory management, multi-currency, discount rules, custom staff permissions, and offline-first capabilities — all at zero subscription cost. More critically, we offer a <strong>full integrated accounting suite</strong> (double-entry journal, P&amp;L, A/R, A/P, audit log) that ConnectPOS does not provide at any tier, eliminating the need for a separate accounting system.
+    </p>
+    <br>
+    <p>
+      Our key gaps are in <strong>customer engagement features</strong> (loyalty points, gift cards) and <strong>eCommerce integration</strong> — areas where ConnectPOS excels because it was built for Shopify/Magento merchants. Closing the loyalty and gift card gaps first will deliver the highest competitive ROI for the least implementation effort, directly addressing their Advanced tier differentiators.
+    </p>
+    <br>
+    <p>
+      For independent brick-and-mortar retailers who need a complete POS + accounting solution with no per-register subscription cost, <strong>Local Ledger Pro is the stronger choice</strong>. ConnectPOS is better suited for businesses with an existing eCommerce storefront that need tight online/offline inventory sync.
+    </p>
+  </div>
+
+  <div class="exec-grid">
+    <div class="exec-card" style="border-left-color:var(--green);">
+      <h4>Immediate Wins (Next Sprint)</h4>
+      <ul>
+        <li>Customer loyalty &amp; points program</li>
+        <li>Gift card issuance &amp; redemption</li>
+        <li>Customer-facing second screen display</li>
+      </ul>
+    </div>
+    <div class="exec-card" style="border-left-color:var(--gold);">
+      <h4>Medium-Term Goals (Next Quarter)</h4>
+      <ul>
+        <li>Multi-branch / multi-location support</li>
+        <li>Saved quotes &amp; cart management</li>
+        <li>Partial payments at checkout</li>
+      </ul>
+    </div>
+    <div class="exec-card" style="border-left-color:var(--purple);">
+      <h4>Long-Term Roadmap</h4>
+      <ul>
+        <li>eCommerce sync (Shopify / WooCommerce)</li>
+        <li>Omnichannel &amp; click &amp; collect</li>
+        <li>Public API &amp; webhook system</li>
+      </ul>
+    </div>
+    <div class="exec-card" style="border-left-color:var(--accent);">
+      <h4>Maintain Our Lead In</h4>
+      <ul>
+        <li>Integrated double-entry accounting</li>
+        <li>Audit log &amp; price override trail</li>
+        <li>Offline-first PWA reliability</li>
+        <li>Arabic / RTL localization</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    Local Ledger Pro — Competitor Analysis Report · ConnectPOS vs Local Ledger Pro · March 2026 · Internal Use Only
+  </div>
+</div>
+
+</body>
+</html>

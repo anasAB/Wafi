@@ -1,0 +1,88 @@
+<h2>Home Screen — What changes?</h2>
+<p class="subtitle">The current HomePage has a "today's sales" card, low-stock card, and "New Sale" button. How should Epic 3 transform it?</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#f8fafc;border-radius:8px;padding:14px;font-family:sans-serif;direction:rtl;min-height:280px;font-size:11px">
+        <div style="font-size:12px;font-weight:600;color:#111;margin-bottom:8px">وافي — الرئيسية</div>
+        <!-- Period toggle -->
+        <div style="display:flex;background:#f3f4f6;border-radius:8px;margin-bottom:10px">
+          <div style="flex:1;background:#1A56DB;color:white;border-radius:6px;padding:5px;text-align:center">اليوم</div>
+          <div style="flex:1;padding:5px;text-align:center;color:#6b7280">الأسبوع</div>
+          <div style="flex:1;padding:5px;text-align:center;color:#6b7280">الشهر</div>
+        </div>
+        <!-- 3 cards -->
+        <div style="display:grid;grid-template-columns:1fr;gap:6px;margin-bottom:8px">
+          <div style="background:white;border-radius:8px;padding:10px;border-left:3px solid #1A56DB">
+            <div style="font-size:9px;color:#6b7280">المال الداخل</div>
+            <div style="font-size:18px;font-weight:700;color:#111">$450</div>
+            <div style="font-size:9px;color:#6b7280">6,525,000 ل.س</div>
+          </div>
+          <div style="background:white;border-radius:8px;padding:10px;border-left:3px solid #f97316">
+            <div style="font-size:9px;color:#6b7280">المصاريف</div>
+            <div style="font-size:18px;font-weight:700;color:#111">$80</div>
+            <div style="font-size:9px;color:#6b7280">1,160,000 ل.س</div>
+          </div>
+          <div style="background:white;border-radius:8px;padding:10px;border-left:3px solid #16a34a">
+            <div style="font-size:9px;color:#6b7280">الربح</div>
+            <div style="font-size:18px;font-weight:700;color:#16a34a">+$214</div>
+            <div style="font-size:9px;color:#6b7280">اليوم</div>
+          </div>
+        </div>
+        <!-- Add expense button -->
+        <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:7px;text-align:center;color:#16a34a;font-size:10px;margin-bottom:8px">+ إضافة مصروف</div>
+        <!-- Best sellers -->
+        <div style="background:white;border-radius:8px;padding:8px">
+          <div style="font-size:9px;font-weight:600;margin-bottom:4px">الأكثر مبيعاً</div>
+          <div style="font-size:9px;color:#6b7280">① شاشة سامسونج — 5 قطع — $225</div>
+          <div style="font-size:9px;color:#6b7280">② كابل HDMI — 12 قطع — $48</div>
+        </div>
+        <!-- Low stock from Epic 2 moved to bottom -->
+        <div style="background:#fefce8;border-radius:6px;padding:6px;margin-top:6px;font-size:9px;color:#d97706">⚠ مخزون منخفض (3)</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Full replacement (Recommended)</h3>
+      <p>Completely redesign the home screen around the dashboard. Period toggle at top, 3 metric cards, expense button, best sellers. Low-stock card moves below. "New Sale" stays as a sticky button at bottom.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#f8fafc;border-radius:8px;padding:14px;font-family:sans-serif;direction:rtl;min-height:280px;font-size:11px">
+        <div style="font-size:12px;font-weight:600;color:#111;margin-bottom:8px">وافي — الرئيسية</div>
+        <!-- Old today's sales card stays -->
+        <div style="background:white;border-radius:8px;padding:10px;margin-bottom:8px">
+          <div style="font-size:9px;color:#6b7280">مبيعات اليوم</div>
+          <div style="font-size:18px;font-weight:700;color:#111">$450</div>
+        </div>
+        <!-- Low stock card stays -->
+        <div style="background:#fefce8;border-radius:8px;padding:8px;margin-bottom:8px;font-size:9px;color:#d97706">⚠ مخزون منخفض (3)</div>
+        <!-- New dashboard section appended below -->
+        <div style="border-top:1px solid #e5e7eb;padding-top:8px;margin-bottom:6px">
+          <div style="font-size:9px;font-weight:600;color:#6b7280;margin-bottom:6px">لوحة الأعمال</div>
+          <div style="display:flex;gap:4px;margin-bottom:6px">
+            <div style="flex:1;background:white;border-radius:6px;padding:6px;text-align:center">
+              <div style="font-size:8px;color:#6b7280">مصاريف</div>
+              <div style="font-size:12px;font-weight:700">$80</div>
+            </div>
+            <div style="flex:1;background:white;border-radius:6px;padding:6px;text-align:center">
+              <div style="font-size:8px;color:#6b7280">ربح</div>
+              <div style="font-size:12px;font-weight:700;color:#16a34a">+$214</div>
+            </div>
+          </div>
+        </div>
+        <div style="background:#f0fdf4;border-radius:6px;padding:6px;text-align:center;font-size:9px;color:#16a34a">+ إضافة مصروف</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Additive (keep existing cards)</h3>
+      <p>Keep the existing "today's sales" card and low-stock card as-is. Add the dashboard section below as a new block. Less cohesive but avoids touching Epic 1 & 2 work.</p>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:20px">Click to select, then confirm in terminal.</p>

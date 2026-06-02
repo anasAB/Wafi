@@ -1,0 +1,2121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Local Ledger Pro — Product Feature Report</title>
+<style>
+  /* ── Reset & Base ─────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --navy:    #0f2044;
+    --navy2:   #1a3260;
+    --accent:  #2563eb;
+    --accent2: #3b82f6;
+    --gold:    #f59e0b;
+    --green:   #10b981;
+    --red:     #ef4444;
+    --purple:  #8b5cf6;
+    --teal:    #0891b2;
+    --text:    #1e293b;
+    --muted:   #64748b;
+    --border:  #e2e8f0;
+    --bg:      #f8fafc;
+    --white:   #ffffff;
+    --card-shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+  }
+
+  html { font-size: 14px; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: var(--text); background: var(--bg); line-height: 1.6; }
+
+  /* ── Typography ───────────────────────────────────────────────── */
+  h1 { font-size: 2.4rem; font-weight: 800; }
+  h2 { font-size: 1.6rem; font-weight: 700; }
+  h3 { font-size: 1.15rem; font-weight: 700; }
+  h4 { font-size: 1rem; font-weight: 600; }
+  p  { margin-bottom: .6rem; }
+
+  /* ── Cover Page ───────────────────────────────────────────────── */
+  .cover {
+    background: linear-gradient(135deg, var(--navy) 0%, var(--navy2) 60%, #1e4080 100%);
+    color: white;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 80px 100px;
+    page-break-after: always;
+    position: relative;
+    overflow: hidden;
+  }
+  .cover::before {
+    content: '';
+    position: absolute; top: -120px; right: -120px;
+    width: 500px; height: 500px;
+    border-radius: 50%;
+    background: rgba(37, 99, 235, .15);
+  }
+  .cover::after {
+    content: '';
+    position: absolute; bottom: -80px; left: -80px;
+    width: 350px; height: 350px;
+    border-radius: 50%;
+    background: rgba(245, 158, 11, .08);
+  }
+  .cover-badge {
+    background: var(--gold);
+    color: var(--navy);
+    font-size: .75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    padding: 4px 14px;
+    border-radius: 99px;
+    margin-bottom: 28px;
+    display: inline-block;
+  }
+  .cover h1 { font-size: 3.6rem; line-height: 1.1; margin-bottom: 16px; }
+  .cover .subtitle { font-size: 1.3rem; color: rgba(255,255,255,.7); margin-bottom: 48px; }
+  .cover-meta { display: flex; gap: 40px; }
+  .cover-meta-item label { font-size: .7rem; text-transform: uppercase; letter-spacing: .1em; color: rgba(255,255,255,.5); display: block; margin-bottom: 4px; }
+  .cover-meta-item span { font-size: 1rem; color: white; font-weight: 600; }
+  .cover-stats {
+    position: absolute; bottom: 60px; right: 100px;
+    display: flex; gap: 32px;
+  }
+  .cover-stat { text-align: center; }
+  .cover-stat .num { font-size: 2.4rem; font-weight: 800; color: var(--gold); display: block; }
+  .cover-stat .lbl { font-size: .7rem; color: rgba(255,255,255,.6); text-transform: uppercase; letter-spacing: .08em; }
+
+  /* ── Table of Contents ────────────────────────────────────────── */
+  .toc-page {
+    min-height: 100vh;
+    padding: 60px 80px;
+    page-break-after: always;
+    background: white;
+  }
+  .toc-page h2 { color: var(--navy); margin-bottom: 32px; padding-bottom: 12px; border-bottom: 3px solid var(--accent); }
+  .toc-section { margin-bottom: 24px; }
+  .toc-section-title { font-weight: 700; color: var(--navy2); font-size: .9rem; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8px; }
+  .toc-item { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px dotted var(--border); color: var(--text); text-decoration: none; }
+  .toc-item:hover { color: var(--accent); }
+  .toc-item .toc-num { color: var(--muted); font-size: .8rem; min-width: 24px; }
+  .toc-item .toc-name { flex: 1; padding: 0 12px; }
+  .toc-item .toc-route { font-family: monospace; font-size: .75rem; color: var(--muted); background: var(--bg); padding: 1px 6px; border-radius: 3px; }
+
+  /* ── Section Wrapper ──────────────────────────────────────────── */
+  .section {
+    padding: 60px 80px;
+    page-break-before: always;
+    background: white;
+  }
+  .section-header {
+    display: flex; align-items: center; gap: 16px;
+    margin-bottom: 32px; padding-bottom: 16px;
+    border-bottom: 3px solid var(--accent);
+  }
+  .section-icon {
+    width: 48px; height: 48px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.4rem; flex-shrink: 0;
+  }
+  .section-header h2 { color: var(--navy); }
+  .section-header .section-sub { color: var(--muted); font-size: .9rem; font-weight: 400; margin-top: 2px; }
+
+  /* ── Executive Summary ────────────────────────────────────────── */
+  .exec-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 32px; }
+  .exec-card {
+    background: var(--bg); border-radius: 10px; padding: 20px;
+    border-left: 4px solid var(--accent);
+  }
+  .exec-card h4 { color: var(--navy); margin-bottom: 8px; }
+  .exec-card ul { list-style: none; }
+  .exec-card ul li { padding: 3px 0; color: var(--text); font-size: .88rem; }
+  .exec-card ul li::before { content: '›'; color: var(--accent); margin-right: 8px; font-weight: 700; }
+
+  .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
+  .kpi-card { background: var(--navy); color: white; border-radius: 10px; padding: 20px; text-align: center; }
+  .kpi-card .kpi-num { font-size: 2rem; font-weight: 800; color: var(--gold); display: block; }
+  .kpi-card .kpi-lbl { font-size: .75rem; color: rgba(255,255,255,.65); text-transform: uppercase; letter-spacing: .06em; margin-top: 4px; }
+
+  /* ── Page Feature Cards ───────────────────────────────────────── */
+  .page-card {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 28px;
+    overflow: hidden;
+    box-shadow: var(--card-shadow);
+    page-break-inside: avoid;
+  }
+  .page-card-header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 16px 20px;
+    background: linear-gradient(90deg, var(--navy) 0%, var(--navy2) 100%);
+    color: white;
+  }
+  .page-num {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: rgba(255,255,255,.15);
+    display: flex; align-items: center; justify-content: center;
+    font-size: .8rem; font-weight: 700; flex-shrink: 0;
+  }
+  .page-card-header h3 { flex: 1; font-size: 1rem; }
+  .page-route {
+    font-family: monospace; font-size: .72rem;
+    background: rgba(255,255,255,.12); padding: 3px 10px; border-radius: 4px;
+    color: rgba(255,255,255,.8);
+  }
+  .page-card-body { padding: 18px 20px; }
+  .page-purpose {
+    font-size: .88rem; color: var(--muted); margin-bottom: 14px;
+    padding-bottom: 10px; border-bottom: 1px solid var(--border);
+    font-style: italic;
+  }
+  .features-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .feature-group h4 { font-size: .8rem; text-transform: uppercase; letter-spacing: .07em; color: var(--accent); margin-bottom: 8px; }
+  .feature-group ul { list-style: none; }
+  .feature-group ul li {
+    font-size: .82rem; padding: 3px 0; color: var(--text);
+    border-bottom: 1px solid #f1f5f9; display: flex; gap: 8px;
+  }
+  .feature-group ul li::before { content: '✓'; color: var(--green); font-weight: 700; flex-shrink: 0; }
+  .page-entities { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .entity-tag {
+    background: #eff6ff; color: var(--accent); font-size: .72rem;
+    padding: 2px 10px; border-radius: 99px; border: 1px solid #bfdbfe;
+    font-weight: 500;
+  }
+
+  /* ── Cross-Cutting Section ────────────────────────────────────── */
+  .cross-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .cross-card {
+    border: 1px solid var(--border); border-radius: 10px; padding: 20px;
+    background: white; box-shadow: var(--card-shadow);
+  }
+  .cross-card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .cross-icon { font-size: 1.4rem; }
+  .cross-card h3 { font-size: 1rem; color: var(--navy); }
+  .cross-card p { font-size: .83rem; color: var(--muted); margin-bottom: 8px; }
+  .cross-card ul { list-style: none; }
+  .cross-card ul li { font-size: .82rem; color: var(--text); padding: 3px 0; }
+  .cross-card ul li::before { content: '•'; color: var(--accent); margin-right: 8px; font-weight: 700; }
+
+  /* ── Suggested Features ───────────────────────────────────────── */
+  .suggest-card {
+    border-radius: 12px; margin-bottom: 24px; overflow: hidden;
+    box-shadow: var(--card-shadow); page-break-inside: avoid;
+    border: 1px solid var(--border);
+  }
+  .suggest-header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 16px 20px;
+  }
+  .suggest-num {
+    width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .9rem; font-weight: 800; flex-shrink: 0;
+    color: white;
+  }
+  .suggest-header h3 { font-size: 1.05rem; color: white; flex: 1; }
+  .priority-badge {
+    font-size: .68rem; font-weight: 700; text-transform: uppercase;
+    padding: 3px 10px; border-radius: 99px; letter-spacing: .06em;
+  }
+  .priority-high   { background: rgba(239,68,68,.2); color: #fca5a5; }
+  .priority-medium { background: rgba(245,158,11,.2); color: #fcd34d; }
+  .priority-low    { background: rgba(16,185,129,.2); color: #6ee7b7; }
+  .suggest-body { padding: 18px 20px; background: white; }
+  .suggest-desc { font-size: .88rem; color: var(--text); margin-bottom: 14px; line-height: 1.7; }
+  .suggest-details { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+  .suggest-detail-box { background: var(--bg); border-radius: 8px; padding: 12px; }
+  .suggest-detail-box h4 { font-size: .72rem; text-transform: uppercase; letter-spacing: .07em; color: var(--accent); margin-bottom: 8px; }
+  .suggest-detail-box ul { list-style: none; }
+  .suggest-detail-box ul li { font-size: .8rem; color: var(--text); padding: 2px 0; }
+  .suggest-detail-box ul li::before { content: '›'; color: var(--accent); margin-right: 6px; font-weight: 700; }
+  .impact-bar { height: 6px; border-radius: 3px; background: #e2e8f0; margin-top: 4px; overflow: hidden; }
+  .impact-fill { height: 100%; border-radius: 3px; background: var(--green); }
+
+  /* ── Color accent variants for suggest cards ──────────────────── */
+  .c-blue   { background: linear-gradient(90deg, #1d4ed8 0%, #2563eb 100%); }
+  .c-purple { background: linear-gradient(90deg, #6d28d9 0%, #7c3aed 100%); }
+  .c-teal   { background: linear-gradient(90deg, #0e7490 0%, #0891b2 100%); }
+  .c-green  { background: linear-gradient(90deg, #059669 0%, #10b981 100%); }
+  .c-orange { background: linear-gradient(90deg, #b45309 0%, #d97706 100%); }
+  .c-rose   { background: linear-gradient(90deg, #be185d 0%, #db2777 100%); }
+  .c-indigo { background: linear-gradient(90deg, #3730a3 0%, #4f46e5 100%); }
+  .c-sky    { background: linear-gradient(90deg, #0369a1 0%, #0284c7 100%); }
+  .c-lime   { background: linear-gradient(90deg, #3f6212 0%, #65a30d 100%); }
+  .c-amber  { background: linear-gradient(90deg, #92400e 0%, #b45309 100%); }
+
+  /* ── Footer ───────────────────────────────────────────────────── */
+  .page-footer {
+    text-align: center; color: var(--muted); font-size: .75rem;
+    padding: 24px; border-top: 1px solid var(--border); margin-top: 40px;
+  }
+
+  /* ── Print Styles ─────────────────────────────────────────────── */
+  @media print {
+    body { background: white; font-size: 11px; }
+    .cover { min-height: 100vh; }
+    .section, .toc-page { page-break-before: always; }
+    .page-card { page-break-inside: avoid; box-shadow: none; }
+    .suggest-card { page-break-inside: avoid; box-shadow: none; }
+    a { color: inherit; text-decoration: none; }
+    .kpi-grid { break-inside: avoid; }
+    .cross-grid { break-inside: avoid; }
+  }
+
+  /* ── Divider ──────────────────────────────────────────────────── */
+  .divider { height: 2px; background: var(--border); margin: 32px 0; }
+
+  /* ── Alert box ────────────────────────────────────────────────── */
+  .info-box {
+    background: #eff6ff; border-left: 4px solid var(--accent);
+    border-radius: 6px; padding: 14px 18px; margin-bottom: 20px;
+    font-size: .85rem; color: var(--navy2);
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!--  COVER PAGE                                                      -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="cover">
+  <div class="cover-badge">Product Owner Report</div>
+  <h1>Local Ledger Pro</h1>
+  <p class="subtitle">Comprehensive Feature Inventory &amp; Product Roadmap Recommendations</p>
+  <div class="cover-meta">
+    <div class="cover-meta-item">
+      <label>Report Date</label>
+      <span>March 2026</span>
+    </div>
+    <div class="cover-meta-item">
+      <label>Version</label>
+      <span>1.1 — Updated</span>
+    </div>
+    <div class="cover-meta-item">
+      <label>Prepared by</label>
+      <span>Product &amp; Analytics Team</span>
+    </div>
+    <div class="cover-meta-item">
+      <label>Classification</label>
+      <span>Internal — Confidential</span>
+    </div>
+  </div>
+  <div class="cover-stats">
+    <div class="cover-stat"><span class="num">26</span><span class="lbl">Pages / Modules</span></div>
+    <div class="cover-stat"><span class="num">180+</span><span class="lbl">Features</span></div>
+    <div class="cover-stat"><span class="num">24</span><span class="lbl">Data Entities</span></div>
+    <div class="cover-stat"><span class="num">10</span><span class="lbl">Suggested Features</span></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!--  TABLE OF CONTENTS                                               -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="toc-page">
+  <h2>Table of Contents</h2>
+
+  <div class="toc-section">
+    <div class="toc-section-title">Overview</div>
+    <a class="toc-item" href="#exec">
+      <span class="toc-num">01</span>
+      <span class="toc-name">Executive Summary</span>
+      <span class="toc-route">App overview &amp; architecture</span>
+    </a>
+  </div>
+
+  <div class="toc-section">
+    <div class="toc-section-title">Application Pages &amp; Features</div>
+    <a class="toc-item" href="#p1"><span class="toc-num">1</span><span class="toc-name">Dashboard</span><span class="toc-route">/</span></a>
+    <a class="toc-item" href="#p2"><span class="toc-num">2</span><span class="toc-name">Products</span><span class="toc-route">/products</span></a>
+    <a class="toc-item" href="#p3"><span class="toc-num">3</span><span class="toc-name">Sales (Point of Sale)</span><span class="toc-route">/sales</span></a>
+    <a class="toc-item" href="#p4"><span class="toc-num">4</span><span class="toc-name">Returns</span><span class="toc-route">/returns</span></a>
+    <a class="toc-item" href="#p5"><span class="toc-num">5</span><span class="toc-name">Expenses</span><span class="toc-route">/expenses</span></a>
+    <a class="toc-item" href="#p6"><span class="toc-num">6</span><span class="toc-name">Categories</span><span class="toc-route">/categories</span></a>
+    <a class="toc-item" href="#p7"><span class="toc-num">7</span><span class="toc-name">Providers (Suppliers)</span><span class="toc-route">/providers</span></a>
+    <a class="toc-item" href="#p8"><span class="toc-num">8</span><span class="toc-name">Purchase Orders</span><span class="toc-route">/purchase-orders</span></a>
+    <a class="toc-item" href="#p9"><span class="toc-num">9</span><span class="toc-name">Warehouse</span><span class="toc-route">/warehouse</span></a>
+    <a class="toc-item" href="#p10"><span class="toc-num">10</span><span class="toc-name">Customers</span><span class="toc-route">/customers</span></a>
+    <a class="toc-item" href="#p11"><span class="toc-num">11</span><span class="toc-name">Invoices</span><span class="toc-route">/invoices</span></a>
+    <a class="toc-item" href="#p12"><span class="toc-num">12</span><span class="toc-name">Chart of Accounts</span><span class="toc-route">/accounts</span></a>
+    <a class="toc-item" href="#p13"><span class="toc-num">13</span><span class="toc-name">Journal Entries</span><span class="toc-route">/journal</span></a>
+    <a class="toc-item" href="#p14"><span class="toc-num">14</span><span class="toc-name">General Ledger</span><span class="toc-route">/ledger</span></a>
+    <a class="toc-item" href="#p15"><span class="toc-num">15</span><span class="toc-name">Accounts Payable / Receivable</span><span class="toc-route">/accounts-payable</span></a>
+    <a class="toc-item" href="#p16"><span class="toc-num">16</span><span class="toc-name">Financial Reports</span><span class="toc-route">/reports</span></a>
+    <a class="toc-item" href="#p17"><span class="toc-num">17</span><span class="toc-name">Analytics</span><span class="toc-route">/analytics</span></a>
+    <a class="toc-item" href="#p18"><span class="toc-num">18</span><span class="toc-name">Offers Management</span><span class="toc-route">/offers</span></a>
+    <a class="toc-item" href="#p19"><span class="toc-num">19</span><span class="toc-name">Shifts (Cash Register)</span><span class="toc-route">/shifts</span></a>
+    <a class="toc-item" href="#p20"><span class="toc-num">20</span><span class="toc-name">Audit Log</span><span class="toc-route">/audit-log</span></a>
+    <a class="toc-item" href="#p21"><span class="toc-num">21</span><span class="toc-name">Notifications</span><span class="toc-route">/notifications</span></a>
+    <a class="toc-item" href="#p22"><span class="toc-num">22</span><span class="toc-name">Settings</span><span class="toc-route">/settings</span></a>
+    <a class="toc-item" href="#p23"><span class="toc-num">23</span><span class="toc-name">Handbook (Help Center)</span><span class="toc-route">/handbook</span></a>
+    <a class="toc-item" href="#p24"><span class="toc-num">24</span><span class="toc-name">Landing Page</span><span class="toc-route">/landing</span></a>
+    <a class="toc-item" href="#p25"><span class="toc-num">25</span><span class="toc-name">Login &amp; Authentication</span><span class="toc-route">/login</span></a>
+    <a class="toc-item" href="#p26"><span class="toc-num">26</span><span class="toc-name">Onboarding Wizard</span><span class="toc-route">overlay</span></a>
+  </div>
+
+  <div class="toc-section">
+    <div class="toc-section-title">Platform-Wide Capabilities</div>
+    <a class="toc-item" href="#cross"><span class="toc-num">—</span><span class="toc-name">Cross-Cutting Features</span><span class="toc-route">RBAC, Sync, PWA, i18n…</span></a>
+  </div>
+
+  <div class="toc-section">
+    <div class="toc-section-title">Product Roadmap</div>
+    <a class="toc-item" href="#suggested"><span class="toc-num">—</span><span class="toc-name">Suggested Features (10 Recommendations)</span><span class="toc-route">PO Analysis</span></a>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!--  SECTION 1 — EXECUTIVE SUMMARY                                   -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="section" id="exec">
+  <div class="section-header">
+    <div class="section-icon" style="background:#eff6ff;">📊</div>
+    <div>
+      <h2>Executive Summary</h2>
+      <div class="section-sub">Application overview, target audience, and technology stack</div>
+    </div>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi-card"><span class="kpi-num">26</span><span class="kpi-lbl">Modules / Pages</span></div>
+    <div class="kpi-card"><span class="kpi-num">180+</span><span class="kpi-lbl">Distinct Features</span></div>
+    <div class="kpi-card"><span class="kpi-num">24</span><span class="kpi-lbl">Data Entities</span></div>
+    <div class="kpi-card"><span class="kpi-num">50+</span><span class="kpi-lbl">Custom Hooks</span></div>
+  </div>
+
+  <div class="info-box">
+    <strong>What is Local Ledger Pro?</strong> An integrated, offline-first Point-of-Sale and accounting platform for small-to-medium retail businesses. It combines daily retail operations (sales, inventory, customers) with complete double-entry bookkeeping and financial reporting — all running locally in the browser with optional cloud synchronisation via Supabase.
+  </div>
+
+  <div class="exec-grid">
+    <div class="exec-card">
+      <h4>Core Domain</h4>
+      <ul>
+        <li>Retail Point-of-Sale (POS)</li>
+        <li>Inventory &amp; Warehouse Management</li>
+        <li>Double-Entry Bookkeeping</li>
+        <li>Financial Reporting &amp; Analytics</li>
+        <li>Customer &amp; Supplier Relationships</li>
+        <li>Employee &amp; Permission Management</li>
+      </ul>
+    </div>
+    <div class="exec-card">
+      <h4>Target Users</h4>
+      <ul>
+        <li>Small retail shops &amp; boutiques</li>
+        <li>Service businesses with physical inventory</li>
+        <li>Business owners needing accounting + POS</li>
+        <li>Businesses in low-connectivity areas (offline-first)</li>
+        <li>Teams with owner + employee roles</li>
+        <li>Multi-currency businesses</li>
+      </ul>
+    </div>
+    <div class="exec-card">
+      <h4>Technology Highlights</h4>
+      <ul>
+        <li>React 18 + TypeScript 5.8 + Vite 5</li>
+        <li>Material-UI 7 + shadcn/ui components</li>
+        <li>Dexie (IndexedDB) — offline-first local DB</li>
+        <li>Supabase — optional cloud sync &amp; backup</li>
+        <li>MUI X-Charts + Recharts — data visualisation</li>
+        <li>Vite PWA — progressive web app support</li>
+      </ul>
+    </div>
+    <div class="exec-card">
+      <h4>Key Differentiators</h4>
+      <ul>
+        <li>Fully offline — works without internet</li>
+        <li>Auto cloud sync on reconnect</li>
+        <li>PIN-based auth with recovery phrases</li>
+        <li>Page-level RBAC for employees</li>
+        <li>AI-powered offer suggestions</li>
+        <li>RFM customer segmentation built-in</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!--  SECTION 2 — APPLICATION PAGES                                   -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon" style="background:#f0fdf4;">🗂️</div>
+    <div>
+      <h2>Application Pages &amp; Features</h2>
+      <div class="section-sub">Detailed inventory of all 26 pages with features and data entities</div>
+    </div>
+  </div>
+
+  <!-- PAGE 1: DASHBOARD -->
+  <div class="page-card" id="p1">
+    <div class="page-card-header">
+      <div class="page-num">1</div>
+      <h3>Dashboard</h3>
+      <span class="page-route">/</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">Central hub providing a real-time overview of business health, alerts, and daily performance KPIs.</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>KPI &amp; Metrics</h4>
+          <ul>
+            <li>Total Sales card with monthly trend</li>
+            <li>Total Expenses card with cost trend</li>
+            <li>Net Profit card with margin %</li>
+            <li>Average Sale Value card</li>
+            <li>6-month revenue vs expenses chart</li>
+            <li>Daily summary performance widget</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>Widgets &amp; Alerts</h4>
+          <ul>
+            <li>Low Stock Alert widget</li>
+            <li>Recent Transactions widget</li>
+            <li>Goals / Targets progress tracker</li>
+            <li>Online / Offline status indicator</li>
+            <li>Cloud backup restore shortcut</li>
+            <li>Onboarding wizard launcher (owners)</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">Sale</span>
+        <span class="entity-tag">Expense</span>
+        <span class="entity-tag">Product</span>
+        <span class="entity-tag">Goal</span>
+        <span class="entity-tag">Notification</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 2: PRODUCTS -->
+  <div class="page-card" id="p2">
+    <div class="page-card-header">
+      <div class="page-num">2</div>
+      <h3>Products</h3>
+      <span class="page-route">/products</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">Full product catalog and inventory management with ABC analysis, dead stock detection, and bulk import.</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>Product Data</h4>
+          <ul>
+            <li>SKU, name, description, image</li>
+            <li>Category &amp; subcategory assignment</li>
+            <li>Transaction type: Sale / Rent / Both</li>
+            <li>Purchase price, sale price, rental price</li>
+            <li>Floor stock + warehouse stock levels</li>
+            <li>Discount &amp; active offer info</li>
+            <li>Product variants (size, colour)</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>Analytics &amp; Actions</h4>
+          <ul>
+            <li>ABC Analysis (A / B / C / New classification)</li>
+            <li>Dead stock identification (60-day rule)</li>
+            <li>Inventory turnover calculation</li>
+            <li>Add / Adjust stock dialogs</li>
+            <li>Full stock movement history</li>
+            <li>Bulk import via Excel / CSV</li>
+            <li>Search, category &amp; status filters</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">Product</span>
+        <span class="entity-tag">ProductVariant</span>
+        <span class="entity-tag">Category</span>
+        <span class="entity-tag">StockMovement</span>
+        <span class="entity-tag">Provider</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 3: SALES -->
+  <div class="page-card" id="p3">
+    <div class="page-card-header">
+      <div class="page-num">3</div>
+      <h3>Sales (Point of Sale)</h3>
+      <span class="page-route">/sales</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">Full POS interface for recording sales with barcode scanning, promotions, multi-currency, and receipt printing.</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>Checkout &amp; Cart</h4>
+          <ul>
+            <li>Product search &amp; category browse</li>
+            <li>Barcode / QR scanner integration</li>
+            <li>Add-to-cart with quantity adjustment</li>
+            <li>Bundle offer &amp; Buy-X-Get-Y support</li>
+            <li>Manual discount (% or fixed)</li>
+            <li>Tax calculation per transaction</li>
+            <li>Real-time profit calculation</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>Payment &amp; Compliance</h4>
+          <ul>
+            <li>Payment methods: Cash, Bank, Credit, Other</li>
+            <li>Multi-currency with live exchange rates</li>
+            <li>Minimum margin protection &amp; alerts</li>
+            <li>Price override audit trail</li>
+            <li>Receipt print / view dialog</li>
+            <li>Sales history with date &amp; method filters</li>
+            <li>Stock availability validation</li>
+            <li>Partial payment at checkout with balance due</li>
+            <li>Auto-creates A/R entry for unpaid balance</li>
+            <li>Receipt shows amount paid + balance owed</li>
+            <li>PARTIAL badge in sales history table</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">Sale</span>
+        <span class="entity-tag">SaleItem</span>
+        <span class="entity-tag">Customer</span>
+        <span class="entity-tag">Product</span>
+        <span class="entity-tag">CurrencyRate</span>
+        <span class="entity-tag">AuditLog</span>
+        <span class="entity-tag">CreditLedgerEntry</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 4: RETURNS -->
+  <div class="page-card" id="p4">
+    <div class="page-card-header">
+      <div class="page-num">4</div>
+      <h3>Returns</h3>
+      <span class="page-route">/returns</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">Process product returns from completed sales, select refund methods, and maintain return audit history.</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>Return Workflow</h4>
+          <ul>
+            <li>Search &amp; select original sale</li>
+            <li>Select items &amp; quantities to return</li>
+            <li>Return reason selection</li>
+            <li>Refund method: Cash, Bank, Credit, Store Credit</li>
+            <li>Notes / comments field</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>History &amp; Management</h4>
+          <ul>
+            <li>Return reference number tracking</li>
+            <li>Expandable row showing returned items</li>
+            <li>Status: Completed / Cancelled</li>
+            <li>Undo return capability</li>
+            <li>Automatic stock reversal on return</li>
+            <li>Full audit logging</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">Return</span>
+        <span class="entity-tag">ReturnItem</span>
+        <span class="entity-tag">Sale</span>
+        <span class="entity-tag">StockMovement</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 5: EXPENSES -->
+  <div class="page-card" id="p5">
+    <div class="page-card-header">
+      <div class="page-num">5</div>
+      <h3>Expenses</h3>
+      <span class="page-route">/expenses</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">Track one-off and recurring expenses with categories, payment methods, vendor attribution, and status management.</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>Regular Expenses</h4>
+          <ul>
+            <li>Date, category, account assignment</li>
+            <li>Amount &amp; payment method</li>
+            <li>Vendor name &amp; description</li>
+            <li>Status: Pending / Completed / Cancelled</li>
+            <li>Date range, category &amp; search filters</li>
+            <li>Edit &amp; delete dialogs</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>Recurring Expenses</h4>
+          <ul>
+            <li>Frequency: Daily / Weekly / Monthly / Yearly</li>
+            <li>Start &amp; end dates, next due date</li>
+            <li>Pause / Resume toggle</li>
+            <li>Automatic scheduling</li>
+            <li>Bulk delete support</li>
+            <li>Account &amp; payment method assignment</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">Expense</span>
+        <span class="entity-tag">RecurringExpense</span>
+        <span class="entity-tag">Category</span>
+        <span class="entity-tag">Account</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 6: CATEGORIES -->
+  <div class="page-card" id="p6">
+    <div class="page-card-header">
+      <div class="page-num">6</div>
+      <h3>Categories</h3>
+      <span class="page-route">/categories</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">Manage hierarchical product and expense categories with parent-child nesting and item counts.</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>Category Management</h4>
+          <ul>
+            <li>Product categories &amp; expense categories tabs</li>
+            <li>Parent-child hierarchy (unlimited depth)</li>
+            <li>Category colour coding</li>
+            <li>Product / expense count per category</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>Actions</h4>
+          <ul>
+            <li>Create category with parent selection</li>
+            <li>Edit category name &amp; colour</li>
+            <li>Delete with cascade option</li>
+            <li>Collapse / expand category tree</li>
+            <li>Create subcategories inline</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">Category</span>
+        <span class="entity-tag">Product</span>
+        <span class="entity-tag">Expense</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 7: PROVIDERS -->
+  <div class="page-card" id="p7">
+    <div class="page-card-header">
+      <div class="page-num">7</div>
+      <h3>Providers (Suppliers)</h3>
+      <span class="page-route">/providers</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">Maintain a complete supplier directory for linking to products and purchase orders.</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>Provider Data</h4>
+          <ul>
+            <li>Company name &amp; contact person</li>
+            <li>Phone, email, address</li>
+            <li>Notes &amp; additional info</li>
+            <li>Active provider count card</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>Actions</h4>
+          <ul>
+            <li>Add / Edit / Delete provider</li>
+            <li>Bulk import from Excel / CSV</li>
+            <li>Clickable contact icons</li>
+            <li>Empty state with CTA</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">Provider</span>
+        <span class="entity-tag">Product</span>
+        <span class="entity-tag">PurchaseOrder</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 8: PURCHASE ORDERS -->
+  <div class="page-card" id="p8">
+    <div class="page-card-header">
+      <div class="page-num">8</div>
+      <h3>Purchase Orders</h3>
+      <span class="page-route">/purchase-orders</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">Full purchase order lifecycle from creation through partial/full receipt, with cost tracking and status management.</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>PO Creation &amp; Tracking</h4>
+          <ul>
+            <li>Auto-generated PO number</li>
+            <li>Provider selection (autocomplete)</li>
+            <li>Product + SKU search, unit cost, quantity</li>
+            <li>Auto-calculated line &amp; order totals</li>
+            <li>Expected delivery date &amp; notes</li>
+            <li>Status: Draft → Ordered → Partial → Received → Cancelled</li>
+            <li>Payment terms (days) for cash flow projection</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>Receiving &amp; Metrics</h4>
+          <ul>
+            <li>Full or partial receipt workflow</li>
+            <li>Per-item quantity received tracking</li>
+            <li>Expandable rows with line items</li>
+            <li>Total POs, outstanding value, pending count</li>
+            <li>Cancel &amp; delete PO</li>
+            <li>Automatic stock update on receipt</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">PurchaseOrder</span>
+        <span class="entity-tag">PurchaseOrderItem</span>
+        <span class="entity-tag">Provider</span>
+        <span class="entity-tag">Product</span>
+        <span class="entity-tag">StockMovement</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 9: WAREHOUSE -->
+  <div class="page-card" id="p9">
+    <div class="page-card-header">
+      <div class="page-num">9</div>
+      <h3>Warehouse</h3>
+      <span class="page-route">/warehouse</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">Manage inventory across two physical locations — floor (display) and warehouse (storage) — with transfer tracking.</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>Stock View</h4>
+          <ul>
+            <li>Floor stock vs warehouse stock per product</li>
+            <li>Search by product name / SKU</li>
+            <li>Total floor &amp; warehouse stock metrics</li>
+            <li>Low floor stock indicators</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>Transfers</h4>
+          <ul>
+            <li>Transfer dialog with product search</li>
+            <li>Direction toggle (Floor ↔ Warehouse)</li>
+            <li>Quantity input &amp; validation</li>
+            <li>Transfer history audit log</li>
+            <li>Minimum floor quantity alerts</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">StockTransfer</span>
+        <span class="entity-tag">Product</span>
+        <span class="entity-tag">StockMovement</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 10: CUSTOMERS -->
+  <div class="page-card" id="p10">
+    <div class="page-card-header">
+      <div class="page-num">10</div>
+      <h3>Customers</h3>
+      <span class="page-route">/customers</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">Customer relationship management with built-in RFM segmentation, purchase history, and analytics visualisation.</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>Customer Data &amp; RFM</h4>
+          <ul>
+            <li>Name, email, phone, address, notes</li>
+            <li>Total purchases (auto-calculated)</li>
+            <li>RFM segments: Champion, Loyal, Potential Loyal, At-Risk, Lost, New, Needs Attention</li>
+            <li>Last purchase date &amp; days-since</li>
+            <li>Active / inactive status</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>Analytics &amp; Actions</h4>
+          <ul>
+            <li>Top customers bar chart by revenue</li>
+            <li>Customer count by RFM segment</li>
+            <li>Purchase history per customer</li>
+            <li>Add / Edit / Delete customer</li>
+            <li>Bulk import from Excel / CSV</li>
+            <li>Pagination (20 per page)</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">Customer</span>
+        <span class="entity-tag">Sale</span>
+        <span class="entity-tag">Invoice</span>
+        <span class="entity-tag">CreditLedgerEntry</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 11: INVOICES -->
+  <div class="page-card" id="p11">
+    <div class="page-card-header">
+      <div class="page-num">11</div>
+      <h3>Invoices</h3>
+      <span class="page-route">/invoices</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">Create, send, and track customer invoices with due dates, status tracking, and overdue detection.</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>Invoice Creation</h4>
+          <ul>
+            <li>Customer selection &amp; issue / due dates</li>
+            <li>Line-item entry (description, qty, price)</li>
+            <li>Subtotal, discount (% or fixed), tax, total</li>
+            <li>Multi-currency support</li>
+            <li>Notes field</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>Status &amp; Metrics</h4>
+          <ul>
+            <li>States: Draft → Sent → Paid / Overdue</li>
+            <li>Colour-coded status chips</li>
+            <li>Print / view invoice dialog</li>
+            <li>Mark as paid action</li>
+            <li>Stat cards: total, draft, paid, overdue, value, unpaid</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">Invoice</span>
+        <span class="entity-tag">InvoiceItem</span>
+        <span class="entity-tag">Customer</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 12: CHART OF ACCOUNTS -->
+  <div class="page-card" id="p12">
+    <div class="page-card-header">
+      <div class="page-num">12</div>
+      <h3>Chart of Accounts</h3>
+      <span class="page-route">/accounts</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">Define and manage the full general ledger account structure supporting double-entry bookkeeping.</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>Account Structure</h4>
+          <ul>
+            <li>5 account types: Assets, Liabilities, Equity, Income, Expenses</li>
+            <li>Hierarchical parent-child accounts</li>
+            <li>Account code, name, description</li>
+            <li>Opening balance &amp; current balance</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>Management &amp; Summary</h4>
+          <ul>
+            <li>Add / Edit accounts</li>
+            <li>Summary cards per account type</li>
+            <li>Count &amp; total per type</li>
+            <li>Balance display</li>
+            <li>Default accounts for auto-posting</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">Account</span>
+        <span class="entity-tag">JournalLine</span>
+        <span class="entity-tag">Transaction</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 13: JOURNAL -->
+  <div class="page-card" id="p13">
+    <div class="page-card-header">
+      <div class="page-num">13</div>
+      <h3>Journal Entries</h3>
+      <span class="page-route">/journal</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">Create and post manual journal entries with full double-entry validation and balance enforcement.</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>Entry Creation</h4>
+          <ul>
+            <li>Entry date, description, reference #</li>
+            <li>Multiple debit/credit line items</li>
+            <li>Account selection per line</li>
+            <li>Notes field</li>
+            <li>Real-time debit/credit totals</li>
+            <li>Balance validation (debits = credits)</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>History</h4>
+          <ul>
+            <li>Journal entry list with number, date, description</li>
+            <li>Posted / unposted status</li>
+            <li>View / edit entry dialog</li>
+            <li>Delete entry</li>
+            <li>Pagination</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">JournalEntry</span>
+        <span class="entity-tag">JournalLine</span>
+        <span class="entity-tag">Account</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 14: LEDGER -->
+  <div class="page-card" id="p14">
+    <div class="page-card-header">
+      <div class="page-num">14</div>
+      <h3>General Ledger</h3>
+      <span class="page-route">/ledger</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">View all financial transactions with running balances, advanced filtering, and multi-format export.</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>Transaction View</h4>
+          <ul>
+            <li>Reference #, date, description</li>
+            <li>Account, transaction type</li>
+            <li>Amount &amp; running balance</li>
+            <li>Types: Sale, Expense, Journal, Purchase</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>Filters &amp; Export</h4>
+          <ul>
+            <li>Account filter</li>
+            <li>Transaction type filter</li>
+            <li>Date range picker</li>
+            <li>Text search</li>
+            <li>Export: Excel, CSV, JSON</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">Transaction</span>
+        <span class="entity-tag">TransactionLine</span>
+        <span class="entity-tag">Account</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 15: ACCOUNTS PAYABLE / RECEIVABLE -->
+  <div class="page-card" id="p15">
+    <div class="page-card-header">
+      <div class="page-num">15</div>
+      <h3>Accounts Payable / Receivable</h3>
+      <span class="page-route">/accounts-payable</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">Manage outstanding credit positions — money customers owe (A/R) and money owed to suppliers (A/P).</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>Credit Tracking</h4>
+          <ul>
+            <li>Separate tabs: Receivable &amp; Payable</li>
+            <li>Entity (customer / provider), amount, due date</li>
+            <li>Amount paid, balance, status</li>
+            <li>Status: Open, Partial, Paid, Overdue</li>
+            <li>Days overdue indicator</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>Payments &amp; Metrics</h4>
+          <ul>
+            <li>Record payment dialog</li>
+            <li>Payment method &amp; date tracking</li>
+            <li>Total receivables / payables cards</li>
+            <li>Overdue count &amp; overdue amount</li>
+            <li>Entry creation dialog</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">CreditLedgerEntry</span>
+        <span class="entity-tag">CreditPayment</span>
+        <span class="entity-tag">Customer</span>
+        <span class="entity-tag">Provider</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 16: FINANCIAL REPORTS -->
+  <div class="page-card" id="p16">
+    <div class="page-card-header">
+      <div class="page-num">16</div>
+      <h3>Financial Reports</h3>
+      <span class="page-route">/reports</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">Five-tab financial reporting hub: P&amp;L, Cash Flow Statement, Balance Sheet, Cash Flow Forecast, and Custom Report Builder.</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>P&amp;L · Cash Flow · Balance Sheet</h4>
+          <ul>
+            <li>Gross revenue, COGS, gross &amp; net profit</li>
+            <li>Period: Monthly, Quarterly, Yearly, Custom</li>
+            <li>Current vs previous period comparison (%)</li>
+            <li>Monthly trend, pie, and comparison bar charts</li>
+            <li>Cash flow statement with operating activities</li>
+            <li>Balance sheet: assets, liabilities, equity</li>
+            <li>Export to Excel on all tabs</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>Cash Flow Forecast (30 / 60 / 90 days)</h4>
+          <ul>
+            <li>Starts from real cash &amp; bank account balances</li>
+            <li>Projected inflows: rolling daily sales average</li>
+            <li>A/R due-date inflows from credit ledger</li>
+            <li>Recurring expense outflows (daily to yearly)</li>
+            <li>A/P due-date outflows from credit ledger</li>
+            <li>PO payment due dates via payment terms</li>
+            <li>Running balance line chart (inflows / outflows area)</li>
+            <li>4 KPI cards: Inflows, Outflows, Net Cash, Cash Risk Date</li>
+            <li>Upcoming obligations table with due dates</li>
+            <li>Warning banner when balance goes negative</li>
+            <li>Cash buffer alert threshold (configurable in Settings)</li>
+            <li>Export forecast + obligations to Excel</li>
+          </ul>
+        </div>
+      </div>
+      <div class="features-grid" style="margin-top:16px;">
+        <div class="feature-group">
+          <h4>Custom Report Builder</h4>
+          <ul>
+            <li>Dimensions: Date, Product, Category, Customer, Payment Method</li>
+            <li>Metrics: Revenue, Profit, Units Sold, Transactions, Margin %, Avg Sale</li>
+            <li>8 date preset shortcuts (Today → This Year)</li>
+            <li>6 quick-start templates (Top 10 Products, Monthly Revenue…)</li>
+            <li>Compare vs prior period — Prev + Δ % columns per metric</li>
+            <li>Group by day / week / month (date dimension)</li>
+            <li>Top N filtering (5 / 10 / 20 / All)</li>
+            <li>Bar, Line, Pie, and Table chart types</li>
+            <li>Sortable table columns (click any header)</li>
+            <li>Save &amp; load named report configurations</li>
+            <li>Export results to Excel</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>Report Builder Intelligence</h4>
+          <ul>
+            <li>Auto % of Total column when revenue metric selected</li>
+            <li>Colour-coded profit (green / red) and margin cells</li>
+            <li>Trending icon on profit and delta columns</li>
+            <li>Metric availability guard (Units only for product/category)</li>
+            <li>Prior-period query runs in parallel for performance</li>
+            <li>Sort resets on each new report run</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">Sale</span>
+        <span class="entity-tag">Expense</span>
+        <span class="entity-tag">Account</span>
+        <span class="entity-tag">RecurringExpense</span>
+        <span class="entity-tag">CreditLedgerEntry</span>
+        <span class="entity-tag">PurchaseOrder</span>
+        <span class="entity-tag">Transaction</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 17: ANALYTICS -->
+  <div class="page-card" id="p17">
+    <div class="page-card-header">
+      <div class="page-num">17</div>
+      <h3>Analytics</h3>
+      <span class="page-route">/analytics</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">Advanced business intelligence covering sales performance, profitability, expense trends, and KPI gauges.</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>Sales &amp; Profitability</h4>
+          <ul>
+            <li>Total sales, count, avg sale value, profit, margin %</li>
+            <li>Top products by qty, revenue, profit</li>
+            <li>Top categories by revenue</li>
+            <li>Sales by payment method (pie chart)</li>
+            <li>Product &amp; category margin breakdown</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>Expenses &amp; KPIs</h4>
+          <ul>
+            <li>Total expenses &amp; category pie chart</li>
+            <li>Monthly expense trend (bar chart)</li>
+            <li>Profit margin gauge</li>
+            <li>Inventory turnover gauge</li>
+            <li>Date range: Week, Month, 3M, Year, Custom</li>
+            <li>Export to Excel</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">Sale</span>
+        <span class="entity-tag">SaleItem</span>
+        <span class="entity-tag">Expense</span>
+        <span class="entity-tag">Product</span>
+        <span class="entity-tag">Category</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 18: OFFERS -->
+  <div class="page-card" id="p18">
+    <div class="page-card-header">
+      <div class="page-num">18</div>
+      <h3>Offers Management</h3>
+      <span class="page-route">/offers</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">Full promotional engine with discount types, bundles, seasonal rules, AI-powered suggestions, and offer analytics.</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>Offer Types</h4>
+          <ul>
+            <li>Product discounts (% or fixed)</li>
+            <li>Bundle offers (Buy X for $Y)</li>
+            <li>Buy-X-Get-Y promotions</li>
+            <li>Seasonal / date-range promotions</li>
+            <li>Per-category bulk discounts</li>
+            <li>Active / paused / expired states</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>AI Suggestions &amp; Analytics</h4>
+          <ul>
+            <li>Score-based offer recommendations (dead stock, velocity)</li>
+            <li>One-click offer creation from suggestions</li>
+            <li>Offer usage &amp; discount total tracking</li>
+            <li>Revenue &amp; profit impact per offer</li>
+            <li>Default discount caps &amp; min margin settings</li>
+            <li>Reactivate expired offers</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">ProductOffer</span>
+        <span class="entity-tag">BundleOffer</span>
+        <span class="entity-tag">BuyXGetYOffer</span>
+        <span class="entity-tag">SeasonalPromotionRule</span>
+        <span class="entity-tag">OfferAnalytics</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 19: SHIFTS -->
+  <div class="page-card" id="p19">
+    <div class="page-card-header">
+      <div class="page-num">19</div>
+      <h3>Shifts (Cash Register)</h3>
+      <span class="page-route">/shifts</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">Manage cash register shifts with opening floats, cash reconciliation, and variance tracking per employee.</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>Current Shift</h4>
+          <ul>
+            <li>Opened-by employee &amp; open time</li>
+            <li>Running duration counter</li>
+            <li>Opening float amount</li>
+            <li>Cash sales total &amp; all-method sales total</li>
+            <li>Transaction count</li>
+            <li>Expected cash-in-drawer alert</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>Open / Close &amp; History</h4>
+          <ul>
+            <li>Open shift dialog with float input</li>
+            <li>Close shift dialog with actual cash input</li>
+            <li>Variance calculation (over / under)</li>
+            <li>Shift history table with colour-coded variance</li>
+            <li>Shift reference # tracking</li>
+            <li>Notes on close</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">Shift</span>
+        <span class="entity-tag">User</span>
+        <span class="entity-tag">Sale</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 20: AUDIT LOG -->
+  <div class="page-card" id="p20">
+    <div class="page-card-header">
+      <div class="page-num">20</div>
+      <h3>Audit Log</h3>
+      <span class="page-route">/audit-log</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">Complete tamper-evident change history for compliance — who changed what, when, with full before/after data.</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>Log Content</h4>
+          <ul>
+            <li>Timestamp, user, action type</li>
+            <li>Entity type &amp; entity ID</li>
+            <li>Before &amp; after data (side-by-side diff)</li>
+            <li>Metadata &amp; context</li>
+            <li>Actions: CREATE, UPDATE, DELETE, PRICE_OVERRIDE, REFUND, etc.</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>Filters &amp; Display</h4>
+          <ul>
+            <li>Text search across all fields</li>
+            <li>Filter by user, entity type, action, date range</li>
+            <li>Colour-coded action types</li>
+            <li>Expandable rows with full diff</li>
+            <li>Pagination (10 per page)</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">AuditLog</span>
+        <span class="entity-tag">User</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 21: NOTIFICATIONS -->
+  <div class="page-card" id="p21">
+    <div class="page-card-header">
+      <div class="page-num">21</div>
+      <h3>Notifications</h3>
+      <span class="page-route">/notifications</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">Centralised in-app notification centre for stock alerts, daily/monthly summaries, and system warnings.</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>Notification Types</h4>
+          <ul>
+            <li>Low stock alerts</li>
+            <li>Out-of-stock alerts</li>
+            <li>Cash flow risk alert (projected balance below threshold)</li>
+            <li>Daily performance summary</li>
+            <li>Monthly performance summary</li>
+            <li>General system alerts</li>
+            <li>Severity: Info / Warning / Error</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>Management</h4>
+          <ul>
+            <li>Tabs: All, Unread, Alerts</li>
+            <li>Mark as read / Mark all as read</li>
+            <li>Delete individual notifications</li>
+            <li>Clear all read notifications</li>
+            <li>Unread count badge in header</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">Notification</span>
+        <span class="entity-tag">Product</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 22: SETTINGS -->
+  <div class="page-card" id="p22">
+    <div class="page-card-header">
+      <div class="page-num">22</div>
+      <h3>Settings</h3>
+      <span class="page-route">/settings</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">Comprehensive configuration centre with 12 tabs covering business info, employees, accounting, backup, and more.</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>Configuration Tabs (1–6)</h4>
+          <ul>
+            <li><strong>Business Info:</strong> name, currency, address, logo</li>
+            <li><strong>Accounting:</strong> tax rate, fiscal year, method</li>
+            <li><strong>Product Defaults:</strong> discount caps, margin rules, alert thresholds</li>
+            <li><strong>Notifications:</strong> stock thresholds, summary schedules, cash flow alert threshold</li>
+            <li><strong>Theme &amp; Display:</strong> dark/light, language, date format</li>
+            <li><strong>Backup &amp; Restore:</strong> full &amp; incremental backup, cloud sync</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>Configuration Tabs (7–12)</h4>
+          <ul>
+            <li><strong>Data Export:</strong> tables to Excel / CSV / JSON</li>
+            <li><strong>Cloud Sync:</strong> Supabase status, manual sync, conflict resolution</li>
+            <li><strong>Employees:</strong> add, PIN reset, role, deactivate</li>
+            <li><strong>Page Permissions:</strong> per-employee access per page</li>
+            <li><strong>Currency Rates:</strong> base currency, exchange rates, history</li>
+            <li><strong>Data Management:</strong> DB size, clear cache, delete all</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">Settings</span>
+        <span class="entity-tag">User</span>
+        <span class="entity-tag">CurrencyRate</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 23: HANDBOOK -->
+  <div class="page-card" id="p23">
+    <div class="page-card-header">
+      <div class="page-num">23</div>
+      <h3>Handbook (Help Center)</h3>
+      <span class="page-route">/handbook</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">In-app contextual documentation covering every module with what-it-is, what-you-can-do, and tips.</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>Content Sections</h4>
+          <ul>
+            <li>Getting Started &amp; Business Setup</li>
+            <li>Point of Sale guide</li>
+            <li>Inventory Management guide</li>
+            <li>Accounts &amp; Ledger guide</li>
+            <li>Analytics &amp; Reports guide</li>
+            <li>Administration guide</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>UX</h4>
+          <ul>
+            <li>Feature cards with icon, explanation, bullets</li>
+            <li>Tips &amp; tricks per feature</li>
+            <li>Deep links to relevant pages</li>
+            <li>Section-to-section navigation</li>
+            <li>Collapsible section groups</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">Static Content</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 24: LANDING -->
+  <div class="page-card" id="p24">
+    <div class="page-card-header">
+      <div class="page-num">24</div>
+      <h3>Landing Page</h3>
+      <span class="page-route">/landing</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">Interactive feature tour for new users exploring the app before setup, with module highlights and navigation CTAs.</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>Content</h4>
+          <ul>
+            <li>Guided feature tour sections</li>
+            <li>Module-by-module capability cards</li>
+            <li>"What it does / What you can do / Expect" format</li>
+            <li>Tips for new users</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>Navigation</h4>
+          <ul>
+            <li>Deep links to each major module</li>
+            <li>Getting Started CTA</li>
+            <li>Navigation to all 6 core areas</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">Static / Onboarding</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 25: LOGIN -->
+  <div class="page-card" id="p25">
+    <div class="page-card-header">
+      <div class="page-num">25</div>
+      <h3>Login &amp; Authentication</h3>
+      <span class="page-route">/login</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">PIN-based multi-user authentication with role detection, recovery phrase support, and session management.</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>Authentication</h4>
+          <ul>
+            <li>6-digit PIN login</li>
+            <li>Recovery phrase for PIN reset</li>
+            <li>Role detection: Owner vs Employee</li>
+            <li>Device identification</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>Session Management</h4>
+          <ul>
+            <li>Auto-logout after configurable inactivity (0–60 min)</li>
+            <li>Last login timestamp</li>
+            <li>Multi-user support (switch users)</li>
+            <li>Role-based redirect after login</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">User</span>
+        <span class="entity-tag">Settings</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 26: ONBOARDING -->
+  <div class="page-card" id="p26">
+    <div class="page-card-header">
+      <div class="page-num">26</div>
+      <h3>Onboarding Wizard</h3>
+      <span class="page-route">Modal Overlay</span>
+    </div>
+    <div class="page-card-body">
+      <p class="page-purpose">Step-by-step guided setup for new business owners covering all critical initial configuration in one flow.</p>
+      <div class="features-grid">
+        <div class="feature-group">
+          <h4>Wizard Steps</h4>
+          <ul>
+            <li>Business information entry</li>
+            <li>Product category creation</li>
+            <li>Initial products setup</li>
+            <li>Employee account creation</li>
+            <li>Basic accounting setup</li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>UX</h4>
+          <ul>
+            <li>Progress indicator per step</li>
+            <li>Skip / Dismiss option</li>
+            <li>Completion flag (won't re-show)</li>
+            <li>Accessible from Dashboard for owners</li>
+          </ul>
+        </div>
+      </div>
+      <div class="page-entities">
+        <span class="entity-tag">Settings</span>
+        <span class="entity-tag">Category</span>
+        <span class="entity-tag">Product</span>
+        <span class="entity-tag">User</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!--  SECTION 3 — CROSS-CUTTING FEATURES                              -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="section" id="cross">
+  <div class="section-header">
+    <div class="section-icon" style="background:#fef3c7;">⚙️</div>
+    <div>
+      <h2>Platform-Wide Capabilities</h2>
+      <div class="section-sub">Features that span the entire application — not tied to a single page</div>
+    </div>
+  </div>
+
+  <div class="cross-grid">
+    <div class="cross-card">
+      <div class="cross-card-header"><span class="cross-icon">🔐</span><h3>Role-Based Access Control</h3></div>
+      <p>Granular two-tier permission system ensuring employees only see what they need.</p>
+      <ul>
+        <li>Owner vs Employee roles</li>
+        <li>Per-page permission levels: None / Read / Read-Write</li>
+        <li>Per-employee configuration in Settings</li>
+        <li>Runtime permission checks on every page</li>
+        <li>Covers all 26 application pages</li>
+      </ul>
+    </div>
+    <div class="cross-card">
+      <div class="cross-card-header"><span class="cross-icon">📡</span><h3>Offline-First / PWA</h3></div>
+      <p>Full application functionality without internet; syncs automatically when reconnected.</p>
+      <ul>
+        <li>Dexie (IndexedDB) local database</li>
+        <li>Service worker caching (Workbox)</li>
+        <li>Offline banner notification</li>
+        <li>Auto-sync to Supabase on reconnect</li>
+        <li>Installable as a PWA on desktop &amp; mobile</li>
+      </ul>
+    </div>
+    <div class="cross-card">
+      <div class="cross-card-header"><span class="cross-icon">💱</span><h3>Multi-Currency Support</h3></div>
+      <p>Sell and report in multiple currencies with live exchange rate updates.</p>
+      <ul>
+        <li>Live rates from ER-API (open.er-api.com)</li>
+        <li>Manual rate override capability</li>
+        <li>Currency selection per transaction</li>
+        <li>Locale-aware formatting (decimals, symbols)</li>
+        <li>Rate history tracking</li>
+      </ul>
+    </div>
+    <div class="cross-card">
+      <div class="cross-card-header"><span class="cross-icon">🌍</span><h3>Multi-Language Support</h3></div>
+      <p>UI internationalisation for multilingual teams and markets.</p>
+      <ul>
+        <li>English &amp; Arabic supported</li>
+        <li>Language persisted in local storage</li>
+        <li>RTL layout support for Arabic</li>
+        <li>Configurable via Settings → Theme &amp; Display</li>
+      </ul>
+    </div>
+    <div class="cross-card">
+      <div class="cross-card-header"><span class="cross-icon">📋</span><h3>Audit &amp; Compliance</h3></div>
+      <p>Every change in the system is logged with before/after data for accountability.</p>
+      <ul>
+        <li>All CREATE / UPDATE / DELETE actions logged</li>
+        <li>Captures user, timestamp, entity, before &amp; after</li>
+        <li>Price override &amp; discount audit trail</li>
+        <li>Configurable retention period</li>
+        <li>Exportable audit data</li>
+      </ul>
+    </div>
+    <div class="cross-card">
+      <div class="cross-card-header"><span class="cross-icon">💾</span><h3>Backup &amp; Restore</h3></div>
+      <p>Multiple layers of data protection: local, incremental, and cloud backups.</p>
+      <ul>
+        <li>Full database backup (download JSON)</li>
+        <li>Delta / incremental backup</li>
+        <li>Cloud backup via Supabase</li>
+        <li>Restore preview before committing</li>
+        <li>Scheduled backup reminders</li>
+      </ul>
+    </div>
+    <div class="cross-card">
+      <div class="cross-card-header"><span class="cross-icon">📤</span><h3>Import / Export</h3></div>
+      <p>Bulk data operations for onboarding and external analysis.</p>
+      <ul>
+        <li>Bulk import: Products, Customers, Providers via Excel/CSV</li>
+        <li>Export any table: Excel, CSV, JSON</li>
+        <li>Selective table export in Settings</li>
+        <li>XLSX library for Excel support</li>
+      </ul>
+    </div>
+    <div class="cross-card">
+      <div class="cross-card-header"><span class="cross-icon">🎨</span><h3>Theming &amp; Display</h3></div>
+      <p>User-customisable appearance settings for comfort across environments.</p>
+      <ul>
+        <li>Dark / Light mode toggle</li>
+        <li>Colour scheme selection</li>
+        <li>Date &amp; number format configuration</li>
+        <li>Preferences persisted locally</li>
+        <li>MUI theme system integration</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!--  SECTION 4 — SUGGESTED FEATURES                                  -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="section" id="suggested">
+  <div class="section-header">
+    <div class="section-icon" style="background:#fdf4ff;">💡</div>
+    <div>
+      <h2>Suggested Features — PO Recommendations</h2>
+      <div class="section-sub">10 high-value enhancements identified through product analysis, ranked by business impact</div>
+    </div>
+  </div>
+
+  <div class="info-box">
+    The following recommendations are based on gap analysis of the current feature set, common SMB retail pain points, and growth opportunities. Each suggestion includes business rationale, scope, and implementation notes.
+  </div>
+
+  <!-- SUGGESTION 1 -->
+  <div class="suggest-card">
+    <div class="suggest-header c-blue">
+      <div class="suggest-num" style="background:rgba(255,255,255,.2);">1</div>
+      <h3>Multi-Branch / Multi-Location Support</h3>
+      <span class="priority-badge priority-high">High Priority</span>
+    </div>
+    <div class="suggest-body">
+      <p class="suggest-desc">
+        Allow a single Local Ledger Pro account to manage multiple store locations (branches) with location-specific inventory, sales, and staff — while providing the owner with a consolidated view across all branches. This is the most common growth bottleneck for successful SMBs: they open a second store and have no unified system.
+      </p>
+      <div class="suggest-details">
+        <div class="suggest-detail-box">
+          <h4>Key Capabilities</h4>
+          <ul>
+            <li>Branch creation &amp; management</li>
+            <li>Per-branch inventory pools</li>
+            <li>Per-branch sales &amp; expense tracking</li>
+            <li>Cross-branch stock transfer requests</li>
+            <li>Consolidated P&amp;L dashboard</li>
+          </ul>
+        </div>
+        <div class="suggest-detail-box">
+          <h4>Business Value</h4>
+          <ul>
+            <li>Unlocks growth beyond 1 location</li>
+            <li>Single source of truth for the owner</li>
+            <li>Reduces manual reconciliation effort</li>
+            <li>Enables branch performance comparison</li>
+            <li>High upsell potential (premium tier)</li>
+          </ul>
+        </div>
+        <div class="suggest-detail-box">
+          <h4>Implementation Notes</h4>
+          <ul>
+            <li>Add branchId to Product, Sale, Expense</li>
+            <li>Branch selector in header / auth flow</li>
+            <li>Supabase required for multi-device sync</li>
+            <li>Consolidated report aggregation layer</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUGGESTION 2 -->
+  <div class="suggest-card">
+    <div class="suggest-header c-purple">
+      <div class="suggest-num" style="background:rgba(255,255,255,.2);">2</div>
+      <h3>Customer Loyalty &amp; Points Program</h3>
+      <span class="priority-badge priority-high">High Priority</span>
+    </div>
+    <div class="suggest-body">
+      <p class="suggest-desc">
+        A built-in loyalty engine that awards points on purchases, supports tier levels (Bronze, Silver, Gold), and allows redemption at checkout. The RFM segmentation already present in Customers provides the perfect data foundation — loyalty tiers can map directly to RFM Champion/Loyal segments, and points balance can be displayed on the POS screen during checkout.
+      </p>
+      <div class="suggest-details">
+        <div class="suggest-detail-box">
+          <h4>Key Capabilities</h4>
+          <ul>
+            <li>Points earned per currency unit spent</li>
+            <li>Configurable earn / burn rates</li>
+            <li>Tier thresholds &amp; tier benefits</li>
+            <li>Points balance on POS checkout</li>
+            <li>Redemption as discount or free item</li>
+            <li>Points history per customer</li>
+          </ul>
+        </div>
+        <div class="suggest-detail-box">
+          <h4>Business Value</h4>
+          <ul>
+            <li>Increases repeat purchase rate</li>
+            <li>Reduces churn of "At Risk" RFM segment</li>
+            <li>Creates emotional brand connection</li>
+            <li>Differentiates from competitors</li>
+            <li>Low-cost retention mechanism</li>
+          </ul>
+        </div>
+        <div class="suggest-detail-box">
+          <h4>Implementation Notes</h4>
+          <ul>
+            <li>Add loyaltyPoints to Customer entity</li>
+            <li>New LoyaltyTransaction entity</li>
+            <li>Points display in Sales / checkout</li>
+            <li>Settings tab for earn/burn/tier config</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUGGESTION 3 -->
+  <div class="suggest-card">
+    <div class="suggest-header c-teal">
+      <div class="suggest-num" style="background:rgba(255,255,255,.2);">3</div>
+      <h3>Predictive Inventory (Demand Forecasting)</h3>
+      <span class="priority-badge priority-high">High Priority</span>
+    </div>
+    <div class="suggest-body">
+      <p class="suggest-desc">
+        Leverage existing sales history to forecast future demand per product and automatically suggest reorder quantities and timing. The app already calculates ABC analysis and dead stock — the next step is predictive. Integrating a lightweight time-series model (moving average or exponential smoothing) can surface "order now" suggestions before stock-outs occur, reducing lost sales.
+      </p>
+      <div class="suggest-details">
+        <div class="suggest-detail-box">
+          <h4>Key Capabilities</h4>
+          <ul>
+            <li>30/60/90-day demand projections per SKU</li>
+            <li>Automated reorder point calculation</li>
+            <li>Suggested order quantity per product</li>
+            <li>One-click "Create PO from Suggestions"</li>
+            <li>Seasonality adjustment</li>
+            <li>Forecast accuracy tracking</li>
+          </ul>
+        </div>
+        <div class="suggest-detail-box">
+          <h4>Business Value</h4>
+          <ul>
+            <li>Prevents stock-outs &amp; lost sales</li>
+            <li>Reduces overstock &amp; holding costs</li>
+            <li>Saves time on manual reorder decisions</li>
+            <li>Improves cash flow management</li>
+            <li>Complements existing ABC analysis</li>
+          </ul>
+        </div>
+        <div class="suggest-detail-box">
+          <h4>Implementation Notes</h4>
+          <ul>
+            <li>Extend analyticsService with forecast engine</li>
+            <li>New "Reorder Suggestions" widget on Dashboard</li>
+            <li>Deep link to create PO from suggestion</li>
+            <li>Minimum 30-day sales history required</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUGGESTION 4 -->
+  <div class="suggest-card">
+    <div class="suggest-header c-green">
+      <div class="suggest-num" style="background:rgba(255,255,255,.2);">4</div>
+      <h3>SMS / Email Marketing Integration</h3>
+      <span class="priority-badge priority-medium">Medium Priority</span>
+    </div>
+    <div class="suggest-body">
+      <p class="suggest-desc">
+        Enable targeted outreach campaigns directly from the Customers page, leveraging the existing RFM segments. An owner should be able to select "At-Risk" customers and send a personalised discount offer in two clicks. Integration with Twilio (SMS) or Mailchimp / SendGrid (email) via API keys configured in Settings would deliver this without building a messaging infrastructure.
+      </p>
+      <div class="suggest-details">
+        <div class="suggest-detail-box">
+          <h4>Key Capabilities</h4>
+          <ul>
+            <li>Segment-based campaign targeting</li>
+            <li>SMS &amp; email channel support</li>
+            <li>Message templates with variable substitution</li>
+            <li>Campaign history &amp; status</li>
+            <li>Unsubscribe management</li>
+            <li>Open / delivery tracking</li>
+          </ul>
+        </div>
+        <div class="suggest-detail-box">
+          <h4>Business Value</h4>
+          <ul>
+            <li>Activates "At-Risk" &amp; "Lost" RFM segments</li>
+            <li>Drives repeat purchases with targeted offers</li>
+            <li>Automates what owners do manually today</li>
+            <li>Measurable ROI per campaign</li>
+          </ul>
+        </div>
+        <div class="suggest-detail-box">
+          <h4>Implementation Notes</h4>
+          <ul>
+            <li>New Campaigns module / tab in Customers</li>
+            <li>API key config in Settings → Integrations</li>
+            <li>New Campaign entity in DB</li>
+            <li>Twilio / SendGrid REST call from client</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUGGESTION 5 -->
+  <div class="suggest-card">
+    <div class="suggest-header c-orange">
+      <div class="suggest-num" style="background:rgba(255,255,255,.2);">5</div>
+      <h3>Barcode &amp; Product Label Printing</h3>
+      <span class="priority-badge priority-medium">Medium Priority</span>
+    </div>
+    <div class="suggest-body">
+      <p class="suggest-desc">
+        Allow users to print product labels (barcode + name + price) directly from the Products page, either to a label printer (Zebra, Brother) via USB/Bluetooth or as a printable PDF sheet. Currently, the barcode scanner is input-only — closing the loop with label printing would eliminate the need for a separate labelling tool and streamline receiving workflows with Purchase Orders.
+      </p>
+      <div class="suggest-details">
+        <div class="suggest-detail-box">
+          <h4>Key Capabilities</h4>
+          <ul>
+            <li>Label template designer (size, fields)</li>
+            <li>Barcode generation (Code128, QR)</li>
+            <li>Bulk label print from product selection</li>
+            <li>Print-to-PDF option</li>
+            <li>Auto-print on PO receipt</li>
+          </ul>
+        </div>
+        <div class="suggest-detail-box">
+          <h4>Business Value</h4>
+          <ul>
+            <li>Eliminates separate labelling tool</li>
+            <li>Speeds up receiving &amp; stocking process</li>
+            <li>Consistent branding on labels</li>
+            <li>Reduces price-tagging errors</li>
+          </ul>
+        </div>
+        <div class="suggest-detail-box">
+          <h4>Implementation Notes</h4>
+          <ul>
+            <li>jsbarcode library for barcode generation</li>
+            <li>Print dialog with label layout preview</li>
+            <li>Add "Print Labels" action to Products page</li>
+            <li>Web Bluetooth API for direct printer (optional)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUGGESTION 6 -->
+  <div class="suggest-card">
+    <div class="suggest-header c-rose">
+      <div class="suggest-num" style="background:rgba(255,255,255,.2);">6</div>
+      <h3>E-Commerce / Online Store Sync</h3>
+      <span class="priority-badge priority-medium">Medium Priority</span>
+    </div>
+    <div class="suggest-body">
+      <p class="suggest-desc">
+        Bi-directional synchronisation with popular e-commerce platforms (Shopify, WooCommerce) or a lightweight built-in online product catalogue. Online orders would auto-create sales in Local Ledger Pro, and stock levels would be pushed to the online store in real-time — preventing overselling. This bridges the gap between physical retail and online sales in one system.
+      </p>
+      <div class="suggest-details">
+        <div class="suggest-detail-box">
+          <h4>Key Capabilities</h4>
+          <ul>
+            <li>Shopify &amp; WooCommerce connectors</li>
+            <li>Stock push on every sale / adjustment</li>
+            <li>Online order → Sale auto-creation</li>
+            <li>Product mapping &amp; SKU matching</li>
+            <li>Sync status dashboard</li>
+            <li>Error &amp; conflict resolution</li>
+          </ul>
+        </div>
+        <div class="suggest-detail-box">
+          <h4>Business Value</h4>
+          <ul>
+            <li>Enables omnichannel retail</li>
+            <li>Eliminates double data entry</li>
+            <li>Prevents online overselling</li>
+            <li>Single view of all revenue streams</li>
+          </ul>
+        </div>
+        <div class="suggest-detail-box">
+          <h4>Implementation Notes</h4>
+          <ul>
+            <li>New Integrations tab in Settings</li>
+            <li>Shopify Admin API / WooCommerce REST API</li>
+            <li>Webhook receiver (requires server / Supabase function)</li>
+            <li>New SyncLog entity for audit trail</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUGGESTION 7 -->
+  <div class="suggest-card">
+    <div class="suggest-header c-indigo">
+      <div class="suggest-num" style="background:rgba(255,255,255,.2);">7</div>
+      <h3>Custom Report Builder</h3>
+      <span class="priority-badge priority-medium">Medium Priority</span>
+    </div>
+    <div class="suggest-body">
+      <p class="suggest-desc">
+        A drag-and-drop interface enabling owners and accountants to build ad-hoc reports across any combination of data dimensions — without writing code or exporting to Excel. The current Financial Reports and Analytics pages answer common questions well, but power users consistently need custom slices: "sales by employee by category this quarter vs last" or "expense vs budget by month". A report builder closes this gap permanently.
+      </p>
+      <div class="suggest-details">
+        <div class="suggest-detail-box">
+          <h4>Key Capabilities</h4>
+          <ul>
+            <li>Drag-and-drop dimension / metric selection</li>
+            <li>Filter builder (date, category, employee, etc.)</li>
+            <li>Chart type selection (table, bar, line, pie)</li>
+            <li>Save &amp; name custom reports</li>
+            <li>Schedule email delivery of saved reports</li>
+            <li>Export custom report to Excel / PDF</li>
+          </ul>
+        </div>
+        <div class="suggest-detail-box">
+          <h4>Business Value</h4>
+          <ul>
+            <li>Reduces owner dependence on dev team</li>
+            <li>Replaces ad-hoc Excel exports</li>
+            <li>Surfaces insights not in fixed reports</li>
+            <li>High perceived value for power users</li>
+          </ul>
+        </div>
+        <div class="suggest-detail-box">
+          <h4>Implementation Notes</h4>
+          <ul>
+            <li>New /reports/builder route</li>
+            <li>Query builder abstraction over Dexie</li>
+            <li>New SavedReport entity in DB</li>
+            <li>MUI X-Charts for dynamic chart rendering</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUGGESTION 8 -->
+  <div class="suggest-card">
+    <div class="suggest-header c-sky">
+      <div class="suggest-num" style="background:rgba(255,255,255,.2);">8</div>
+      <h3>Cash Flow Forecasting</h3>
+      <span class="priority-badge priority-medium">Medium Priority</span>
+    </div>
+    <div class="suggest-body">
+      <p class="suggest-desc">
+        Project 30, 60, and 90-day cash positions using known recurring expenses, outstanding receivables/payables, and historical sales trends. The app already has all the required data: RecurringExpense (known outflows), CreditLedgerEntry (future inflows/outflows), and Sale history (revenue trends). A forecasting view would help owners plan purchasing decisions, payroll, and investments with confidence.
+      </p>
+      <div class="suggest-details">
+        <div class="suggest-detail-box">
+          <h4>Key Capabilities</h4>
+          <ul>
+            <li>30 / 60 / 90-day cash flow chart</li>
+            <li>Incorporates recurring expenses on due dates</li>
+            <li>Incorporates A/R expected inflows</li>
+            <li>Incorporates A/P expected outflows</li>
+            <li>Scenario planning (best / base / worst)</li>
+            <li>Minimum cash balance alert threshold</li>
+          </ul>
+        </div>
+        <div class="suggest-detail-box">
+          <h4>Business Value</h4>
+          <ul>
+            <li>Prevents cash-flow surprises</li>
+            <li>Informs large purchase decisions</li>
+            <li>Builds financial literacy for owners</li>
+            <li>Complements existing Financial Reports</li>
+          </ul>
+        </div>
+        <div class="suggest-detail-box">
+          <h4>Implementation Notes</h4>
+          <ul>
+            <li>New "Cash Flow" tab in Financial Reports</li>
+            <li>cashFlowForecastService.ts in services/</li>
+            <li>Inputs: RecurringExpense, CreditLedgerEntry, Sale avg</li>
+            <li>MUI X-Charts area chart for visualisation</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUGGESTION 9 -->
+  <div class="suggest-card">
+    <div class="suggest-header c-lime">
+      <div class="suggest-num" style="background:rgba(255,255,255,.2);">9</div>
+      <h3>Employee Time Tracking &amp; Payroll Export</h3>
+      <span class="priority-badge priority-low">Lower Priority</span>
+    </div>
+    <div class="suggest-body">
+      <p class="suggest-desc">
+        Extend the existing Shifts module with clock-in/clock-out functionality and hourly rate configuration per employee, enabling payroll calculation and export for the accountant. Currently shifts track cash reconciliation but not employee hours. Since employees already log in with PINs and shifts are tracked, adding time logging is a natural and low-friction extension that eliminates a common pain point for small retail businesses.
+      </p>
+      <div class="suggest-details">
+        <div class="suggest-detail-box">
+          <h4>Key Capabilities</h4>
+          <ul>
+            <li>Clock-in / clock-out per employee per shift</li>
+            <li>Hourly rate configuration in Employee settings</li>
+            <li>Overtime rate threshold</li>
+            <li>Payroll summary by employee / period</li>
+            <li>Export payroll to Excel for accountant</li>
+            <li>Break time tracking</li>
+          </ul>
+        </div>
+        <div class="suggest-detail-box">
+          <h4>Business Value</h4>
+          <ul>
+            <li>Replaces manual timesheet tracking</li>
+            <li>Ensures accurate payroll calculations</li>
+            <li>Reduces payroll disputes</li>
+            <li>All HR basics in one system</li>
+          </ul>
+        </div>
+        <div class="suggest-detail-box">
+          <h4>Implementation Notes</h4>
+          <ul>
+            <li>Extend Shift entity with hoursWorked, breakMinutes</li>
+            <li>Add hourlyRate to User entity</li>
+            <li>New PayrollPeriod entity</li>
+            <li>New /payroll route or tab in Shifts</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUGGESTION 10 -->
+  <div class="suggest-card">
+    <div class="suggest-header c-amber">
+      <div class="suggest-num" style="background:rgba(255,255,255,.2);">10</div>
+      <h3>Supplier Self-Serve Portal</h3>
+      <span class="priority-badge priority-low">Lower Priority</span>
+    </div>
+    <div class="suggest-body">
+      <p class="suggest-desc">
+        A lightweight web portal where suppliers can log in (via a unique link), view their open Purchase Orders, confirm receipt, upload invoices, and see outstanding payables. Currently all PO communication happens outside the system (phone/email). Bringing suppliers into the workflow eliminates manual follow-up, reduces receiving errors, and creates a digital paper trail for all procurement interactions — particularly valuable as business volume grows.
+      </p>
+      <div class="suggest-details">
+        <div class="suggest-detail-box">
+          <h4>Key Capabilities</h4>
+          <ul>
+            <li>Unique invite link per provider</li>
+            <li>Supplier view of open POs</li>
+            <li>PO confirmation / acknowledgement</li>
+            <li>Invoice upload by supplier</li>
+            <li>Outstanding payables view</li>
+            <li>In-app messaging thread per PO</li>
+          </ul>
+        </div>
+        <div class="suggest-detail-box">
+          <h4>Business Value</h4>
+          <ul>
+            <li>Reduces PO confirmation phone calls</li>
+            <li>Digital invoice trail reduces disputes</li>
+            <li>Scales procurement beyond manual processes</li>
+            <li>Supplier relationship differentiation</li>
+          </ul>
+        </div>
+        <div class="suggest-detail-box">
+          <h4>Implementation Notes</h4>
+          <ul>
+            <li>Requires Supabase for multi-user auth</li>
+            <li>New SupplierUser role &amp; auth flow</li>
+            <li>Separate /portal route (minimal UI)</li>
+            <li>New SupplierMessage entity for threading</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="page-footer">
+    <p><strong>Local Ledger Pro — Product Feature Report</strong> &nbsp;|&nbsp; March 2026 &nbsp;|&nbsp; Confidential — Internal Use Only</p>
+    <p style="margin-top:6px;">Generated via automated codebase analysis &amp; product review. All feature descriptions reflect the current codebase snapshot.</p>
+  </div>
+</div>
+
+</body>
+</html>
