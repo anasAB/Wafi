@@ -1,0 +1,45 @@
+export interface Customer {
+  id:         string
+  shopId:     string
+  name:       string
+  phone?:     string
+  mobile?:    string
+  address?:   string
+  deleted:    boolean
+  createdAt:  string
+  syncStatus: string
+}
+
+export interface NewCustomer {
+  name:     string
+  phone?:   string
+  mobile?:  string
+  address?: string
+}
+
+export interface OpenInvoice {
+  saleId:        string
+  displayNumber: string
+  saleDate:      string
+  totalUsd:      number
+  remainingUsd:  number
+  itemsSummary:  string  // e.g. "Samsung A55، كابل HDMI"
+}
+
+export interface PaymentAllocation {
+  saleId:                  string
+  amountUsd:               number
+  currency:                'USD' | 'SYP'
+  amountRaw:               number
+  exchangeRateAtPayment?:  number
+}
+
+export interface CustomerPayment {
+  id:         string
+  customerId: string
+  saleId:     string
+  amountUsd:  number
+  currency:   'USD' | 'SYP'
+  paidAt:     string
+  createdAt:  string
+}
