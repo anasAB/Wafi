@@ -49,26 +49,36 @@ async function confirmDelete() {
 </script>
 
 <template>
-  <div class="flex flex-col min-h-dvh" dir="rtl">
+  <div class="flex flex-col min-h-dvh bg-bg-void" dir="rtl">
     <AppHeader
       title="المنتجات"
       :show-back="true"
-      :show-back-office="false"
-      @back="router.push('/back-office')"
+      @back="router.back()"
     />
 
-    <main class="flex-1 px-4 py-4 max-w-2xl mx-auto w-full">
-      <!-- "Add with scanned barcode" CTA -->
-      <div
-        v-if="missedBarcode"
-        class="mb-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-xl px-4 py-3 flex items-center justify-between"
-      >
-        <span class="text-sm text-blue-800 dark:text-blue-200">لم يُعثر على: {{ missedBarcode }}</span>
+    <main class="flex-1 px-4 py-4 max-w-5xl mx-auto w-full pb-24 lg:pb-6">
+      <!-- Desktop toolbar -->
+      <div class="hidden lg:flex items-center justify-between mb-5">
+        <p class="text-sm text-text-muted">{{ products.length }} منتج</p>
         <button
           type="button"
-          class="text-sm font-semibold text-blue-600 dark:text-blue-400 underline"
+          class="btn-gold px-5 h-10 text-sm"
+          @click="router.push('/products/add')"
+        >+ إضافة منتج</button>
+      </div>
+
+      <!-- Missed barcode banner -->
+      <div
+        v-if="missedBarcode"
+        class="mb-4 glass-sm px-4 py-3 flex items-center justify-between"
+        style="border-color: var(--color-border-gold)"
+      >
+        <span class="text-sm text-text-primary">لم يُعثر على: <span class="text-gold-primary font-mono">{{ missedBarcode }}</span></span>
+        <button
+          type="button"
+          class="text-sm font-semibold text-gold-primary underline"
           @click="router.push(`/products/add?barcode=${encodeURIComponent(missedBarcode!)}`)"
-        >إضافة منتج جديد بهذا الباركود</button>
+        >إضافة بهذا الباركود</button>
       </div>
 
       <ProductList
@@ -79,12 +89,13 @@ async function confirmDelete() {
       />
     </main>
 
-    <!-- FAB -->
+    <!-- Mobile FAB (hidden on lg+) -->
     <button
       type="button"
       data-testid="add-fab"
-      class="fixed bottom-6 start-6 w-14 h-14 rounded-full bg-blue-600 text-white text-2xl shadow-lg
-             hover:bg-blue-700 active:scale-95 transition-all flex items-center justify-center z-20"
+      class="lg:hidden fixed bottom-20 start-6 w-14 h-14 rounded-full text-bg-void text-2xl shadow-lg
+             active:scale-95 transition-all flex items-center justify-center z-20"
+      style="background: linear-gradient(135deg, var(--color-gold-primary), var(--color-gold-to)); box-shadow: 0 0 24px var(--color-gold-subtle)"
       aria-label="إضافة منتج"
       @click="router.push('/products/add')"
     >+</button>
