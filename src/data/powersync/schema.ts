@@ -4,7 +4,7 @@ const products = new Table({
   shop_id:             column.text,
   name_ar:             column.text,
   name_en:             column.text,
-  price_usd:           column.real,   // sale price — kept for POS backward compat
+  price_usd:           column.real,
   cost_price_usd:      column.real,
   barcode:             column.text,
   category:            column.text,
@@ -42,6 +42,8 @@ const sales = new Table({
   amount_received:          column.real,
   amount_received_currency: column.text,
   change_due:               column.real,
+  customer_id:              column.text,   // nullable — set for credit sales
+  is_credit:                column.integer, // 0/1, default 0
 })
 
 const sale_line_items = new Table({
@@ -50,7 +52,7 @@ const sale_line_items = new Table({
   product_id:     column.text,
   quantity:       column.integer,
   unit_price_usd: column.real,
-  unit_cost_usd:  column.real,   // cost price at time of sale — for COGS calculation
+  unit_cost_usd:  column.real,
   line_total_usd: column.real,
 })
 
@@ -64,16 +66,41 @@ const exchange_rates = new Table({
 
 const expenses = new Table({
   shop_id:      column.text,
-  amount:       column.real,   // raw entered amount
-  currency:     column.text,   // USD or SYP
-  amount_usd:   column.real,   // converted at exchange rate on save
+  amount:       column.real,
+  currency:     column.text,
+  amount_usd:   column.real,
   category:     column.text,
-  expense_date: column.text,   // YYYY-MM-DD — backdatable up to 30 days
+  expense_date: column.text,
   notes:        column.text,
   photo_url:    column.text,
-  paid_in_cash: column.integer, // 0/1, default 1
+  paid_in_cash: column.integer,
   created_at:   column.text,
   sync_status:  column.text,
+})
+
+const customers = new Table({
+  shop_id:     column.text,
+  name:        column.text,
+  phone:       column.text,
+  mobile:      column.text,
+  address:     column.text,
+  deleted:     column.integer,
+  created_at:  column.text,
+  sync_status: column.text,
+})
+
+const customer_payments = new Table({
+  shop_id:                  column.text,
+  customer_id:              column.text,
+  sale_id:                  column.text,
+  amount_usd:               column.real,
+  currency:                 column.text,
+  amount_raw:               column.real,
+  exchange_rate_at_payment: column.real,
+  notes:                    column.text,
+  paid_at:                  column.text,
+  created_at:               column.text,
+  sync_status:              column.text,
 })
 
 export const AppSchema = new Schema({
@@ -83,4 +110,6 @@ export const AppSchema = new Schema({
   sale_line_items,
   exchange_rates,
   expenses,
+  customers,
+  customer_payments,
 })
