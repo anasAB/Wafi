@@ -25,14 +25,10 @@ describe('AppHeader', () => {
     expect(w.text()).toContain('Test')
   })
 
-  it('shows gear icon by default', () => {
+  it('does not show gear or back-office icons', () => {
     const w = mountHeader()
-    expect(w.find('[data-testid="gear-link"]').exists()).toBe(true)
-  })
-
-  it('hides gear icon when showSettings is false', () => {
-    const w = mountHeader({ showSettings: false })
     expect(w.find('[data-testid="gear-link"]').exists()).toBe(false)
+    expect(w.find('[data-testid="back-office-link"]').exists()).toBe(false)
   })
 
   it('shows back button when showBack is true', () => {
