@@ -41,30 +41,33 @@ const textSizes = computed(() => [
     />
   </div>
 
-  <div class="px-4 py-4 md:p-5 max-w-lg mx-auto w-full md:max-w-none">
+  <div class="px-4 py-4 md:p-5 max-w-lg mx-auto w-full md:max-w-none" dir="rtl">
 
     <!-- Preferences group -->
-    <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 px-1 md:px-0">{{ t('personal.preferencesSection') }}</p>
-    <div class="glass-sm overflow-hidden mb-4 md:bg-transparent md:backdrop-filter-none md:border-0 md:rounded-none">
+    <p class="text-xs font-semibold text-text-muted mb-2 px-1 md:px-0 tracking-widest uppercase">{{ t('personal.preferencesSection') }}</p>
+    <div class="glass-sm overflow-hidden mb-4">
 
       <!-- Luxury theme -->
-      <div class="px-4 py-3.5 border-b border-gray-100 dark:border-gray-700">
-        <p class="text-sm text-text-muted mb-3">Luxury Theme</p>
+      <div class="px-4 py-3.5 border-b border-border-glass">
+        <p class="text-sm text-text-muted mb-3">{{ t('personal.luxuryTheme') }}</p>
         <ThemePickerScreen />
       </div>
 
       <!-- Language -->
-      <div class="px-4 py-3.5 border-b border-gray-100 dark:border-gray-700">
-        <p class="text-sm text-gray-700 dark:text-gray-300 mb-2.5">{{ t('personal.language') }}</p>
+      <div class="px-4 py-3.5 border-b border-border-glass">
+        <p class="text-sm text-text-muted mb-2.5">{{ t('personal.language') }}</p>
         <div class="flex gap-2">
           <button
             v-for="lang in languages"
             :key="lang.value"
             type="button"
-            class="flex-1 py-2 rounded-xl text-sm font-medium transition-colors"
+            class="flex-1 py-2 rounded-xl text-sm font-medium transition-all"
             :class="settings.language === lang.value
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'"
+              ? 'text-bg-void font-semibold'
+              : 'bg-surface-glass text-text-muted hover:bg-surface-raised hover:text-text-primary'"
+            :style="settings.language === lang.value
+              ? 'background: linear-gradient(135deg, var(--color-gold-primary), var(--color-gold-to))'
+              : ''"
             @click="settings.language = lang.value"
           >
             {{ lang.label }}
@@ -73,17 +76,20 @@ const textSizes = computed(() => [
       </div>
 
       <!-- Theme -->
-      <div class="px-4 py-3.5 border-b border-gray-100 dark:border-gray-700">
-        <p class="text-sm text-gray-700 dark:text-gray-300 mb-2.5">{{ t('personal.theme') }}</p>
+      <div class="px-4 py-3.5 border-b border-border-glass">
+        <p class="text-sm text-text-muted mb-2.5">{{ t('personal.theme') }}</p>
         <div class="flex gap-2">
           <button
             v-for="thm in themes"
             :key="thm.value"
             type="button"
-            class="flex-1 py-2 rounded-xl text-sm font-medium transition-colors"
+            class="flex-1 py-2 rounded-xl text-sm font-medium transition-all"
             :class="settings.theme === thm.value
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'"
+              ? 'text-bg-void font-semibold'
+              : 'bg-surface-glass text-text-muted hover:bg-surface-raised hover:text-text-primary'"
+            :style="settings.theme === thm.value
+              ? 'background: linear-gradient(135deg, var(--color-gold-primary), var(--color-gold-to))'
+              : ''"
             @click="settings.theme = thm.value"
           >
             {{ thm.label }}
@@ -93,16 +99,19 @@ const textSizes = computed(() => [
 
       <!-- Text size -->
       <div class="px-4 py-3.5">
-        <p class="text-sm text-gray-700 dark:text-gray-300 mb-2.5">{{ t('personal.textSize') }}</p>
+        <p class="text-sm text-text-muted mb-2.5">{{ t('personal.textSize') }}</p>
         <div class="flex gap-1.5">
           <button
             v-for="s in textSizes"
             :key="s.value"
             type="button"
-            class="flex-1 py-2 rounded-xl text-sm font-medium transition-colors"
+            class="flex-1 py-2 rounded-xl text-sm font-medium transition-all"
             :class="settings.textSize === s.value
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'"
+              ? 'text-bg-void font-semibold'
+              : 'bg-surface-glass text-text-muted hover:bg-surface-raised hover:text-text-primary'"
+            :style="settings.textSize === s.value
+              ? 'background: linear-gradient(135deg, var(--color-gold-primary), var(--color-gold-to))'
+              : ''"
             @click="settings.textSize = s.value"
           >
             <span class="sm:hidden">{{ s.short }}</span>
@@ -114,16 +123,15 @@ const textSizes = computed(() => [
     </div>
 
     <!-- Session group -->
-    <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 px-1 md:px-0">{{ t('personal.sessionSection') }}</p>
-    <div class="glass-sm overflow-hidden md:bg-transparent md:backdrop-filter-none md:border-0 md:rounded-none">
+    <p class="text-xs font-semibold text-text-muted mb-2 px-1 md:px-0 tracking-widest uppercase">{{ t('personal.sessionSection') }}</p>
+    <div class="glass-sm overflow-hidden">
       <button
         type="button"
-        class="w-full flex items-center justify-between px-4 py-3.5 text-sm text-red-500 opacity-60 cursor-not-allowed"
+        class="w-full flex items-center justify-between px-4 py-3.5 text-sm text-red-500 opacity-50 cursor-not-allowed"
         disabled
-        title="سيتم تفعيله في الإصدار القادم"
       >
         <span>{{ t('personal.signOut') }}</span>
-        <span class="text-xs text-gray-400 dark:text-gray-500">{{ t('common.comingSoon') }}</span>
+        <span class="text-xs text-text-muted">{{ t('common.comingSoon') }}</span>
       </button>
     </div>
 

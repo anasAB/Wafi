@@ -128,19 +128,20 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-col gap-6 pb-24" dir="rtl">
+  <div class="flex flex-col gap-4 pb-24" dir="rtl">
 
-    <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm flex flex-col gap-3">
-      <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">المعلومات الأساسية</p>
+    <div class="glass-sm p-4 flex flex-col gap-3">
+      <p class="text-xs font-semibold text-text-muted uppercase tracking-wide">المعلومات الأساسية</p>
 
       <div>
-        <label class="block text-sm text-gray-700 dark:text-gray-300 mb-1">الاسم بالعربي *</label>
+        <label class="block text-sm text-text-muted mb-1">الاسم بالعربي *</label>
         <input
           v-model="nameAr"
           data-testid="name-ar"
           type="text"
-          class="w-full border rounded-xl px-3 py-2 text-sm dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          :class="errors['name-ar'] ? 'border-red-500' : 'border-gray-200 dark:border-gray-600'"
+          class="w-full rounded-xl px-3 py-2 text-sm text-text-primary bg-surface-glass border focus:outline-none focus:ring-1"
+          :class="errors['name-ar'] ? 'border-red-500' : 'border-border-glass'"
+          style="--tw-ring-color: var(--color-gold-primary)"
           placeholder="مثال: شاشة سامسونج 55 بوصة"
           @input="delete errors['name-ar']"
         />
@@ -150,54 +151,60 @@ onMounted(() => {
       </div>
 
       <div>
-        <label class="block text-sm text-gray-700 dark:text-gray-300 mb-1">الاسم بالإنجليزي</label>
+        <label class="block text-sm text-text-muted mb-1">الاسم بالإنجليزي</label>
         <input v-model="nameEn" data-testid="name-en" type="text"
-          class="w-full border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 text-sm dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          class="w-full rounded-xl px-3 py-2 text-sm text-text-primary bg-surface-glass border border-border-glass focus:outline-none focus:ring-1"
+          style="--tw-ring-color: var(--color-gold-primary)"
           placeholder="اختياري" />
       </div>
 
       <div>
-        <label class="block text-sm text-gray-700 dark:text-gray-300 mb-1">الباركود</label>
+        <label class="block text-sm text-text-muted mb-1">الباركود</label>
         <input v-model="barcode" data-testid="barcode" type="text"
-          class="w-full border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 text-sm dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          class="w-full rounded-xl px-3 py-2 text-sm text-text-primary bg-surface-glass border border-border-glass focus:outline-none focus:ring-1"
+          style="--tw-ring-color: var(--color-gold-primary)"
           placeholder="اختياري" />
       </div>
 
       <div>
-        <label class="block text-sm text-gray-700 dark:text-gray-300 mb-1">الفئة</label>
+        <label class="block text-sm text-text-muted mb-1">الفئة</label>
         <input v-model="category" data-testid="category" type="text"
-          class="w-full border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 text-sm dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          class="w-full rounded-xl px-3 py-2 text-sm text-text-primary bg-surface-glass border border-border-glass focus:outline-none focus:ring-1"
+          style="--tw-ring-color: var(--color-gold-primary)"
           placeholder="اختياري" />
       </div>
     </div>
 
-    <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm flex flex-col gap-3">
-      <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">التسعير</p>
+    <div class="glass-sm p-4 flex flex-col gap-3">
+      <p class="text-xs font-semibold text-text-muted uppercase tracking-wide">التسعير</p>
 
       <div v-if="priceWarning" data-testid="price-warning"
-        class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 rounded-xl px-3 py-2 text-sm text-yellow-800 dark:text-yellow-200">
+        class="glass-sm px-3 py-2 text-sm text-gold-primary"
+        style="border-color: var(--color-border-gold)">
         سعر البيع أقل من سعر التكلفة — هل أنت متأكد؟
         <div class="flex gap-2 mt-2">
-          <button type="button" class="text-xs font-semibold underline" data-testid="confirm-price-warning"
+          <button type="button" class="text-xs font-semibold underline text-gold-primary" data-testid="confirm-price-warning"
             @click="priceWarning = false; commitSave(Number(stock.value))">نعم، احفظ</button>
-          <button type="button" class="text-xs" @click="priceWarning = false">لا، تراجع</button>
+          <button type="button" class="text-xs text-text-muted" @click="priceWarning = false">لا، تراجع</button>
         </div>
       </div>
 
       <div class="flex gap-3">
         <div class="flex-1">
-          <label class="block text-sm text-gray-700 dark:text-gray-300 mb-1">سعر التكلفة $ *</label>
+          <label class="block text-sm text-text-muted mb-1">سعر التكلفة $ *</label>
           <input v-model="costPrice" data-testid="cost-price" type="number" min="0" step="0.01"
-            class="w-full border rounded-xl px-3 py-2 text-sm dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            :class="errors['cost-price'] ? 'border-red-500' : 'border-gray-200 dark:border-gray-600'"
+            class="w-full rounded-xl px-3 py-2 text-sm text-text-primary bg-surface-glass border focus:outline-none focus:ring-1"
+            :class="errors['cost-price'] ? 'border-red-500' : 'border-border-glass'"
+            style="--tw-ring-color: var(--color-gold-primary)"
             @input="delete errors['cost-price']" />
           <p v-if="errors['cost-price']" class="text-xs text-red-500 mt-1">{{ errors['cost-price'] }}</p>
         </div>
         <div class="flex-1">
-          <label class="block text-sm text-gray-700 dark:text-gray-300 mb-1">سعر البيع $ *</label>
+          <label class="block text-sm text-text-muted mb-1">سعر البيع $ *</label>
           <input v-model="salePrice" data-testid="sale-price" type="number" min="0" step="0.01"
-            class="w-full border rounded-xl px-3 py-2 text-sm dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            :class="errors['sale-price'] ? 'border-red-500' : 'border-gray-200 dark:border-gray-600'"
+            class="w-full rounded-xl px-3 py-2 text-sm text-text-primary bg-surface-glass border focus:outline-none focus:ring-1"
+            :class="errors['sale-price'] ? 'border-red-500' : 'border-border-glass'"
+            style="--tw-ring-color: var(--color-gold-primary)"
             @input="delete errors['sale-price']" />
           <p v-if="errors['sale-price']" class="text-xs text-red-500 mt-1">{{ errors['sale-price'] }}</p>
         </div>
@@ -205,32 +212,34 @@ onMounted(() => {
 
       <p v-if="margin !== null" data-testid="margin-display"
         class="text-xs font-medium"
-        :class="margin >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500'">
+        :class="margin >= 0 ? 'text-gold-primary' : 'text-red-500'">
         هامش الربح على التكلفة: {{ margin }}%
       </p>
     </div>
 
-    <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm flex flex-col gap-3">
-      <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">المخزون</p>
+    <div class="glass-sm p-4 flex flex-col gap-3">
+      <p class="text-xs font-semibold text-text-muted uppercase tracking-wide">المخزون</p>
       <div class="flex gap-3">
         <div class="flex-1">
-          <label class="block text-sm text-gray-700 dark:text-gray-300 mb-1">الكمية الحالية *</label>
+          <label class="block text-sm text-text-muted mb-1">الكمية الحالية *</label>
           <input v-model="stock" data-testid="current-stock" type="number" step="1"
-            class="w-full border rounded-xl px-3 py-2 text-sm dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            :class="errors['current-stock'] ? 'border-red-500' : 'border-gray-200 dark:border-gray-600'"
+            class="w-full rounded-xl px-3 py-2 text-sm text-text-primary bg-surface-glass border focus:outline-none focus:ring-1"
+            :class="errors['current-stock'] ? 'border-red-500' : 'border-border-glass'"
+            style="--tw-ring-color: var(--color-gold-primary)"
             @input="delete errors['current-stock']" />
           <p v-if="errors['current-stock']" class="text-xs text-red-500 mt-1">{{ errors['current-stock'] }}</p>
         </div>
         <div class="flex-1">
-          <label class="block text-sm text-gray-700 dark:text-gray-300 mb-1">حد التنبيه</label>
+          <label class="block text-sm text-text-muted mb-1">حد التنبيه</label>
           <input v-model="threshold" data-testid="threshold" type="number" min="0" step="1"
-            class="w-full border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 text-sm dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            class="w-full rounded-xl px-3 py-2 text-sm text-text-primary bg-surface-glass border border-border-glass focus:outline-none focus:ring-1"
+            style="--tw-ring-color: var(--color-gold-primary)" />
         </div>
       </div>
     </div>
 
-    <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm">
-      <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">الصورة</p>
+    <div class="glass-sm p-4">
+      <p class="text-xs font-semibold text-text-muted uppercase tracking-wide mb-3">الصورة</p>
       <p v-if="photoError" class="text-xs text-red-500 mb-2">{{ photoError }}</p>
       <ProductPhotoUpload
         :model-value="photoUrl"
@@ -239,30 +248,32 @@ onMounted(() => {
       />
     </div>
 
-    <div class="fixed bottom-0 inset-x-0 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 px-4 py-3 flex gap-3" dir="rtl">
-      <button
-        type="button"
-        data-testid="save-btn"
-        :disabled="saving"
-        class="flex-1 h-12 rounded-xl text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-colors"
-        @click="handleSave(false)"
-      >{{ saving ? '...' : 'حفظ' }}</button>
+    <div class="fixed bottom-0 inset-x-0 z-10" style="background: var(--color-bg-void); border-top: 1px solid var(--color-border-gold)">
+      <div class="max-w-2xl mx-auto px-4 py-3 flex gap-3" dir="rtl">
+        <button
+          type="button"
+          data-testid="save-btn"
+          :disabled="saving"
+          class="flex-1 btn-gold h-12 text-sm disabled:opacity-50"
+          @click="handleSave(false)"
+        >{{ saving ? '...' : 'حفظ' }}</button>
 
-      <button
-        v-if="mode === 'add'"
-        type="button"
-        data-testid="save-another-btn"
-        :disabled="saving"
-        class="h-12 px-4 rounded-xl text-sm text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-600"
-        @click="handleSave(true)"
-      >إضافة آخر</button>
+        <button
+          v-if="mode === 'add'"
+          type="button"
+          data-testid="save-another-btn"
+          :disabled="saving"
+          class="btn-ghost h-12 px-4 text-sm disabled:opacity-50"
+          @click="handleSave(true)"
+        >إضافة آخر</button>
 
-      <button
-        type="button"
-        data-testid="cancel-btn"
-        class="h-12 px-4 rounded-xl text-sm text-gray-600 dark:text-gray-400"
-        @click="emit('cancel')"
-      >إلغاء</button>
+        <button
+          type="button"
+          data-testid="cancel-btn"
+          class="h-12 px-4 rounded-xl text-sm text-text-muted hover:text-text-primary transition-colors"
+          @click="emit('cancel')"
+        >إلغاء</button>
+      </div>
     </div>
 
     <StockAdjustmentDialog
