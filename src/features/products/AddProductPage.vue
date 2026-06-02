@@ -18,14 +18,13 @@ function handleSaved() {
 </script>
 
 <template>
-  <div class="flex flex-col min-h-dvh" dir="rtl">
+  <div class="flex flex-col min-h-dvh bg-bg-void" dir="rtl">
     <AppHeader
       title="إضافة منتج"
       :show-back="true"
-      :show-back-office="false"
-      @back="router.push('/products')"
+      @back="router.back()"
     />
-    <main class="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
+    <main class="flex-1 px-4 py-4 max-w-2xl mx-auto w-full">
       <ProductForm
         mode="add"
         :initial-barcode="initialBarcode"

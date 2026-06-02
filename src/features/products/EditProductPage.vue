@@ -27,19 +27,20 @@ function handleSaved() {
 </script>
 
 <template>
-  <div class="flex flex-col min-h-dvh" dir="rtl">
+  <div class="flex flex-col min-h-dvh bg-bg-void" dir="rtl">
     <AppHeader
       title="تعديل المنتج"
       :show-back="true"
-      :show-back-office="false"
-      @back="router.push('/products')"
+      @back="router.back()"
     />
-    <main class="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
-      <div v-if="!loaded" class="flex justify-center py-20 text-gray-400">جارٍ التحميل...</div>
-      <div v-else-if="!product" class="flex flex-col items-center justify-center py-20 text-gray-400 gap-2">
-        <span class="text-3xl">📦</span>
+    <main class="flex-1 px-4 py-4 max-w-2xl mx-auto w-full">
+      <div v-if="!loaded" class="flex justify-center py-20 text-text-muted text-sm">جارٍ التحميل...</div>
+      <div v-else-if="!product" class="flex flex-col items-center justify-center py-20 text-text-muted gap-3">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+        </svg>
         <p class="text-sm">المنتج غير موجود</p>
-        <button type="button" class="text-sm text-blue-600 underline" @click="router.push('/products')">العودة للمنتجات</button>
+        <button type="button" class="text-sm text-gold-primary underline" @click="router.push('/products')">العودة للمنتجات</button>
       </div>
       <ProductForm
         v-else

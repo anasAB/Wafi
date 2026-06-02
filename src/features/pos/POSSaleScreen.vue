@@ -90,7 +90,7 @@ function handlePaymentConfirmed(completedSale: CompletedSale) {
 
 <template>
   <div class="flex flex-col min-h-dvh bg-bg-void">
-    <AppHeader title="بيع جديد" :show-exchange-rate="true" :show-back="true" @back="router.push('/home')" />
+    <AppHeader title="بيع جديد" :show-exchange-rate="true" :show-back="true" @back="router.push('/')" />
 
     <!-- Rate change notice -->
     <div

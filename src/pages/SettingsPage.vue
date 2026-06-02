@@ -11,18 +11,16 @@ const APP_VERSION = 'v0.1.0'
 </script>
 
 <template>
-  <div class="flex flex-col min-h-dvh">
+  <div class="flex flex-col min-h-dvh bg-bg-void" dir="rtl">
     <AppHeader
       :title="t('settings.title')"
       :show-back="true"
-      :show-settings="false"
       @back="router.back()"
     />
 
-    <!-- Mobile layout (hidden on md+): full-screen grouped list -->
+    <!-- Mobile layout (hidden on md+) -->
     <main class="flex-1 md:hidden px-4 py-4 max-w-lg mx-auto w-full">
 
-      <!-- Personal section -->
       <p class="text-xs font-medium text-text-muted mb-2 px-1 tracking-widest uppercase">{{ t('settings.personal') }}</p>
       <div class="glass-sm overflow-hidden mb-4">
         <button
@@ -31,61 +29,64 @@ const APP_VERSION = 'v0.1.0'
           @click="router.push('/settings/personal')"
         >
           <span>{{ t('settings.personal') }}</span>
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-gray-400 rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-text-muted rtl:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
           </svg>
         </button>
         <button
           type="button"
-          class="w-full flex items-center justify-between px-4 py-3.5 text-sm text-red-500 opacity-60 cursor-not-allowed"
+          class="w-full flex items-center justify-between px-4 py-3.5 text-sm text-red-500 opacity-50 cursor-not-allowed"
           disabled
         >
           <span>{{ t('personal.signOut') }}</span>
-          <span class="text-xs text-gray-400 dark:text-gray-500">{{ t('common.comingSoon') }}</span>
+          <span class="text-xs text-text-muted">{{ t('common.comingSoon') }}</span>
         </button>
       </div>
 
-      <!-- About section -->
       <p class="text-xs font-medium text-text-muted mb-2 px-1 tracking-widest uppercase">{{ t('settings.about') }}</p>
       <div class="glass-sm overflow-hidden">
-        <div class="flex items-center justify-between px-4 py-3.5 text-sm text-gray-900 dark:text-white">
+        <div class="flex items-center justify-between px-4 py-3.5 text-sm text-text-primary">
           <span>{{ t('personal.aboutVersionLabel') }}</span>
-          <span class="text-xs text-gray-400 dark:text-gray-500">{{ APP_VERSION }}</span>
+          <span class="text-xs text-text-muted">{{ APP_VERSION }}</span>
         </div>
       </div>
 
     </main>
 
-    <!-- Desktop layout (md+): sidebar + content panel -->
-    <div class="hidden md:flex flex-1 max-w-2xl mx-auto w-full px-6 py-6 gap-6">
+    <!-- Desktop layout (md+): sidebar (right in RTL) + content panel (left) -->
+    <div class="hidden md:flex flex-1 max-w-4xl mx-auto w-full px-6 py-6 gap-6">
 
-      <!-- Sidebar nav -->
-      <nav class="w-44 flex-shrink-0">
+      <!-- Sidebar nav — appears on RIGHT in RTL because it's first in flex-row -->
+      <nav class="w-52 flex-shrink-0">
         <div class="glass-sm overflow-hidden">
           <RouterLink
             to="/settings/personal"
-            class="block px-4 py-3 text-sm border-b border-gray-100 dark:border-gray-700"
+            class="flex items-center justify-between px-4 py-3.5 text-sm border-b border-border-glass transition-colors"
             :class="route.path === '/settings/personal'
-              ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30 font-medium'
-              : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'"
+              ? 'text-gold-primary bg-surface-raised font-semibold'
+              : 'text-text-muted hover:bg-surface-glass hover:text-text-primary'"
           >
-            {{ t('settings.personal') }}
+            <span>{{ t('settings.personal') }}</span>
+            <span v-if="route.path === '/settings/personal'" class="w-1.5 h-1.5 rounded-full bg-gold-primary" />
           </RouterLink>
-          <div class="px-4 py-3 text-sm text-gray-400 dark:text-gray-500">
-            {{ t('settings.about') }}
-            <span class="text-xs mr-1 text-gray-300 dark:text-gray-600">{{ APP_VERSION }}</span>
+          <div class="flex items-center justify-between px-4 py-3.5 text-sm text-text-muted">
+            <span>{{ t('settings.about') }}</span>
+            <span class="text-xs opacity-50">{{ APP_VERSION }}</span>
           </div>
         </div>
       </nav>
 
-      <!-- Content panel: sub-screens render here via RouterView on desktop -->
-      <div class="flex-1 glass-sm overflow-hidden">
+      <!-- Content panel -->
+      <div class="flex-1 glass-sm overflow-hidden min-h-0">
         <RouterView />
         <div
           v-if="route.path === '/settings'"
-          class="flex items-center justify-center h-48 text-sm text-gray-400 dark:text-gray-500"
+          class="flex flex-col items-center justify-center h-48 gap-2 text-text-muted"
         >
-          {{ t('settings.selectSection') }}
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
+          </svg>
+          <p class="text-sm">{{ t('settings.selectSection') }}</p>
         </div>
       </div>
 
