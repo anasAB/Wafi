@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import NumericKeypad from '@/components/ui/NumericKeypad.vue'
+import CustomerPickerModal from '@/features/customers/components/CustomerPickerModal.vue'
 import { usePayment } from './usePayment'
 import type { CompletedSale } from './payment.types'
+import type { Customer } from '@/features/customers/customer.types'
 
 const emit = defineEmits<{
   (e: 'confirmed', sale: CompletedSale): void
@@ -12,7 +14,9 @@ const emit = defineEmits<{
 const { state, method, amountReceived, totalUsd, totalSyp, changeDue, error,
         selectMethod, back, cancel, confirm } = usePayment()
 
-const amountStr = ref('')
+const amountStr        = ref('')
+const selectedCustomer = ref<Customer | null>(null)
+const showPicker       = ref(false)
 
 const displayAmount = computed(() => {
   if (!amountStr.value) return null
@@ -38,10 +42,20 @@ function handleDelete() {
   amountReceived.value = displayAmount.value
 }
 
+function handleSelectCredit() {
+  selectMethod('credit')
+  showPicker.value = true
+}
+
+function handleCustomerSelected(customer: Customer) {
+  selectedCustomer.value = customer
+  showPicker.value = false
+}
+
 async function handleConfirm() {
-  if (method.value !== 'card' && !amountSufficient.value) return
+  if (method.value !== 'card' && method.value !== 'credit' && !amountSufficient.value) return
   try {
-    const sale = await confirm()
+    const sale = await confirm(selectedCustomer.value?.id)
     emit('confirmed', sale)
   } catch {
     // error is set in usePayment
@@ -84,7 +98,7 @@ function handleCancel() {
           <p class="text-sm text-gray-400 mt-1">{{ totalSyp.toLocaleString() }} ل.س</p>
         </div>
 
-        <div class="grid grid-cols-3 gap-3">
+        <div class="grid grid-cols-2 gap-3 mb-3">
           <button
             v-for="m in [
               { key: 'cash_usd', label: 'نقدي دولار' },
@@ -96,7 +110,44 @@ function handleCancel() {
             class="py-4 rounded-xl border-2 border-gray-200 dark:border-gray-700 text-sm font-medium text-gray-700 dark:text-gray-200 hover:border-blue-500 hover:text-blue-600 active:scale-95 transition-all"
             @click="selectMethod(m.key as any)"
           >{{ m.label }}</button>
+
+          <!-- Credit tile -->
+          <button
+            type="button"
+            data-testid="credit-method-btn"
+            class="py-4 rounded-xl border-2 text-sm font-medium active:scale-95 transition-all"
+            :class="selectedCustomer
+              ? 'border-amber-400 text-amber-600 bg-amber-50 dark:bg-amber-900/20'
+              : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:border-amber-400 hover:text-amber-600'"
+            @click="handleSelectCredit"
+          >📋 آجل</button>
         </div>
+
+        <!-- Selected customer chip -->
+        <div
+          v-if="selectedCustomer && method === 'credit'"
+          class="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 flex items-center justify-between"
+          dir="rtl"
+        >
+          <div>
+            <p class="text-sm font-semibold text-amber-800 dark:text-amber-200">{{ selectedCustomer.name }}</p>
+            <p v-if="selectedCustomer.phone" class="text-xs text-amber-600 dark:text-amber-400">{{ selectedCustomer.phone }}</p>
+          </div>
+          <button
+            type="button"
+            class="text-xs text-amber-600 underline"
+            @click="showPicker = true"
+          >تغيير</button>
+        </div>
+
+        <!-- Confirm credit button -->
+        <button
+          v-if="method === 'credit' && selectedCustomer"
+          type="button"
+          data-testid="confirm-credit-btn"
+          class="w-full h-12 rounded-xl bg-amber-500 text-white font-semibold active:scale-95 transition-all"
+          @click="handleConfirm"
+        >تأكيد البيع الآجل</button>
 
         <p v-if="error" class="mt-4 text-red-600 text-sm text-center">{{ error }}</p>
       </div>
@@ -186,4 +237,11 @@ function handleCancel() {
 
     </div>
   </div>
+
+  <!-- Customer picker -->
+  <CustomerPickerModal
+    v-if="showPicker"
+    @select="handleCustomerSelected"
+    @cancel="showPicker = false"
+  />
 </template>
