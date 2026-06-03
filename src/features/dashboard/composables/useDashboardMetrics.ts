@@ -9,6 +9,7 @@ export function useDashboardMetrics() {
   const cogsUsd          = ref(0)
   const expensesUsd      = ref(0)
   const missingCostCount = ref(0)
+  const invoiceCount     = ref(0)
 
   const profitUsd = computed(() => revenueUsd.value - cogsUsd.value - expensesUsd.value)
 
@@ -16,7 +17,7 @@ export function useDashboardMetrics() {
     const device = useDeviceStore()
     const { start, end } = getDateRange(period)
 
-    const [revRow, cogsRow, expRow, missingRow] = await Promise.all([
+    const [revRow, cogsRow, expRow, missingRow, countRow] = await Promise.all([
       db.getOptional<{ total: number }>(
         `SELECT COALESCE(SUM(total_usd), 0) as total
          FROM sales WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?`,
@@ -40,13 +41,19 @@ export function useDashboardMetrics() {
            AND (cost_price_usd = 0 OR cost_price_usd IS NULL)`,
         [device.shopId]
       ),
+      db.getOptional<{ count: number }>(
+        `SELECT COUNT(*) as count FROM sales
+         WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?`,
+        [device.shopId, start, end]
+      ),
     ])
 
     revenueUsd.value       = revRow?.total    ?? 0
     cogsUsd.value          = cogsRow?.cogs    ?? 0
     expensesUsd.value      = expRow?.total    ?? 0
     missingCostCount.value = missingRow?.count ?? 0
+    invoiceCount.value     = countRow?.count   ?? 0
   }
 
-  return { revenueUsd, cogsUsd, expensesUsd, profitUsd, missingCostCount, load }
+  return { revenueUsd, cogsUsd, expensesUsd, profitUsd, missingCostCount, invoiceCount, load }
 }
