@@ -19,6 +19,7 @@ export default createRouter({
       component: () => import('@/pages/SettingsPage.vue'),
       children: [
         { path: 'personal', component: () => import('@/features/settings/screens/PersonalPreferencesScreen.vue') },
+        { path: 'receipt',  component: () => import('@/features/receipt/ReceiptSettingsScreen.vue') },
       ],
     },
     { path: '/:pathMatch(.*)*', redirect: '/' },
