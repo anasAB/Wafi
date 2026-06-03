@@ -55,6 +55,7 @@ export function useSaleHistory() {
         amountReceivedCurrency: r.amount_received_currency,
         changeDue:           r.change_due,
         isPending:           pendingIds.has(r.id),
+        isSplit:             (r.is_split ?? 0) === 1,
       }))
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)

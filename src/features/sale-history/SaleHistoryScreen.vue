@@ -54,7 +54,11 @@ function formatDate(iso: string): string {
 }
 
 const methodLabel: Record<string, string> = {
-  cash_usd: '💵', cash_syp: 'ل.س', card: '💳',
+  cash_usd: '💵',
+  cash_syp: 'ل.س',
+  card:     '💳',
+  credit:   '📋',
+  split:    '💵+',
 }
 
 async function handleReprint(saleId: string) {
