@@ -3,8 +3,8 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import AppToast from '@/components/ui/AppToast.vue'
-import ReceiptTemplatePreview from '../components/ReceiptTemplatePreview.vue'
-import { useReceiptSettings } from '../composables/useReceiptSettings'
+import ReceiptTemplatePreview from './components/ReceiptTemplatePreview.vue'
+import { useReceiptSettings } from './composables/useReceiptSettings'
 
 const router = useRouter()
 const { settings, load, save } = useReceiptSettings()
