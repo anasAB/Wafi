@@ -6,6 +6,7 @@ import AppToast from '@/components/ui/AppToast.vue'
 import type { CompletedSale } from '@/features/payment/payment.types'
 import { useDeviceStore } from '@/store/device.store'
 import type { ReceiptData } from '@/composables/usePrinter'
+import { useReceiptSettings } from '@/features/receipt/composables/useReceiptSettings'
 
 const router  = useRouter()
 const device  = useDeviceStore()
@@ -22,10 +23,13 @@ const methodLabels: Record<string, string> = {
 
 async function handlePrint() {
   if (!sale) return
+  const { settings, load } = useReceiptSettings()
+  await load()
+
   const receipt: ReceiptData = {
     saleId:                 sale.saleId,
     displaySaleNumber:      sale.displaySaleNumber,
-    shopName:               device.shopId,
+    shopName:               settings.value.shopName || device.shopId,
     createdAt:              sale.createdAt,
     lines:                  sale.lines,
     totalUsd:               sale.totalUsd,
@@ -35,6 +39,9 @@ async function handlePrint() {
     amountReceived:         sale.amountReceived,
     amountReceivedCurrency: sale.amountReceivedCurrency,
     changeDue:              sale.changeDue,
+    taxNumber:              settings.value.taxNumber  || undefined,
+    headerText:             settings.value.headerText || undefined,
+    footerText:             settings.value.footerText || undefined,
   }
   try {
     await printer.print(receipt)

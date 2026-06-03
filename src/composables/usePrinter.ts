@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 
-export type PaymentMethod = 'cash_usd' | 'cash_syp' | 'card'
+export type PaymentMethod = 'cash_usd' | 'cash_syp' | 'card' | 'credit'
 
 export interface ReceiptData {
   saleId:            string
