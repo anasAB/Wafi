@@ -508,7 +508,7 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
     <span class="activity-live-dot"></span>
     <span class="card-title">النشاط المباشر</span>
   </div>
-  <div v-if="recentActivity.length === 0" class="empty-state">لا يوجد نشاط اليوم</div>
+  <div v-if="recentActivity.length === 0" class="empty-state">لا يوجد نشاط في آخر ٧ أيام</div>
   <div v-else class="activity-list">
     <div v-for="sale in recentActivity" :key="sale.id" class="activity-item">
       <div class="ai-amount" dir="ltr">

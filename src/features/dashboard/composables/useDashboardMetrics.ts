@@ -5,6 +5,7 @@ import { getDateRange } from './periodUtils'
 import type { Period } from './periodUtils'
 
 export function useDashboardMetrics() {
+  const device           = useDeviceStore()
   const revenueUsd       = ref(0)
   const cogsUsd          = ref(0)
   const expensesUsd      = ref(0)
@@ -14,7 +15,6 @@ export function useDashboardMetrics() {
   const profitUsd = computed(() => revenueUsd.value - cogsUsd.value - expensesUsd.value)
 
   async function load(period: Period) {
-    const device = useDeviceStore()
     const { start, end } = getDateRange(period)
 
     const [revRow, cogsRow, expRow, missingRow, countRow] = await Promise.all([
