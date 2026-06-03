@@ -427,7 +427,80 @@ const bottomNavItems = [
 
   <!-- Right column (desktop only) -->
   <div class="hp-col-right">
-    <!-- SIGNALS -->
+    <!-- Health signals -->
+<div class="section-card">
+  <div class="signals-title">إشارات الصحة</div>
+  <div class="signals-list">
+
+    <!-- Low stock -->
+    <RouterLink
+      to="/products?filter=low-stock"
+      class="signal-row"
+      :class="allClear ? 'sig-green' : 'sig-yellow'"
+    >
+      <span class="sig-dot" :class="allClear ? 'dot-green' : 'dot-yellow'"></span>
+      <div class="sig-body">
+        <div class="sig-main">
+          {{ allClear ? 'كل المنتجات متوفرة' : `${lowStockCount} أصناف مخزون منخفض` }}
+        </div>
+        <div v-if="!allClear" class="sig-sub">
+          {{ lowStockTop3.map(p => p.nameAr).join('، ') }}
+        </div>
+      </div>
+      <svg class="sig-arr" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path d="M9 18l6-6-6-6"/>
+      </svg>
+    </RouterLink>
+
+    <!-- Open credit customers -->
+    <RouterLink
+      to="/customers"
+      class="signal-row"
+      :class="openCreditCount > 0 ? 'sig-blue' : 'sig-green'"
+    >
+      <span class="sig-dot" :class="openCreditCount > 0 ? 'dot-blue' : 'dot-green'"></span>
+      <div class="sig-body">
+        <div class="sig-main">
+          {{ openCreditCount > 0 ? `${openCreditCount} زبون بفواتير آجل` : 'لا ديون مفتوحة' }}
+        </div>
+      </div>
+      <svg class="sig-arr" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path d="M9 18l6-6-6-6"/>
+      </svg>
+    </RouterLink>
+
+    <!-- Margin signal -->
+    <div
+      class="signal-row"
+      :class="profitMarginPct >= 20 ? 'sig-green' : profitMarginPct >= 10 ? 'sig-yellow' : 'sig-red'"
+    >
+      <span
+        class="sig-dot"
+        :class="profitMarginPct >= 20 ? 'dot-green' : profitMarginPct >= 10 ? 'dot-yellow' : 'dot-red'"
+      ></span>
+      <div class="sig-body">
+        <div class="sig-main">الهامش {{ profitMarginPct }}%</div>
+        <div class="sig-sub">
+          {{ profitMarginPct >= 20 ? 'هامش صحي' : profitMarginPct >= 10 ? 'هامش متوسط' : 'هامش منخفض' }}
+        </div>
+      </div>
+    </div>
+
+    <!-- Cash drawer -->
+    <button class="signal-row sig-green" @click="showCashDrawer = true">
+      <span class="sig-dot dot-green"></span>
+      <div class="sig-body">
+        <div class="sig-main">النقد في الصندوق</div>
+        <div class="sig-sub" dir="ltr">${{ drawer.cashUsd.value.toFixed(2) }}</div>
+      </div>
+      <svg class="sig-arr" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path d="M9 18l6-6-6-6"/>
+      </svg>
+    </button>
+
+  </div>
+</div>
+
     <!-- EXPENSE BUTTON -->
   </div>
 
@@ -801,4 +874,32 @@ const bottomNavItems = [
 .sr-name  { flex: 1; font-size: 13px; font-weight: 600; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sr-units { font-size: 11px; color: var(--text-4); flex-shrink: 0; }
 .sr-rev   { font-size: 13px; font-weight: 700; color: var(--green); flex-shrink: 0; }
+
+/* ─── HEALTH SIGNALS ─────────────────────────────────── */
+.signals-title { font-size: 13px; font-weight: 700; color: var(--text-1); margin-bottom: 10px; }
+.signals-list  { display: flex; flex-direction: column; }
+
+.signal-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+  text-decoration: none; font-family: 'Tajawal', sans-serif;
+  background: transparent; border-right: none; border-left: none;
+  border-top: none; cursor: pointer; width: 100%; text-align: right;
+  transition: opacity .15s;
+}
+.signal-row:last-child { border-bottom: none; }
+.signal-row:hover { opacity: .8; }
+
+.sig-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 5px;
+}
+.dot-green  { background: var(--green);  box-shadow: 0 0 5px rgba(34,197,94,.5);  }
+.dot-yellow { background: var(--yellow); box-shadow: 0 0 5px rgba(245,158,11,.5); }
+.dot-red    { background: var(--red);    box-shadow: 0 0 5px rgba(239,68,68,.5);  }
+.dot-blue   { background: #60A5FA;       box-shadow: 0 0 5px rgba(96,165,250,.5); }
+
+.sig-body { flex: 1; min-width: 0; }
+.sig-main { font-size: 12px; font-weight: 700; color: var(--text-2); }
+.sig-sub  { font-size: 11px; color: var(--text-4); margin-top: 2px; }
+.sig-arr  { color: var(--text-4); flex-shrink: 0; margin-top: 2px; }
 </style>
