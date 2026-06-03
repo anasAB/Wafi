@@ -1,4 +1,4 @@
-export type PaymentMethod = 'cash_usd' | 'cash_syp' | 'card' | 'credit'
+export type PaymentMethod = 'cash_usd' | 'cash_syp' | 'card' | 'credit' | 'split'
 export type PaymentState  = 'method-selection' | 'amount-entry' | 'card-confirm' | 'credit-confirm' | 'confirming' | 'confirmed'
 
 export interface SaleLine {
@@ -6,6 +6,15 @@ export interface SaleLine {
   quantity:     number
   unitPriceUsd: number
   lineTotalUsd: number
+}
+
+export interface SplitPaymentEntry {
+  method:       'cash_usd' | 'cash_syp' | 'card'
+  amountRaw:    number   // as entered by cashier
+  currency:     'USD' | 'SYP'
+  amountUsd:    number   // converted at exchangeRate
+  exchangeRate: number
+  changeDue:    number   // 0 unless last entry is overpaid
 }
 
 export interface CompletedSale {
@@ -21,4 +30,5 @@ export interface CompletedSale {
   createdAt:               string
   lines:                   SaleLine[]
   customerId?:             string
+  splitPayments?:          SplitPaymentEntry[]
 }
