@@ -86,12 +86,14 @@ describe('usePayment', () => {
   it('confirm deducts stock and writes stock_adjustments for each sale line', async () => {
     // Mock all db.execute calls in order:
     // 1. INSERT INTO sales
-    // 2. INSERT INTO sale_line_items (for the one line in beforeEach)
+    // 2. INSERT INTO sale_payments (single entry, non-split path)
+    // 3. INSERT INTO sale_line_items (for the one line in beforeEach)
     // Note: SELECT is now getOptional, not execute
-    // 3. UPDATE products (stock deduction)
-    // 4. INSERT INTO stock_adjustments
+    // 4. UPDATE products (stock deduction)
+    // 5. INSERT INTO stock_adjustments
     vi.mocked(db.execute)
       .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sales
+      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sale_payments
       .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sale_line_items
       // Note: SELECT is now getOptional, not execute
       .mockResolvedValueOnce({ rows: { _array: [] } } as any) // UPDATE products
@@ -124,6 +126,7 @@ describe('usePayment', () => {
       .mockResolvedValueOnce({ current_stock: 10 } as any)   // stock lookup for p1
     vi.mocked(db.execute)
       .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sales
+      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sale_payments
       .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sale_line_items
       .mockResolvedValueOnce({ rows: { _array: [] } } as any) // UPDATE products stock
       .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT stock_adjustments
@@ -146,6 +149,7 @@ describe('usePayment', () => {
       .mockResolvedValueOnce({ current_stock: 10 } as any)
     vi.mocked(db.execute)
       .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sales
+      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sale_payments
       .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sale_line_items
       .mockResolvedValueOnce({ rows: { _array: [] } } as any) // UPDATE products
       .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT stock_adjustments
@@ -161,5 +165,111 @@ describe('usePayment', () => {
     expect(salesInsert).toBeDefined()
     expect(salesInsert![1]).toContain('customer-abc')
     expect(salesInsert![1]).toContain(1) // is_credit = 1
+  })
+
+  describe('split payments', () => {
+    beforeEach(() => {
+      setActivePinia(createPinia())
+      vi.clearAllMocks()
+      vi.mocked(db.getOptional).mockResolvedValue(null)
+      vi.mocked(db.execute).mockResolvedValue({ rows: { _array: [] } } as any)
+    })
+
+    it('pendingPayments defaults to empty', () => {
+      const { pendingPayments } = usePayment()
+      expect(pendingPayments.value).toHaveLength(0)
+    })
+
+    it('addPayment appends an entry to pendingPayments', () => {
+      const { addPayment, pendingPayments, selectMethod } = usePayment()
+      selectMethod('cash_usd')
+      addPayment('cash_usd', 30)
+      expect(pendingPayments.value).toHaveLength(1)
+      expect(pendingPayments.value[0].method).toBe('cash_usd')
+      expect(pendingPayments.value[0].amountUsd).toBe(30)
+      expect(pendingPayments.value[0].currency).toBe('USD')
+    })
+
+    it('addPayment sets SYP currency for cash_syp', () => {
+      const { addPayment, pendingPayments } = usePayment()
+      addPayment('cash_syp', 1_450_000)
+      expect(pendingPayments.value[0].amountRaw).toBe(1_450_000)
+      expect(pendingPayments.value[0].currency).toBe('SYP')
+    })
+
+    it('remainingUsd is non-negative', () => {
+      const { addPayment, remainingUsd } = usePayment()
+      addPayment('cash_usd', 30)
+      expect(remainingUsd.value).toBeGreaterThanOrEqual(0)
+    })
+
+    it('removeLastPayment removes the last entry', () => {
+      const { addPayment, removeLastPayment, pendingPayments } = usePayment()
+      addPayment('cash_usd', 30)
+      addPayment('cash_syp', 500_000)
+      removeLastPayment()
+      expect(pendingPayments.value).toHaveLength(1)
+      expect(pendingPayments.value[0].method).toBe('cash_usd')
+    })
+
+    it('removeLastPayment is a no-op when list is empty', () => {
+      const { removeLastPayment, pendingPayments } = usePayment()
+      removeLastPayment()
+      expect(pendingPayments.value).toHaveLength(0)
+    })
+
+    it('isReadyToConfirm is false when pendingPayments is empty', () => {
+      const { isReadyToConfirm } = usePayment()
+      expect(isReadyToConfirm.value).toBe(false)
+    })
+
+    it('confirm with pendingPayments writes is_split=1 and inserts sale_payments rows', async () => {
+      vi.mocked(db.getOptional)
+        .mockResolvedValueOnce({ cost_price_usd: 0 } as any)
+        .mockResolvedValueOnce({ current_stock: 10 } as any)
+      vi.mocked(db.execute)
+        .mockResolvedValue({ rows: { _array: [] } } as any)
+
+      const { addPayment, confirm } = usePayment()
+      addPayment('cash_usd', 30)
+      addPayment('cash_syp', 500_000)
+      await confirm()
+
+      const salesInsert = vi.mocked(db.execute).mock.calls.find(c =>
+        (c[0] as string).includes('INSERT INTO sales') &&
+        (c[0] as string).includes('is_split')
+      )
+      expect(salesInsert).toBeDefined()
+      expect(salesInsert![1]).toContain(1) // is_split = 1
+
+      const paymentInserts = vi.mocked(db.execute).mock.calls.filter(c =>
+        (c[0] as string).includes('INSERT INTO sale_payments')
+      )
+      expect(paymentInserts).toHaveLength(2)
+    })
+
+    it('confirm without pendingPayments (single path) writes is_split=0', async () => {
+      vi.mocked(db.getOptional)
+        .mockResolvedValueOnce({ cost_price_usd: 0 } as any)
+        .mockResolvedValueOnce({ current_stock: 10 } as any)
+      vi.mocked(db.execute)
+        .mockResolvedValue({ rows: { _array: [] } } as any)
+
+      const { selectMethod, confirm } = usePayment()
+      selectMethod('card')
+      await confirm()
+
+      const salesInsert = vi.mocked(db.execute).mock.calls.find(c =>
+        (c[0] as string).includes('INSERT INTO sales') &&
+        (c[0] as string).includes('is_split')
+      )
+      expect(salesInsert).toBeDefined()
+      expect(salesInsert![1]).toContain(0) // is_split = 0
+
+      const paymentInserts = vi.mocked(db.execute).mock.calls.filter(c =>
+        (c[0] as string).includes('INSERT INTO sale_payments')
+      )
+      expect(paymentInserts).toHaveLength(1)
+    })
   })
 })
