@@ -19,6 +19,8 @@ const methodLabels: Record<string, string> = {
   cash_usd: 'نقداً دولار',
   cash_syp: 'نقداً ليرة',
   card:     'بطاقة',
+  credit:   'آجل',
+  split:    'متعدد',
 }
 
 async function handlePrint() {
@@ -74,8 +76,23 @@ async function handlePrint() {
       </div>
       <div class="flex justify-between text-sm">
         <span class="text-gray-500">طريقة الدفع</span>
-        <span class="font-semibold">{{ sale ? methodLabels[sale.paymentMethod] : '—' }}</span>
+        <span class="font-semibold">
+          {{ sale ? (sale.paymentMethod === 'split' ? 'متعدد' : methodLabels[sale.paymentMethod]) : '—' }}
+        </span>
       </div>
+
+      <!-- Split payment breakdown -->
+      <template v-if="sale?.splitPayments?.length">
+        <div
+          v-for="(entry, i) in sale.splitPayments"
+          :key="i"
+          class="flex justify-between text-sm pr-4"
+          dir="rtl"
+        >
+          <span class="text-gray-400">{{ methodLabels[entry.method] }}</span>
+          <span class="text-gray-600 dark:text-gray-300">${{ entry.amountUsd.toFixed(2) }}</span>
+        </div>
+      </template>
       <div v-if="sale?.changeDue && sale.changeDue > 0" class="flex justify-between text-sm">
         <span class="text-gray-500">الباقي</span>
         <span class="font-semibold text-green-600">
