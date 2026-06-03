@@ -1,4 +1,4 @@
-export type PaymentMethod = 'cash_usd' | 'cash_syp' | 'card'
+export type PaymentMethod = 'cash_usd' | 'cash_syp' | 'card' | 'credit'
 export type PaymentState  = 'method-selection' | 'amount-entry' | 'card-confirm' | 'confirming' | 'confirmed'
 
 export interface SaleLine {
@@ -20,4 +20,5 @@ export interface CompletedSale {
   changeDue?:              number
   createdAt:               string
   lines:                   SaleLine[]
+  customerId?:             string
 }

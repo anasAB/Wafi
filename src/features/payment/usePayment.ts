@@ -54,7 +54,7 @@ export function usePayment() {
     // Sale intentionally NOT cleared — user can resume
   }
 
-  async function confirm(): Promise<CompletedSale> {
+  async function confirm(customerId?: string): Promise<CompletedSale> {
     if (!method.value) throw new Error('No payment method selected')
     state.value      = 'confirming'
     error.value      = null
@@ -74,6 +74,7 @@ export function usePayment() {
       amountReceivedCurrency: method.value === 'cash_syp' ? 'SYP' : 'USD',
       changeDue:              changeDue.value ?? undefined,
       createdAt:              now,
+      customerId,
       lines:                  saleStore.lines.map(l => ({
         nameAr:       l.nameAr,
         quantity:     l.quantity,
@@ -86,14 +87,15 @@ export function usePayment() {
       await db.execute(
         `INSERT INTO sales (id, shop_id, device_id, device_sequence, display_sale_number,
           created_at, total_usd, total_syp, exchange_rate_at_sale, payment_method,
-          amount_received, amount_received_currency, change_due)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          amount_received, amount_received_currency, change_due, customer_id, is_credit)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           saleId, deviceStore.shopId, deviceStore.deviceId,
           saleStore.deviceSequence, displayNum, now,
           totalUsd.value, totalSyp.value, sale.exchangeRateAtSale,
           method.value, sale.amountReceived ?? null,
           sale.amountReceivedCurrency ?? null, sale.changeDue ?? null,
+          customerId ?? null, customerId ? 1 : 0,
         ]
       )
 

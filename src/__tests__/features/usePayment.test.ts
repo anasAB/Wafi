@@ -139,4 +139,27 @@ describe('usePayment', () => {
     expect(lineInsertCall).toBeDefined()
     expect(lineInsertCall?.[1]).toContain(7) // unit_cost_usd = 7
   })
+
+  it('confirm writes customer_id and is_credit=1 for credit sales', async () => {
+    vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({ cost_price_usd: 5 } as any)
+      .mockResolvedValueOnce({ current_stock: 10 } as any)
+    vi.mocked(db.execute)
+      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sales
+      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sale_line_items
+      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // UPDATE products
+      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT stock_adjustments
+
+    const { selectMethod, confirm } = usePayment()
+    selectMethod('credit')
+    await confirm('customer-abc')
+
+    const salesInsert = vi.mocked(db.execute).mock.calls.find(c =>
+      (c[0] as string).includes('INSERT INTO sales') &&
+      (c[0] as string).includes('customer_id')
+    )
+    expect(salesInsert).toBeDefined()
+    expect(salesInsert![1]).toContain('customer-abc')
+    expect(salesInsert![1]).toContain(1) // is_credit = 1
+  })
 })
