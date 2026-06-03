@@ -310,7 +310,72 @@ const bottomNavItems = [
           <h1 class="gm-name">أهلاً 👋</h1>
         </div>
 
-        <!-- SECTIONS ADDED IN LATER TASKS -->
+        <!-- Period row -->
+<div class="hp-period-row">
+  <div class="hp-d">
+    <h2 class="period-heading">{{ period === 'today' ? 'اليوم' : period === 'week' ? 'هذا الأسبوع' : 'هذا الشهر' }}</h2>
+  </div>
+  <div class="period-toggle-wrap">
+    <div class="period-toggle">
+      <button
+        v-for="p in (['today','week','month'] as const)" :key="p"
+        class="pt-btn" :class="{ active: period === p }"
+        @click="setPeriod(p)"
+      >{{ p === 'today' ? 'اليوم' : p === 'week' ? 'الأسبوع' : 'الشهر' }}</button>
+    </div>
+    <button
+      class="hp-d sell-btn-inline"
+      :disabled="!canStartSale"
+      @click="router.push('/pos')"
+    >
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+        <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+        <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+      </svg>
+      بيع جديد
+    </button>
+  </div>
+</div>
+
+<!-- No rate warning -->
+<div v-if="!currentRate" class="no-rate-warning">
+  حدد سعر صرف الدولار من الأعلى قبل البدء في البيع.
+</div>
+
+<!-- KPI strip -->
+<div class="kpi-strip">
+  <div class="kpi-card blue-accent" @click="router.push(`/history?period=${period}`)">
+    <div class="kc-label">المال الداخل</div>
+    <div class="kc-value" dir="ltr">${{ metrics.revenueUsd.value.toLocaleString() }}</div>
+    <div class="kc-sub" v-if="revenueSyp">{{ revenueSyp.toLocaleString('ar-SY') }} ل.س</div>
+  </div>
+  <div class="kpi-card" @click="showProfitSheet = true">
+    <div class="kc-label">الربح الإجمالي</div>
+    <div class="kc-value" dir="ltr" :class="metrics.profitUsd.value >= 0 ? 'positive' : 'negative'">
+      ${{ metrics.profitUsd.value.toLocaleString() }}
+    </div>
+    <div class="kc-sub">هامش {{ profitMarginPct }}%</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kc-label">الفواتير</div>
+    <div class="kc-value">{{ metrics.invoiceCount.value.toLocaleString('ar-SY') }}</div>
+    <div class="kc-sub" v-if="avgPerInvoice">متوسط ${{ avgPerInvoice }}</div>
+  </div>
+  <div class="kpi-card green-accent" @click="showCashDrawer = true">
+    <div class="kc-label">النقد في الصندوق</div>
+    <div class="kc-value" dir="ltr">${{ drawer.cashUsd.value.toLocaleString() }}</div>
+    <div class="kc-sub" v-if="drawer.cashSyp.value">{{ drawer.cashSyp.value.toLocaleString('ar-SY') }} ل.س</div>
+  </div>
+</div>
+
+<!-- Sell button — mobile full width -->
+<button
+  class="hp-m sell-btn-full"
+  :disabled="!canStartSale"
+  @click="router.push('/pos')"
+>بيع جديد</button>
+
+<!-- CHART + CONTENT -->
 
       </div><!-- /.hp-body -->
 
@@ -547,4 +612,84 @@ const bottomNavItems = [
 .bn-item.active { color: var(--accent); }
 .bn-icon { width: 22px; height: 22px; }
 .bn-label { font-size: 9px; font-weight: 600; font-family: 'Tajawal', sans-serif; }
+
+/* ─── PERIOD ROW ─────────────────────────────────────── */
+.hp-period-row {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 10px; margin-bottom: 18px;
+}
+.period-heading { font-size: 20px; font-weight: 800; color: var(--text-1); }
+.period-toggle-wrap { display: flex; align-items: center; gap: 10px; }
+.period-toggle {
+  display: flex;
+  background: rgba(255,255,255,.04); border: 1px solid var(--border);
+  border-radius: 11px; padding: 3px; gap: 2px;
+}
+.pt-btn {
+  flex: 1; padding: 8px 14px; border-radius: 9px;
+  background: transparent; border: none;
+  color: var(--text-3); font-family: 'Tajawal', sans-serif;
+  font-size: 12px; font-weight: 600; cursor: pointer;
+  transition: background .15s, color .15s; white-space: nowrap;
+}
+.pt-btn.active { background: var(--accent); color: white; font-weight: 800; }
+.pt-btn:hover:not(.active) { color: var(--text-2); }
+
+/* ─── NO RATE WARNING ────────────────────────────────── */
+.no-rate-warning {
+  background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.25);
+  border-radius: 12px; padding: 10px 14px; margin-bottom: 16px;
+  font-size: 13px; color: #FCD34D;
+}
+
+/* ─── KPI STRIP ──────────────────────────────────────── */
+.kpi-strip {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px; margin-bottom: 18px;
+}
+@media (min-width: 900px) {
+  .kpi-strip { grid-template-columns: repeat(4, 1fr); }
+}
+.kpi-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 14px; padding: 15px 16px; cursor: pointer;
+  transition: border-color .2s;
+}
+.kpi-card:hover { border-color: rgba(255,255,255,.14); }
+.kpi-card.blue-accent  { border-color: rgba(26,86,219,.25); }
+.kpi-card.green-accent { border-color: rgba(34,197,94,.18); }
+
+.kc-label { font-size: 11px; color: var(--text-3); margin-bottom: 5px; }
+.kc-value {
+  font-size: 20px; font-weight: 800; color: var(--text-1);
+  text-align: right; margin-bottom: 3px;
+}
+@media (min-width: 900px) { .kc-value { font-size: 22px; } }
+.kc-value.positive { color: var(--green); }
+.kc-value.negative { color: var(--red); }
+.kc-sub { font-size: 10px; color: var(--text-4); }
+
+/* ─── SELL BUTTONS ───────────────────────────────────── */
+.sell-btn-inline {
+  background: var(--accent); border: none; border-radius: 11px;
+  padding: 9px 20px; display: flex; align-items: center; gap: 7px;
+  color: white; font-family: 'Tajawal', sans-serif;
+  font-size: 13px; font-weight: 800; cursor: pointer;
+  box-shadow: 0 3px 14px rgba(26,86,219,.3);
+  transition: background .2s, opacity .2s;
+}
+.sell-btn-inline:disabled { opacity: .4; cursor: not-allowed; }
+.sell-btn-inline:not(:disabled):hover { background: var(--accent-h); }
+
+.sell-btn-full {
+  width: 100%; height: 50px; border: none; border-radius: 14px;
+  background: var(--accent); color: white;
+  font-family: 'Tajawal', sans-serif; font-size: 16px; font-weight: 800;
+  cursor: pointer; margin-bottom: 18px;
+  box-shadow: 0 4px 18px rgba(26,86,219,.35);
+  transition: background .2s, opacity .2s;
+}
+.sell-btn-full:disabled { opacity: .4; cursor: not-allowed; }
+.sell-btn-full:not(:disabled):active { transform: scale(.98); }
 </style>
