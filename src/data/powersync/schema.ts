@@ -103,6 +103,16 @@ const customer_payments = new Table({
   sync_status:              column.text,
 })
 
+const receipt_settings = new Table({
+  shop_id:     column.text,
+  shop_name:   column.text,
+  tax_number:  column.text,
+  header_text: column.text,
+  footer_text: column.text,
+  updated_at:  column.text,
+  sync_status: column.text,
+})
+
 export const AppSchema = new Schema({
   products,
   stock_adjustments,
@@ -112,4 +122,5 @@ export const AppSchema = new Schema({
   expenses,
   customers,
   customer_payments,
+  receipt_settings,
 })
