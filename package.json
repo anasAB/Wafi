@@ -15,6 +15,7 @@
     "@powersync/web": "^1.38.1",
     "@supabase/supabase-js": "^2.105.4",
     "@zxing/browser": "^0.2.0",
+    "apexcharts": "^5.13.0",
     "autoprefixer": "^10.5.0",
     "dexie": "^4.4.2",
     "pinia": "^3.0.4",
@@ -26,6 +27,7 @@
     "vue": "^3.5.34",
     "vue-i18n": "^11.4.4",
     "vue-router": "^5.0.7",
+    "vue3-apexcharts": "^1.11.1",
     "vuetify": "^4.0.7"
   },
   "devDependencies": {
