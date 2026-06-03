@@ -501,7 +501,33 @@ const bottomNavItems = [
   </div>
 </div>
 
-    <!-- EXPENSE BUTTON -->
+    <!-- Live activity feed (desktop only) -->
+<div class="section-card hp-d">
+  <div class="activity-hdr">
+    <span class="activity-live-dot"></span>
+    <span class="card-title">النشاط المباشر</span>
+  </div>
+  <div v-if="recentActivity.length === 0" class="empty-state">لا يوجد نشاط اليوم</div>
+  <div v-else class="activity-list">
+    <div v-for="sale in recentActivity" :key="sale.id" class="activity-item">
+      <div class="ai-amount" dir="ltr">
+        {{ sale.paymentMethod === 'cash_syp'
+          ? (sale.totalSyp ?? 0).toLocaleString('ar-SY') + ' ل.س'
+          : '$' + sale.totalUsd.toFixed(2) }}
+      </div>
+      <div class="ai-meta">{{ timeAgo(sale.createdAt) }}</div>
+    </div>
+  </div>
+</div>
+
+<!-- Add expense button (both layouts) -->
+<button class="add-expense-btn" @click="showExpenseForm = true">
+  <div class="ae-plus">+</div>
+  <div>
+    <div class="ae-title">سجّل مصروف</div>
+    <div class="ae-sub">صوّر الفاتورة وأدخل المبلغ</div>
+  </div>
+</button>
   </div>
 
 </div>
@@ -902,4 +928,43 @@ const bottomNavItems = [
 .sig-main { font-size: 12px; font-weight: 700; color: var(--text-2); }
 .sig-sub  { font-size: 11px; color: var(--text-4); margin-top: 2px; }
 .sig-arr  { color: var(--text-4); flex-shrink: 0; margin-top: 2px; }
+
+/* ─── ACTIVITY FEED ──────────────────────────────────── */
+.activity-hdr {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+}
+.activity-live-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--green); box-shadow: 0 0 5px rgba(34,197,94,.6);
+  flex-shrink: 0;
+  animation: livepulse 2s ease-in-out infinite;
+}
+@keyframes livepulse { 0%,100% { opacity:1; } 50% { opacity:.35; } }
+
+.activity-list { display: flex; flex-direction: column; }
+.activity-item {
+  padding: 8px 0; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.activity-item:last-child { border-bottom: none; }
+.ai-amount { font-size: 13px; font-weight: 700; color: var(--text-1); }
+.ai-meta   { font-size: 11px; color: var(--text-4); }
+
+/* ─── ADD EXPENSE ────────────────────────────────────── */
+.add-expense-btn {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; border: 1.5px dashed rgba(26,86,219,.3);
+  border-radius: 14px; padding: 14px 18px;
+  background: rgba(26,86,219,.04);
+  font-family: 'Tajawal', sans-serif; text-align: right; cursor: pointer;
+  transition: background .2s, border-color .2s;
+}
+.add-expense-btn:hover { background: rgba(26,86,219,.08); border-color: rgba(26,86,219,.5); }
+.ae-plus {
+  width: 34px; height: 34px; background: var(--accent); border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: white; font-size: 20px; font-weight: 800; flex-shrink: 0;
+}
+.ae-title { font-size: 13px; font-weight: 700; color: var(--text-2); }
+.ae-sub   { font-size: 11px; color: var(--text-4); margin-top: 2px; }
 </style>
