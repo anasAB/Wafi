@@ -84,6 +84,25 @@ export function useCustomerBalance(customerId: string) {
   async function recordPayment(allocations: PaymentAllocation[]): Promise<void> {
     const device = useDeviceStore()
     const now    = new Date().toISOString()
+
+    // Guard: do not allow allocation amount to exceed current remaining on invoice
+    for (const alloc of allocations) {
+      const remRow = await db.getOptional<{ remaining_usd: number }>(
+        `SELECT s.total_usd - COALESCE(SUM(cp.amount_usd), 0) AS remaining_usd
+         FROM sales s
+         LEFT JOIN customer_payments cp ON cp.sale_id = s.id
+         WHERE s.id = ?
+         GROUP BY s.id`,
+        [alloc.saleId]
+      )
+      // If the sale row is not found locally (null) or remaining_usd is not present on the row,
+      // skip the guard — this handles offline / newly synced rows not yet visible.
+      if (remRow === null || remRow.remaining_usd === undefined) continue
+      if (alloc.amountUsd > remRow.remaining_usd + 0.001) {
+        throw new Error(`المبلغ المدخل يتجاوز المبلغ المتبقي للفاتورة`)
+      }
+    }
+
     for (const alloc of allocations) {
       await db.execute(
         `INSERT INTO customer_payments

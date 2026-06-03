@@ -55,6 +55,7 @@ export function useCustomers() {
   }
 
   async function update(id: string, data: Partial<NewCustomer>): Promise<void> {
+    const device = useDeviceStore()
     const sets: string[] = []
     const vals: (string | null)[] = []
     if (data.name    !== undefined) { sets.push('name = ?');    vals.push(data.name) }
@@ -64,15 +65,16 @@ export function useCustomers() {
     if (!sets.length) return
     sets.push("sync_status = 'pending'")
     await db.execute(
-      `UPDATE customers SET ${sets.join(', ')} WHERE id = ?`,
-      [...vals, id]
+      `UPDATE customers SET ${sets.join(', ')} WHERE id = ? AND shop_id = ?`,
+      [...vals, id, device.shopId]
     )
   }
 
   async function softDelete(id: string): Promise<void> {
+    const device = useDeviceStore()
     await db.execute(
-      `UPDATE customers SET deleted = 1, sync_status = 'pending' WHERE id = ?`,
-      [id]
+      `UPDATE customers SET deleted = 1, sync_status = 'pending' WHERE id = ? AND shop_id = ?`,
+      [id, device.shopId]
     )
   }
 

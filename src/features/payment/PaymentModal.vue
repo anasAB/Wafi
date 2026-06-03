@@ -62,8 +62,14 @@ async function handleConfirm() {
   }
 }
 
+function handleBack() {
+  back()
+  selectedCustomer.value = null
+}
+
 function handleCancel() {
   cancel()
+  selectedCustomer.value = null
   emit('close')
 }
 </script>
@@ -123,39 +129,13 @@ function handleCancel() {
           >📋 آجل</button>
         </div>
 
-        <!-- Selected customer chip -->
-        <div
-          v-if="selectedCustomer && method === 'credit'"
-          class="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 flex items-center justify-between"
-          dir="rtl"
-        >
-          <div>
-            <p class="text-sm font-semibold text-amber-800 dark:text-amber-200">{{ selectedCustomer.name }}</p>
-            <p v-if="selectedCustomer.phone" class="text-xs text-amber-600 dark:text-amber-400">{{ selectedCustomer.phone }}</p>
-          </div>
-          <button
-            type="button"
-            class="text-xs text-amber-600 underline"
-            @click="showPicker = true"
-          >تغيير</button>
-        </div>
-
-        <!-- Confirm credit button -->
-        <button
-          v-if="method === 'credit' && selectedCustomer"
-          type="button"
-          data-testid="confirm-credit-btn"
-          class="w-full h-12 rounded-xl bg-amber-500 text-white font-semibold active:scale-95 transition-all"
-          @click="handleConfirm"
-        >تأكيد البيع الآجل</button>
-
         <p v-if="error" class="mt-4 text-red-600 text-sm text-center">{{ error }}</p>
       </div>
 
       <!-- ── Amount entry (cash) ── -->
       <div v-else-if="state === 'amount-entry'" class="p-6">
         <div class="flex justify-start mb-4">
-          <button type="button" class="text-sm text-gray-500 dark:text-gray-400" @click="back">
+          <button type="button" class="text-sm text-gray-500 dark:text-gray-400" @click="handleBack">
             رجوع
           </button>
         </div>
@@ -201,7 +181,7 @@ function handleCancel() {
       <!-- ── Card confirm ── -->
       <div v-else-if="state === 'card-confirm'" class="p-6">
         <div class="flex justify-start mb-4">
-          <button type="button" class="text-sm text-gray-500 dark:text-gray-400" @click="back">
+          <button type="button" class="text-sm text-gray-500 dark:text-gray-400" @click="handleBack">
             رجوع
           </button>
         </div>
@@ -227,6 +207,50 @@ function handleCancel() {
         >
           تأكيد
         </button>
+      </div>
+
+      <!-- ── Credit confirm ── -->
+      <div v-else-if="state === 'credit-confirm'" class="p-6">
+        <div class="flex justify-start mb-4">
+          <button type="button" class="text-sm text-gray-500 dark:text-gray-400" @click="handleBack">
+            رجوع
+          </button>
+        </div>
+
+        <h2 id="payment-modal-title" class="text-lg font-bold text-gray-900 dark:text-white mb-4 text-center">
+          إجمالي البيع
+        </h2>
+
+        <div class="mb-6 text-center">
+          <p class="text-3xl font-bold text-gray-900 dark:text-white">${{ totalUsd.toFixed(2) }}</p>
+          <p class="text-sm text-gray-400 mt-1">{{ totalSyp.toLocaleString() }} ل.س</p>
+        </div>
+
+        <!-- Customer chip -->
+        <div
+          v-if="selectedCustomer"
+          class="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 flex items-center justify-between"
+          dir="rtl"
+        >
+          <div>
+            <p class="text-sm font-semibold text-amber-800 dark:text-amber-200">{{ selectedCustomer.name }}</p>
+            <p v-if="selectedCustomer.phone" class="text-xs text-amber-600 dark:text-amber-400">{{ selectedCustomer.phone }}</p>
+          </div>
+          <button
+            type="button"
+            class="text-xs text-amber-600 underline"
+            @click="showPicker = true"
+          >تغيير</button>
+        </div>
+
+        <button
+          type="button"
+          data-testid="confirm-credit-btn"
+          class="w-full h-12 rounded-xl bg-amber-500 text-white font-semibold active:scale-95 transition-all"
+          @click="handleConfirm"
+        >تأكيد البيع الآجل</button>
+
+        <p v-if="error" class="mt-4 text-red-600 text-sm text-center">{{ error }}</p>
       </div>
 
       <!-- ── Confirming (spinner) ── -->

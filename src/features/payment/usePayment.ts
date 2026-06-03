@@ -38,11 +38,13 @@ export function usePayment() {
 
   function selectMethod(m: PaymentMethod) {
     method.value = m
-    state.value  = m === 'card' ? 'card-confirm' : 'amount-entry'
+    state.value  = m === 'card'   ? 'card-confirm'
+                 : m === 'credit' ? 'credit-confirm'
+                 : 'amount-entry'
   }
 
   function back() {
-    if (state.value === 'amount-entry' || state.value === 'card-confirm') {
+    if (state.value === 'amount-entry' || state.value === 'card-confirm' || state.value === 'credit-confirm') {
       amountReceived.value = null
       method.value         = null
       state.value          = 'method-selection'
@@ -142,7 +144,9 @@ export function usePayment() {
       return sale
     } catch (err) {
       error.value      = err instanceof Error ? err.message : 'Payment failed'
-      state.value      = method.value === 'card' ? 'card-confirm' : 'amount-entry'
+      state.value      = method.value === 'card'   ? 'card-confirm'
+                       : method.value === 'credit' ? 'credit-confirm'
+                       : 'amount-entry'
       throw err
     }
   }

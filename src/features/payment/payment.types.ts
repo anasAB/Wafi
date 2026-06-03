@@ -1,5 +1,5 @@
 export type PaymentMethod = 'cash_usd' | 'cash_syp' | 'card' | 'credit'
-export type PaymentState  = 'method-selection' | 'amount-entry' | 'card-confirm' | 'confirming' | 'confirmed'
+export type PaymentState  = 'method-selection' | 'amount-entry' | 'card-confirm' | 'credit-confirm' | 'confirming' | 'confirmed'
 
 export interface SaleLine {
   nameAr:       string
