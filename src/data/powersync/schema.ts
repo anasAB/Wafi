@@ -44,6 +44,7 @@ const sales = new Table({
   change_due:               column.real,
   customer_id:              column.text,   // nullable — set for credit sales
   is_credit:                column.integer, // 0/1, default 0
+  is_split:                 column.integer, // 0/1, default 0
 })
 
 const sale_line_items = new Table({
@@ -113,6 +114,18 @@ const receipt_settings = new Table({
   sync_status: column.text,
 })
 
+const sale_payments = new Table({
+  sale_id:       column.text,
+  shop_id:       column.text,
+  method:        column.text,   // 'cash_usd' | 'cash_syp' | 'card'
+  amount_raw:    column.real,   // amount as entered in native currency
+  currency:      column.text,   // 'USD' | 'SYP'
+  amount_usd:    column.real,   // converted to USD
+  exchange_rate: column.real,
+  change_due:    column.real,   // nullable — only last entry when overpaid
+  created_at:    column.text,
+})
+
 export const AppSchema = new Schema({
   products,
   stock_adjustments,
@@ -123,4 +136,5 @@ export const AppSchema = new Schema({
   customers,
   customer_payments,
   receipt_settings,
+  sale_payments,
 })
