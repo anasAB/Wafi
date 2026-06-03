@@ -152,9 +152,7 @@ const ratePillText = computed(() =>
 )
 
 const recentActivity = computed(() =>
-  history.sales.value
-    .filter(s => s.paymentMethod === 'cash_usd' || s.paymentMethod === 'cash_syp')
-    .slice(0, 5)
+  history.sales.value.slice(0, 5)
 )
 
 function timeAgo(iso: string): string {
@@ -224,6 +222,9 @@ const bottomNavItems = [
   { label: 'الزبائن',  route: '/customers',icon: 'users'    },
   { label: 'التقارير', route: '/history',  icon: 'doc'      },
 ]
+
+const PERIOD_LABEL: Record<string, string> = { today: 'اليوم', week: 'الأسبوع', month: 'الشهر' }
+const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'هذا الأسبوع', month: 'هذا الشهر' }
 </script>
 
 <template>
@@ -313,7 +314,7 @@ const bottomNavItems = [
         <!-- Period row -->
 <div class="hp-period-row">
   <div class="hp-d">
-    <h2 class="period-heading">{{ period === 'today' ? 'اليوم' : period === 'week' ? 'هذا الأسبوع' : 'هذا الشهر' }}</h2>
+    <h2 class="period-heading">{{ PERIOD_HEADING[period] }}</h2>
   </div>
   <div class="period-toggle-wrap">
     <div class="period-toggle">
@@ -321,7 +322,7 @@ const bottomNavItems = [
         v-for="p in (['today','week','month'] as const)" :key="p"
         class="pt-btn" :class="{ active: period === p }"
         @click="setPeriod(p)"
-      >{{ p === 'today' ? 'اليوم' : p === 'week' ? 'الأسبوع' : 'الشهر' }}</button>
+      >{{ PERIOD_LABEL[p] }}</button>
     </div>
     <button
       class="hp-d sell-btn-inline"
@@ -386,9 +387,9 @@ const bottomNavItems = [
       <div class="card-hdr">
         <span class="card-title">المبيعات والربح — آخر ٧ أيام</span>
         <div class="chart-legend">
-          <span class="legend-dot" style="background:var(--accent)"></span>
+          <span class="legend-dot legend-dot-sales"></span>
           <span class="legend-label">المبيعات</span>
-          <span class="legend-dot" style="background:var(--green)"></span>
+          <span class="legend-dot legend-dot-profit"></span>
           <span class="legend-label">الربح</span>
         </div>
       </div>
@@ -875,7 +876,9 @@ const bottomNavItems = [
 
 /* ─── CHART LEGEND ───────────────────────────────────── */
 .chart-legend { display: flex; align-items: center; gap: 8px; }
-.legend-dot   { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.legend-dot        { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.legend-dot-sales  { background: var(--accent); }
+.legend-dot-profit { background: var(--green); }
 .legend-label { font-size: 11px; color: var(--text-3); }
 
 /* ─── BEST SELLERS ───────────────────────────────────── */
