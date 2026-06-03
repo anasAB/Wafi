@@ -400,7 +400,28 @@ const bottomNavItems = [
       />
     </div>
 
-    <!-- BEST SELLERS -->
+    <!-- Best sellers table -->
+<div class="section-card">
+  <div class="card-hdr">
+    <span class="card-title">أكثر المنتجات مبيعاً</span>
+    <span class="card-badge">حسب الكمية</span>
+  </div>
+  <div v-if="sellers.items.value.length === 0" class="empty-state">
+    لا توجد مبيعات في هذه الفترة
+  </div>
+  <div v-else class="sellers-table">
+    <div
+      v-for="(item, i) in sellers.items.value.slice(0, 3)"
+      :key="item.nameAr"
+      class="seller-row"
+    >
+      <div class="sr-rank">{{ i + 1 }}</div>
+      <div class="sr-name">{{ item.nameAr }}</div>
+      <div class="sr-units">{{ item.unitsSold }} مبيعة</div>
+      <div class="sr-rev" dir="ltr">${{ item.revenueUsd.toFixed(0) }}</div>
+    </div>
+  </div>
+</div>
 
   </div>
 
@@ -757,4 +778,27 @@ const bottomNavItems = [
 .chart-legend { display: flex; align-items: center; gap: 8px; }
 .legend-dot   { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .legend-label { font-size: 11px; color: var(--text-3); }
+
+/* ─── BEST SELLERS ───────────────────────────────────── */
+.card-badge {
+  font-size: 10px; font-weight: 700;
+  color: #60A5FA; background: var(--accent-m);
+  padding: 3px 8px; border-radius: 20px;
+}
+.empty-state { font-size: 12px; color: var(--text-4); text-align: center; padding: 12px 0; }
+.sellers-table { display: flex; flex-direction: column; }
+.seller-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 0; border-bottom: 1px solid var(--border);
+}
+.seller-row:last-child { border-bottom: none; }
+.sr-rank {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: rgba(255,255,255,.05);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; color: var(--text-3); flex-shrink: 0;
+}
+.sr-name  { flex: 1; font-size: 13px; font-weight: 600; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sr-units { font-size: 11px; color: var(--text-4); flex-shrink: 0; }
+.sr-rev   { font-size: 13px; font-weight: 700; color: var(--green); flex-shrink: 0; }
 </style>
