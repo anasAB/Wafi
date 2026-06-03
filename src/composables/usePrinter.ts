@@ -20,6 +20,9 @@ export interface ReceiptData {
   amountReceived?:          number
   amountReceivedCurrency?:  'USD' | 'SYP'
   changeDue?:               number
+  taxNumber?:               string
+  headerText?:              string
+  footerText?:              string
 }
 
 export interface IPrinterDriver {
