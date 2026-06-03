@@ -375,7 +375,42 @@ const bottomNavItems = [
   @click="router.push('/pos')"
 >بيع جديد</button>
 
-<!-- CHART + CONTENT -->
+<!-- Two-column layout: chart+sellers | signals+feed -->
+<div class="hp-content-row">
+
+  <!-- Left column -->
+  <div class="hp-col-main">
+
+    <!-- Area chart -->
+    <div class="section-card chart-card">
+      <div class="card-hdr">
+        <span class="card-title">المبيعات والربح — آخر ٧ أيام</span>
+        <div class="chart-legend">
+          <span class="legend-dot" style="background:var(--accent)"></span>
+          <span class="legend-label">المبيعات</span>
+          <span class="legend-dot" style="background:var(--green)"></span>
+          <span class="legend-label">الربح</span>
+        </div>
+      </div>
+      <VueApexCharts
+        type="area"
+        :height="160"
+        :series="chartSeries"
+        :options="chartOptions"
+      />
+    </div>
+
+    <!-- BEST SELLERS -->
+
+  </div>
+
+  <!-- Right column (desktop only) -->
+  <div class="hp-col-right">
+    <!-- SIGNALS -->
+    <!-- EXPENSE BUTTON -->
+  </div>
+
+</div>
 
       </div><!-- /.hp-body -->
 
@@ -692,4 +727,34 @@ const bottomNavItems = [
 }
 .sell-btn-full:disabled { opacity: .4; cursor: not-allowed; }
 .sell-btn-full:not(:disabled):active { transform: scale(.98); }
+
+/* ─── CONTENT ROW ────────────────────────────────────── */
+.hp-content-row {
+  display: flex; flex-direction: column; gap: 14px;
+}
+@media (min-width: 900px) {
+  .hp-content-row {
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    gap: 16px; align-items: start;
+  }
+}
+.hp-col-main  { display: flex; flex-direction: column; gap: 14px; }
+.hp-col-right { display: flex; flex-direction: column; gap: 14px; }
+
+/* ─── SECTION CARD ───────────────────────────────────── */
+.section-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 16px; padding: 18px 20px;
+}
+.card-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px;
+}
+.card-title { font-size: 13px; font-weight: 700; color: var(--text-1); }
+
+/* ─── CHART LEGEND ───────────────────────────────────── */
+.chart-legend { display: flex; align-items: center; gap: 8px; }
+.legend-dot   { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.legend-label { font-size: 11px; color: var(--text-3); }
 </style>
