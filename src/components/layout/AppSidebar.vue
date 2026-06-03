@@ -17,7 +17,7 @@ const mainNav: NavItem[] = [
   { key: 'reports',   label: 'التقارير',  href: null,        enabled: false },
   { key: 'expenses',  label: 'المصاريف',  href: null,        enabled: false },
   { key: 'shifts',    label: 'الكاشيرات', href: null,        enabled: false },
-  { key: 'customers', label: 'العملاء',   href: null,        enabled: false },
+  { key: 'customers', label: 'العملاء',   href: '/customers', enabled: true  },
 ]
 
 function isActive(href: string | null): boolean {

@@ -18,7 +18,8 @@ function isActive(key: string): boolean {
     case 'manage':  return (
       route.path.startsWith('/back-office') ||
       route.path.startsWith('/products') ||
-      route.path.startsWith('/settings')
+      route.path.startsWith('/settings') ||
+      route.path.startsWith('/customers')
     )
     default: return false
   }

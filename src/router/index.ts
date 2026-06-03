@@ -12,6 +12,8 @@ export default createRouter({
     { path: '/products/add',      component: () => import('@/features/products/AddProductPage.vue') },
     { path: '/products/:id/edit', component: () => import('@/features/products/EditProductPage.vue') },
     { path: '/expenses',          component: () => import('@/features/expenses/ExpenseListPage.vue') },
+    { path: '/customers',         component: () => import('@/features/customers/CustomersPage.vue') },
+    { path: '/customers/:id',     component: () => import('@/features/customers/CustomerDetailPage.vue') },
     {
       path: '/settings',
       component: () => import('@/pages/SettingsPage.vue'),

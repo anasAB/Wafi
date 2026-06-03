@@ -12,10 +12,11 @@ onMounted(() => {
 })
 
 const modules = [
-  { key: 'products', label: 'المنتجات', description: 'إدارة المخزون والأسعار', route: '/products', active: true },
-  { key: 'reports',  label: 'التقارير',  description: 'الأرباح والمبيعات',       route: null,       active: false },
-  { key: 'expenses', label: 'المصاريف', description: 'تتبع مصاريف المحل',       route: null,       active: false },
-  { key: 'shifts',   label: 'الكاشيرات', description: 'الورديات والصلاحيات',     route: null,       active: false },
+  { key: 'products',  label: 'المنتجات',  description: 'إدارة المخزون والأسعار', route: '/products',  active: true  },
+  { key: 'customers', label: 'الزبائن',   description: 'الديون والمدفوعات',       route: '/customers', active: true  },
+  { key: 'reports',   label: 'التقارير',  description: 'الأرباح والمبيعات',       route: null,         active: false },
+  { key: 'expenses',  label: 'المصاريف', description: 'تتبع مصاريف المحل',       route: null,         active: false },
+  { key: 'shifts',    label: 'الكاشيرات', description: 'الورديات والصلاحيات',     route: null,         active: false },
 ]
 
 function handleTile(mod: typeof modules[number]) {
@@ -44,6 +45,9 @@ function handleTile(mod: typeof modules[number]) {
                style="background: rgb(201 168 76 / 0.12)">
             <svg v-if="mod.key === 'products'" xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-gold-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+            </svg>
+            <svg v-if="mod.key === 'customers'" xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-gold-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
             </svg>
           </div>
           <div>
