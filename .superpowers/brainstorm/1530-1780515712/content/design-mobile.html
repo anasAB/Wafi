@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>موكاب الجوال</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap');
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Tajawal', sans-serif; background: #111827; color: #E8EDF5; direction: rtl; display: flex; flex-direction: column; align-items: center; padding: 32px 16px 48px; gap: 40px; }
+
+.section-label { font-size: 12px; font-weight: 700; color: #6B7280; text-transform: uppercase; letter-spacing: 1px; text-align: center; margin-bottom: -24px; }
+
+/* Phone frame */
+.phone {
+  width: 360px;
+  background: #06090F;
+  border-radius: 36px;
+  overflow: hidden;
+  box-shadow: 0 0 0 2px rgba(255,255,255,.08), 0 24px 60px rgba(0,0,0,.6);
+  position: relative;
+}
+
+/* Sticky header */
+.ph-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 18px 12px;
+  background: #06090F;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+  position: sticky; top: 0;
+}
+.ph-shop { display: flex; align-items: center; gap: 8px; }
+.ph-shop-icon { width: 30px; height: 30px; background: rgba(26,86,219,.15); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+.ph-shop-name { font-size: 15px; font-weight: 800; color: #E8EDF5; }
+.ph-actions { display: flex; align-items: center; gap: 6px; }
+.ph-rate { background: #0D1828; border: 1px solid rgba(26,86,219,.25); border-radius: 20px; padding: 4px 10px; font-size: 11px; font-weight: 700; color: #4B9EFF; }
+.ph-bell { width: 32px; height: 32px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.07); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #637285; position: relative; }
+.ph-bell .dot { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; background: #EF4444; border-radius: 50%; border: 1.5px solid #06090F; }
+
+/* Body scroll */
+.ph-body { padding: 16px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; max-height: 680px; }
+
+/* Greeting */
+.ph-greeting { }
+.ph-gdate { font-size: 11px; color: #3D4F6B; margin-bottom: 2px; }
+.ph-gname { font-size: 20px; font-weight: 800; color: #E8EDF5; }
+
+/* Period toggle */
+.ph-period {
+  display: flex; background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.07); border-radius: 12px; padding: 3px; gap: 2px;
+}
+.ph-period-btn { flex: 1; padding: 8px 0; border-radius: 9px; font-size: 13px; font-weight: 600; color: #637285; text-align: center; }
+.ph-period-btn.active { background: #1A56DB; color: white; font-weight: 800; }
+
+/* KPI grid 2x2 */
+.kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.kpi-card { background: #0D1828; border: 1px solid rgba(255,255,255,.06); border-radius: 14px; padding: 14px; }
+.kpi-card.blue-border { border-color: rgba(26,86,219,.25); }
+.kpi-card.green-border { border-color: rgba(34,197,94,.15); }
+.kc-label { font-size: 10px; color: #637285; margin-bottom: 5px; }
+.kc-val { font-size: 19px; font-weight: 800; color: #E8EDF5; direction: ltr; text-align: right; }
+.kc-delta { font-size: 10px; font-weight: 700; margin-top: 3px; }
+.kc-delta.up { color: #22C55E; }
+.kc-delta.down { color: #EF4444; }
+.kc-sub { font-size: 10px; color: #3D4F6B; margin-top: 3px; }
+
+/* Sell button */
+.ph-sell {
+  background: #1A56DB; border-radius: 14px; padding: 14px;
+  text-align: center; font-size: 16px; font-weight: 800; color: white;
+  box-shadow: 0 4px 18px rgba(26,86,219,.35);
+}
+
+/* Chart mini */
+.ph-chart { background: #0D1828; border: 1px solid rgba(255,255,255,.06); border-radius: 14px; padding: 14px; }
+.ph-chart-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.ph-chart-title { font-size: 12px; font-weight: 700; color: #E8EDF5; }
+.ph-chart-legend { display: flex; gap: 10px; }
+.ph-leg { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #637285; }
+.ph-leg-dot { width: 6px; height: 6px; border-radius: 50%; }
+
+/* Signals */
+.ph-signals { background: #0D1828; border: 1px solid rgba(255,255,255,.06); border-radius: 14px; padding: 14px; }
+.ph-signals-title { font-size: 12px; font-weight: 700; color: #E8EDF5; margin-bottom: 10px; }
+.sig-row { display: flex; align-items: flex-start; gap: 9px; padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,.04); }
+.sig-row:last-child { border-bottom: none; }
+.sig-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+.sig-dot.g { background: #22C55E; }
+.sig-dot.y { background: #F59E0B; }
+.sig-dot.r { background: #EF4444; }
+.sig-main { font-size: 12px; font-weight: 700; color: #C8D5E8; }
+.sig-sub  { font-size: 10px; color: #637285; margin-top: 1px; }
+
+/* Best sellers */
+.ph-sellers { background: #0D1828; border: 1px solid rgba(255,255,255,.06); border-radius: 14px; padding: 14px; }
+.ph-sellers-title { font-size: 12px; font-weight: 700; color: #E8EDF5; margin-bottom: 10px; }
+.seller-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,.04); }
+.seller-row:last-child { border-bottom: none; }
+.sr-rank { width: 20px; height: 20px; border-radius: 50%; background: rgba(255,255,255,.05); font-size: 10px; font-weight: 700; color: #637285; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.sr-name { flex: 1; font-size: 12px; font-weight: 600; color: #C8D5E8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sr-val  { font-size: 12px; font-weight: 700; color: #22C55E; flex-shrink: 0; direction: ltr; }
+
+/* Expense button */
+.ph-expense { border: 1.5px dashed rgba(26,86,219,.3); border-radius: 14px; padding: 13px 16px; display: flex; align-items: center; gap: 12px; background: rgba(26,86,219,.04); }
+.exp-plus { width: 32px; height: 32px; background: #1A56DB; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 18px; font-weight: 800; flex-shrink: 0; }
+.exp-title { font-size: 13px; font-weight: 700; color: #C8D5E8; }
+.exp-sub   { font-size: 10px; color: #3D4F6B; margin-top: 2px; }
+
+/* Bottom nav */
+.ph-nav {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  height: 58px; background: rgba(6,9,15,.97);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid rgba(255,255,255,.07);
+  position: sticky; bottom: 0;
+}
+.ph-nav-item { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #364A66; }
+.ph-nav-item.active { color: #1A56DB; }
+.ph-nav-label { font-size: 9px; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div class="section-label">تصميم الجوال — عرض كامل</div>
+
+<div class="phone">
+  <!-- Header -->
+  <div class="ph-header">
+    <div class="ph-shop">
+      <div class="ph-shop-icon">🏪</div>
+      <div class="ph-shop-name">محل النور</div>
+    </div>
+    <div class="ph-actions">
+      <div class="ph-rate">💱 ١٣٬٥٠٠</div>
+      <div class="ph-bell">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span class="dot"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Body -->
+  <div class="ph-body">
+
+    <!-- Greeting -->
+    <div class="ph-greeting">
+      <div class="ph-gdate">الأربعاء، ٣ يونيو ٢٠٢٦</div>
+      <div class="ph-gname">أهلاً، أبو محمد 👋</div>
+    </div>
+
+    <!-- Period toggle -->
+    <div class="ph-period">
+      <div class="ph-period-btn active">اليوم</div>
+      <div class="ph-period-btn">الأسبوع</div>
+      <div class="ph-period-btn">الشهر</div>
+    </div>
+
+    <!-- KPI 2x2 -->
+    <div class="kpi-grid">
+      <div class="kpi-card blue-border">
+        <div class="kc-label">المال الداخل</div>
+        <div class="kc-val">$1,240</div>
+        <div class="kc-delta up">↑ 12.4%</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kc-label">الربح</div>
+        <div class="kc-val">$340</div>
+        <div class="kc-delta up">↑ 8.1%</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kc-label">الفواتير</div>
+        <div class="kc-val" style="direction:rtl">١٤٢</div>
+        <div class="kc-sub">متوسط $٨.٧</div>
+      </div>
+      <div class="kpi-card green-border">
+        <div class="kc-label">النقد بالصندوق</div>
+        <div class="kc-val">$2,140</div>
+        <div class="kc-sub">آخر تسوية ٨:٣٠</div>
+      </div>
+    </div>
+
+    <!-- Sell button -->
+    <div class="ph-sell">بيع جديد</div>
+
+    <!-- Mini chart -->
+    <div class="ph-chart">
+      <div class="ph-chart-hdr">
+        <div class="ph-chart-title">المبيعات — آخر ٧ أيام</div>
+        <div class="ph-chart-legend">
+          <div class="ph-leg"><div class="ph-leg-dot" style="background:#1A56DB"></div>مبيعات</div>
+          <div class="ph-leg"><div class="ph-leg-dot" style="background:#22C55E"></div>ربح</div>
+        </div>
+      </div>
+      <svg viewBox="0 0 320 80" style="width:100%;height:80px" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="bg2" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#1A56DB" stop-opacity="0.25"/>
+            <stop offset="100%" stop-color="#1A56DB" stop-opacity="0"/>
+          </linearGradient>
+          <linearGradient id="gg2" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#22C55E" stop-opacity="0.18"/>
+            <stop offset="100%" stop-color="#22C55E" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <line x1="0" y1="25" x2="320" y2="25" stroke="rgba(255,255,255,.04)" stroke-width="1"/>
+        <line x1="0" y1="50" x2="320" y2="50" stroke="rgba(255,255,255,.04)" stroke-width="1"/>
+        <path d="M0,65 C40,50 60,28 100,22 C130,17 150,48 200,20 C235,8 265,38 320,14 L320,80 L0,80 Z" fill="url(#bg2)"/>
+        <path d="M0,65 C40,50 60,28 100,22 C130,17 150,48 200,20 C235,8 265,38 320,14" fill="none" stroke="#1A56DB" stroke-width="1.5"/>
+        <path d="M0,74 C40,68 60,58 100,55 C130,52 150,64 200,50 C235,42 265,58 320,45 L320,80 L0,80 Z" fill="url(#gg2)"/>
+        <path d="M0,74 C40,68 60,58 100,55 C130,52 150,64 200,50 C235,42 265,58 320,45" fill="none" stroke="#22C55E" stroke-width="1.5"/>
+      </svg>
+    </div>
+
+    <!-- Health signals -->
+    <div class="ph-signals">
+      <div class="ph-signals-title">إشارات تحتاج انتباهك</div>
+      <div class="sig-row">
+        <div class="sig-dot y"></div>
+        <div><div class="sig-main">٣ أصناف مخزون منخفض</div><div class="sig-sub">USB-C · آيفون 14 · AirPods</div></div>
+      </div>
+      <div class="sig-row">
+        <div class="sig-dot r"></div>
+        <div><div class="sig-main">زبون تجاوز الحد الائتماني</div><div class="sig-sub">أبو خالد — $٢٬٠٠٠</div></div>
+      </div>
+      <div class="sig-row">
+        <div class="sig-dot g"></div>
+        <div><div class="sig-main">الهامش يرتفع ↑ 2.3%</div><div class="sig-sub">مقارنة بالأسبوع الماضي</div></div>
+      </div>
+    </div>
+
+    <!-- Best sellers -->
+    <div class="ph-sellers">
+      <div class="ph-sellers-title">أكثر المنتجات مبيعاً</div>
+      <div class="seller-row">
+        <div class="sr-rank">١</div>
+        <div class="sr-name">سامسونج A15 128GB</div>
+        <div class="sr-val">$540</div>
+      </div>
+      <div class="seller-row">
+        <div class="sr-rank">٢</div>
+        <div class="sr-name">كابل USB-C مجدول</div>
+        <div class="sr-val">$235</div>
+      </div>
+      <div class="seller-row">
+        <div class="sr-rank">٣</div>
+        <div class="sr-name">غطاء حماية شفاف</div>
+        <div class="sr-val">$128</div>
+      </div>
+    </div>
+
+    <!-- Add expense -->
+    <div class="ph-expense">
+      <div class="exp-plus">+</div>
+      <div>
+        <div class="exp-title">سجّل مصروف</div>
+        <div class="exp-sub">صوّر الفاتورة وأدخل المبلغ</div>
+      </div>
+    </div>
+
+  </div><!-- /body -->
+
+  <!-- Bottom nav -->
+  <nav class="ph-nav">
+    <div class="ph-nav-item active">
+      <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <span class="ph-nav-label">الرئيسية</span>
+    </div>
+    <div class="ph-nav-item">
+      <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+      <span class="ph-nav-label">المخزون</span>
+    </div>
+    <div class="ph-nav-item">
+      <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+      <span class="ph-nav-label">الزبائن</span>
+    </div>
+    <div class="ph-nav-item">
+      <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      <span class="ph-nav-label">التقارير</span>
+    </div>
+  </nav>
+
+</div>
+
+</body>
+</html>

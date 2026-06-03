@@ -1,0 +1,106 @@
+<h2>Design: 4 screens + 1 POS change</h2>
+<p class="subtitle">Here's the full surface area. Does this look right before we go deeper?</p>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px">
+
+  <!-- POS Change -->
+  <div class="mockup">
+    <div class="mockup-header">① POS — Payment Modal (modified)</div>
+    <div class="mockup-body" style="direction:rtl;font-size:12px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
+        <div style="padding:8px;background:rgba(255,255,255,0.06);border-radius:8px;text-align:center;border:1px solid rgba(255,255,255,0.1)">💵 كاش دولار</div>
+        <div style="padding:8px;background:rgba(255,255,255,0.06);border-radius:8px;text-align:center;border:1px solid rgba(255,255,255,0.1)">ل.س كاش</div>
+        <div style="padding:8px;background:rgba(255,255,255,0.06);border-radius:8px;text-align:center;border:1px solid rgba(255,255,255,0.1)">💳 بطاقة</div>
+        <div style="padding:8px;background:rgba(201,168,76,0.25);border-radius:8px;text-align:center;border:1px solid #c9a84c;color:#c9a84c;font-weight:bold">📋 آجل ← NEW</div>
+      </div>
+      <div style="background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.3);border-radius:8px;padding:8px;font-size:11px">
+        <div style="color:#c9a84c;font-weight:bold;margin-bottom:4px">اختر الزبون</div>
+        <div style="display:flex;align-items:center;gap:6px;background:rgba(255,255,255,0.05);border-radius:6px;padding:6px">
+          <span style="flex:1">🔍 ابحث باسم الزبون...</span>
+        </div>
+        <div style="margin-top:6px;padding:4px 6px;background:rgba(255,255,255,0.05);border-radius:6px">أبو خالد — مديون $240</div>
+        <div style="margin-top:4px;padding:4px 6px;color:rgba(201,168,76,0.7);font-size:10px">+ إضافة زبون جديد</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Customer List -->
+  <div class="mockup">
+    <div class="mockup-header">② Customers List — /customers</div>
+    <div class="mockup-body" style="direction:rtl;font-size:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="color:rgba(255,255,255,0.5);font-size:11px">٤ زبائن — مجموع المديونية $847</span>
+        <span style="color:#c9a84c;font-size:11px">+ إضافة</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:rgba(255,255,255,0.05);border-radius:8px">
+          <div><div style="font-weight:600">أبو خالد</div><div style="font-size:10px;color:rgba(255,255,255,0.4)">آخر نشاط: اليوم</div></div>
+          <div style="color:#f59e0b;font-weight:bold">$240 ↗</div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:rgba(255,255,255,0.05);border-radius:8px">
+          <div><div style="font-weight:600">محل الأمل</div><div style="font-size:10px;color:rgba(255,255,255,0.4)">آخر نشاط: أمس</div></div>
+          <div style="color:#f59e0b;font-weight:bold">$85 ↗</div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:rgba(255,255,255,0.05);border-radius:8px">
+          <div><div style="font-weight:600">سامي حداد</div><div style="font-size:10px;color:rgba(255,255,255,0.4)">آخر نشاط: ٣ أيام</div></div>
+          <div style="color:#22c55e;font-size:11px">مسوّى ✓</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Customer Detail -->
+  <div class="mockup">
+    <div class="mockup-header">③ Customer Detail — /customers/:id</div>
+    <div class="mockup-body" style="direction:rtl;font-size:12px">
+      <div style="text-align:center;margin-bottom:10px">
+        <div style="font-size:16px;font-weight:bold">أبو خالد</div>
+        <div style="font-size:10px;color:rgba(255,255,255,0.4)">📱 0991234567 | 🏠 حي المزة</div>
+        <div style="font-size:22px;font-weight:bold;color:#f59e0b;margin-top:6px">$240.00</div>
+        <div style="font-size:10px;color:rgba(255,255,255,0.4)">إجمالي المديونية</div>
+      </div>
+      <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:4px">فواتير مفتوحة</div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <div style="display:flex;justify-content:space-between;padding:6px 8px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:6px">
+          <div><div>#٢٣١ — ٢ يونيو</div><div style="font-size:10px;color:rgba(255,255,255,0.4)">Samsung A55 + غطاء</div></div>
+          <div style="text-align:left"><div style="color:#f59e0b">$160 متبقي</div><div style="font-size:10px;color:rgba(255,255,255,0.3)">من $220</div></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:6px 8px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:6px">
+          <div><div>#٢١٨ — ٢٨ مايو</div><div style="font-size:10px;color:rgba(255,255,255,0.4)">كابل HDMI × 4</div></div>
+          <div style="color:#f59e0b">$80</div>
+        </div>
+      </div>
+      <button style="width:100%;margin-top:10px;padding:8px;background:#c9a84c;border:none;border-radius:8px;color:#05080f;font-weight:bold;cursor:pointer">تسجيل دفعة</button>
+    </div>
+  </div>
+
+  <!-- Payment Recording -->
+  <div class="mockup">
+    <div class="mockup-header">④ Record Payment — bottom sheet</div>
+    <div class="mockup-body" style="direction:rtl;font-size:12px">
+      <div style="font-weight:600;margin-bottom:8px">تسجيل دفعة — أبو خالد</div>
+      <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:6px">اختر الفواتير المدفوعة</div>
+      <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:8px;padding:6px;background:rgba(201,168,76,0.1);border:1px solid #c9a84c;border-radius:6px">
+          <span style="color:#c9a84c">☑</span>
+          <div style="flex:1"><div>#٢٣١ — $160 متبقي</div></div>
+          <input style="width:70px;padding:4px;background:rgba(255,255,255,0.1);border:1px solid rgba(201,168,76,0.4);border-radius:4px;color:white;text-align:center" value="100" />
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:6px;background:rgba(255,255,255,0.05);border-radius:6px">
+          <span style="color:rgba(255,255,255,0.3)">☐</span>
+          <div style="flex:1"><div>#٢١٨ — $80 متبقي</div></div>
+          <input style="width:70px;padding:4px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:4px;color:rgba(255,255,255,0.3);text-align:center" value="80" disabled />
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:bold;padding:6px 0;border-top:1px solid rgba(255,255,255,0.1)">
+        <span>إجمالي الدفعة</span><span style="color:#22c55e">$100</span>
+      </div>
+      <button style="width:100%;margin-top:6px;padding:8px;background:#22c55e;border:none;border-radius:8px;color:#05080f;font-weight:bold;cursor:pointer">تأكيد الدفعة</button>
+    </div>
+  </div>
+
+</div>
+
+<div style="margin-top:16px;padding:12px;background:rgba(255,255,255,0.04);border-radius:8px;font-size:12px;direction:rtl">
+  <strong>المسار الكامل:</strong> POS → اختر آجل → اختر زبون → تأكيد البيع → يظهر كفاتورة مفتوحة في صفحة الزبون → الزبون يدفع لاحقاً → تسجيل دفعة جزئية أو كاملة
+</div>

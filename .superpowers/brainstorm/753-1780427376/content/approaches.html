@@ -1,0 +1,43 @@
+<h2>Three approaches for the credit ledger</h2>
+<p class="subtitle">All include: "آجل" in POS checkout, customer list, invoice tracking, payment recording. The difference is payment flexibility and scope.</p>
+
+<div class="options">
+
+  <div class="option" data-choice="core" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Core — Full-invoice payments only</h3>
+      <p>Customer pays invoices in full. No partial payments. Simpler model: each invoice is either open or closed.</p>
+      <div class="pros-cons" style="margin-top:10px">
+        <div class="pros"><h4>Pros</h4><ul><li>Faster to build</li><li>Simpler UI</li><li>Easier to understand</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Doesn't match reality — customers often pay partial amounts</li><li>Big invoices stay "open" forever</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="partial" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Flexible — Partial payments per invoice ⭐ Recommended</h3>
+      <p>Customer can pay any amount against specific invoices. Each invoice tracks total owed vs total paid. Balance = sum of all remaining amounts.</p>
+      <div class="pros-cons" style="margin-top:10px">
+        <div class="pros"><h4>Pros</h4><ul><li>Matches how Syrian shops actually work</li><li>No stuck open invoices</li><li>Accurate running balance</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Slightly more complex payment modal</li></ul></div>
+      </div>
+      <p style="margin-top:8px; font-size:11px; color:#c9a84c">⭐ Best fit for the brother's shop and demo</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="hybrid" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Full — Partial payments + manual debt entries</h3>
+      <p>Everything in B, plus ability to manually add a debt not tied to a POS sale (for pre-existing balances when migrating from paper).</p>
+      <div class="pros-cons" style="margin-top:10px">
+        <div class="pros"><h4>Pros</h4><ul><li>Handles migration from paper ledger</li><li>More complete on day 1</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>More schema + UI work</li><li>Manual debts can be added in v1 once ledger is proven</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+</div>

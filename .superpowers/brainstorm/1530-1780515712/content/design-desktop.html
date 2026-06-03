@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>موكاب الصفحة الرئيسية — سطح المكتب</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Tajawal', sans-serif; background: #030712; color: #E8EDF5; direction: rtl; }
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap');
+
+/* ── Shell ── */
+.shell { display: flex; min-height: 100vh; }
+
+/* ── Sidebar ── */
+.sidebar {
+  width: 220px; flex-shrink: 0;
+  background: #070B14;
+  border-left: 1px solid rgba(255,255,255,.06);
+  display: flex; flex-direction: column;
+  position: sticky; top: 0; height: 100vh;
+}
+.sb-brand {
+  display: flex; align-items: center; gap: 10px;
+  padding: 20px 16px 16px;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+}
+.sb-icon {
+  width: 36px; height: 36px; background: rgba(26,86,219,.15);
+  border-radius: 9px; display: flex; align-items: center; justify-content: center;
+  font-size: 17px;
+}
+.sb-name { font-size: 14px; font-weight: 800; color: #E8EDF5; }
+.sb-sub  { font-size: 11px; color: #3D4F6B; margin-top: 1px; }
+
+.sb-nav { flex: 1; padding: 12px 10px; display: flex; flex-direction: column; gap: 2px; }
+.nav-section { font-size: 10px; font-weight: 700; color: #3D4F6B; letter-spacing: 1px; padding: 10px 10px 4px; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: 9px;
+  color: #637285; font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: all .15s;
+}
+.nav-item:hover { background: rgba(255,255,255,.04); color: #C8D5E8; }
+.nav-item.active { background: rgba(26,86,219,.12); color: #4B9EFF; }
+.nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+.sb-footer {
+  padding: 10px 10px 14px;
+  border-top: 1px solid rgba(255,255,255,.05);
+}
+.sb-user {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: 9px;
+  background: rgba(255,255,255,.03);
+}
+.sb-av {
+  width: 32px; height: 32px; background: rgba(26,86,219,.18); border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 800; color: #4B9EFF;
+}
+.sb-user-name { font-size: 12px; font-weight: 700; color: #C8D5E8; }
+.sb-user-role { font-size: 10px; color: #3D4F6B; }
+
+/* ── Main ── */
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: #06090F; }
+
+/* ── Top bar ── */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 28px; height: 62px;
+  background: #06090F; border-bottom: 1px solid rgba(255,255,255,.05);
+  position: sticky; top: 0; z-index: 10; flex-shrink: 0;
+}
+.topbar-greeting { display: flex; flex-direction: column; gap: 1px; }
+.tg-main  { font-size: 15px; font-weight: 700; color: #E8EDF5; }
+.tg-date  { font-size: 11px; color: #3D4F6B; }
+.topbar-actions { display: flex; align-items: center; gap: 8px; }
+.rate-pill {
+  display: flex; align-items: center; gap: 6px;
+  background: #0D1828; border: 1px solid rgba(26,86,219,.2);
+  border-radius: 20px; padding: 5px 12px;
+  font-size: 12px; font-weight: 700; color: #4B9EFF; cursor: pointer;
+}
+.icon-btn {
+  width: 36px; height: 36px; background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.07); border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  color: #637285; position: relative;
+}
+.icon-btn .dot {
+  position: absolute; top: 5px; right: 6px;
+  width: 8px; height: 8px; background: #FF6B6B;
+  border-radius: 50%; border: 2px solid #06090F;
+}
+
+/* ── Body ── */
+.body { padding: 24px 28px; overflow-y: auto; flex: 1; }
+
+/* ── Period strip ── */
+.period-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.period-label { font-size: 18px; font-weight: 800; color: #E8EDF5; }
+.period-toggle {
+  display: flex; background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.07); border-radius: 10px; padding: 3px; gap: 2px;
+}
+.pt-btn {
+  padding: 6px 14px; border-radius: 8px;
+  font-size: 12px; font-weight: 600; cursor: pointer; color: #637285;
+}
+.pt-btn.active { background: #1A56DB; color: white; font-weight: 700; }
+
+/* ── KPI strip ── */
+.kpi-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+.kpi-card {
+  background: #0D1828; border: 1px solid rgba(255,255,255,.06);
+  border-radius: 14px; padding: 16px 18px;
+}
+.kpi-label  { font-size: 11px; color: #637285; margin-bottom: 6px; }
+.kpi-value  { font-size: 22px; font-weight: 800; color: #E8EDF5; direction: ltr; text-align: right; margin-bottom: 4px; }
+.kpi-delta  { font-size: 11px; font-weight: 700; }
+.kpi-delta.up   { color: #22C55E; }
+.kpi-delta.down { color: #EF4444; }
+.kpi-sub { font-size: 10px; color: #3D4F6B; margin-top: 2px; }
+
+/* ── Content row ── */
+.content-row { display: grid; grid-template-columns: 1fr 300px; gap: 16px; }
+
+/* ── Chart card ── */
+.chart-card {
+  background: #0D1828; border: 1px solid rgba(255,255,255,.06);
+  border-radius: 16px; padding: 20px 24px; margin-bottom: 16px;
+}
+.chart-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.chart-title { font-size: 14px; font-weight: 700; color: #E8EDF5; }
+.chart-legend { display: flex; gap: 14px; }
+.legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #637285; }
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+/* SVG chart area */
+.chart-area { width: 100%; height: 160px; position: relative; }
+.chart-area svg { width: 100%; height: 100%; }
+
+/* ── Best earners ── */
+.table-card {
+  background: #0D1828; border: 1px solid rgba(255,255,255,.06);
+  border-radius: 16px; padding: 18px 24px;
+}
+.table-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.table-title { font-size: 14px; font-weight: 700; color: #E8EDF5; }
+.table-badge { font-size: 10px; font-weight: 700; color: #4B9EFF; background: rgba(26,86,219,.12); padding: 3px 8px; border-radius: 20px; }
+.table-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,.04);
+}
+.table-row:last-child { border-bottom: none; }
+.tr-rank { width: 22px; height: 22px; border-radius: 50%; background: rgba(255,255,255,.05); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #637285; flex-shrink: 0; }
+.tr-name { flex: 1; font-size: 13px; font-weight: 600; color: #C8D5E8; }
+.tr-count { font-size: 11px; color: #3D4F6B; flex-shrink: 0; }
+.tr-val { font-size: 13px; font-weight: 700; color: #E8EDF5; direction: ltr; flex-shrink: 0; }
+
+/* ── Right column ── */
+.right-col { display: flex; flex-direction: column; gap: 14px; }
+
+/* ── Health signals ── */
+.signals-card {
+  background: #0D1828; border: 1px solid rgba(255,255,255,.06);
+  border-radius: 16px; padding: 18px 20px;
+}
+.signals-title { font-size: 13px; font-weight: 700; color: #E8EDF5; margin-bottom: 12px; }
+.signal-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,.04);
+}
+.signal-item:last-child { border-bottom: none; }
+.signal-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
+.signal-dot.green  { background: #22C55E; box-shadow: 0 0 6px rgba(34,197,94,.5); }
+.signal-dot.yellow { background: #F59E0B; box-shadow: 0 0 6px rgba(245,158,11,.5); }
+.signal-dot.red    { background: #EF4444; box-shadow: 0 0 6px rgba(239,68,68,.5); }
+.signal-text { flex: 1; min-width: 0; }
+.signal-main { font-size: 12px; font-weight: 700; color: #C8D5E8; }
+.signal-sub  { font-size: 11px; color: #637285; margin-top: 2px; }
+
+/* ── Activity feed ── */
+.activity-card {
+  background: #0D1828; border: 1px solid rgba(255,255,255,.06);
+  border-radius: 16px; padding: 18px 20px; flex: 1;
+}
+.activity-title { font-size: 13px; font-weight: 700; color: #E8EDF5; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+.live-dot { width: 7px; height: 7px; border-radius: 50%; background: #22C55E; box-shadow: 0 0 6px rgba(34,197,94,.6); animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.4; } }
+.activity-item { display: flex; flex-direction: column; gap: 2px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.04); }
+.activity-item:last-child { border-bottom: none; }
+.ai-amount { font-size: 13px; font-weight: 700; color: #E8EDF5; direction: ltr; text-align: right; }
+.ai-meta   { font-size: 11px; color: #637285; }
+
+/* ── CTA button (sell) ── */
+.sell-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  background: #1A56DB; border-radius: 14px; padding: 13px 28px;
+  font-size: 15px; font-weight: 800; color: white; cursor: pointer;
+  margin-bottom: 16px; box-shadow: 0 4px 20px rgba(26,86,219,.3);
+}
+</style>
+</head>
+<body>
+<div style="background:#030712; padding: 12px 16px; text-align:center; font-size:12px; color:#637285; border-bottom:1px solid rgba(255,255,255,.05)">
+  موكاب تقريبي — سطح المكتب (RTL) | <span style="color:#4B9EFF">تصميم مقترح للصفحة الرئيسية</span>
+</div>
+
+<div class="shell">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sb-brand">
+      <div class="sb-icon">🏪</div>
+      <div>
+        <div class="sb-name">محل النور</div>
+        <div class="sb-sub">وافي POS</div>
+      </div>
+    </div>
+    <nav class="sb-nav">
+      <div class="nav-section">الرئيسية</div>
+      <div class="nav-item active">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        لوحة التحكم
+      </div>
+      <div class="nav-item">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+        نقطة البيع
+      </div>
+      <div class="nav-item">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        سجل المبيعات
+      </div>
+      <div class="nav-section">الإدارة</div>
+      <div class="nav-item">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+        المخزون
+      </div>
+      <div class="nav-item">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        الزبائن
+      </div>
+      <div class="nav-item">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        التقارير
+      </div>
+      <div class="nav-item">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        المصاريف
+      </div>
+    </nav>
+    <div class="sb-footer">
+      <div class="sb-user">
+        <div class="sb-av">م</div>
+        <div>
+          <div class="sb-user-name">أبو محمد</div>
+          <div class="sb-user-role">مالك</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div class="main">
+
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="topbar-greeting">
+        <div class="tg-main">صباح الخير، أبو محمد 👋</div>
+        <div class="tg-date">الأربعاء، ٣ يونيو ٢٠٢٦</div>
+      </div>
+      <div class="topbar-actions">
+        <div class="rate-pill">
+          💱 $١ = ١٣٬٥٠٠ ل.س
+          <span style="color:#637285; font-size:10px">تعديل</span>
+        </div>
+        <div class="icon-btn">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <span class="dot"></span>
+        </div>
+        <div class="icon-btn">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </div>
+      </div>
+    </header>
+
+    <!-- Body -->
+    <div class="body">
+
+      <!-- Period row -->
+      <div class="period-row">
+        <div class="period-label">اليوم</div>
+        <div style="display:flex; gap:10px; align-items:center">
+          <div class="sell-btn" style="margin-bottom:0; padding:9px 20px; font-size:13px">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+            بيع جديد
+          </div>
+          <div class="period-toggle">
+            <div class="pt-btn active">اليوم</div>
+            <div class="pt-btn">الأسبوع</div>
+            <div class="pt-btn">الشهر</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- KPI strip -->
+      <div class="kpi-strip">
+        <div class="kpi-card" style="border-color:rgba(26,86,219,.2)">
+          <div class="kpi-label">المال الداخل اليوم</div>
+          <div class="kpi-value">$1,240</div>
+          <div class="kpi-delta up">↑ 12.4%</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">الربح الإجمالي</div>
+          <div class="kpi-value">$340</div>
+          <div class="kpi-delta up">↑ 8.1% <span style="color:#3D4F6B; font-weight:400">هامش 27%</span></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">الفواتير</div>
+          <div class="kpi-value" style="direction:rtl">١٤٢</div>
+          <div class="kpi-sub">متوسط $٨.٧ / فاتورة</div>
+        </div>
+        <div class="kpi-card" style="border-color:rgba(34,197,94,.15)">
+          <div class="kpi-label">النقد في الصندوق</div>
+          <div class="kpi-value">$2,140</div>
+          <div class="kpi-sub">آخر تسوية: ٨:٣٠ ص</div>
+        </div>
+      </div>
+
+      <!-- Content row -->
+      <div class="content-row">
+
+        <!-- Left col -->
+        <div>
+          <!-- Chart -->
+          <div class="chart-card">
+            <div class="chart-hdr">
+              <div class="chart-title">المبيعات والربح — آخر ٧ أيام</div>
+              <div class="chart-legend">
+                <div class="legend-item"><div class="legend-dot" style="background:#1A56DB"></div> المبيعات</div>
+                <div class="legend-item"><div class="legend-dot" style="background:#22C55E"></div> الربح</div>
+              </div>
+            </div>
+            <!-- SVG area chart approximation -->
+            <div class="chart-area">
+              <svg viewBox="0 0 600 160" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <linearGradient id="blueGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#1A56DB" stop-opacity="0.3"/>
+                    <stop offset="100%" stop-color="#1A56DB" stop-opacity="0"/>
+                  </linearGradient>
+                  <linearGradient id="greenGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#22C55E" stop-opacity="0.2"/>
+                    <stop offset="100%" stop-color="#22C55E" stop-opacity="0"/>
+                  </linearGradient>
+                </defs>
+                <!-- Grid lines -->
+                <line x1="0" y1="40" x2="600" y2="40" stroke="rgba(255,255,255,.04)" stroke-width="1"/>
+                <line x1="0" y1="80" x2="600" y2="80" stroke="rgba(255,255,255,.04)" stroke-width="1"/>
+                <line x1="0" y1="120" x2="600" y2="120" stroke="rgba(255,255,255,.04)" stroke-width="1"/>
+                <!-- Sales area -->
+                <path d="M0,120 C60,100 100,60 180,50 C240,42 280,90 360,45 C420,20 480,70 600,30 L600,160 L0,160 Z"
+                      fill="url(#blueGrad)"/>
+                <path d="M0,120 C60,100 100,60 180,50 C240,42 280,90 360,45 C420,20 480,70 600,30"
+                      fill="none" stroke="#1A56DB" stroke-width="2"/>
+                <!-- Profit area -->
+                <path d="M0,140 C60,130 100,110 180,105 C240,100 280,120 360,95 C420,80 480,110 600,85 L600,160 L0,160 Z"
+                      fill="url(#greenGrad)"/>
+                <path d="M0,140 C60,130 100,110 180,105 C240,100 280,120 360,95 C420,80 480,110 600,85"
+                      fill="none" stroke="#22C55E" stroke-width="2"/>
+                <!-- X axis labels -->
+                <text x="0"   y="158" font-size="9" fill="#3D4F6B" text-anchor="middle" font-family="Tajawal">سبت</text>
+                <text x="100" y="158" font-size="9" fill="#3D4F6B" text-anchor="middle" font-family="Tajawal">أحد</text>
+                <text x="200" y="158" font-size="9" fill="#3D4F6B" text-anchor="middle" font-family="Tajawal">إثن</text>
+                <text x="300" y="158" font-size="9" fill="#3D4F6B" text-anchor="middle" font-family="Tajawal">ثلا</text>
+                <text x="400" y="158" font-size="9" fill="#3D4F6B" text-anchor="middle" font-family="Tajawal">أرب</text>
+                <text x="500" y="158" font-size="9" fill="#3D4F6B" text-anchor="middle" font-family="Tajawal">خمس</text>
+                <text x="590" y="158" font-size="9" fill="#4B9EFF" text-anchor="middle" font-family="Tajawal">اليوم</text>
+              </svg>
+            </div>
+          </div>
+
+          <!-- Best earners -->
+          <div class="table-card">
+            <div class="table-hdr">
+              <div class="table-title">أكثر المنتجات مبيعاً اليوم</div>
+              <div class="table-badge">حسب الربح</div>
+            </div>
+            <div class="table-row">
+              <div class="tr-rank">١</div>
+              <div class="tr-name">سامسونج A15 128GB</div>
+              <div class="tr-count">٩ مبيعات</div>
+              <div class="tr-val" style="color:#22C55E">$540</div>
+            </div>
+            <div class="table-row">
+              <div class="tr-rank">٢</div>
+              <div class="tr-name">كابل USB-C مجدول 2م</div>
+              <div class="tr-count">٤٧ مبيعة</div>
+              <div class="tr-val" style="color:#22C55E">$235</div>
+            </div>
+            <div class="table-row">
+              <div class="tr-rank">٣</div>
+              <div class="tr-name">غطاء حماية شفاف</div>
+              <div class="tr-count">٣٢ مبيعة</div>
+              <div class="tr-val" style="color:#22C55E">$128</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right col -->
+        <div class="right-col">
+
+          <!-- Health signals -->
+          <div class="signals-card">
+            <div class="signals-title">إشارات الصحة</div>
+            <div class="signal-item">
+              <div class="signal-dot green"></div>
+              <div class="signal-text">
+                <div class="signal-main">فرق في الصندوق</div>
+                <div class="signal-sub">تحقق قبل الإغلاق غداً</div>
+              </div>
+            </div>
+            <div class="signal-item">
+              <div class="signal-dot yellow"></div>
+              <div class="signal-text">
+                <div class="signal-main">٣ أصناف مخزون منخفض</div>
+                <div class="signal-sub">USB-C، آيفون 14، AirPods</div>
+              </div>
+            </div>
+            <div class="signal-item">
+              <div class="signal-dot red"></div>
+              <div class="signal-text">
+                <div class="signal-main">زبون تجاوز الحد الائتماني</div>
+                <div class="signal-sub">أبو خالد — $٢٬٠٠٠ / $١٬٥٠٠</div>
+              </div>
+            </div>
+            <div class="signal-item">
+              <div class="signal-dot green"></div>
+              <div class="signal-text">
+                <div class="signal-main">الهامش يرتفع</div>
+                <div class="signal-sub">↑ 2.3% مقارنة بالأسبوع الماضي</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Activity feed -->
+          <div class="activity-card">
+            <div class="activity-title">
+              <div class="live-dot"></div>
+              النشاط المباشر
+            </div>
+            <div class="activity-item">
+              <div class="ai-amount">$٢٤٠ — نقد</div>
+              <div class="ai-meta">كاشير لَيلى · منذ ٤ دقائق</div>
+            </div>
+            <div class="activity-item">
+              <div class="ai-amount">$١٢٬٠٠٠ ل.س — نقد</div>
+              <div class="ai-meta">كاشير أحمد · منذ ٩ دقائق</div>
+            </div>
+            <div class="activity-item">
+              <div class="ai-amount">$٨٥ — آجل (أبو خالد)</div>
+              <div class="ai-meta">كاشير لَيلى · منذ ١٥ دقيقة</div>
+            </div>
+          </div>
+
+          <!-- Add expense -->
+          <div style="border:1.5px dashed rgba(26,86,219,.3); border-radius:14px; padding:14px 18px; display:flex; align-items:center; gap:12px; cursor:pointer; background:rgba(26,86,219,.04)">
+            <div style="width:34px; height:34px; background:#1A56DB; border-radius:50%; display:flex; align-items:center; justify-content:center; color:white; font-size:18px; font-weight:800; flex-shrink:0">+</div>
+            <div>
+              <div style="font-size:13px; font-weight:700; color:#C8D5E8">سجّل مصروف</div>
+              <div style="font-size:11px; color:#3D4F6B; margin-top:2px">صوّر الفاتورة وأدخل المبلغ</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</body>
+</html>
