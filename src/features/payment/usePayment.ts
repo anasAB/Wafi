@@ -4,12 +4,14 @@ import { useSaleNumber } from '@/composables/useSaleNumber'
 import { useSaleDraft } from '@/composables/useSaleDraft'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
+import { useShiftStore } from '@/features/shifts/shift.store'
 import { v4 as uuidv4 } from 'uuid'
 import type { PaymentMethod, PaymentState, CompletedSale, SplitPaymentEntry } from './payment.types'
 
 export function usePayment() {
   const saleStore      = useSaleStore()
   const deviceStore    = useDeviceStore()
+  const shiftStore     = useShiftStore()
   const { nextNumber } = useSaleNumber()
   const { clearDraft } = useSaleDraft()
 
@@ -147,14 +149,15 @@ export function usePayment() {
       await db.execute(
         `INSERT INTO sales (id, shop_id, device_id, device_sequence, display_sale_number,
           created_at, total_usd, total_syp, exchange_rate_at_sale, payment_method,
-          amount_received, amount_received_currency, change_due, customer_id, is_credit, is_split)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          amount_received, amount_received_currency, change_due, customer_id, is_credit, is_split, shift_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           saleId, deviceStore.shopId, deviceStore.deviceId,
           saleStore.deviceSequence, displayNum, now,
           totalUsd.value, totalSyp.value, saleStore.lockedExchangeRate,
           primaryMethod, totalReceived, 'USD', lastChange ?? null,
           customerId ?? null, customerId ? 1 : 0, isSplit ? 1 : 0,
+          shiftStore.activeShiftId,
         ]
       )
 
