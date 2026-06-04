@@ -1,24 +1,39 @@
 <script setup lang="ts">
+import { ref, computed }   from 'vue'
 import { useRoute, RouterLink } from 'vue-router'
+import { useShiftStore }   from '@/features/shifts/shift.store'
+import ZReportScreen       from '@/features/shifts/components/ZReportScreen.vue'
 
 const route = useRoute()
 
+const shiftStore  = useShiftStore()
+const showZReport = ref(false)
+
 interface NavItem {
-  key:     string
-  label:   string
-  href:    string | null
-  enabled: boolean
+  key:        string
+  label:      string
+  href:       string | null
+  permission: string | null    // key of StaffPermissions, or null = always visible
 }
 
-const mainNav: NavItem[] = [
-  { key: 'home',      label: 'الرئيسية',  href: '/',         enabled: true  },
-  { key: 'history',   label: 'المبيعات',  href: '/history',  enabled: true  },
-  { key: 'products',  label: 'المنتجات',  href: '/products', enabled: true  },
-  { key: 'reports',   label: 'التقارير',  href: null,        enabled: false },
-  { key: 'expenses',  label: 'المصاريف',  href: null,        enabled: false },
-  { key: 'shifts',    label: 'الكاشيرات', href: null,        enabled: false },
-  { key: 'customers', label: 'العملاء',   href: '/customers', enabled: true  },
+const allNavItems: NavItem[] = [
+  { key: 'home',      label: 'الرئيسية',  href: '/',               permission: null },
+  { key: 'history',   label: 'المبيعات',  href: '/history',        permission: null },
+  { key: 'products',  label: 'المنتجات',  href: '/products',       permission: 'can_manage_products' },
+  { key: 'reports',   label: 'التقارير',  href: null,              permission: 'can_view_reports' },
+  { key: 'expenses',  label: 'المصاريف',  href: '/expenses',       permission: 'can_view_expenses' },
+  { key: 'shifts',    label: 'الورديات',  href: '/shifts/history', permission: null },
+  { key: 'customers', label: 'العملاء',   href: '/customers',      permission: 'can_manage_customers' },
 ]
+
+const navItems = computed(() => {
+  const perms   = shiftStore.permissions
+  const isOwner = shiftStore.activeStaff?.role === 'owner'
+  if (!perms || isOwner) return allNavItems.filter(i => i.href !== null)
+  return allNavItems.filter(i =>
+    i.href !== null && (!i.permission || (perms as any)[i.permission])
+  )
+})
 
 function isActive(href: string | null): boolean {
   if (!href) return false
@@ -37,23 +52,21 @@ function isActive(href: string | null): boolean {
       class="flex items-center gap-2 px-5 h-14 border-b border-border-glass hover:bg-surface-glass transition-colors flex-shrink-0"
     >
       <span class="font-display text-xl text-gold-primary font-semibold tracking-wide">وافي</span>
-      <span class="text-xs text-text-muted">الإدارة</span>
+      <span class="text-xs text-text-muted truncate max-w-20">{{ shiftStore.activeStaff?.name ?? 'الإدارة' }}</span>
     </RouterLink>
 
     <!-- Main nav -->
     <nav class="flex-1 p-2 flex flex-col gap-0.5">
       <component
-        v-for="item in mainNav"
+        v-for="item in navItems"
         :key="item.key"
-        :is="item.href && item.enabled ? RouterLink : 'div'"
-        v-bind="item.href && item.enabled ? { to: item.href } : {}"
+        :is="item.href ? RouterLink : 'div'"
+        v-bind="item.href ? { to: item.href } : {}"
         class="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm transition-all"
         :class="[
           isActive(item.href)
             ? 'bg-surface-raised text-gold-primary font-semibold'
-            : item.enabled
-              ? 'text-text-muted hover:bg-surface-glass hover:text-text-primary cursor-pointer'
-              : 'text-text-muted opacity-30 cursor-not-allowed',
+            : 'text-text-muted hover:bg-surface-glass hover:text-text-primary cursor-pointer',
         ]"
       >
         <!-- Home -->
@@ -86,7 +99,6 @@ function isActive(href: string | null): boolean {
         </svg>
 
         <span class="flex-1">{{ item.label }}</span>
-        <span v-if="!item.enabled" class="text-xs opacity-50 flex-shrink-0">قريباً</span>
         <span v-if="isActive(item.href)" class="w-1.5 h-1.5 rounded-full bg-gold-primary flex-shrink-0" />
       </component>
     </nav>
@@ -107,5 +119,20 @@ function isActive(href: string | null): boolean {
         <span>الإعدادات</span>
       </RouterLink>
     </div>
+
+    <!-- Close shift -->
+    <div class="p-2 border-t border-border-glass flex-shrink-0">
+      <button
+        @click="showZReport = true"
+        class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm text-red-400 hover:bg-red-500/10 transition-all"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+        </svg>
+        <span>إغلاق الوردية</span>
+      </button>
+    </div>
+
+    <ZReportScreen v-if="showZReport" />
   </aside>
 </template>
