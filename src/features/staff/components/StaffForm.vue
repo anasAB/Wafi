@@ -28,6 +28,10 @@ const PERM_LABELS: Array<[keyof StaffPermissions, string]> = [
 ]
 
 async function onFirstPin(pin: string) {
+  if (!props.editStaffId && !name.value.trim()) {
+    pinError.value = 'يرجى إدخال الاسم أولاً'
+    return
+  }
   firstPin.value = pin
   pinStep.value  = 'confirm'
 }
@@ -62,6 +66,7 @@ async function onConfirmPin(pin: string) {
         <div>
           <label class="text-[#637285] text-sm block mb-1">الاسم</label>
           <input v-model="name"
+            @input="pinError = ''"
             class="w-full bg-white/10 rounded-xl px-4 py-3 text-white outline-none"
             placeholder="اسم الموظف" />
         </div>

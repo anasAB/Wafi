@@ -23,7 +23,6 @@ export default createRouter({
         { path: 'staff',    component: () => import('@/features/staff/components/StaffList.vue') },
       ],
     },
-    { path: '/settings/staff',  component: () => import('@/features/staff/components/StaffList.vue') },
     { path: '/shifts/history',  component: () => import('@/features/shifts/components/ShiftHistoryScreen.vue') },
     { path: '/setup-owner',     component: () => import('@/features/shifts/components/OwnerSetupScreen.vue') },
     { path: '/:pathMatch(.*)*', redirect: '/' },

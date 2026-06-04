@@ -133,6 +133,8 @@ function isActive(href: string | null): boolean {
       </button>
     </div>
 
-    <ZReportScreen v-if="showZReport" />
+    <Teleport to="body">
+      <ZReportScreen v-if="showZReport" />
+    </Teleport>
   </aside>
 </template>

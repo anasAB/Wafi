@@ -64,7 +64,9 @@ export function useStaff() {
       [id, device.shopId, data.name, pinHash, data.role, permsJson, now]
     )
     await loadStaff()
-    return staff.value.find((s) => s.id === id)!
+    const created = staff.value.find((s) => s.id === id)
+    if (!created) throw new Error(`Staff ${id} not found after insert`)
+    return created
   }
 
   async function updateStaffPin(staffId: string, newPin: string): Promise<void> {

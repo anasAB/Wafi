@@ -21,6 +21,7 @@ const shiftStore = useShiftStore()
 const { loadActiveShift } = useShift()
 const { hasAnyStaff }     = useStaff()
 const appReady  = ref(false)
+const hasStaff  = ref(false)
 
 const showSidebar = computed(() =>
   !route.path.startsWith('/pos')
@@ -47,6 +48,7 @@ function onSystemThemeChange() { applyTheme(settings.theme) }
 onMounted(async () => {
   mq.addEventListener('change', onSystemThemeChange)
   const staffExist = await hasAnyStaff()
+  hasStaff.value = staffExist
   if (!staffExist) {
     router.push('/setup-owner')
     appReady.value = true
@@ -82,7 +84,7 @@ watch(
 
   <template v-else>
     <!-- Shift gate — blocks the whole app when no shift is open -->
-    <LockScreen v-if="!shiftStore.isShiftOpen" />
+    <LockScreen v-if="hasStaff && !shiftStore.isShiftOpen" />
 
     <!-- Normal app shell -->
     <div
