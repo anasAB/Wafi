@@ -45,6 +45,16 @@ const APP_VERSION = 'v0.1.0'
         </button>
         <button
           type="button"
+          class="w-full flex items-center justify-between px-4 py-3.5 border-b border-border-glass text-sm text-text-primary active:bg-surface-glass"
+          @click="router.push('/settings/staff')"
+        >
+          <span>الموظفون</span>
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-text-muted rtl:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+        <button
+          type="button"
           class="w-full flex items-center justify-between px-4 py-3.5 text-sm text-red-500 opacity-50 cursor-not-allowed"
           disabled
         >
@@ -88,6 +98,16 @@ const APP_VERSION = 'v0.1.0'
           >
             <span>إعدادات الفاتورة</span>
             <span v-if="route.path === '/settings/receipt'" class="w-1.5 h-1.5 rounded-full bg-gold-primary" />
+          </RouterLink>
+          <RouterLink
+            to="/settings/staff"
+            class="flex items-center justify-between px-4 py-3.5 text-sm border-b border-border-glass transition-colors"
+            :class="route.path === '/settings/staff'
+              ? 'text-gold-primary bg-surface-raised font-semibold'
+              : 'text-text-muted hover:bg-surface-glass hover:text-text-primary'"
+          >
+            <span>الموظفون</span>
+            <span v-if="route.path === '/settings/staff'" class="w-1.5 h-1.5 rounded-full bg-gold-primary" />
           </RouterLink>
           <div class="flex items-center justify-between px-4 py-3.5 text-sm text-text-muted">
             <span>{{ t('settings.about') }}</span>
