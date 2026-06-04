@@ -45,6 +45,7 @@ const sales = new Table({
   customer_id:              column.text,   // nullable — set for credit sales
   is_credit:                column.integer, // 0/1, default 0
   is_split:                 column.integer, // 0/1, default 0
+  shift_id:                 column.text,   // FK → cashier_shifts.id, nullable
 })
 
 const sale_line_items = new Table({
@@ -126,6 +127,28 @@ const sale_payments = new Table({
   created_at:    column.text,
 })
 
+const staff = new Table({
+  shop_id:     column.text,
+  name:        column.text,
+  pin_hash:    column.text,
+  role:        column.text,     // 'owner' | 'cashier'
+  permissions: column.text,     // JSON blob
+  is_active:   column.integer,
+  created_at:  column.text,
+})
+
+const cashier_shifts = new Table({
+  shop_id:          column.text,
+  device_id:        column.text,
+  staff_id:         column.text,
+  opened_at:        column.text,
+  closed_at:        column.text,    // nullable
+  opening_cash_usd: column.real,
+  closing_cash_usd: column.real,    // nullable
+  closing_cash_syp: column.real,    // nullable
+  status:           column.text,    // 'open' | 'closed'
+})
+
 export const AppSchema = new Schema({
   products,
   stock_adjustments,
@@ -137,4 +160,6 @@ export const AppSchema = new Schema({
   customer_payments,
   receipt_settings,
   sale_payments,
+  staff,
+  cashier_shifts,
 })
