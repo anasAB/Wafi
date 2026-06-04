@@ -1,16 +1,26 @@
 <script setup lang="ts">
-import { watch, onMounted, onBeforeUnmount, computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { watch, onMounted, onBeforeUnmount, computed, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useSettingsStore } from '@/features/settings'
 import { useThemePalette } from '@/composables/useThemePalette'
 import { i18n } from '@/i18n'
 import type { Theme } from '@/features/settings'
 import AppSidebar   from '@/components/layout/AppSidebar.vue'
 import AppBottomNav from '@/components/layout/AppBottomNav.vue'
+import { useShiftStore } from '@/features/shifts/shift.store'
+import { useShift }      from '@/features/shifts/composables/useShift'
+import { useStaff }      from '@/features/staff/composables/useStaff'
+import LockScreen        from '@/features/shifts/components/LockScreen.vue'
 
 const route    = useRoute()
+const router   = useRouter()
 const settings = useSettingsStore()
 useThemePalette()
+
+const shiftStore = useShiftStore()
+const { loadActiveShift } = useShift()
+const { hasAnyStaff }     = useStaff()
+const appReady  = ref(false)
 
 const showSidebar = computed(() =>
   !route.path.startsWith('/pos')
@@ -34,7 +44,19 @@ function applyTheme(theme: Theme) {
 watch(() => settings.theme, applyTheme, { immediate: true })
 
 function onSystemThemeChange() { applyTheme(settings.theme) }
-onMounted(() => mq.addEventListener('change', onSystemThemeChange))
+onMounted(async () => {
+  mq.addEventListener('change', onSystemThemeChange)
+  const staffExist = await hasAnyStaff()
+  if (!staffExist) {
+    router.push('/setup-owner')
+    appReady.value = true
+    return
+  }
+  if (shiftStore.activeShiftId) {
+    await loadActiveShift()  // validates and clears store if shift was closed
+  }
+  appReady.value = true
+})
 onBeforeUnmount(() => mq.removeEventListener('change', onSystemThemeChange))
 
 // --- Text size ---
@@ -53,23 +75,30 @@ watch(
 </script>
 
 <template>
-  <div
-    id="app"
-    :dir="settings.language === 'ar' ? 'rtl' : 'ltr'"
-    :lang="settings.language"
-    class="h-dvh bg-bg-void text-text-primary flex overflow-hidden"
-  >
-    <!-- Persistent sidebar — desktop only -->
-    <AppSidebar v-if="showSidebar" class="hidden lg:flex" />
-
-    <!-- Content column -->
-    <div class="flex-1 min-w-0 flex flex-col overflow-hidden">
-      <!-- Scrollable page area -->
-      <div class="flex-1 overflow-y-auto">
-        <RouterView />
-      </div>
-      <!-- Bottom tab bar — mobile only -->
-      <AppBottomNav v-if="showBottomNav" class="lg:hidden" />
-    </div>
+  <!-- Loading splash -->
+  <div v-if="!appReady" class="fixed inset-0 bg-[#06090F] flex items-center justify-center">
+    <span class="text-[#637285] text-sm">جاري التحميل...</span>
   </div>
+
+  <template v-else>
+    <!-- Shift gate — blocks the whole app when no shift is open -->
+    <LockScreen v-if="!shiftStore.isShiftOpen" />
+
+    <!-- Normal app shell -->
+    <div
+      v-else
+      id="app"
+      :dir="settings.language === 'ar' ? 'rtl' : 'ltr'"
+      :lang="settings.language"
+      class="h-dvh bg-bg-void text-text-primary flex overflow-hidden"
+    >
+      <AppSidebar v-if="showSidebar" class="hidden lg:flex" />
+      <div class="flex-1 min-w-0 flex flex-col overflow-hidden">
+        <div class="flex-1 overflow-y-auto">
+          <RouterView />
+        </div>
+        <AppBottomNav v-if="showBottomNav" class="lg:hidden" />
+      </div>
+    </div>
+  </template>
 </template>
