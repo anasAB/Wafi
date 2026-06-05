@@ -49,34 +49,37 @@ async function confirmDelete() {
 </script>
 
 <template>
-  <div class="flex flex-col min-h-dvh bg-bg-void" dir="rtl">
+  <div class="page-root" dir="rtl">
     <AppHeader
       title="المنتجات"
       :show-back="true"
       @back="router.back()"
     />
 
-    <main class="flex-1 px-4 py-4 max-w-5xl mx-auto w-full pb-24 lg:pb-6">
-      <!-- Desktop toolbar -->
-      <div class="hidden lg:flex items-center justify-between mb-5">
-        <p class="text-sm text-text-muted">{{ products.length }} منتج</p>
+    <main class="page-main">
+      <!-- Toolbar -->
+      <div class="toolbar">
+        <p class="product-count">{{ products.length }} منتج</p>
         <button
           type="button"
-          class="btn-gold px-5 h-10 text-sm"
+          class="btn-primary hidden lg:flex"
           @click="router.push('/products/add')"
-        >+ إضافة منتج</button>
+        >
+          <svg class="btn-icon" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+          إضافة منتج
+        </button>
       </div>
 
       <!-- Missed barcode banner -->
-      <div
-        v-if="missedBarcode"
-        class="mb-4 glass-sm px-4 py-3 flex items-center justify-between"
-        style="border-color: var(--color-border-gold)"
-      >
-        <span class="text-sm text-text-primary">لم يُعثر على: <span class="text-gold-primary font-mono">{{ missedBarcode }}</span></span>
+      <div v-if="missedBarcode" class="barcode-banner">
+        <span class="barcode-banner-text">
+          لم يُعثر على الباركود: <span class="barcode-code">{{ missedBarcode }}</span>
+        </span>
         <button
           type="button"
-          class="text-sm font-semibold text-gold-primary underline"
+          class="barcode-banner-action"
           @click="router.push(`/products/add?barcode=${encodeURIComponent(missedBarcode!)}`)"
         >إضافة بهذا الباركود</button>
       </div>
@@ -89,16 +92,18 @@ async function confirmDelete() {
       />
     </main>
 
-    <!-- Mobile FAB (hidden on lg+) -->
+    <!-- Mobile FAB -->
     <button
       type="button"
       data-testid="add-fab"
-      class="lg:hidden fixed bottom-20 start-6 w-14 h-14 rounded-full text-bg-void text-2xl shadow-lg
-             active:scale-95 transition-all flex items-center justify-center z-20"
-      style="background: linear-gradient(135deg, var(--color-gold-primary), var(--color-gold-to)); box-shadow: 0 0 24px var(--color-gold-subtle)"
-      aria-label="إضافة منتج"
+      class="fab lg:hidden"
       @click="router.push('/products/add')"
-    >+</button>
+    >
+      <svg class="btn-icon" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+      </svg>
+      إضافة منتج
+    </button>
 
     <AppDialog
       v-if="deleteTarget"
@@ -113,3 +118,135 @@ async function confirmDelete() {
     <AppToast v-if="toast" :message="toast.message" :type="toast.type" @dismiss="toast = null" />
   </div>
 </template>
+
+<style scoped>
+.page-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: #06090F;
+  font-family: 'Tajawal', system-ui, sans-serif;
+}
+
+.page-main {
+  flex: 1;
+  padding: 1rem 1rem 80px;
+  width: 100%;
+}
+
+@media (min-width: 1024px) {
+  .page-main {
+    padding: 1.25rem 1.5rem 1.5rem;
+  }
+}
+
+/* Toolbar */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  gap: 0.75rem;
+}
+
+.product-count {
+  font-size: 0.875rem;
+  color: #637285;
+}
+
+/* Primary button */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-inline: 1.5rem;
+  height: 44px;
+  border-radius: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  border: none;
+  box-shadow: 0 4px 16px rgba(26, 86, 219, 0.40);
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.btn-primary:hover {
+  opacity: 0.88;
+}
+
+.btn-icon {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
+
+/* Missed barcode banner */
+.barcode-banner {
+  margin-bottom: 1rem;
+  border-radius: 1rem;
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: linear-gradient(135deg, rgba(26, 86, 219, 0.11), rgba(255, 255, 255, 0.04));
+  border: 1px solid rgba(26, 86, 219, 0.28);
+  box-shadow: 0 4px 20px rgba(26, 86, 219, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.barcode-banner-text {
+  font-size: 0.875rem;
+  color: #E8EDF5;
+}
+
+.barcode-code {
+  font-family: monospace;
+  color: #60A5FA;
+  font-weight: 700;
+}
+
+.barcode-banner-action {
+  font-size: 0.875rem;
+  font-weight: 700;
+  white-space: nowrap;
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.625rem;
+  color: #60A5FA;
+  background: rgba(26, 86, 219, 0.15);
+  border: 1px solid rgba(26, 86, 219, 0.30);
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.barcode-banner-action:hover {
+  opacity: 0.85;
+}
+
+/* Mobile FAB */
+.fab {
+  position: fixed;
+  bottom: 5rem;
+  inset-inline-start: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding-inline: 1.25rem;
+  height: 3rem;
+  border-radius: 1rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  border: none;
+  box-shadow: 0 6px 24px rgba(26, 86, 219, 0.50);
+  z-index: 20;
+  cursor: pointer;
+  transition: transform 0.15s, opacity 0.15s;
+}
+
+.fab:active {
+  transform: scale(0.95);
+}
+</style>
