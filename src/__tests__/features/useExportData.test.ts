@@ -154,11 +154,11 @@ describe('fetchCustomersRows', () => {
     vi.mocked(db.getAll).mockResolvedValue([])
   })
 
-  it('calls db.getAll with GROUP BY aggregation and shop_id twice', async () => {
+  it('calls db.getAll with GROUP BY aggregation and shop_id three times', async () => {
     await fetchCustomersRows()
     const call = vi.mocked(db.getAll).mock.calls[0]
     expect(call[0]).toContain('GROUP BY')
-    expect((call[1] as unknown[]).filter(v => v === '00000000-0000-0000-0000-000000000001')).toHaveLength(2)
+    expect((call[1] as unknown[]).filter(v => v === '00000000-0000-0000-0000-000000000001')).toHaveLength(3)
   })
 
   it('maps a db row to Arabic-keyed export row', async () => {

@@ -43,8 +43,8 @@ export async function fetchSalesRows(
      LEFT JOIN cashier_shifts cs ON cs.id = s.shift_id
      LEFT JOIN staff st          ON st.id = cs.staff_id
      WHERE s.shop_id = ?
-       AND s.created_at >= ?
-       AND s.created_at <= ?
+       AND date(s.created_at) >= ?
+       AND date(s.created_at) <= ?
      ORDER BY s.created_at DESC, li.id ASC`,
     [shopId, range.start, range.end],
   )
@@ -144,12 +144,12 @@ export async function fetchCustomersRows(): Promise<Record<string, unknown>[]> {
        MAX(s.created_at) AS last_purchase
      FROM customers c
      LEFT JOIN sales s              ON s.customer_id = c.id AND s.shop_id = ?
-     LEFT JOIN customer_payments cp ON cp.customer_id = c.id
+     LEFT JOIN customer_payments cp ON cp.customer_id = c.id AND cp.shop_id = ?
      WHERE c.shop_id = ?
        AND c.is_deleted = 0
      GROUP BY c.id
      ORDER BY c.name`,
-    [shopId, shopId],
+    [shopId, shopId, shopId],
   )
   return rows.map(r => ({
     'الاسم':               r.name,
