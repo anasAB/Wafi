@@ -319,7 +319,7 @@ function onFormDone() { showForm.value = false; loadStaff() }
 
 .modal-panel {
   width: 100%;
-  max-width: 400px;
+  max-width: 340px;
   backdrop-filter: blur(20px) saturate(180%);
   background: linear-gradient(135deg, rgba(26,86,219,0.16), rgba(26,86,219,0.06));
   border: 1px solid rgba(26,86,219,0.45);

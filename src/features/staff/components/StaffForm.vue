@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive }  from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { useStaff }       from '../composables/useStaff'
 import PinPad             from './PinPad.vue'
 import type { StaffRole, StaffPermissions } from '../staff.types'
@@ -10,14 +10,22 @@ const emit  = defineEmits<{ done: [] }>()
 
 const { createStaff, updateStaffPin } = useStaff()
 
+// step: 'info' (new staff only) → 'pin' → 'confirm'
+const step      = ref<'info' | 'pin' | 'confirm'>(props.editStaffId ? 'pin' : 'info')
 const name      = ref('')
 const role      = ref<StaffRole>('cashier')
-const pinStep   = ref<'first' | 'confirm'>('first')
 const firstPin  = ref('')
+const nameError = ref('')
 const pinError  = ref('')
 const pinPadRef = ref<InstanceType<typeof PinPad> | null>(null)
 const saving    = ref(false)
 const perms     = reactive<StaffPermissions>({ ...DEFAULT_CASHIER_PERMISSIONS })
+
+const stepLabel = computed(() => {
+  if (step.value === 'info')    return ''
+  if (step.value === 'pin')     return props.editStaffId ? 'أدخل الرقم السري الجديد' : 'أنشئ رقماً سرياً (4 أرقام)'
+  return 'أكّد الرقم السري'
+})
 
 const PERM_LABELS: Array<[keyof StaffPermissions, string]> = [
   ['can_view_reports',     'عرض التقارير'],
@@ -27,23 +35,29 @@ const PERM_LABELS: Array<[keyof StaffPermissions, string]> = [
   ['can_manage_settings',  'الإعدادات'],
 ]
 
-async function onFirstPin(pin: string) {
-  if (!props.editStaffId && !name.value.trim()) {
-    pinError.value = 'يرجى إدخال الاسم أولاً'
-    return
-  }
-  firstPin.value = pin
-  pinStep.value  = 'confirm'
+function submitInfo() {
+  if (!name.value.trim()) { nameError.value = 'يرجى إدخال الاسم'; return }
+  nameError.value = ''
+  step.value = 'pin'
 }
 
-async function onConfirmPin(pin: string) {
+function onPin(pin: string) {
+  if (step.value === 'pin') {
+    firstPin.value = pin
+    step.value     = 'confirm'
+    return
+  }
   if (pin !== firstPin.value) {
     pinError.value = 'الرقمان لا يتطابقان'
     pinPadRef.value?.shake()
-    pinStep.value  = 'first'
+    step.value     = 'pin'
     firstPin.value = ''
     return
   }
+  saveStaff(pin)
+}
+
+async function saveStaff(pin: string) {
   saving.value = true
   try {
     if (props.editStaffId) {
@@ -60,82 +74,82 @@ async function onConfirmPin(pin: string) {
 
 <template>
   <div class="form-root" dir="rtl">
-    <!-- Name + role fields (new staff only) -->
-    <template v-if="!editStaffId && !firstPin">
+
+    <!-- Step 1: Info (new staff only) -->
+    <template v-if="step === 'info'">
       <div class="fields-section">
 
-        <!-- Name input -->
         <div class="field-group">
           <label class="field-label">اسم الموظف</label>
           <input
             v-model="name"
-            @input="pinError = ''"
+            @input="nameError = ''"
+            @keydown.enter="submitInfo"
             class="field-input"
+            :class="{ 'field-input-error': nameError }"
             placeholder="مثال: أحمد خالد"
+            autofocus
           />
+          <p v-if="nameError" class="field-error-msg">{{ nameError }}</p>
         </div>
 
-        <!-- Role selector -->
         <div class="field-group">
           <label class="field-label">الدور الوظيفي</label>
           <div class="role-toggle">
             <button
               @click="role = 'cashier'"
               :class="['role-btn', role === 'cashier' ? 'role-active' : 'role-idle']"
-            >
-              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z" />
-              </svg>
-              كاشير
-            </button>
+              type="button"
+            >كاشير</button>
             <button
               @click="role = 'owner'"
               :class="['role-btn', role === 'owner' ? 'role-active' : 'role-idle']"
-            >
-              <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0l-.003-.001z" />
-              </svg>
-              مالك
-            </button>
+              type="button"
+            >مالك</button>
           </div>
         </div>
 
-        <!-- Permissions (cashier only) -->
         <div v-if="role === 'cashier'" class="perms-card">
           <p class="perms-title">الصلاحيات</p>
-          <label
-            v-for="[key, label] in PERM_LABELS"
-            :key="key"
-            class="perm-row"
-          >
+          <label v-for="[key, label] in PERM_LABELS" :key="key" class="perm-row">
             <span class="perm-label">{{ label }}</span>
             <div class="checkbox-wrap" :class="{ 'checkbox-checked': (perms as any)[key] }">
-              <input
-                type="checkbox"
-                v-model="(perms as any)[key]"
-                class="sr-only"
-              />
-              <svg v-if="(perms as any)[key]" width="12" height="12" fill="none" stroke="white" stroke-width="3" viewBox="0 0 24 24">
+              <input type="checkbox" v-model="(perms as any)[key]" class="sr-only" />
+              <svg v-if="(perms as any)[key]" width="11" height="11" fill="none" stroke="white" stroke-width="3" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
               </svg>
             </div>
           </label>
         </div>
+
+        <button @click="submitInfo" class="btn-next" type="button">
+          التالي — تعيين الرقم السري
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+          </svg>
+        </button>
       </div>
     </template>
 
-    <!-- Pin step label -->
-    <p class="pin-label">
-      {{ pinStep === 'first'
-        ? (editStaffId ? 'أدخل الرقم السري الجديد' : 'أنشئ رقماً سرياً (4 أرقام)')
-        : 'أكّد الرقم السري' }}
-    </p>
-    <p v-if="pinError" class="pin-error">{{ pinError }}</p>
+    <!-- Step 2 & 3: PIN entry -->
+    <template v-else>
+      <p class="pin-step-label">{{ stepLabel }}</p>
+      <p v-if="pinError" class="pin-error">{{ pinError }}</p>
+      <PinPad ref="pinPadRef" @complete="onPin" />
 
-    <PinPad
-      ref="pinPadRef"
-      @complete="pinStep === 'first' ? onFirstPin($event) : onConfirmPin($event)"
-    />
+      <button
+        v-if="!editStaffId"
+        @click="step = 'info'; firstPin = ''; pinError = ''"
+        class="btn-back"
+        type="button"
+      >
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+        </svg>
+        رجوع
+      </button>
+    </template>
+
   </div>
 </template>
 
@@ -144,35 +158,37 @@ async function onConfirmPin(pin: string) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
+  width: 100%;
 }
 
 .fields-section {
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 
 .field-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 
 .field-label {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
   color: #637285;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .field-input {
   width: 100%;
   background: rgba(255,255,255,0.07);
-  border: 1px solid rgba(255,255,255,0.18);
+  border: 1px solid rgba(255,255,255,0.16);
   border-radius: 10px;
-  padding: 10px 14px;
+  padding: 9px 12px;
   font-size: 14px;
   color: #E8EDF5;
   outline: none;
@@ -182,17 +198,21 @@ async function onConfirmPin(pin: string) {
 
 .field-input:focus {
   border-color: rgba(26,86,219,0.8);
-  box-shadow: 0 0 0 3px rgba(26,86,219,0.25), 0 0 12px rgba(26,86,219,0.15);
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.22), 0 0 10px rgba(26,86,219,0.12);
 }
 
-.field-input::placeholder {
-  color: #3D4F6B;
+.field-input::placeholder { color: #3D4F6B; }
+
+.field-input-error { border-color: rgba(239,68,68,0.6) !important; }
+
+.field-error-msg {
+  font-size: 12px;
+  color: #EF4444;
 }
 
-/* Role toggle */
 .role-toggle {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   background: rgba(255,255,255,0.04);
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 10px;
@@ -201,11 +221,7 @@ async function onConfirmPin(pin: string) {
 
 .role-btn {
   flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 38px;
+  height: 36px;
   border-radius: 8px;
   font-size: 13px;
   font-weight: 600;
@@ -218,7 +234,7 @@ async function onConfirmPin(pin: string) {
 .role-active {
   background: linear-gradient(135deg, #1A56DB, #1248B3);
   color: white;
-  box-shadow: 0 2px 10px rgba(26,86,219,0.40);
+  box-shadow: 0 2px 8px rgba(26,86,219,0.35);
 }
 
 .role-idle {
@@ -226,24 +242,20 @@ async function onConfirmPin(pin: string) {
   color: #637285;
 }
 
-.role-idle:hover {
-  color: #C8D5E8;
-  background: rgba(255,255,255,0.05);
-}
+.role-idle:hover { color: #C8D5E8; background: rgba(255,255,255,0.05); }
 
-/* Permissions */
 .perms-card {
-  background: linear-gradient(135deg, rgba(26,86,219,0.08), rgba(255,255,255,0.03));
-  border: 1px solid rgba(26,86,219,0.18);
-  border-radius: 12px;
-  padding: 14px 16px;
+  background: linear-gradient(135deg, rgba(26,86,219,0.07), rgba(255,255,255,0.02));
+  border: 1px solid rgba(26,86,219,0.16);
+  border-radius: 10px;
+  padding: 12px 14px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .perms-title {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   color: #3D4F6B;
   text-transform: uppercase;
@@ -257,17 +269,14 @@ async function onConfirmPin(pin: string) {
   cursor: pointer;
 }
 
-.perm-label {
-  font-size: 13px;
-  color: #C8D5E8;
-}
+.perm-label { font-size: 13px; color: #C8D5E8; }
 
 .checkbox-wrap {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
   border: 1.5px solid rgba(255,255,255,0.18);
-  background: rgba(255,255,255,0.06);
+  background: rgba(255,255,255,0.05);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -278,7 +287,6 @@ async function onConfirmPin(pin: string) {
 .checkbox-checked {
   background: linear-gradient(135deg, #1A56DB, #1248B3);
   border-color: #1A56DB;
-  box-shadow: 0 2px 8px rgba(26,86,219,0.35);
 }
 
 .sr-only {
@@ -289,8 +297,27 @@ async function onConfirmPin(pin: string) {
   clip: rect(0,0,0,0);
 }
 
-/* Pin step */
-.pin-label {
+.btn-next {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 44px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  color: white;
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  box-shadow: 0 4px 14px rgba(26,86,219,0.38);
+  border: none;
+  cursor: pointer;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  margin-top: 2px;
+}
+
+/* PIN step */
+.pin-step-label {
   font-size: 15px;
   font-weight: 600;
   color: #E8EDF5;
@@ -298,13 +325,29 @@ async function onConfirmPin(pin: string) {
 }
 
 .pin-error {
-  font-size: 13px;
+  font-size: 12px;
   color: #EF4444;
-  text-align: center;
   background: rgba(239,68,68,0.08);
-  border: 1px solid rgba(239,68,68,0.25);
+  border: 1px solid rgba(239,68,68,0.22);
   border-radius: 8px;
-  padding: 8px 14px;
+  padding: 7px 14px;
   width: 100%;
+  text-align: center;
 }
+
+.btn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #637285;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  margin-top: 4px;
+}
+
+.btn-back:hover { color: #C8D5E8; }
 </style>
