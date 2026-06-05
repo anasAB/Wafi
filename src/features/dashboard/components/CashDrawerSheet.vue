@@ -29,63 +29,256 @@ function fmtSyp(n: number): string {
 </script>
 
 <template>
+  <!-- Backdrop -->
   <div
-    class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40"
+    class="backdrop"
     dir="rtl"
     @click.self="emit('close')"
   >
-    <div class="bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-2xl w-full max-w-md p-6 shadow-xl max-h-[80vh] flex flex-col">
-      <!-- Handle -->
-      <div class="w-9 h-1 bg-gray-200 dark:bg-gray-700 rounded-full mx-auto mb-4 sm:hidden shrink-0"></div>
+    <!-- Sheet panel -->
+    <div class="sheet">
+      <!-- Drag handle (mobile only) -->
+      <div class="drag-handle sm:hidden"></div>
 
-      <h2 class="text-base font-bold text-gray-900 dark:text-white mb-1 shrink-0">حركات النقد — اليوم</h2>
+      <!-- Header -->
+      <div class="sheet-header">
+        <h2 class="sheet-title">حركات النقد — اليوم</h2>
+      </div>
 
-      <!-- Summary -->
-      <div class="bg-gray-50 dark:bg-gray-800 rounded-xl p-3 mb-4 shrink-0">
-        <p class="text-xs text-gray-500 mb-1">الإجمالي المتوقع</p>
-        <p class="text-sm font-bold text-gray-900 dark:text-white">
+      <!-- Summary card -->
+      <div class="summary-card">
+        <p class="summary-label">الإجمالي المتوقع في الصندوق</p>
+        <p class="summary-value" dir="ltr">
           <span v-if="cashUsd !== 0">${{ cashUsd.toFixed(2) }}</span>
-          <span v-if="cashUsd !== 0 && cashSyp !== 0" class="text-gray-400 mx-1">+</span>
+          <span v-if="cashUsd !== 0 && cashSyp !== 0" class="sep">+</span>
           <span v-if="cashSyp !== 0">{{ Math.round(cashSyp).toLocaleString('en-US') }} ل.س</span>
-          <span v-if="cashUsd === 0 && cashSyp === 0" class="text-gray-400">$0</span>
+          <span v-if="cashUsd === 0 && cashSyp === 0" class="muted">$0.00</span>
         </p>
       </div>
 
       <!-- Movements list -->
-      <div class="flex-1 overflow-y-auto flex flex-col gap-2 mb-4">
-        <div
-          v-if="movements.length === 0"
-          class="text-center py-8 text-gray-400 text-sm"
-        >لا توجد حركات نقدية اليوم</div>
+      <div class="movements-list">
+        <div v-if="movements.length === 0" class="empty-state">
+          لا توجد حركات نقدية اليوم
+        </div>
 
         <div
           v-for="m in movements"
           :key="m.createdAt + m.type"
-          class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-800"
+          class="movement-row"
         >
-          <div>
-            <p class="text-sm font-medium" :class="m.type === 'sale' ? 'text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400'">
-              {{ m.label }}
-            </p>
-            <p class="text-xs text-gray-400">{{ relativeTime(m.createdAt) }}</p>
+          <div class="movement-info">
+            <p class="movement-label">{{ m.label }}</p>
+            <p class="movement-time">{{ relativeTime(m.createdAt) }}</p>
           </div>
-          <div class="text-left">
-            <p v-if="m.usd !== 0" class="text-sm font-semibold" :class="m.usd > 0 ? 'text-green-600' : 'text-red-500'">
+          <div class="movement-amounts">
+            <p v-if="m.usd !== 0" class="amount-usd" dir="ltr"
+               :class="m.usd > 0 ? 'positive' : 'negative'">
               {{ fmtUsd(m.usd) }}
             </p>
-            <p v-if="m.syp !== 0" class="text-sm font-semibold" :class="m.syp > 0 ? 'text-green-600' : 'text-red-500'">
+            <p v-if="m.syp !== 0" class="amount-syp" dir="ltr"
+               :class="m.syp > 0 ? 'positive' : 'negative'">
               {{ fmtSyp(m.syp) }}
             </p>
           </div>
         </div>
       </div>
 
-      <button
-        type="button"
-        class="w-full h-11 rounded-xl text-sm text-gray-600 dark:text-gray-400
-               border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 shrink-0"
-        @click="emit('close')"
-      >إغلاق</button>
+      <!-- Close button -->
+      <div class="sheet-footer">
+        <button type="button" class="btn-close" @click="emit('close')">إغلاق</button>
+      </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+}
+
+@media (min-width: 640px) {
+  .backdrop {
+    align-items: center;
+  }
+}
+
+.sheet {
+  font-family: 'Tajawal', system-ui, sans-serif;
+  width: 100%;
+  max-width: 28rem;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-top-left-radius: 1.25rem;
+  border-top-right-radius: 1.25rem;
+  backdrop-filter: blur(20px) saturate(180%);
+  background: linear-gradient(135deg, rgba(26, 86, 219, 0.16), rgba(26, 86, 219, 0.06));
+  border: 1px solid rgba(26, 86, 219, 0.45);
+  box-shadow: 0 -8px 48px rgba(26, 86, 219, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.09);
+}
+
+@media (min-width: 640px) {
+  .sheet {
+    border-radius: 1.25rem;
+    box-shadow: 0 8px 48px rgba(26, 86, 219, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  }
+}
+
+.drag-handle {
+  width: 40px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+  margin: 12px auto 0;
+  flex-shrink: 0;
+}
+
+.sheet-header {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid rgba(26, 86, 219, 0.14);
+  flex-shrink: 0;
+}
+
+.sheet-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #E8EDF5;
+  margin: 0;
+}
+
+.summary-card {
+  margin: 1rem 1.25rem 0.75rem;
+  padding: 0.875rem 1rem;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, rgba(26, 86, 219, 0.11), rgba(255, 255, 255, 0.04));
+  border: 1px solid rgba(26, 86, 219, 0.28);
+  box-shadow: 0 4px 20px rgba(26, 86, 219, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  flex-shrink: 0;
+}
+
+.summary-label {
+  font-size: 0.75rem;
+  color: #637285;
+  margin: 0 0 0.375rem;
+}
+
+.summary-value {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #E8EDF5;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.summary-value .sep {
+  color: #637285;
+}
+
+.summary-value .muted {
+  color: #637285;
+}
+
+.movements-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 1.25rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 2.5rem 0;
+  color: #3D4F6B;
+  font-size: 0.875rem;
+}
+
+.movement-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.movement-info {
+  min-width: 0;
+}
+
+.movement-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #C8D5E8;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.movement-time {
+  font-size: 0.75rem;
+  color: #3D4F6B;
+  margin: 0.125rem 0 0;
+}
+
+.movement-amounts {
+  text-align: left;
+  flex-shrink: 0;
+  margin-inline-start: 0.75rem;
+}
+
+.amount-usd {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.amount-syp {
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin: 0.125rem 0 0;
+}
+
+.positive {
+  color: #22C55E;
+}
+
+.negative {
+  color: #EF4444;
+}
+
+.sheet-footer {
+  padding: 1rem 1.25rem;
+  border-top: 1px solid rgba(26, 86, 219, 0.14);
+  flex-shrink: 0;
+}
+
+.btn-close {
+  width: 100%;
+  height: 44px;
+  border-radius: 0.75rem;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #E8EDF5;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.btn-close:hover {
+  opacity: 0.8;
+}
+</style>
