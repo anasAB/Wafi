@@ -294,6 +294,7 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
           </div>
           <div class="kc-label">المال الداخل</div>
           <div class="kc-value" dir="ltr">${{ metrics.revenueUsd.value.toLocaleString() }}</div>
+          <div class="kc-accent-bar"></div>
           <div class="kc-sub" v-if="revenueSyp">{{ revenueSyp.toLocaleString('ar-SY') }} ل.س</div>
         </div>
         <div class="kpi-card green-accent" @click="showProfitSheet = true">
@@ -306,6 +307,7 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
           <div class="kc-value" dir="ltr" :class="metrics.profitUsd.value >= 0 ? 'positive' : 'negative'">
             ${{ metrics.profitUsd.value.toLocaleString() }}
           </div>
+          <div class="kc-accent-bar"></div>
           <div class="kc-sub">هامش {{ profitMarginPct }}%</div>
         </div>
         <div class="kpi-card">
@@ -316,6 +318,7 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
           </div>
           <div class="kc-label">الفواتير</div>
           <div class="kc-value">{{ metrics.invoiceCount.value.toLocaleString('ar-SY') }}</div>
+          <div class="kc-accent-bar"></div>
           <div class="kc-sub" v-if="avgPerInvoice">متوسط ${{ avgPerInvoice }}</div>
         </div>
         <div class="kpi-card" @click="showCashDrawer = true">
@@ -326,6 +329,7 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
           </div>
           <div class="kc-label">النقد في الصندوق</div>
           <div class="kc-value" dir="ltr">${{ drawer.cashUsd.value.toLocaleString() }}</div>
+          <div class="kc-accent-bar"></div>
           <div class="kc-sub" v-if="drawer.cashSyp.value">{{ drawer.cashSyp.value.toLocaleString('ar-SY') }} ل.س</div>
         </div>
       </div>
@@ -352,7 +356,10 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
           <!-- Area chart -->
           <div class="section-card chart-card">
             <div class="card-hdr">
-              <span class="card-title">المبيعات والربح — آخر ٧ أيام</span>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span class="activity-live-dot"></span>
+                <span class="card-title">المبيعات والربح — آخر ٧ أيام</span>
+              </div>
               <div class="chart-legend">
                 <span class="legend-dot legend-dot-sales"></span>
                 <span class="legend-label">المبيعات</span>
@@ -697,6 +704,16 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
 .kc-value.positive { color: #22C55E; }
 .kc-value.negative { color: #EF4444; }
 .kc-sub { font-size: 10px; color: #3D4F6B; }
+.kc-accent-bar {
+  height: 2px;
+  width: 55%;
+  border-radius: 1px;
+  background: linear-gradient(90deg, #1A56DB, transparent);
+  margin: 4px 0 2px;
+}
+.kpi-card.green-accent .kc-accent-bar {
+  background: linear-gradient(90deg, #22C55E, transparent);
+}
 
 /* ─── SELL BUTTONS ───────────────────────────────────── */
 .sell-btn-inline {
