@@ -22,12 +22,6 @@ const periodLabel: Record<Period, string> = {
 
 const showCogsWarning = computed(() => props.cogsUsd === 0 && props.revenueUsd > 0)
 
-const netProfitClass = computed(() => {
-  if (props.profitUsd > 0) return 'text-green-600 dark:text-green-400'
-  if (props.profitUsd < 0) return 'text-red-600 dark:text-red-400'
-  return 'text-gray-500 dark:text-gray-400'
-})
-
 function fmt(n: number, sign = false): string {
   const abs = Math.abs(n).toFixed(2)
   if (sign && n > 0) return `+$${abs}`
@@ -37,69 +31,232 @@ function fmt(n: number, sign = false): string {
 </script>
 
 <template>
+  <!-- Backdrop -->
   <div
-    class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40"
+    class="backdrop"
     dir="rtl"
     data-testid="profit-backdrop"
     @click.self="emit('close')"
   >
-    <div class="bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-2xl w-full max-w-md p-6 shadow-xl">
-      <!-- Handle -->
-      <div class="w-9 h-1 bg-gray-200 dark:bg-gray-700 rounded-full mx-auto mb-4 sm:hidden"></div>
+    <!-- Sheet panel -->
+    <div class="sheet">
+      <!-- Drag handle (mobile) -->
+      <div class="drag-handle sm:hidden"></div>
 
-      <h2 class="text-base font-bold text-gray-900 dark:text-white mb-1">تفصيل الربح</h2>
-      <p class="text-xs text-gray-400 dark:text-gray-500 mb-5">{{ periodLabel[period] }}</p>
+      <!-- Header -->
+      <div class="sheet-header">
+        <h2 class="sheet-title">تفصيل الربح</h2>
+        <p class="sheet-subtitle">{{ periodLabel[period] }}</p>
+      </div>
 
-      <!-- 5 rows -->
-      <div class="flex flex-col divide-y divide-gray-100 dark:divide-gray-800">
-
-        <div class="flex justify-between items-center py-3" data-testid="row-revenue">
-          <span class="text-sm text-gray-500 dark:text-gray-400">إجمالي البيع</span>
-          <span class="text-sm font-semibold text-green-600 dark:text-green-400">{{ fmt(revenueUsd, true) }}</span>
+      <!-- Rows -->
+      <div class="rows-container">
+        <div class="profit-row" data-testid="row-revenue">
+          <span class="row-label">إجمالي البيع</span>
+          <span class="row-value positive" dir="ltr">{{ fmt(revenueUsd, true) }}</span>
         </div>
 
-        <div class="flex justify-between items-center py-3" data-testid="row-cogs">
-          <span class="text-sm text-gray-500 dark:text-gray-400">تكلفة البضاعة المباعة</span>
-          <span class="text-sm font-semibold text-red-500">{{ cogsUsd > 0 ? `−$${cogsUsd.toFixed(2)}` : '$0.00' }}</span>
+        <div class="profit-row" data-testid="row-cogs">
+          <span class="row-label">تكلفة البضاعة المباعة</span>
+          <span class="row-value negative" dir="ltr">
+            {{ cogsUsd > 0 ? `−$${cogsUsd.toFixed(2)}` : '$0.00' }}
+          </span>
         </div>
 
         <!-- COGS warning -->
         <div
           v-if="showCogsWarning"
           data-testid="cogs-warning"
-          class="py-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3"
+          class="cogs-warning"
         >
-          ⚠ بعض المنتجات بدون سعر تكلفة — الربح الإجمالي قد يكون أعلى من الحقيقي
+          بعض المنتجات بدون سعر تكلفة — الربح الإجمالي قد يكون أعلى من الحقيقي
         </div>
 
-        <div class="flex justify-between items-center py-3 font-medium" data-testid="row-gross">
-          <span class="text-sm text-gray-700 dark:text-gray-300">الربح الإجمالي</span>
-          <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">{{ fmt(grossProfit) }}</span>
+        <div class="profit-row" data-testid="row-gross">
+          <span class="row-label row-label--emphasis">الربح الإجمالي</span>
+          <span class="row-value row-value--emphasis" dir="ltr">{{ fmt(grossProfit) }}</span>
         </div>
 
-        <div class="flex justify-between items-center py-3" data-testid="row-expenses">
-          <span class="text-sm text-gray-500 dark:text-gray-400">المصاريف</span>
-          <span class="text-sm font-semibold text-red-500">{{ expensesUsd > 0 ? `−$${expensesUsd.toFixed(2)}` : '$0.00' }}</span>
+        <div class="profit-row" data-testid="row-expenses">
+          <span class="row-label">المصاريف</span>
+          <span class="row-value negative" dir="ltr">
+            {{ expensesUsd > 0 ? `−$${expensesUsd.toFixed(2)}` : '$0.00' }}
+          </span>
         </div>
 
-        <div
-          class="flex justify-between items-center pt-4"
-          data-testid="row-net"
-          :class="netProfitClass"
-        >
-          <span class="text-base font-bold">صافي الربح</span>
-          <span class="text-xl font-extrabold">{{ fmt(profitUsd, true) }}</span>
+        <div class="profit-row profit-row--net" data-testid="row-net">
+          <span class="net-label">صافي الربح</span>
+          <span
+            class="net-value"
+            :class="profitUsd > 0 ? 'positive' : profitUsd < 0 ? 'negative' : 'muted'"
+            dir="ltr"
+          >{{ fmt(profitUsd, true) }}</span>
         </div>
-
       </div>
 
       <!-- Close button -->
-      <button
-        type="button"
-        class="mt-5 w-full h-11 rounded-xl text-sm text-gray-600 dark:text-gray-400
-               border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
-        @click="emit('close')"
-      >إغلاق</button>
+      <div class="sheet-footer">
+        <button type="button" class="btn-close" @click="emit('close')">إغلاق</button>
+      </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+}
+
+@media (min-width: 640px) {
+  .backdrop {
+    align-items: center;
+  }
+}
+
+.sheet {
+  font-family: 'Tajawal', system-ui, sans-serif;
+  width: 100%;
+  max-width: 28rem;
+  overflow: hidden;
+  border-top-left-radius: 1.25rem;
+  border-top-right-radius: 1.25rem;
+  backdrop-filter: blur(20px) saturate(180%);
+  background: linear-gradient(135deg, rgba(26, 86, 219, 0.16), rgba(26, 86, 219, 0.06));
+  border: 1px solid rgba(26, 86, 219, 0.45);
+  box-shadow: 0 -8px 48px rgba(26, 86, 219, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.09);
+}
+
+@media (min-width: 640px) {
+  .sheet {
+    border-radius: 1.25rem;
+    box-shadow: 0 8px 48px rgba(26, 86, 219, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  }
+}
+
+.drag-handle {
+  width: 40px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+  margin: 12px auto 0;
+}
+
+.sheet-header {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid rgba(26, 86, 219, 0.14);
+}
+
+.sheet-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #E8EDF5;
+  margin: 0;
+}
+
+.sheet-subtitle {
+  font-size: 0.75rem;
+  color: #637285;
+  margin: 0.125rem 0 0;
+}
+
+.rows-container {
+  padding: 0 1.25rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.profit-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.875rem 0;
+  border-bottom: 1px solid rgba(26, 86, 219, 0.14);
+}
+
+.profit-row--net {
+  padding: 1rem 0;
+  border-bottom: none;
+}
+
+.row-label {
+  font-size: 0.875rem;
+  color: #8A9BBF;
+}
+
+.row-label--emphasis {
+  font-weight: 500;
+  color: #C8D5E8;
+}
+
+.row-value {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.row-value--emphasis {
+  color: #C8D5E8;
+}
+
+.net-label {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #E8EDF5;
+}
+
+.net-value {
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.positive {
+  color: #22C55E;
+}
+
+.negative {
+  color: #EF4444;
+}
+
+.muted {
+  color: #637285;
+}
+
+.cogs-warning {
+  margin: 0.5rem 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.75rem;
+  font-size: 0.75rem;
+  color: #FCD34D;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.28);
+}
+
+.sheet-footer {
+  padding: 1rem 1.25rem 1.25rem;
+  border-top: 1px solid rgba(26, 86, 219, 0.14);
+}
+
+.btn-close {
+  width: 100%;
+  height: 44px;
+  border-radius: 0.75rem;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #E8EDF5;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.btn-close:hover {
+  opacity: 0.8;
+}
+</style>
