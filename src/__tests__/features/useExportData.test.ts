@@ -3,7 +3,7 @@ import { setActivePinia, createPinia } from 'pinia'
 
 vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
 
-import { fetchSalesRows, fetchExpensesRows } from '@/features/exports/composables/useExportData'
+import { fetchSalesRows, fetchExpensesRows, fetchProductsRows } from '@/features/exports/composables/useExportData'
 import { db } from '@/data/powersync/db'
 
 describe('fetchSalesRows', () => {
@@ -95,5 +95,54 @@ describe('fetchExpensesRows', () => {
     expect(rows[0]['الفئة']).toBe('إيجار')
     expect(rows[0]['المبلغ $']).toBe(200)
     expect(rows[0]['المبلغ ل.س']).toBe(2500000)
+  })
+})
+
+describe('fetchProductsRows', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    vi.mocked(db.getAll).mockResolvedValue([])
+  })
+
+  it('calls db.getAll filtering only active products', async () => {
+    await fetchProductsRows()
+    expect(db.getAll).toHaveBeenCalledWith(
+      expect.stringContaining('is_active'),
+      expect.any(Array),
+    )
+  })
+
+  it('maps a db row to Arabic-keyed export row with computed stock value', async () => {
+    vi.mocked(db.getAll).mockResolvedValueOnce([{
+      name: 'iPhone 15',
+      barcode: '1234567890',
+      sale_price_usd: 500,
+      sale_price_syp: 6250000,
+      cost_usd: 380,
+      current_stock: 10,
+    }])
+    const rows = await fetchProductsRows()
+    expect(rows).toHaveLength(1)
+    expect(rows[0]['الاسم']).toBe('iPhone 15')
+    expect(rows[0]['الباركود']).toBe('1234567890')
+    expect(rows[0]['سعر البيع $']).toBe(500)
+    expect(rows[0]['المخزون الحالي']).toBe(10)
+    expect(rows[0]['قيمة المخزون $']).toBe(3800)
+  })
+
+  it('maps null barcode and cost to "—"', async () => {
+    vi.mocked(db.getAll).mockResolvedValueOnce([{
+      name: 'منتج بدون باركود',
+      barcode: null,
+      sale_price_usd: 20,
+      sale_price_syp: 250000,
+      cost_usd: null,
+      current_stock: 5,
+    }])
+    const rows = await fetchProductsRows()
+    expect(rows[0]['الباركود']).toBe('—')
+    expect(rows[0]['التكلفة $']).toBe('—')
+    expect(rows[0]['قيمة المخزون $']).toBe('—')
   })
 })

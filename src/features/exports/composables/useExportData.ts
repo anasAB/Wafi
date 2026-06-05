@@ -90,3 +90,35 @@ export async function fetchExpensesRows(
     'المبلغ ل.س': r.amount_syp,
   }))
 }
+
+type ProductRow = {
+  name: string
+  barcode: string | null
+  sale_price_usd: number
+  sale_price_syp: number
+  cost_usd: number | null
+  current_stock: number
+}
+
+export async function fetchProductsRows(): Promise<Record<string, unknown>[]> {
+  const { shopId } = useDeviceStore()
+  const rows = await db.getAll<ProductRow>(
+    `SELECT name, barcode, sale_price_usd, sale_price_syp, cost_usd, current_stock
+     FROM products
+     WHERE shop_id = ?
+       AND is_active = 1
+     ORDER BY name ASC`,
+    [shopId],
+  )
+  return rows.map(r => ({
+    'الاسم':          r.name,
+    'الباركود':       r.barcode ?? '—',
+    'سعر البيع $':    r.sale_price_usd,
+    'سعر البيع ل.س':  r.sale_price_syp,
+    'التكلفة $':      r.cost_usd ?? '—',
+    'المخزون الحالي': r.current_stock,
+    'قيمة المخزون $': r.cost_usd != null
+      ? Number((r.current_stock * r.cost_usd).toFixed(2))
+      : '—',
+  }))
+}
