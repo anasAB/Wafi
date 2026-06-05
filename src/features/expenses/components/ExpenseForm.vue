@@ -78,117 +78,344 @@ async function handleSave(addAnother = false) {
 </script>
 
 <template>
+  <!-- Backdrop -->
   <div
-    class="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
+    class="backdrop"
     dir="rtl"
     @click.self="emit('cancel')"
   >
-    <div class="bg-white dark:bg-gray-900 rounded-t-2xl w-full max-w-lg p-6 shadow-xl">
-      <div class="w-9 h-1 bg-gray-200 dark:bg-gray-700 rounded-full mx-auto mb-5"></div>
-      <h2 class="text-base font-semibold text-gray-900 dark:text-white mb-4">{{ initialExpense ? 'تعديل مصروف' : 'إضافة مصروف' }}</h2>
+    <!-- Sheet panel -->
+    <div class="sheet">
+      <!-- Handle -->
+      <div class="sheet-handle"></div>
 
-        <!-- Amount -->
-        <div class="mb-4">
-          <div class="flex gap-2">
-            <input
-              v-model="amount"
-              data-testid="amount-input"
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="0"
-              class="flex-1 border rounded-xl px-4 py-3 text-xl font-bold dark:bg-gray-800 dark:text-white
-                     focus:outline-none focus:ring-2 focus:ring-blue-500"
-              :class="errors['amount'] ? 'border-red-500' : 'border-gray-200 dark:border-gray-600'"
-              autofocus
-              @input="delete errors['amount']"
-            />
-            <div class="flex bg-gray-100 dark:bg-gray-800 rounded-xl p-1 gap-1 shrink-0">
+      <div class="sheet-body">
+        <!-- Title -->
+        <h2 class="sheet-title">
+          {{ initialExpense ? 'تعديل مصروف' : 'إضافة مصروف' }}
+        </h2>
+
+        <!-- Amount row -->
+        <div class="field-group">
+          <div class="amount-row">
+            <div class="amount-input-wrap">
+              <input
+                v-model="amount"
+                data-testid="amount-input"
+                type="number" min="0" step="0.01"
+                placeholder="0.00"
+                class="form-input amount-input"
+                :class="{ 'input-error': errors['amount'] }"
+                autofocus
+                @input="delete errors['amount']"
+                @focus="($event.target as HTMLInputElement).style.borderColor = errors['amount'] ? '#EF4444' : 'rgba(26,86,219,0.8)'"
+                @blur="($event.target as HTMLInputElement).style.borderColor = errors['amount'] ? '#EF4444' : 'rgba(255,255,255,0.18)'"
+              />
+            </div>
+            <!-- Currency toggle -->
+            <div class="currency-toggle">
               <button
                 type="button"
                 data-testid="currency-usd"
-                class="px-3 py-2 text-sm font-semibold rounded-lg transition-colors"
-                :class="currency === 'USD' ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400'"
+                :class="['currency-btn', currency === 'USD' ? 'currency-active' : 'currency-idle']"
                 @click="currency = 'USD'"
               >USD</button>
               <button
                 type="button"
                 data-testid="currency-syp"
-                class="px-3 py-2 text-sm font-semibold rounded-lg transition-colors"
-                :class="currency === 'SYP' ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-400'"
+                :class="['currency-btn', currency === 'SYP' ? 'currency-active' : 'currency-idle']"
                 @click="currency = 'SYP'"
               >SYP</button>
             </div>
           </div>
-          <p v-if="errors['amount']" data-testid="error-amount" class="text-xs text-red-500 mt-1">{{ errors['amount'] }}</p>
-          <p v-if="usdEquivalent" data-testid="usd-equivalent" class="text-xs text-gray-400 mt-1">≈ ${{ usdEquivalent }}</p>
+          <p v-if="errors['amount']" data-testid="error-amount" class="field-error">
+            {{ errors['amount'] }}
+          </p>
+          <p v-if="usdEquivalent" data-testid="usd-equivalent" class="field-hint">
+            ≈ ${{ usdEquivalent }}
+          </p>
         </div>
 
         <!-- Category -->
-        <div class="mb-4">
-          <label class="block text-sm text-gray-600 dark:text-gray-400 mb-2">الفئة *</label>
+        <div class="field-group">
+          <label class="field-label">الفئة <span class="label-required">*</span></label>
           <ExpenseCategoryChips
             ref="chipsRef"
             v-model="category"
             @update:model-value="delete errors['category']"
           />
-          <p v-if="errors['category']" data-testid="error-category" class="text-xs text-red-500 mt-1">{{ errors['category'] }}</p>
+          <p v-if="errors['category']" data-testid="error-category" class="field-error">
+            {{ errors['category'] }}
+          </p>
         </div>
 
         <!-- Date -->
-        <div class="mb-4">
-          <label class="block text-sm text-gray-600 dark:text-gray-400 mb-1">التاريخ</label>
+        <div class="field-group">
+          <label class="field-label">التاريخ</label>
           <input
             v-model="expenseDate"
             data-testid="expense-date"
             type="date"
             :max="new Date().toISOString().slice(0, 10)"
-            class="w-full border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 text-sm
-                   dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            class="form-input"
+            @focus="($event.target as HTMLInputElement).style.borderColor = 'rgba(26,86,219,0.8)'"
+            @blur="($event.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.18)'"
           />
         </div>
 
         <!-- Notes -->
-        <div class="mb-5">
-          <label class="block text-sm text-gray-600 dark:text-gray-400 mb-1">ملاحظات</label>
+        <div class="field-group">
+          <label class="field-label">
+            ملاحظات
+            <span class="label-optional">(اختياري)</span>
+          </label>
           <textarea
             v-model="notes"
             data-testid="notes-input"
             rows="2"
-            placeholder="اختياري..."
-            class="w-full border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 text-sm
-                   dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="وصف المصروف..."
+            class="form-input form-textarea"
+            @focus="($event.target as HTMLTextAreaElement).style.borderColor = 'rgba(26,86,219,0.8)'"
+            @blur="($event.target as HTMLTextAreaElement).style.borderColor = 'rgba(255,255,255,0.18)'"
           />
         </div>
 
-        <!-- Buttons -->
-        <div class="flex gap-2">
+        <!-- Action buttons -->
+        <div class="action-row">
           <button
             type="button"
             data-testid="save-btn"
             :disabled="saving"
-            class="flex-1 h-12 rounded-xl text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700
-                   disabled:opacity-50 transition-colors"
+            class="btn-primary"
             @click="handleSave(false)"
-          >{{ saving ? '...' : 'حفظ' }}</button>
+          >{{ saving ? 'جاري الحفظ...' : 'حفظ' }}</button>
 
           <button
             v-if="!initialExpense"
             type="button"
             data-testid="save-another-btn"
             :disabled="saving"
-            class="h-12 px-4 rounded-xl text-sm text-gray-600 dark:text-gray-300
-                   border border-gray-200 dark:border-gray-600"
+            class="btn-secondary"
             @click="handleSave(true)"
           >إضافة أخرى</button>
 
           <button
             type="button"
             data-testid="cancel-btn"
-            class="h-12 px-4 rounded-xl text-sm text-gray-500 dark:text-gray-400"
+            class="btn-ghost"
             @click="emit('cancel')"
           >إلغاء</button>
+        </div>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+/* ── Backdrop ──────────────────────────────────────── */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+}
+
+/* ── Sheet ─────────────────────────────────────────── */
+.sheet {
+  width: 100%;
+  max-width: 32rem;
+  border-radius: 1.25rem 1.25rem 0 0;
+  overflow: hidden;
+  backdrop-filter: blur(20px) saturate(180%);
+  background: linear-gradient(135deg, rgba(26,86,219,0.16), rgba(26,86,219,0.06));
+  border: 1px solid rgba(26,86,219,0.45);
+  box-shadow: 0 8px 48px rgba(26,86,219,0.22), inset 0 1px 0 rgba(255,255,255,0.09);
+}
+
+.sheet-handle {
+  width: 2.5rem;
+  height: 0.25rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.20);
+  margin: 0.75rem auto 1.25rem;
+}
+
+.sheet-body {
+  padding: 0 1.25rem 1.5rem;
+  font-family: 'Tajawal', system-ui, sans-serif;
+}
+
+/* ── Sheet title ───────────────────────────────────── */
+.sheet-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #E8EDF5;
+  margin-bottom: 1.25rem;
+}
+
+/* ── Field groups ──────────────────────────────────── */
+.field-group {
+  margin-bottom: 1rem;
+}
+
+.field-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #637285;
+  margin-bottom: 6px;
+}
+.label-required { color: #EF4444; }
+.label-optional {
+  color: #3D4F6B;
+  font-weight: 400;
+  margin-inline-start: 0.25rem;
+}
+
+/* ── Amount row ────────────────────────────────────── */
+.amount-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+.amount-input-wrap { flex: 1; }
+
+/* ── Form inputs ───────────────────────────────────── */
+.form-input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 0.75rem;
+  padding: 0.625rem 0.875rem;
+  color: #E8EDF5;
+  font-size: 0.875rem;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+.form-input::placeholder { color: #3D4F6B; }
+.form-input:focus {
+  border-color: rgba(26, 86, 219, 0.8);
+  box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.25), 0 0 12px rgba(26, 86, 219, 0.15);
+}
+
+.amount-input {
+  font-size: 1.25rem;
+  font-weight: 700;
+  padding-block: 0.75rem;
+}
+.input-error {
+  border-color: #EF4444 !important;
+}
+
+.form-textarea {
+  resize: none;
+  min-height: 64px;
+  line-height: 1.6;
+}
+
+/* ── Currency toggle ───────────────────────────────── */
+.currency-toggle {
+  display: flex;
+  border-radius: 0.75rem;
+  padding: 0.25rem;
+  gap: 0.25rem;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.currency-btn {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  border-radius: 0.5rem;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.currency-active {
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(26,86,219,0.35);
+}
+.currency-idle {
+  background: transparent;
+  color: #637285;
+}
+.currency-idle:hover { color: #E8EDF5; }
+
+/* ── Field feedback ────────────────────────────────── */
+.field-error {
+  font-size: 0.75rem;
+  color: #EF4444;
+  margin-top: 0.375rem;
+}
+.field-hint {
+  font-size: 0.75rem;
+  color: #637285;
+  margin-top: 0.375rem;
+}
+
+/* ── Action buttons ────────────────────────────────── */
+.action-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+.btn-primary {
+  flex: 1;
+  height: 44px;
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 700;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(26, 86, 219, 0.40);
+  transition: opacity 0.15s, transform 0.15s;
+}
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary:not(:disabled):active { transform: scale(0.97); }
+
+.btn-secondary {
+  height: 44px;
+  padding-inline: 1rem;
+  border-radius: 0.75rem;
+  background: rgba(26, 86, 219, 0.12);
+  color: #60A5FA;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  border: 1px solid rgba(26, 86, 219, 0.30);
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+}
+.btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-secondary:not(:disabled):hover { background: rgba(26, 86, 219, 0.20); }
+.btn-secondary:not(:disabled):active { transform: scale(0.97); }
+
+.btn-ghost {
+  height: 44px;
+  padding-inline: 1rem;
+  border-radius: 0.75rem;
+  background: transparent;
+  color: #E8EDF5;
+  font-size: 0.875rem;
+  font-weight: 500;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+}
+.btn-ghost:hover { background: rgba(255, 255, 255, 0.05); }
+.btn-ghost:active { transform: scale(0.97); }
+</style>
