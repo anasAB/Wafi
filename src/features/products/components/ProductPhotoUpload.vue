@@ -67,28 +67,29 @@ function clear() {
 </script>
 
 <template>
-  <div>
-    <div
-      v-if="modelValue"
-      class="relative w-24 h-24 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700"
-    >
-      <img :src="modelValue" alt="صورة المنتج" class="w-full h-full object-cover" />
+  <div class="photo-root">
+    <!-- Thumbnail when photo exists -->
+    <div v-if="modelValue" class="photo-preview">
+      <img :src="modelValue" alt="صورة المنتج" class="preview-img" />
       <button
         type="button"
-        class="absolute top-1 left-1 bg-black/50 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs"
+        class="remove-btn"
         aria-label="حذف الصورة"
         @click="clear"
       >✕</button>
     </div>
 
+    <!-- Upload area when no photo -->
     <label
       v-else
-      class="flex flex-col items-center justify-center gap-2 w-full border-2 border-dashed
-             border-gray-300 dark:border-gray-600 rounded-xl p-6 cursor-pointer
-             hover:border-blue-400 transition-colors text-gray-400 dark:text-gray-500"
+      class="upload-area"
     >
-      <span class="text-2xl">📷</span>
-      <span class="text-sm">اضغط لإضافة صورة</span>
+      <svg class="upload-icon" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
+        <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z" />
+      </svg>
+      <span class="upload-label">اضغط لإضافة صورة</span>
+      <span class="upload-hint">PNG, JPG, WebP</span>
       <input
         ref="fileInput"
         type="file"
@@ -100,3 +101,93 @@ function clear() {
     </label>
   </div>
 </template>
+
+<style scoped>
+.photo-root {
+  font-family: 'Tajawal', system-ui, sans-serif;
+}
+
+/* ── Upload area ─────────────────────────────────── */
+.upload-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 24px;
+  border-radius: 0.75rem;
+  background: rgba(26,86,219,0.06);
+  border: 1.5px dashed rgba(26,86,219,0.35);
+  color: #637285;
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.upload-area:hover {
+  background: rgba(26,86,219,0.10);
+  border-color: rgba(26,86,219,0.55);
+  color: #60A5FA;
+}
+
+.upload-icon {
+  width: 32px;
+  height: 32px;
+}
+
+.upload-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.upload-hint {
+  font-size: 12px;
+  color: #3D4F6B;
+}
+
+.upload-area:hover .upload-hint {
+  color: #637285;
+}
+
+/* ── Photo preview ───────────────────────────────── */
+.photo-preview {
+  position: relative;
+  width: 112px;
+  height: 112px;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  border: 1px solid rgba(26,86,219,0.25);
+  box-shadow: 0 4px 16px rgba(26,86,219,0.12);
+}
+
+.preview-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ── Remove button ───────────────────────────────── */
+.remove-btn {
+  position: absolute;
+  top: 6px;
+  inset-inline-end: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #E8EDF5;
+  background: rgba(0,0,0,0.65);
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.remove-btn:hover {
+  opacity: 0.80;
+}
+</style>
