@@ -135,3 +135,93 @@ describe('useReturnSheet — computed state', () => {
     expect(canConfirm.value).toBe(true)
   })
 })
+
+describe('useReturnSheet — confirm()', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  async function loadSheet(customerId: string | null = 'cust-1') {
+    // call order: execute(sale), getAll(lineItems), getAll(priorReturns)
+    vi.mocked(db.execute).mockResolvedValueOnce({
+      rows: { _array: [{ id: SALE_ID, display_sale_number: '#001', customer_id: customerId }] },
+    } as any)
+    vi.mocked(db.getAll)
+      .mockResolvedValueOnce([{ product_id: 'p1', product_name: 'iPhone', quantity: 2, unit_price_usd: 500 }] as any)
+      .mockResolvedValueOnce([] as any)  // no prior returns
+    const sheet = useReturnSheet(SALE_ID)
+    await sheet.load()
+    sheet.lines.value[0].selected   = true
+    sheet.lines.value[0].qtyToReturn = 1
+    sheet.lines.value[0].restock    = true
+    sheet.refundMethod.value        = 'cash_usd'
+    // After load(), reset execute mock for confirm() calls
+    vi.mocked(db.execute).mockResolvedValue({ rows: { _array: [{ rate: 12500 }] } } as any)
+    return sheet
+  }
+
+  it('inserts a returns row with correct fields', async () => {
+    const { confirm } = await loadSheet()
+    await confirm()
+    const insertCall = (vi.mocked(db.execute).mock.calls as any[])
+      .find(([sql]) => sql.includes('INSERT INTO returns'))
+    expect(insertCall).toBeDefined()
+    expect(insertCall[1][2]).toBe(SALE_ID)          // original_sale_id
+    expect(insertCall[1][4]).toBe('cash_usd')        // refund_method
+    expect(insertCall[1][5]).toBe(500)               // refund_amount_usd (1 × 500)
+  })
+
+  it('inserts return_line_items for each selected line', async () => {
+    const { confirm } = await loadSheet()
+    await confirm()
+    const insertCall = (vi.mocked(db.execute).mock.calls as any[])
+      .find(([sql]) => sql.includes('INSERT INTO return_line_items'))
+    expect(insertCall).toBeDefined()
+    expect(insertCall[1][3]).toBe('p1')   // product_id
+    expect(insertCall[1][4]).toBe(1)      // qty_returned
+    expect(insertCall[1][7]).toBe(1)      // restock = 1
+  })
+
+  it('updates product stock and inserts stock_adjustment when restock=true', async () => {
+    // loadSheet sets restock=true. db.execute mock returns { rate:12500 } for all calls,
+    // so SELECT current_stock returns undefined → oldStock=0, newStock=1
+    const sheet = await loadSheet(null)
+    await sheet.confirm()
+    const updateCall = (vi.mocked(db.execute).mock.calls as any[])
+      .find(([sql]: [string]) => sql.includes('UPDATE products'))
+    expect(updateCall).toBeDefined()
+    expect(updateCall[1][2]).toBe('p1')  // product_id (index 2: [newStock, now, product_id])
+    const adjCall = (vi.mocked(db.execute).mock.calls as any[])
+      .find(([sql]: [string]) => sql.includes('INSERT INTO stock_adjustments'))
+    expect(adjCall).toBeDefined()
+  })
+
+  it('does NOT update stock when restock=false', async () => {
+    const sheet = await loadSheet(null)
+    sheet.lines.value[0].restock = false  // override the default restock=true
+    await sheet.confirm()
+    const updateCall = (vi.mocked(db.execute).mock.calls as any[])
+      .find(([sql]: [string]) => sql.includes('UPDATE products'))
+    expect(updateCall).toBeUndefined()
+  })
+
+  it('inserts negative customer_payments row for store_credit', async () => {
+    const sheet = await loadSheet('cust-1')
+    sheet.refundMethod.value = 'store_credit'  // override cash_usd default
+    await sheet.confirm()
+    const cpCall = (vi.mocked(db.execute).mock.calls as any[])
+      .find(([sql]: [string]) => sql.includes('INSERT INTO customer_payments'))
+    expect(cpCall).toBeDefined()
+    expect(cpCall[1][4]).toBe(-500)     // amount_usd is negative
+    expect(cpCall[1][3]).toBe(SALE_ID)  // sale_id
+  })
+
+  it('does NOT insert customer_payments for cash_usd method', async () => {
+    const sheet = await loadSheet('cust-1')  // has customer but method is cash_usd
+    await sheet.confirm()
+    const cpCall = (vi.mocked(db.execute).mock.calls as any[])
+      .find(([sql]: [string]) => sql.includes('INSERT INTO customer_payments'))
+    expect(cpCall).toBeUndefined()
+  })
+})
