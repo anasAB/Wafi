@@ -3,7 +3,7 @@ import { setActivePinia, createPinia } from 'pinia'
 
 vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
 
-import { fetchSalesRows, fetchExpensesRows, fetchProductsRows } from '@/features/exports/composables/useExportData'
+import { fetchSalesRows, fetchExpensesRows, fetchProductsRows, fetchCustomersRows } from '@/features/exports/composables/useExportData'
 import { db } from '@/data/powersync/db'
 
 describe('fetchSalesRows', () => {
@@ -144,5 +144,49 @@ describe('fetchProductsRows', () => {
     expect(rows[0]['الباركود']).toBe('—')
     expect(rows[0]['التكلفة $']).toBe('—')
     expect(rows[0]['قيمة المخزون $']).toBe('—')
+  })
+})
+
+describe('fetchCustomersRows', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    vi.mocked(db.getAll).mockResolvedValue([])
+  })
+
+  it('calls db.getAll with GROUP BY aggregation and shop_id twice', async () => {
+    await fetchCustomersRows()
+    const call = vi.mocked(db.getAll).mock.calls[0]
+    expect(call[0]).toContain('GROUP BY')
+    expect((call[1] as unknown[]).filter(v => v === '00000000-0000-0000-0000-000000000001')).toHaveLength(2)
+  })
+
+  it('maps a db row to Arabic-keyed export row', async () => {
+    vi.mocked(db.getAll).mockResolvedValueOnce([{
+      name: 'محمد علي',
+      phone: '0991234567',
+      balance_usd: 150,
+      balance_syp: 1875000,
+      last_purchase: '2026-06-04T09:00:00Z',
+    }])
+    const rows = await fetchCustomersRows()
+    expect(rows).toHaveLength(1)
+    expect(rows[0]['الاسم']).toBe('محمد علي')
+    expect(rows[0]['الهاتف']).toBe('0991234567')
+    expect(rows[0]['الرصيد المستحق $']).toBe(150)
+    expect(rows[0]['الرصيد المستحق ل.س']).toBe(1875000)
+  })
+
+  it('maps null phone and last_purchase to "—"', async () => {
+    vi.mocked(db.getAll).mockResolvedValueOnce([{
+      name: 'زبون بدون هاتف',
+      phone: null,
+      balance_usd: 0,
+      balance_syp: 0,
+      last_purchase: null,
+    }])
+    const rows = await fetchCustomersRows()
+    expect(rows[0]['الهاتف']).toBe('—')
+    expect(rows[0]['آخر شراء']).toBe('—')
   })
 })

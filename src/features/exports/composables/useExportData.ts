@@ -122,3 +122,42 @@ export async function fetchProductsRows(): Promise<Record<string, unknown>[]> {
       : '—',
   }))
 }
+
+type CustomerRow = {
+  name: string
+  phone: string | null
+  balance_usd: number
+  balance_syp: number
+  last_purchase: string | null
+}
+
+export async function fetchCustomersRows(): Promise<Record<string, unknown>[]> {
+  const { shopId } = useDeviceStore()
+  const rows = await db.getAll<CustomerRow>(
+    `SELECT
+       c.name,
+       c.phone,
+       COALESCE(SUM(CASE WHEN s.is_credit = 1 THEN s.total_usd ELSE 0 END), 0)
+         - COALESCE(SUM(cp.amount_usd), 0) AS balance_usd,
+       COALESCE(SUM(CASE WHEN s.is_credit = 1 THEN s.total_syp ELSE 0 END), 0)
+         - COALESCE(SUM(cp.amount_syp), 0) AS balance_syp,
+       MAX(s.created_at) AS last_purchase
+     FROM customers c
+     LEFT JOIN sales s              ON s.customer_id = c.id AND s.shop_id = ?
+     LEFT JOIN customer_payments cp ON cp.customer_id = c.id
+     WHERE c.shop_id = ?
+       AND c.is_deleted = 0
+     GROUP BY c.id
+     ORDER BY c.name`,
+    [shopId, shopId],
+  )
+  return rows.map(r => ({
+    'الاسم':               r.name,
+    'الهاتف':              r.phone ?? '—',
+    'الرصيد المستحق $':    r.balance_usd,
+    'الرصيد المستحق ل.س':  r.balance_syp,
+    'آخر شراء':            r.last_purchase
+      ? r.last_purchase.slice(0, 16).replace('T', ' ')
+      : '—',
+  }))
+}
