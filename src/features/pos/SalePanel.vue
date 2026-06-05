@@ -12,33 +12,7 @@ const totalSyp = computed(() => {
   return Math.round(store.totalUsd * rate)
 })
 
-const showClearDialog  = ref(false)
-const swipedProductId  = ref<string | null>(null)
-let   touchStartX      = 0
-let   touchStartY      = 0
-
-function onTouchStart(e: TouchEvent, productId: string) {
-  touchStartX = e.touches[0].clientX
-  touchStartY = e.touches[0].clientY
-  if (swipedProductId.value !== productId) swipedProductId.value = null
-}
-
-function onTouchEnd(e: TouchEvent, productId: string) {
-  const dx = touchStartX - e.changedTouches[0].clientX
-  const dy = touchStartY - e.changedTouches[0].clientY
-  if (Math.abs(dx) < Math.abs(dy)) return
-  if (dx > 50)       swipedProductId.value = productId
-  else if (dx < -20) swipedProductId.value = null
-}
-
-function onTouchCancel() {
-  swipedProductId.value = null
-}
-
-function handleDeleteLine(productId: string) {
-  store.removeLine(productId)
-  swipedProductId.value = null
-}
+const showClearDialog = ref(false)
 
 function handleClearSale() {
   store.clear()
@@ -51,79 +25,92 @@ function handleClearSale() {
 
     <!-- Header -->
     <div class="panel-header">
-      <span class="panel-title">الفاتورة</span>
-      <div class="panel-header-meta">
-        <span class="item-count">{{ store.lines.length }} صنف</span>
-        <button
-          v-if="store.lines.length > 0"
-          type="button"
-          class="clear-btn"
-          @click="showClearDialog = true"
-        >مسح</button>
+      <div class="header-left">
+        <span class="receipt-icon">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z" />
+          </svg>
+        </span>
+        <span class="panel-title">الفاتورة</span>
+        <span v-if="store.lines.length > 0" class="item-badge">{{ store.lines.length }}</span>
       </div>
+      <button
+        v-if="store.lines.length > 0"
+        type="button"
+        class="clear-btn"
+        @click="showClearDialog = true"
+      >
+        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+        </svg>
+        مسح
+      </button>
     </div>
 
     <!-- Line items -->
     <div class="lines-list">
+
       <!-- Empty state -->
       <div v-if="store.lines.length === 0" class="lines-empty">
-        <svg width="24" height="24" fill="none" stroke="#3D4F6B" stroke-width="1.5" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
-        </svg>
-        <p class="lines-empty-text">لا توجد منتجات في البيع</p>
+        <div class="empty-icon-wrap">
+          <svg width="22" height="22" fill="none" stroke="#3D4F6B" stroke-width="1.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
+          </svg>
+        </div>
+        <p class="empty-text">اضغط على منتج لإضافته</p>
       </div>
 
       <!-- Line rows -->
-      <div
-        v-for="line in store.lines"
-        :key="line.productId"
-        class="line-wrap"
-        @touchstart="(e) => onTouchStart(e, line.productId)"
-        @touchend="(e) => onTouchEnd(e, line.productId)"
-        @touchcancel="onTouchCancel"
-      >
-        <!-- Swipe-to-delete reveal -->
-        <div class="delete-reveal">
-          <button type="button" class="delete-reveal-btn" @click="handleDeleteLine(line.productId)">حذف</button>
+      <div v-for="line in store.lines" :key="line.productId" class="line-row">
+        <!-- Product info -->
+        <div class="line-info">
+          <p class="line-name">{{ line.nameAr }}</p>
+          <p class="line-unit">${{ line.unitPriceUsd.toFixed(2) }} × {{ line.quantity }}</p>
         </div>
 
-        <!-- Row (slides on swipe) -->
-        <div
-          :class="['line-row', swipedProductId === line.productId ? 'line-row-swiped' : '']"
-        >
-          <div class="line-info">
-            <p class="line-name">{{ line.nameAr }}</p>
-            <p class="line-unit">${{ line.unitPriceUsd.toFixed(2) }}</p>
-          </div>
+        <!-- Qty controls -->
+        <div class="qty-controls">
+          <button
+            type="button"
+            class="qty-btn"
+            @click="line.quantity - 1 < 1 ? store.removeLine(line.productId) : store.updateQuantity(line.productId, line.quantity - 1)"
+          >−</button>
+          <span class="qty-value">{{ line.quantity }}</span>
+          <button
+            type="button"
+            class="qty-btn"
+            @click="store.updateQuantity(line.productId, line.quantity + 1)"
+          >+</button>
+        </div>
 
-          <div class="qty-controls">
-            <button
-              type="button"
-              class="qty-btn"
-              @click="line.quantity - 1 < 1 ? store.removeLine(line.productId) : store.updateQuantity(line.productId, line.quantity - 1)"
-            >−</button>
-            <span class="qty-value">{{ line.quantity }}</span>
-            <button
-              type="button"
-              class="qty-btn"
-              @click="store.updateQuantity(line.productId, line.quantity + 1)"
-            >+</button>
-          </div>
-
+        <!-- Total + delete -->
+        <div class="line-right">
           <span class="line-total">${{ line.lineTotalUsd.toFixed(2) }}</span>
+          <button
+            type="button"
+            class="line-delete"
+            aria-label="حذف"
+            @click="store.removeLine(line.productId)"
+          >
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
       </div>
     </div>
 
-    <!-- Totals + Pay -->
+    <!-- Footer: totals + pay -->
     <div class="panel-footer">
-      <div class="total-row">
-        <span class="total-label">المجموع</span>
-        <span class="total-usd">${{ store.totalUsd.toFixed(2) }}</span>
-      </div>
-      <div v-if="totalSyp !== null" class="total-syp-row">
-        <span class="total-syp-label">بالليرة</span>
-        <span class="total-syp-value">{{ totalSyp.toLocaleString() }} ل.س</span>
+      <div class="totals-block">
+        <div class="total-main-row">
+          <span class="total-main-label">المجموع</span>
+          <span class="total-main-value">${{ store.totalUsd.toFixed(2) }}</span>
+        </div>
+        <div v-if="totalSyp !== null" class="total-syp-row">
+          <span class="total-syp-label">بالليرة</span>
+          <span class="total-syp-value">{{ totalSyp.toLocaleString() }} ل.س</span>
+        </div>
       </div>
 
       <button
@@ -135,17 +122,18 @@ function handleClearSale() {
         <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z" />
         </svg>
-        دفع
+        <span>دفع</span>
       </button>
     </div>
+
   </div>
 
   <AppDialog
     v-if="showClearDialog"
     title="مسح البيع"
-    message="متأكد من حذف البيع؟"
-    confirm-label="نعم"
-    cancel-label="لا"
+    message="متأكد من حذف جميع العناصر؟"
+    confirm-label="نعم، امسح"
+    cancel-label="إلغاء"
     :danger="true"
     @confirm="handleClearSale"
     @cancel="showClearDialog = false"
@@ -157,20 +145,37 @@ function handleClearSale() {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: linear-gradient(180deg, rgba(26,86,219,0.08) 0%, rgba(7,11,20,0.98) 100%);
-  border-inline-end: 1px solid rgba(26,86,219,0.18);
+  background: linear-gradient(180deg,
+    rgba(26,86,219,0.14) 0%,
+    rgba(13,24,40,0.98)  40%,
+    rgba(7,11,20,1.00)   100%
+  );
+  border-right: 1px solid rgba(26,86,219,0.22);
   font-family: 'Tajawal', system-ui, sans-serif;
 }
 
-/* Header */
+/* ── Header ─────────────────────────────────────── */
 .panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
-  border-bottom: 1px solid rgba(26,86,219,0.16);
-  background: rgba(26,86,219,0.08);
+  padding: 0 14px;
+  height: 48px;
+  border-bottom: 1px solid rgba(26,86,219,0.20);
+  background: rgba(26,86,219,0.10);
   flex-shrink: 0;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.receipt-icon {
+  display: flex;
+  align-items: center;
+  color: #60A5FA;
 }
 
 .panel-title {
@@ -179,102 +184,85 @@ function handleClearSale() {
   color: #E8EDF5;
 }
 
-.panel-header-meta {
-  display: flex;
+.item-badge {
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-}
-
-.item-count {
-  font-size: 12px;
-  color: #637285;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #60A5FA;
+  background: rgba(26,86,219,0.22);
+  border: 1px solid rgba(26,86,219,0.35);
+  padding-inline: 5px;
 }
 
 .clear-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 12px;
   font-weight: 600;
   font-family: 'Tajawal', system-ui, sans-serif;
   color: #EF4444;
   background: rgba(239,68,68,0.08);
-  border: 1px solid rgba(239,68,68,0.22);
+  border: 1px solid rgba(239,68,68,0.20);
   border-radius: 8px;
-  padding: 3px 10px;
+  padding: 4px 10px;
   cursor: pointer;
   transition: background 0.15s;
 }
 
-.clear-btn:hover {
-  background: rgba(239,68,68,0.14);
-}
+.clear-btn:hover { background: rgba(239,68,68,0.14); }
 
-/* Lines list */
+/* ── Lines list ─────────────────────────────────── */
 .lines-list {
   flex: 1;
   overflow-y: auto;
+  padding: 8px 0;
 }
 
+/* Empty state */
 .lines-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  padding: 40px 20px;
+  padding: 48px 20px;
   text-align: center;
 }
 
-.lines-empty-text {
+.empty-icon-wrap {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: rgba(26,86,219,0.08);
+  border: 1px solid rgba(26,86,219,0.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.empty-text {
   font-size: 13px;
   color: #3D4F6B;
 }
 
-/* Line item */
-.line-wrap {
-  position: relative;
-  overflow: hidden;
-  border-bottom: 1px solid rgba(26,86,219,0.10);
-}
-
-.delete-reveal {
-  position: absolute;
-  inset-block: 0;
-  inset-inline-end: 0;
-  width: 72px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, rgba(239,68,68,0.80), rgba(239,68,68,0.60));
-}
-
-.delete-reveal-btn {
-  width: 100%;
-  height: 100%;
-  font-size: 13px;
-  font-weight: 700;
-  font-family: 'Tajawal', system-ui, sans-serif;
-  color: #fff;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-}
-
+/* Line row */
 .line-row {
-  position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 10px 14px;
-  background: transparent;
-  transition: transform 0.2s;
+  border-bottom: 1px solid rgba(26,86,219,0.08);
+  transition: background 0.12s;
 }
 
-.line-row-swiped {
-  transform: translateX(-72px);
-}
-
-/* RTL: swipe in the correct direction */
-[dir="rtl"] .line-row-swiped {
-  transform: translateX(72px);
+.line-row:hover {
+  background: rgba(26,86,219,0.06);
 }
 
 .line-info {
@@ -289,13 +277,13 @@ function handleClearSale() {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin: 0;
+  margin: 0 0 2px;
 }
 
 .line-unit {
   font-size: 11px;
   color: #637285;
-  margin: 2px 0 0;
+  margin: 0;
 }
 
 /* Qty controls */
@@ -304,85 +292,119 @@ function handleClearSale() {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+  background: rgba(26,86,219,0.10);
+  border: 1px solid rgba(26,86,219,0.22);
+  border-radius: 10px;
+  padding: 3px;
 }
 
 .qty-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 16px;
   font-weight: 500;
-  background: rgba(26,86,219,0.14);
-  border: 1px solid rgba(26,86,219,0.28);
+  line-height: 1;
+  background: rgba(26,86,219,0.18);
+  border: 1px solid rgba(26,86,219,0.30);
   color: #60A5FA;
   cursor: pointer;
   transition: background 0.12s, transform 0.1s;
 }
 
-.qty-btn:hover {
-  background: rgba(26,86,219,0.22);
-}
-
-.qty-btn:active {
-  transform: scale(0.90);
-}
+.qty-btn:hover { background: rgba(26,86,219,0.28); }
+.qty-btn:active { transform: scale(0.88); }
 
 .qty-value {
   font-size: 14px;
   font-weight: 700;
   color: #E8EDF5;
-  min-width: 20px;
+  min-width: 22px;
   text-align: center;
   font-variant-numeric: tabular-nums;
+}
+
+/* Right-side: total + delete */
+.line-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .line-total {
   font-size: 13px;
   font-weight: 700;
   color: #60A5FA;
-  min-width: 56px;
+  min-width: 50px;
   text-align: left;
   font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
 }
 
-/* Footer */
-.panel-footer {
-  padding: 14px 16px;
-  border-top: 1px solid rgba(26,86,219,0.18);
-  background: rgba(26,86,219,0.06);
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.total-row {
+.line-delete {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
   display: flex;
   align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #3D4F6B;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+  flex-shrink: 0;
+}
+
+.line-delete:hover {
+  color: #EF4444;
+  background: rgba(239,68,68,0.10);
+  border-color: rgba(239,68,68,0.22);
+}
+
+/* ── Footer ─────────────────────────────────────── */
+.panel-footer {
+  flex-shrink: 0;
+  padding: 14px;
+  border-top: 1px solid rgba(26,86,219,0.20);
+  background: linear-gradient(135deg, rgba(26,86,219,0.12), rgba(26,86,219,0.04));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.totals-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.total-main-row {
+  display: flex;
+  align-items: baseline;
   justify-content: space-between;
 }
 
-.total-label {
+.total-main-label {
   font-size: 13px;
   color: #637285;
 }
 
-.total-usd {
-  font-size: 18px;
+.total-main-value {
+  font-size: 22px;
   font-weight: 800;
   color: #E8EDF5;
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
 }
 
 .total-syp-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: -2px;
 }
 
 .total-syp-label {
@@ -403,22 +425,24 @@ function handleClearSale() {
   justify-content: center;
   gap: 8px;
   width: 100%;
-  height: 48px;
-  margin-top: 6px;
+  height: 52px;
   border-radius: 14px;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 800;
   font-family: 'Tajawal', system-ui, sans-serif;
   color: #fff;
-  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  background: linear-gradient(135deg, #1A56DB 0%, #1248B3 100%);
   border: none;
-  box-shadow: 0 4px 20px rgba(26,86,219,0.45);
+  box-shadow:
+    0 6px 24px rgba(26,86,219,0.55),
+    0 1px 0 rgba(255,255,255,0.12) inset;
   cursor: pointer;
-  transition: opacity 0.15s, transform 0.1s;
+  transition: opacity 0.15s, transform 0.1s, box-shadow 0.15s;
 }
 
 .pay-btn:hover:not(:disabled) {
-  opacity: 0.90;
+  opacity: 0.92;
+  box-shadow: 0 8px 32px rgba(26,86,219,0.65), 0 1px 0 rgba(255,255,255,0.12) inset;
 }
 
 .pay-btn:active:not(:disabled) {
@@ -426,7 +450,7 @@ function handleClearSale() {
 }
 
 .pay-btn:disabled {
-  opacity: 0.35;
+  opacity: 0.30;
   cursor: not-allowed;
   box-shadow: none;
 }

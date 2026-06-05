@@ -89,7 +89,7 @@ onUnmounted(() => {
 
 <style scoped>
 .grid-root {
-  padding: 10px;
+  padding: 12px;
   font-family: 'Tajawal', system-ui, sans-serif;
 }
 
@@ -123,14 +123,14 @@ onUnmounted(() => {
 .product-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
+  gap: 10px;
 }
 
 @media (min-width: 480px) {
   .product-grid { grid-template-columns: repeat(3, 1fr); }
 }
 
-@media (min-width: 768px) {
+@media (min-width: 900px) {
   .product-grid { grid-template-columns: repeat(4, 1fr); }
 }
 
@@ -142,13 +142,13 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   text-align: center;
-  gap: 4px;
-  padding: 12px 8px;
-  min-height: 80px;
+  gap: 6px;
+  padding: 14px 8px 12px;
+  min-height: 110px;
   border-radius: 14px;
-  background: linear-gradient(135deg, rgba(26,86,219,0.10), rgba(255,255,255,0.04));
-  border: 1px solid rgba(26,86,219,0.20);
-  box-shadow: 0 2px 12px rgba(26,86,219,0.06), inset 0 1px 0 rgba(255,255,255,0.06);
+  background: linear-gradient(135deg, rgba(26,86,219,0.12), rgba(255,255,255,0.04));
+  border: 1px solid rgba(26,86,219,0.22);
+  box-shadow: 0 2px 14px rgba(26,86,219,0.08), inset 0 1px 0 rgba(255,255,255,0.07);
   cursor: pointer;
   transition: transform 0.1s, border-color 0.15s, box-shadow 0.15s, background 0.15s;
 }
@@ -188,15 +188,15 @@ onUnmounted(() => {
 /* Text */
 .product-name {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   color: #E8EDF5;
   line-height: 1.3;
   word-break: break-word;
 }
 
 .product-price {
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 800;
   color: #60A5FA;
   font-variant-numeric: tabular-nums;
 }

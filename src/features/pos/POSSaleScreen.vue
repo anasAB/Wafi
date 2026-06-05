@@ -212,7 +212,6 @@ function handlePaymentConfirmed(completedSale: CompletedSale) {
 @media (min-width: 640px) {
   .products-area {
     border-bottom: none;
-    border-inline-start: 1px solid rgba(26,86,219,0.14);
   }
 }
 
