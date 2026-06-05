@@ -79,48 +79,58 @@ function formatDate(iso: string): string {
 <template>
   <Teleport to="body">
     <div
-      class="fixed inset-0 z-50 flex items-end justify-center"
-      style="background: rgb(0 0 0 / 0.6)"
+      class="modal-overlay"
       @click.self="emit('cancel')"
     >
-      <div class="bg-bg-void border-t border-border-glass rounded-t-2xl w-full max-w-lg p-5 shadow-xl" dir="rtl">
-        <div class="w-9 h-1 bg-text-muted/30 rounded-full mx-auto mb-4"></div>
-        <h2 class="text-base font-semibold text-text-primary mb-1">تسجيل دفعة</h2>
-        <p class="text-sm text-text-muted mb-4">{{ customerName }}</p>
+      <div class="sheet-container" dir="rtl">
+        <!-- Handle -->
+        <div class="sheet-handle"></div>
+
+        <!-- Header -->
+        <div class="sheet-header">
+          <div>
+            <h2 class="sheet-title">تسجيل دفعة</h2>
+            <p class="sheet-subtitle">{{ customerName }}</p>
+          </div>
+          <button type="button" class="close-btn" @click="emit('cancel')">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
 
         <!-- Currency toggle -->
-        <div class="flex bg-surface-raised rounded-xl p-1 gap-1 mb-4 w-fit">
+        <div class="currency-toggle">
           <button
             type="button"
-            class="px-4 py-1.5 text-sm font-semibold rounded-lg transition-colors"
-            :class="currency === 'USD' ? 'bg-bg-void text-text-primary shadow-sm' : 'text-text-muted'"
+            class="currency-btn"
+            :class="{ 'currency-btn--active': currency === 'USD' }"
             @click="currency = 'USD'"
           >USD</button>
           <button
             type="button"
-            class="px-4 py-1.5 text-sm font-semibold rounded-lg transition-colors"
-            :class="currency === 'SYP' ? 'bg-bg-void text-text-primary shadow-sm' : 'text-text-muted'"
+            class="currency-btn"
+            :class="{ 'currency-btn--active': currency === 'SYP' }"
             @click="currency = 'SYP'"
           >SYP</button>
         </div>
 
         <!-- Invoice list -->
-        <div class="flex flex-col gap-2 mb-4 max-h-52 overflow-y-auto">
+        <div class="invoice-list">
           <div
             v-for="inv in openInvoices"
             :key="inv.saleId"
             :data-testid="`invoice-${inv.saleId}`"
-            class="flex items-center gap-3 p-3 rounded-xl border transition-colors cursor-pointer"
-            :class="isSelected(inv.saleId)
-              ? 'border-gold-primary bg-surface-raised'
-              : 'border-border-glass'"
+            class="invoice-row"
+            :class="{ 'invoice-row--selected': isSelected(inv.saleId) }"
             @click="toggleInvoice(inv.saleId)"
           >
+            <!-- Checkbox -->
             <button
               type="button"
               :data-testid="`checkbox-${inv.saleId}`"
-              class="w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors"
-              :class="isSelected(inv.saleId) ? 'bg-gold-primary border-gold-primary text-bg-void' : 'border-border-glass'"
+              class="checkbox"
+              :class="{ 'checkbox--checked': isSelected(inv.saleId) }"
               @click.stop="toggleInvoice(inv.saleId)"
             >
               <svg v-if="isSelected(inv.saleId)" class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
@@ -128,15 +138,17 @@ function formatDate(iso: string): string {
               </svg>
             </button>
 
-            <div class="flex-1 min-w-0">
-              <div class="flex justify-between items-center">
-                <span class="text-xs font-semibold text-text-primary">{{ inv.displayNumber }}</span>
-                <span class="text-xs text-text-muted">{{ formatDate(inv.saleDate) }}</span>
+            <!-- Info -->
+            <div class="invoice-info">
+              <div class="invoice-top-row">
+                <span class="invoice-number">{{ inv.displayNumber }}</span>
+                <span class="invoice-date">{{ formatDate(inv.saleDate) }}</span>
               </div>
-              <p class="text-xs text-text-muted truncate">{{ inv.itemsSummary }}</p>
+              <p class="invoice-summary">{{ inv.itemsSummary }}</p>
             </div>
 
-            <div class="shrink-0">
+            <!-- Amount -->
+            <div class="invoice-amount-col">
               <input
                 v-if="isSelected(inv.saleId)"
                 :data-testid="`amount-${inv.saleId}`"
@@ -145,37 +157,35 @@ function formatDate(iso: string): string {
                 :max="inv.remainingUsd"
                 step="0.01"
                 :value="amounts[inv.saleId]"
-                class="w-20 text-center text-sm font-semibold bg-surface-glass border border-gold-primary/40
-                       rounded-lg px-2 py-1 text-text-primary focus:outline-none"
+                class="amount-input"
                 @click.stop
                 @input="amounts[inv.saleId] = parseFloat(($event.target as HTMLInputElement).value) || 0"
               />
-              <span v-else class="text-xs font-semibold text-amber-400">${{ inv.remainingUsd.toFixed(2) }}</span>
+              <span v-else class="invoice-remaining">${{ inv.remainingUsd.toFixed(2) }}</span>
             </div>
           </div>
         </div>
 
-        <!-- Total -->
-        <div class="flex justify-between items-center py-3 border-t border-border-glass mb-4">
-          <span class="text-sm font-semibold text-text-primary">إجمالي الدفعة</span>
-          <span class="text-base font-bold text-green-400">${{ totalUsd.toFixed(2) }}</span>
+        <!-- Total row -->
+        <div class="total-row">
+          <span class="total-label">إجمالي الدفعة</span>
+          <span class="total-amount">${{ totalUsd.toFixed(2) }}</span>
         </div>
 
-        <!-- Buttons -->
-        <div class="flex gap-2">
+        <!-- Action buttons -->
+        <div class="actions">
           <button
             type="button"
             data-testid="confirm-btn"
             :disabled="!hasSelection || saving"
-            class="flex-1 h-11 rounded-xl text-sm font-semibold text-bg-void disabled:opacity-40 transition-colors"
-            style="background: linear-gradient(135deg, var(--color-gold-primary), var(--color-gold-to))"
+            class="btn-confirm"
             @click="handleConfirm"
           >{{ saving ? '...' : 'تأكيد الدفعة' }}</button>
 
           <button
             type="button"
             data-testid="cancel-btn"
-            class="h-11 px-5 rounded-xl text-sm text-text-muted border border-border-glass"
+            class="btn-ghost"
             @click="emit('cancel')"
           >إلغاء</button>
         </div>
@@ -183,3 +193,273 @@ function formatDate(iso: string): string {
     </div>
   </Teleport>
 </template>
+
+<style scoped>
+/* ── Overlay ─────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0,0,0,0.75);
+  backdrop-filter: blur(4px);
+  font-family: 'Tajawal', system-ui, sans-serif;
+}
+
+/* ── Sheet ───────────────────────────────────────────────── */
+.sheet-container {
+  width: 100%;
+  max-width: 32rem;
+  border-radius: 1.25rem 1.25rem 0 0;
+  padding: 0 1.25rem 1.5rem;
+  backdrop-filter: blur(20px) saturate(180%);
+  background: linear-gradient(135deg, rgba(26,86,219,0.16), rgba(26,86,219,0.06));
+  border: 1px solid rgba(26,86,219,0.45);
+  box-shadow: 0 8px 48px rgba(26,86,219,0.22), inset 0 1px 0 rgba(255,255,255,0.09);
+}
+
+/* ── Handle ──────────────────────────────────────────────── */
+.sheet-handle {
+  width: 2.25rem;
+  height: 0.25rem;
+  background: rgba(255,255,255,0.20);
+  border-radius: 9999px;
+  margin: 0.75rem auto 1rem;
+}
+
+/* ── Header ──────────────────────────────────────────────── */
+.sheet-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.sheet-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #E8EDF5;
+  margin: 0;
+}
+
+.sheet-subtitle {
+  font-size: 0.875rem;
+  color: #637285;
+  margin-top: 0.125rem;
+}
+
+.close-btn {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.625rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #637285;
+  background: rgba(255,255,255,0.06);
+  border: none;
+  cursor: pointer;
+  transition: background 0.12s;
+  flex-shrink: 0;
+}
+
+.close-btn:hover { background: rgba(255,255,255,0.10); }
+
+/* ── Currency toggle ─────────────────────────────────────── */
+.currency-toggle {
+  display: flex;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 0.75rem;
+  padding: 0.25rem;
+  gap: 0.25rem;
+  width: fit-content;
+  margin-bottom: 1rem;
+}
+
+.currency-btn {
+  padding: 0.375rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: 0.5rem;
+  border: none;
+  cursor: pointer;
+  color: #637285;
+  background: transparent;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+  font-family: inherit;
+}
+
+.currency-btn--active {
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(26,86,219,0.40);
+}
+
+/* ── Invoice list ────────────────────────────────────────── */
+.invoice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  max-height: 13rem;
+  overflow-y: auto;
+}
+
+.invoice-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.04);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.invoice-row--selected {
+  border-color: rgba(26,86,219,0.55);
+  background: rgba(26,86,219,0.10);
+}
+
+/* ── Checkbox ────────────────────────────────────────────── */
+.checkbox {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 0.375rem;
+  border: 2px solid rgba(255,255,255,0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: transparent;
+  cursor: pointer;
+  color: #fff;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.checkbox--checked {
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  border-color: #1A56DB;
+  box-shadow: 0 2px 8px rgba(26,86,219,0.40);
+}
+
+/* ── Invoice info ────────────────────────────────────────── */
+.invoice-info { flex: 1; min-width: 0; }
+
+.invoice-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.invoice-number {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #E8EDF5;
+}
+
+.invoice-date { font-size: 0.75rem; color: #637285; }
+
+.invoice-summary {
+  font-size: 0.75rem;
+  color: #637285;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 0.125rem;
+}
+
+/* ── Invoice amount column ───────────────────────────────── */
+.invoice-amount-col { flex-shrink: 0; }
+
+.invoice-remaining {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #F59E0B;
+}
+
+.amount-input {
+  width: 5rem;
+  text-align: center;
+  font-size: 0.875rem;
+  font-weight: 600;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(26,86,219,0.45);
+  border-radius: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  color: #E8EDF5;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  font-family: inherit;
+}
+
+.amount-input:focus {
+  border-color: rgba(26,86,219,0.8);
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.20);
+}
+
+/* ── Total row ───────────────────────────────────────────── */
+.total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 0;
+  border-top: 1px solid rgba(26,86,219,0.14);
+  margin-bottom: 1rem;
+}
+
+.total-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #E8EDF5;
+}
+
+.total-amount {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #22C55E;
+}
+
+/* ── Actions ─────────────────────────────────────────────── */
+.actions { display: flex; gap: 0.5rem; }
+
+/* ── Confirm button ──────────────────────────────────────── */
+.btn-confirm {
+  flex: 1;
+  height: 44px;
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(26,86,219,0.40);
+  transition: opacity 0.15s, box-shadow 0.15s, transform 0.1s;
+  font-family: inherit;
+}
+
+.btn-confirm:hover { opacity: 0.88; box-shadow: 0 6px 24px rgba(26,86,219,0.55); }
+.btn-confirm:active { transform: scale(0.98); }
+.btn-confirm:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── Ghost button ────────────────────────────────────────── */
+.btn-ghost {
+  height: 44px;
+  padding-inline: 1.25rem;
+  border-radius: 0.75rem;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.18);
+  color: #E8EDF5;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background 0.12s;
+  font-family: inherit;
+}
+
+.btn-ghost:hover { background: rgba(255,255,255,0.06); }
+</style>
