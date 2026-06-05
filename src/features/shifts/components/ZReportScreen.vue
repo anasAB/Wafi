@@ -55,11 +55,7 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
 <template>
   <CashCountSheet v-if="step === 'cash-count'" @confirm="onCashCounted" />
 
-  <div
-    v-else-if="step === 'report' && metrics"
-    class="zreport-overlay"
-    dir="rtl"
-  >
+  <div v-else-if="step === 'report' && metrics" class="zreport-overlay" dir="rtl">
     <div class="zreport-scroll">
 
       <!-- Header -->
@@ -69,164 +65,104 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
         <p class="zreport-subtitle">ملخص نهاية الوردية</p>
       </div>
 
-      <!-- Shift info card -->
-      <div class="z-card">
-        <div class="z-card-header">
-          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
-          </svg>
-          معلومات الوردية
-        </div>
-        <div class="z-rows">
-          <div class="z-row">
-            <span class="z-label">الكاشير</span>
-            <span class="z-value">{{ shiftStore.activeStaff?.name }}</span>
-          </div>
-          <div class="z-row">
-            <span class="z-label">الجهاز</span>
-            <span class="z-value z-value-mono">{{ device.deviceCode }}</span>
-          </div>
-          <div class="z-row">
-            <span class="z-label">وقت الفتح</span>
-            <span class="z-value">{{ new Date(shift!.openedAt).toLocaleTimeString('ar-SY') }}</span>
-          </div>
-          <div class="z-row">
-            <span class="z-label">المدة</span>
-            <span class="z-value">{{ Math.floor(metrics.durationMinutes / 60) }}س {{ metrics.durationMinutes % 60 }}د</span>
-          </div>
-        </div>
-      </div>
+      <!-- 2-col grid on desktop, stacked on mobile -->
+      <div class="z-grid-top">
 
-      <!-- Sales card -->
-      <div class="z-card">
-        <div class="z-card-header">
-          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
-          </svg>
-          المبيعات
-        </div>
-        <div class="z-rows">
-          <div class="z-row">
-            <span class="z-label">عدد الفواتير</span>
-            <span class="z-value">{{ metrics.invoiceCount }}</span>
+        <!-- Col A: shift info + payment breakdown -->
+        <div class="z-col">
+          <div class="z-card">
+            <div class="z-card-header">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" /></svg>
+              معلومات الوردية
+            </div>
+            <div class="z-rows">
+              <div class="z-row"><span class="z-label">الكاشير</span><span class="z-value">{{ shiftStore.activeStaff?.name }}</span></div>
+              <div class="z-row"><span class="z-label">الجهاز</span><span class="z-value z-value-mono">{{ device.deviceCode }}</span></div>
+              <div class="z-row"><span class="z-label">وقت الفتح</span><span class="z-value">{{ new Date(shift!.openedAt).toLocaleTimeString('ar-SY') }}</span></div>
+              <div class="z-row"><span class="z-label">المدة</span><span class="z-value">{{ Math.floor(metrics.durationMinutes / 60) }}س {{ metrics.durationMinutes % 60 }}د</span></div>
+            </div>
           </div>
-          <div class="z-row z-row-total">
-            <span class="z-label-bold">إجمالي المبيعات</span>
-            <span class="z-value-big">{{ fmt(metrics.totalRevenueUsd) }}</span>
-          </div>
-        </div>
-      </div>
 
-      <!-- Payment breakdown card -->
-      <div class="z-card">
-        <div class="z-card-header">
-          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z" />
-          </svg>
-          تفصيل طريقة الدفع
-        </div>
-        <div class="z-rows">
-          <div class="z-row">
-            <span class="z-label">نقد دولار</span>
-            <span class="z-value">{{ fmt(metrics.cashUsdSales) }}</span>
-          </div>
-          <div class="z-row">
-            <span class="z-label">نقد ليرة</span>
-            <span class="z-value">{{ fmtSyp(metrics.cashSypSalesRaw) }}</span>
-          </div>
-          <div class="z-row">
-            <span class="z-label">بطاقة</span>
-            <span class="z-value">{{ fmt(metrics.cardSales) }}</span>
-          </div>
-          <div class="z-row">
-            <span class="z-label">آجل (دين)</span>
-            <span class="z-value">{{ fmt(metrics.creditSales) }}</span>
+          <div class="z-card">
+            <div class="z-card-header">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z" /></svg>
+              تفصيل طريقة الدفع
+            </div>
+            <div class="z-rows">
+              <div class="z-row"><span class="z-label">نقد دولار</span><span class="z-value">{{ fmt(metrics.cashUsdSales) }}</span></div>
+              <div class="z-row"><span class="z-label">نقد ليرة</span><span class="z-value">{{ fmtSyp(metrics.cashSypSalesRaw) }}</span></div>
+              <div class="z-row"><span class="z-label">بطاقة</span><span class="z-value">{{ fmt(metrics.cardSales) }}</span></div>
+              <div class="z-row"><span class="z-label">آجل (دين)</span><span class="z-value">{{ fmt(metrics.creditSales) }}</span></div>
+            </div>
           </div>
         </div>
-      </div>
 
-      <!-- Expenses card -->
-      <div class="z-card">
-        <div class="z-card-header">
-          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z" />
-          </svg>
-          المصاريف
-        </div>
-        <div class="z-rows">
-          <div class="z-row">
-            <span class="z-label">مصاريف الوردية</span>
-            <span class="z-value">{{ fmt(metrics.cashExpensesUsd) }}</span>
+        <!-- Col B: sales totals + expenses -->
+        <div class="z-col">
+          <div class="z-card">
+            <div class="z-card-header">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" /></svg>
+              المبيعات
+            </div>
+            <div class="z-rows">
+              <div class="z-row"><span class="z-label">عدد الفواتير</span><span class="z-value">{{ metrics.invoiceCount }}</span></div>
+              <div class="z-row z-row-total"><span class="z-label-bold">إجمالي المبيعات</span><span class="z-value-big">{{ fmt(metrics.totalRevenueUsd) }}</span></div>
+            </div>
+          </div>
+
+          <div class="z-card">
+            <div class="z-card-header">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z" /></svg>
+              المصاريف
+            </div>
+            <div class="z-rows">
+              <div class="z-row"><span class="z-label">مصاريف الوردية</span><span class="z-value">{{ fmt(metrics.cashExpensesUsd) }}</span></div>
+            </div>
           </div>
         </div>
-      </div>
 
-      <!-- Cash reconciliation card -->
+      </div><!-- /z-grid-top -->
+
+      <!-- Cash reconciliation — full width below grid -->
       <div class="z-card z-card-recon">
         <div class="z-card-header">
-          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 6.375c0 8.485-7.5 11.9-7.5 11.9s-7.5-3.415-7.5-11.9a7.5 7.5 0 1115 0z" />
-          </svg>
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 6.375c0 8.485-7.5 11.9-7.5 11.9s-7.5-3.415-7.5-11.9a7.5 7.5 0 1115 0z" /></svg>
           حساب الصندوق
         </div>
-        <div class="z-rows">
-          <div class="z-row">
-            <span class="z-label">رصيد الفتح</span>
-            <span class="z-value">{{ fmt(shift!.openingCashUsd) }}</span>
-          </div>
-          <div class="z-row">
-            <span class="z-label">+ نقد مبيعات</span>
-            <span class="z-value z-value-green">{{ fmt(metrics.cashUsdSales) }}</span>
-          </div>
-          <div class="z-row">
-            <span class="z-label">- مصاريف نقدية</span>
-            <span class="z-value z-value-red">{{ fmt(metrics.cashExpensesUsd) }}</span>
-          </div>
-          <div class="z-divider" />
-          <div class="z-row">
-            <span class="z-label">متوقع في الصندوق</span>
-            <span class="z-value z-value-bold">{{ fmt(metrics.expectedUsd) }}</span>
-          </div>
-          <div class="z-row">
-            <span class="z-label">عند العد الفعلي</span>
-            <span class="z-value z-value-bold">{{ fmt(metrics.actualUsd) }}</span>
-          </div>
-          <div class="z-variance-row" :class="metrics.varianceUsd < 0 ? 'z-variance-neg' : 'z-variance-pos'">
-            <span class="z-variance-label">الفرق</span>
-            <span class="z-variance-value">
-              {{ metrics.varianceUsd >= 0 ? '+' : '' }}{{ fmt(metrics.varianceUsd) }}
-              <span class="z-variance-icon">{{ metrics.varianceUsd < 0 ? '⚠' : '✓' }}</span>
-            </span>
-          </div>
-        </div>
 
-        <!-- SYP reconciliation sub-section -->
-        <div class="z-sub-section">
+        <!-- Reconciliation 2-col on desktop -->
+        <div class="z-recon-grid">
           <div class="z-rows">
-            <div class="z-row">
-              <span class="z-label">ليرة متوقع</span>
-              <span class="z-value">{{ fmtSyp(metrics.expectedSyp) }}</span>
-            </div>
-            <div class="z-row">
-              <span class="z-label">ليرة عند العد</span>
-              <span class="z-value">{{ fmtSyp(metrics.actualSyp) }}</span>
-            </div>
-            <div class="z-variance-row" :class="metrics.varianceSyp < 0 ? 'z-variance-neg' : 'z-variance-pos'">
-              <span class="z-variance-label">فرق الليرة</span>
+            <div class="z-row"><span class="z-label">رصيد الفتح</span><span class="z-value">{{ fmt(shift!.openingCashUsd) }}</span></div>
+            <div class="z-row"><span class="z-label">+ نقد مبيعات</span><span class="z-value z-value-green">{{ fmt(metrics.cashUsdSales) }}</span></div>
+            <div class="z-row"><span class="z-label">- مصاريف نقدية</span><span class="z-value z-value-red">{{ fmt(metrics.cashExpensesUsd) }}</span></div>
+            <div class="z-divider" />
+            <div class="z-row"><span class="z-label">متوقع في الصندوق</span><span class="z-value z-value-bold">{{ fmt(metrics.expectedUsd) }}</span></div>
+            <div class="z-row"><span class="z-label">عند العد الفعلي</span><span class="z-value z-value-bold">{{ fmt(metrics.actualUsd) }}</span></div>
+            <div class="z-variance-row" :class="metrics.varianceUsd < 0 ? 'z-variance-neg' : 'z-variance-pos'">
+              <span class="z-variance-label">الفرق (دولار)</span>
               <span class="z-variance-value">
-                {{ metrics.varianceSyp >= 0 ? '+' : '' }}{{ fmtSyp(metrics.varianceSyp) }}
+                {{ metrics.varianceUsd >= 0 ? '+' : '' }}{{ fmt(metrics.varianceUsd) }}
+                <span class="z-variance-icon">{{ metrics.varianceUsd < 0 ? '⚠' : '✓' }}</span>
               </span>
             </div>
           </div>
+
+          <div class="z-rows z-recon-syp">
+            <div class="z-row"><span class="z-label">ليرة متوقع</span><span class="z-value">{{ fmtSyp(metrics.expectedSyp) }}</span></div>
+            <div class="z-row"><span class="z-label">ليرة عند العد</span><span class="z-value">{{ fmtSyp(metrics.actualSyp) }}</span></div>
+            <div class="z-variance-row" :class="metrics.varianceSyp < 0 ? 'z-variance-neg' : 'z-variance-pos'">
+              <span class="z-variance-label">فرق الليرة</span>
+              <span class="z-variance-value">{{ metrics.varianceSyp >= 0 ? '+' : '' }}{{ fmtSyp(metrics.varianceSyp) }}</span>
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- Action buttons -->
+      <!-- Actions: side by side on desktop -->
       <div class="z-actions">
         <button class="z-btn-primary" :disabled="closing" @click="handleClose(true)">
-          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z" />
-          </svg>
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z" /></svg>
           طباعة وإغلاق
         </button>
         <button class="z-btn-ghost" :disabled="closing" @click="handleClose(false)">
@@ -250,12 +186,62 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
 }
 
 .zreport-scroll {
-  max-width: 600px;
+  max-width: 960px;
   margin: 0 auto;
   padding: 24px 16px 40px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+/* ── 2-col grid (top cards) ── */
+.z-grid-top {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.z-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@media (min-width: 768px) {
+  .z-grid-top {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+  .z-col {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+/* ── Reconciliation inner grid ── */
+.z-recon-grid {
+  display: flex;
+  flex-direction: column;
+}
+
+.z-recon-syp {
+  border-top: 1px solid rgba(26,86,219,0.15);
+  background: rgba(26,86,219,0.04);
+}
+
+@media (min-width: 768px) {
+  .z-recon-grid {
+    flex-direction: row;
+  }
+  .z-recon-grid > .z-rows {
+    flex: 1;
+    min-width: 0;
+  }
+  .z-recon-syp {
+    border-top: none;
+    border-inline-start: 1px solid rgba(26,86,219,0.15);
+    background: rgba(26,86,219,0.04);
+  }
 }
 
 /* ── Header ── */
@@ -445,6 +431,18 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
   flex-direction: column;
   gap: 10px;
   padding-top: 4px;
+}
+
+@media (min-width: 768px) {
+  .z-actions {
+    flex-direction: row-reverse;
+  }
+  .z-btn-primary {
+    flex: 2;
+  }
+  .z-btn-ghost {
+    flex: 1;
+  }
 }
 
 .z-btn-primary {
