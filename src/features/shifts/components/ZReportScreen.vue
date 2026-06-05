@@ -56,14 +56,23 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
   <CashCountSheet v-if="step === 'cash-count'" @confirm="onCashCounted" />
 
   <div v-else-if="step === 'report' && metrics" class="zreport-overlay" dir="rtl">
-    <div class="zreport-scroll">
 
-      <!-- Header -->
-      <div class="zreport-header">
+    <!-- Sticky header bar -->
+    <div class="zreport-topbar">
+      <div class="zreport-topbar-inner">
         <div class="zreport-badge">Z</div>
-        <h1 class="zreport-title">تقرير الوردية</h1>
-        <p class="zreport-subtitle">ملخص نهاية الوردية</p>
+        <div class="zreport-topbar-text">
+          <span class="zreport-title">تقرير الوردية</span>
+          <span class="zreport-subtitle">{{ shiftStore.activeStaff?.name }} · {{ new Date(shift!.openedAt).toLocaleTimeString('ar-SY') }}</span>
+        </div>
+        <div class="zreport-hero-stat">
+          <span class="zreport-hero-label">إجمالي المبيعات</span>
+          <span class="zreport-hero-value">{{ fmt(metrics.totalRevenueUsd) }}</span>
+        </div>
       </div>
+    </div>
+
+    <div class="zreport-scroll">
 
       <!-- 2-col grid on desktop, stacked on mobile -->
       <div class="z-grid-top">
@@ -132,15 +141,18 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
 
         <!-- Reconciliation 2-col on desktop -->
         <div class="z-recon-grid">
-          <div class="z-rows">
-            <div class="z-row"><span class="z-label">رصيد الفتح</span><span class="z-value">{{ fmt(shift!.openingCashUsd) }}</span></div>
-            <div class="z-row"><span class="z-label">+ نقد مبيعات</span><span class="z-value z-value-green">{{ fmt(metrics.cashUsdSales) }}</span></div>
-            <div class="z-row"><span class="z-label">- مصاريف نقدية</span><span class="z-value z-value-red">{{ fmt(metrics.cashExpensesUsd) }}</span></div>
-            <div class="z-divider" />
-            <div class="z-row"><span class="z-label">متوقع في الصندوق</span><span class="z-value z-value-bold">{{ fmt(metrics.expectedUsd) }}</span></div>
-            <div class="z-row"><span class="z-label">عند العد الفعلي</span><span class="z-value z-value-bold">{{ fmt(metrics.actualUsd) }}</span></div>
+          <div class="z-recon-col">
+            <p class="z-recon-col-title">دولار $</p>
+            <div class="z-rows">
+              <div class="z-row"><span class="z-label">رصيد الفتح</span><span class="z-value">{{ fmt(shift!.openingCashUsd) }}</span></div>
+              <div class="z-row"><span class="z-label">+ نقد مبيعات</span><span class="z-value z-value-green">{{ fmt(metrics.cashUsdSales) }}</span></div>
+              <div class="z-row"><span class="z-label">- مصاريف نقدية</span><span class="z-value z-value-red">{{ fmt(metrics.cashExpensesUsd) }}</span></div>
+              <div class="z-divider" />
+              <div class="z-row"><span class="z-label">متوقع</span><span class="z-value z-value-bold">{{ fmt(metrics.expectedUsd) }}</span></div>
+              <div class="z-row"><span class="z-label">عند العد</span><span class="z-value z-value-bold">{{ fmt(metrics.actualUsd) }}</span></div>
+            </div>
             <div class="z-variance-row" :class="metrics.varianceUsd < 0 ? 'z-variance-neg' : 'z-variance-pos'">
-              <span class="z-variance-label">الفرق (دولار)</span>
+              <span class="z-variance-label">الفرق</span>
               <span class="z-variance-value">
                 {{ metrics.varianceUsd >= 0 ? '+' : '' }}{{ fmt(metrics.varianceUsd) }}
                 <span class="z-variance-icon">{{ metrics.varianceUsd < 0 ? '⚠' : '✓' }}</span>
@@ -148,11 +160,14 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
             </div>
           </div>
 
-          <div class="z-rows z-recon-syp">
-            <div class="z-row"><span class="z-label">ليرة متوقع</span><span class="z-value">{{ fmtSyp(metrics.expectedSyp) }}</span></div>
-            <div class="z-row"><span class="z-label">ليرة عند العد</span><span class="z-value">{{ fmtSyp(metrics.actualSyp) }}</span></div>
+          <div class="z-recon-col z-recon-col-syp">
+            <p class="z-recon-col-title">ليرة سورية ل.س</p>
+            <div class="z-rows">
+              <div class="z-row"><span class="z-label">متوقع</span><span class="z-value">{{ fmtSyp(metrics.expectedSyp) }}</span></div>
+              <div class="z-row"><span class="z-label">عند العد</span><span class="z-value">{{ fmtSyp(metrics.actualSyp) }}</span></div>
+            </div>
             <div class="z-variance-row" :class="metrics.varianceSyp < 0 ? 'z-variance-neg' : 'z-variance-pos'">
-              <span class="z-variance-label">فرق الليرة</span>
+              <span class="z-variance-label">الفرق</span>
               <span class="z-variance-value">{{ metrics.varianceSyp >= 0 ? '+' : '' }}{{ fmtSyp(metrics.varianceSyp) }}</span>
             </div>
           </div>
@@ -179,19 +194,71 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
 .zreport-overlay {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  z-index: 9999;
   background: #06090F;
   overflow-y: auto;
   font-family: 'Tajawal', system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Sticky top bar ── */
+.zreport-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: linear-gradient(180deg, rgba(7,11,20,0.98) 0%, rgba(7,11,20,0.92) 100%);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(26,86,219,0.22);
+  flex-shrink: 0;
+}
+
+.zreport-topbar-inner {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.zreport-topbar-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.zreport-hero-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+
+.zreport-hero-label {
+  font-size: 10px;
+  color: #3D4F6B;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.zreport-hero-value {
+  font-size: 20px;
+  font-weight: 900;
+  color: #E8EDF5;
+  font-variant-numeric: tabular-nums;
 }
 
 .zreport-scroll {
   max-width: 960px;
+  width: 100%;
   margin: 0 auto;
-  padding: 24px 16px 40px;
+  padding: 16px 16px 40px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  flex: 1;
 }
 
 /* ── 2-col grid (top cards) ── */
@@ -224,33 +291,45 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
   flex-direction: column;
 }
 
-.z-recon-syp {
+.z-recon-col {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.z-recon-col-syp {
   border-top: 1px solid rgba(26,86,219,0.15);
-  background: rgba(26,86,219,0.04);
+  background: rgba(26,86,219,0.05);
+}
+
+.z-recon-col-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: #60A5FA;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0 0 6px;
+  opacity: 0.75;
 }
 
 @media (min-width: 768px) {
   .z-recon-grid {
     flex-direction: row;
   }
-  .z-recon-grid > .z-rows {
+  .z-recon-col {
     flex: 1;
     min-width: 0;
   }
-  .z-recon-syp {
+  .z-recon-col-syp {
     border-top: none;
     border-inline-start: 1px solid rgba(26,86,219,0.15);
-    background: rgba(26,86,219,0.04);
   }
 }
 
-/* ── Header ── */
+/* ── Header (topbar elements) ── */
 .zreport-header {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 20px 0 12px;
+  display: none;
 }
 
 .zreport-badge {
@@ -270,16 +349,23 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
 }
 
 .zreport-title {
-  font-size: 20px;
+  font-size: 15px;
   font-weight: 800;
   color: #E8EDF5;
   margin: 0;
 }
 
 .zreport-subtitle {
-  font-size: 12px;
+  font-size: 11px;
   color: #3D4F6B;
   margin: 0;
+}
+
+.zreport-badge {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  font-size: 16px;
 }
 
 /* ── Card ── */
