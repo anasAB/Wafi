@@ -28,7 +28,7 @@ const showSidebar = computed(() =>
 )
 
 const showBottomNav = computed(() => {
-  if (route.path.startsWith('/pos'))                       return false
+  if (route.path === '/pos/confirmation')                  return false
   if (route.path === '/products/add')                      return false
   if (/^\/products\/[^/]+\/edit$/.test(route.path))       return false
   return true

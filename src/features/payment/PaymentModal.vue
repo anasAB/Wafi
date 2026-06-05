@@ -221,6 +221,7 @@ async function handleConfirm() {
       <div v-else-if="state === 'amount-entry'" class="state-pad">
         <div class="modal-top-bar">
           <button type="button" class="modal-back-btn" @click="handleBack">رجوع</button>
+          <button type="button" class="modal-cancel-btn" @click="handleCancel">إلغاء</button>
         </div>
 
         <h2 id="payment-modal-title" class="modal-heading">المبلغ المستلم</h2>
@@ -275,6 +276,7 @@ async function handleConfirm() {
       <div v-else-if="state === 'card-confirm'" class="state-pad">
         <div class="modal-top-bar">
           <button type="button" class="modal-back-btn" @click="handleBack">رجوع</button>
+          <button type="button" class="modal-cancel-btn" @click="handleCancel">إلغاء</button>
         </div>
 
         <h2 id="payment-modal-title" class="modal-heading">إجمالي البيع</h2>
@@ -304,6 +306,7 @@ async function handleConfirm() {
       <div v-else-if="state === 'credit-confirm'" class="state-pad">
         <div class="modal-top-bar">
           <button type="button" class="modal-back-btn" @click="handleBack">رجوع</button>
+          <button type="button" class="modal-cancel-btn" @click="handleCancel">إلغاء</button>
         </div>
 
         <h2 id="payment-modal-title" class="modal-heading">إجمالي البيع</h2>
@@ -416,7 +419,8 @@ async function handleConfirm() {
 /* ── Top bar ───────────────────────────────────── */
 .modal-top-bar {
   display: flex;
-  justify-content: flex-start;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 20px;
 }
 
