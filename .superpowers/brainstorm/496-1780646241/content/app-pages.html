@@ -1,0 +1,308 @@
+<h2>App pages — what changes and where</h2>
+<p class="subtitle">The token upgrade (Section 1) handles most of it automatically. These are the targeted enhancements per surface.</p>
+
+<style>
+* { box-sizing: border-box; }
+.surfaces { display: flex; flex-direction: column; gap: 20px; margin: 20px 0; font-family: system-ui; }
+
+.surface-block {
+  border-radius: 12px;
+  background: #05080F;
+  border: 1px solid rgba(255,255,255,0.07);
+  overflow: hidden;
+}
+.surface-hdr {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  display: flex; align-items: center; gap: 10px;
+}
+.surface-tag {
+  font-size: 9px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.1em; color: #637285;
+}
+.surface-name {
+  font-size: 13px; font-weight: 700; color: #E8EDF5;
+}
+.surface-body { padding: 14px 16px; }
+
+/* Auto badge */
+.badge-auto {
+  background: rgba(96,165,250,0.12); color: #60A5FA;
+  border: 1px solid rgba(96,165,250,0.25); border-radius: 20px;
+  padding: 2px 8px; font-size: 9px; font-weight: 700;
+  margin-right: auto;
+}
+.badge-manual {
+  background: rgba(26,86,219,0.12); color: #93C5FD;
+  border: 1px solid rgba(26,86,219,0.28); border-radius: 20px;
+  padding: 2px 8px; font-size: 9px; font-weight: 700;
+  margin-right: auto;
+}
+
+/* Mini dashboard mockup */
+.mini-dash {
+  display: flex; flex-direction: column; gap: 8px;
+  background: #06090F; border-radius: 10px; padding: 12px;
+  position: relative; overflow: hidden;
+}
+.mini-dash::before {
+  content: '';
+  position: absolute; top: -50px; right: -50px;
+  width: 160px; height: 160px;
+  background: radial-gradient(circle, rgba(26,86,219,0.15) 0%, transparent 65%);
+  pointer-events: none;
+}
+
+/* Glass card */
+.gc {
+  background: linear-gradient(135deg, rgba(26,86,219,0.11), rgba(255,255,255,0.04));
+  border: 1px solid rgba(26,86,219,0.28);
+  border-radius: 10px; padding: 10px 12px;
+  box-shadow: 0 4px 20px rgba(26,86,219,0.10), inset 0 1px 0 rgba(255,255,255,0.07);
+}
+.gc.green {
+  background: linear-gradient(135deg, rgba(34,197,94,0.09), rgba(255,255,255,0.03));
+  border-color: rgba(34,197,94,0.28);
+  box-shadow: 0 4px 16px rgba(34,197,94,0.08), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.gc.amber {
+  background: linear-gradient(135deg, rgba(245,158,11,0.09), rgba(255,255,255,0.03));
+  border-color: rgba(245,158,11,0.25);
+}
+.gc-label { font-size: 9px; color: #637285; margin-bottom: 2px; }
+.gc-val   { font-size: 16px; font-weight: 800; color: #E8EDF5; }
+.gc-sub   { font-size: 8px; margin-top: 2px; }
+.gc-sub.up { color: #22C55E; }
+.accent-bar { height: 2px; border-radius: 1px; margin-top: 8px; background: linear-gradient(90deg, #1A56DB, transparent); width: 60%; }
+.accent-bar.green { background: linear-gradient(90deg, #22C55E, transparent); }
+
+/* KPI strip */
+.kpi-strip { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; }
+
+/* chart card */
+.chart-card {
+  background: linear-gradient(135deg, rgba(26,86,219,0.10), rgba(255,255,255,0.03));
+  border: 1px solid rgba(26,86,219,0.22);
+  border-radius: 10px; padding: 10px;
+  box-shadow: 0 4px 20px rgba(26,86,219,0.08);
+}
+.chart-bars { display: flex; align-items: flex-end; gap: 4px; height: 48px; }
+.chart-bars span { flex: 1; border-radius: 3px 3px 0 0; }
+.live-dot { width: 6px; height: 6px; border-radius: 50%; background: #22C55E; box-shadow: 0 0 6px rgba(34,197,94,0.8); display: inline-block; }
+
+/* nav */
+.nav-sidebar {
+  background: linear-gradient(180deg, rgba(26,86,219,0.08) 0%, rgba(255,255,255,0.02) 100%);
+  border-right: 1px solid rgba(26,86,219,0.18);
+  border-radius: 10px; padding: 10px 8px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; border-radius: 7px;
+  font-size: 10px; color: #637285;
+  background: transparent;
+}
+.nav-item.active {
+  background: linear-gradient(135deg, rgba(26,86,219,0.18), rgba(26,86,219,0.08));
+  border: 1px solid rgba(26,86,219,0.3);
+  color: #60A5FA; font-weight: 700;
+}
+.nav-dot { width: 4px; height: 4px; border-radius: 50%; background: #1A56DB; flex-shrink: 0; }
+
+/* table card */
+.table-card {
+  background: linear-gradient(135deg, rgba(26,86,219,0.08), rgba(255,255,255,0.03));
+  border: 1px solid rgba(26,86,219,0.2);
+  border-radius: 10px; overflow: hidden;
+}
+.table-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  font-size: 10px; color: #C8D5E8;
+  transition: background 0.15s;
+}
+.table-row:last-child { border-bottom: none; }
+.table-row:hover { background: rgba(26,86,219,0.06); }
+.table-row.hdr { color: #637285; font-size: 9px; background: rgba(255,255,255,0.02); }
+.row-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+
+/* bottom nav */
+.bottom-nav {
+  display: flex; justify-content: space-around; align-items: center;
+  padding: 8px 0;
+  background: linear-gradient(135deg, rgba(26,86,219,0.10), rgba(255,255,255,0.04));
+  border: 1px solid rgba(26,86,219,0.25);
+  border-radius: 10px;
+  box-shadow: 0 -4px 20px rgba(26,86,219,0.10);
+}
+.nav-tab { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 12px; border-radius: 8px; }
+.nav-tab.active { background: linear-gradient(135deg, rgba(26,86,219,0.18), rgba(26,86,219,0.08)); }
+.nav-tab-icon { font-size: 14px; }
+.nav-tab-label { font-size: 8px; color: #637285; }
+.nav-tab.active .nav-tab-label { color: #60A5FA; }
+
+.change-list { display: flex; flex-direction: column; gap: 5px; }
+.change-item {
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: 11px; color: #8899BB; padding: 4px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.change-item:last-child { border-bottom: none; }
+.ci-bullet { color: #1A56DB; flex-shrink: 0; margin-top: 1px; }
+
+.split { display: grid; grid-template-columns: 160px 1fr; gap: 14px; }
+</style>
+
+<div class="surfaces">
+
+  <!-- ── Homepage Dashboard ── -->
+  <div class="surface-block">
+    <div class="surface-hdr">
+      <span class="badge-manual">targeted</span>
+      <div>
+        <div class="surface-tag">App page</div>
+        <div class="surface-name">HomePage — Dashboard</div>
+      </div>
+    </div>
+    <div class="surface-body">
+      <div class="split">
+        <!-- mini preview -->
+        <div class="mini-dash">
+          <div class="kpi-strip">
+            <div class="gc" style="padding:7px 8px;">
+              <div class="gc-label">المال الداخل</div>
+              <div class="gc-val" style="font-size:12px;">$4,820</div>
+              <div class="accent-bar"></div>
+            </div>
+            <div class="gc green" style="padding:7px 8px;">
+              <div class="gc-label">الربح</div>
+              <div class="gc-val" style="font-size:12px; color:#22C55E;">$1,240</div>
+              <div class="accent-bar green"></div>
+            </div>
+            <div class="gc" style="padding:7px 8px;">
+              <div class="gc-label">الفواتير</div>
+              <div class="gc-val" style="font-size:12px;">٤٢</div>
+              <div class="accent-bar"></div>
+            </div>
+            <div class="gc" style="padding:7px 8px;">
+              <div class="gc-label">الصندوق</div>
+              <div class="gc-val" style="font-size:12px;">$380</div>
+              <div class="accent-bar"></div>
+            </div>
+          </div>
+          <div class="chart-card">
+            <div style="display:flex;align-items:center;gap:5px;margin-bottom:7px;">
+              <span class="live-dot"></span>
+              <span style="font-size:9px;color:#637285;">المبيعات والربح</span>
+            </div>
+            <div class="chart-bars">
+              <span style="height:40%;background:linear-gradient(180deg,#3B7FFF,rgba(26,86,219,0.3));"></span>
+              <span style="height:58%;background:linear-gradient(180deg,#3B7FFF,rgba(26,86,219,0.3));"></span>
+              <span style="height:45%;background:linear-gradient(180deg,#3B7FFF,rgba(26,86,219,0.3));"></span>
+              <span style="height:76%;background:linear-gradient(180deg,#3B7FFF,rgba(26,86,219,0.3));box-shadow:0 0 8px rgba(59,127,255,0.4);"></span>
+              <span style="height:55%;background:linear-gradient(180deg,#3B7FFF,rgba(26,86,219,0.3));"></span>
+              <span style="height:92%;background:linear-gradient(180deg,#3B7FFF,rgba(26,86,219,0.3));box-shadow:0 0 10px rgba(59,127,255,0.5);"></span>
+              <span style="height:68%;background:linear-gradient(180deg,#3B7FFF,rgba(26,86,219,0.3));"></span>
+            </div>
+          </div>
+        </div>
+        <!-- change list -->
+        <div class="change-list">
+          <div class="change-item"><span class="ci-bullet">→</span> KPI cards: flat <code>#0D1828</code> → gradient-glow <code>card</code> utility. Blue/green/amber accent variants by metric type.</div>
+          <div class="change-item"><span class="ci-bullet">→</span> Chart card: gets blue-tinted border + glow shadow. Live dot (green pulse) added next to chart title.</div>
+          <div class="change-item"><span class="ci-bullet">→</span> Best sellers table: rows get subtle blue hover glow on hover.</div>
+          <div class="change-item"><span class="ci-bullet">→</span> Health signals card: status dots get stronger glow (already coded, just amplified).</div>
+          <div class="change-item"><span class="ci-bullet">→</span> Add expense button: dashed border color shifts to blue glow on hover.</div>
+          <div class="change-item"><span class="ci-bullet">→</span> Header rate pill: border becomes <code>--color-border-glow</code>.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Navigation ── -->
+  <div class="surface-block">
+    <div class="surface-hdr">
+      <span class="badge-manual">targeted</span>
+      <div>
+        <div class="surface-tag">Layout components</div>
+        <div class="surface-name">AppSidebar + AppBottomNav</div>
+      </div>
+    </div>
+    <div class="surface-body">
+      <div class="split">
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div class="nav-sidebar">
+            <div class="nav-item active"><span class="nav-dot"></span> الرئيسية</div>
+            <div class="nav-item">المنتجات</div>
+            <div class="nav-item">الزبائن</div>
+            <div class="nav-item">المصاريف</div>
+          </div>
+          <div class="bottom-nav">
+            <div class="nav-tab active"><span class="nav-tab-icon">🏠</span><span class="nav-tab-label">الرئيسية</span></div>
+            <div class="nav-tab"><span class="nav-tab-icon">🛍️</span><span class="nav-tab-label">البيع</span></div>
+            <div class="nav-tab"><span class="nav-tab-icon">📦</span><span class="nav-tab-label">المنتجات</span></div>
+            <div class="nav-tab"><span class="nav-tab-icon">⚙️</span><span class="nav-tab-label">الإعدادات</span></div>
+          </div>
+        </div>
+        <div class="change-list">
+          <div class="change-item"><span class="ci-bullet">→</span> Sidebar background: subtle blue gradient top-to-bottom (<code>rgba(26,86,219,0.08) → rgba(255,255,255,0.02)</code>).</div>
+          <div class="change-item"><span class="ci-bullet">→</span> Active nav item: gradient-glow card treatment — blue tinted bg + glow border.</div>
+          <div class="change-item"><span class="ci-bullet">→</span> Bottom nav bar: gets the gradient-glow glass treatment + upward glow shadow.</div>
+          <div class="change-item"><span class="ci-bullet">→</span> Active tab indicator on bottom nav: same gradient-glow pill as sidebar active item.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Feature pages (auto upgrade) ── -->
+  <div class="surface-block">
+    <div class="surface-hdr">
+      <span class="badge-auto">auto via tokens</span>
+      <div>
+        <div class="surface-tag">Feature pages</div>
+        <div class="surface-name">Products · Customers · Expenses · Settings · Sale History</div>
+      </div>
+    </div>
+    <div class="surface-body">
+      <div class="split">
+        <div class="table-card">
+          <div class="table-row hdr">
+            <span style="flex:1;">المنتج</span>
+            <span>المخزون</span>
+            <span style="min-width:40px;text-align:left;">السعر</span>
+          </div>
+          <div class="table-row">
+            <span class="row-dot" style="background:#22C55E;box-shadow:0 0 5px rgba(34,197,94,0.6);"></span>
+            <span style="flex:1;">سامسونج A54</span>
+            <span>٢٤</span>
+            <span style="min-width:40px;text-align:left;color:#22C55E;">$280</span>
+          </div>
+          <div class="table-row">
+            <span class="row-dot" style="background:#F59E0B;box-shadow:0 0 5px rgba(245,158,11,0.6);"></span>
+            <span style="flex:1;">شاحن أصلي</span>
+            <span>٣</span>
+            <span style="min-width:40px;text-align:left;">$18</span>
+          </div>
+          <div class="table-row">
+            <span class="row-dot" style="background:#EF4444;box-shadow:0 0 5px rgba(239,68,68,0.5);"></span>
+            <span style="flex:1;">كفر حماية</span>
+            <span>١</span>
+            <span style="min-width:40px;text-align:left;">$5</span>
+          </div>
+        </div>
+        <div class="change-list">
+          <div class="change-item"><span class="ci-bullet">→</span> All <code>class="card"</code> elements: gradient-glow automatically (token upgrade).</div>
+          <div class="change-item"><span class="ci-bullet">→</span> All <code>class="glass-*"</code> elements: blue-tinted border + glow shadow automatically.</div>
+          <div class="change-item"><span class="ci-bullet">→</span> Stock status dots: glow intensity raised (already have glow, get amplified values).</div>
+          <div class="change-item"><span class="ci-bullet">→</span> Form inputs (<code>.form-input</code>): focus ring shifts to blue glow border.</div>
+          <div class="change-item"><span class="ci-bullet">→</span> AppDialog + all bottom sheets: get <code>glass-lg</code> — heavy blur + glow border.</div>
+          <div class="change-item"><span class="ci-bullet">→</span> AppToast: success gets green-glow border, error gets red-glow border.</div>
+          <div class="change-item"><span class="ci-bullet">→</span> AppHeader: sticky bar gets blue-tinted bottom border (<code>--color-border-glow</code>).</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>

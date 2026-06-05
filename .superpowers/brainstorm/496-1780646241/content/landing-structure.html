@@ -1,0 +1,210 @@
+<h2>Landing page section structure</h2>
+<p class="subtitle">The current page has 7 sections. Which new structure fits the "modern SaaS" brief?</p>
+
+<style>
+.structures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin: 24px 0; }
+.structure-wrap { border-radius: 12px; overflow: hidden; }
+
+.page-outline {
+  background: #05080F;
+  border-radius: 10px;
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-family: system-ui;
+}
+.s-block {
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #E8EDF5;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.s-block.hero   { background: linear-gradient(135deg, rgba(26,86,219,0.25), rgba(26,86,219,0.10)); border: 1px solid rgba(26,86,219,0.4); min-height: 34px; }
+.s-block.stats  { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); }
+.s-block.feat   { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); }
+.s-block.story  { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); }
+.s-block.price  { background: linear-gradient(135deg, rgba(34,197,94,0.12), rgba(34,197,94,0.04)); border: 1px solid rgba(34,197,94,0.25); }
+.s-block.trust  { background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.18); }
+.s-block.cta    { background: linear-gradient(135deg, rgba(26,86,219,0.20), rgba(26,86,219,0.08)); border: 1px solid rgba(26,86,219,0.35); }
+.s-block.faq    { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); }
+.s-block.footer { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); color: #637285; }
+.s-block.howto  { background: rgba(96,165,250,0.07); border: 1px solid rgba(96,165,250,0.2); }
+
+.s-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.dot-blue   { background: #1A56DB; }
+.dot-green  { background: #22C55E; }
+.dot-yellow { background: #F59E0B; }
+.dot-sky    { background: #60A5FA; }
+.dot-muted  { background: #3D4F6B; }
+
+.new-badge {
+  background: rgba(34,197,94,0.15); color: #22C55E;
+  border: 1px solid rgba(34,197,94,0.3); border-radius: 20px;
+  padding: 1px 6px; font-size: 8px; margin-right: auto;
+}
+.keep-badge {
+  background: rgba(255,255,255,0.06); color: #637285;
+  border: 1px solid rgba(255,255,255,0.1); border-radius: 20px;
+  padding: 1px 6px; font-size: 8px; margin-right: auto;
+}
+</style>
+
+<div class="structures">
+
+  <!-- Option A: Lean (4 sections) -->
+  <div class="option" data-choice="lean" onclick="toggleSelect(this)" style="padding:0; border-radius:14px; overflow:hidden; background:#05080F;">
+    <div style="padding:14px;">
+      <div style="font-size:10px; color:#637285; font-family:system-ui; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:10px;">A — Lean (5 sections)</div>
+      <div class="page-outline">
+        <div class="s-block hero">
+          <span class="s-dot dot-blue"></span>
+          Hero + floating cards
+          <span class="keep-badge">upgraded</span>
+        </div>
+        <div class="s-block feat">
+          <span class="s-dot dot-sky"></span>
+          Features grid (3 pillars → 6 icons)
+          <span class="keep-badge">upgraded</span>
+        </div>
+        <div class="s-block price">
+          <span class="s-dot dot-green"></span>
+          Pricing table (Core + packs)
+          <span class="new-badge">new</span>
+        </div>
+        <div class="s-block trust">
+          <span class="s-dot dot-yellow"></span>
+          Trust badges + stats bar
+          <span class="new-badge">new</span>
+        </div>
+        <div class="s-block cta">
+          <span class="s-dot dot-blue"></span>
+          CTA (founding offer)
+          <span class="keep-badge">upgraded</span>
+        </div>
+        <div class="s-block footer">
+          <span class="s-dot dot-muted"></span>
+          Footer
+        </div>
+      </div>
+    </div>
+    <div class="card-body" style="padding:4px 14px 14px;">
+      <h3 style="font-size:13px; margin:0 0 4px;">Lean</h3>
+      <p style="font-size:11px; margin:0;">Cut the "product story" & brand-values sections. Fast to scroll, conversion-focused. Best for cold traffic.</p>
+    </div>
+  </div>
+
+  <!-- Option B: Full SaaS (7 sections) -->
+  <div class="option" data-choice="full-saas" onclick="toggleSelect(this)" style="padding:0; border-radius:14px; overflow:hidden; background:#05080F;">
+    <div style="padding:14px;">
+      <div style="font-size:10px; color:#637285; font-family:system-ui; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:10px;">B — Full SaaS (7 sections)</div>
+      <div class="page-outline">
+        <div class="s-block hero">
+          <span class="s-dot dot-blue"></span>
+          Hero + floating cards
+          <span class="keep-badge">upgraded</span>
+        </div>
+        <div class="s-block stats">
+          <span class="s-dot dot-muted"></span>
+          Stats bar (4 numbers)
+          <span class="keep-badge">upgraded</span>
+        </div>
+        <div class="s-block feat">
+          <span class="s-dot dot-sky"></span>
+          Features grid (icon cards)
+          <span class="keep-badge">upgraded</span>
+        </div>
+        <div class="s-block howto">
+          <span class="s-dot dot-sky"></span>
+          How it works (3 steps)
+          <span class="new-badge">new</span>
+        </div>
+        <div class="s-block price">
+          <span class="s-dot dot-green"></span>
+          Pricing table (Core + packs)
+          <span class="new-badge">new</span>
+        </div>
+        <div class="s-block trust">
+          <span class="s-dot dot-yellow"></span>
+          Trust badges (hardware, offline, Arabic)
+          <span class="new-badge">new</span>
+        </div>
+        <div class="s-block cta">
+          <span class="s-dot dot-blue"></span>
+          Founding CTA
+          <span class="keep-badge">upgraded</span>
+        </div>
+        <div class="s-block footer">
+          <span class="s-dot dot-muted"></span>
+          Footer
+        </div>
+      </div>
+    </div>
+    <div class="card-body" style="padding:4px 14px 14px;">
+      <h3 style="font-size:13px; margin:0 0 4px;">Full SaaS</h3>
+      <p style="font-size:11px; margin:0;">The complete marketing site. Keeps the product story as a "how it works" flow. Educates before converting.</p>
+    </div>
+  </div>
+
+  <!-- Option C: Full SaaS + Product Story -->
+  <div class="option" data-choice="full-plus-story" onclick="toggleSelect(this)" style="padding:0; border-radius:14px; overflow:hidden; background:#05080F;">
+    <div style="padding:14px;">
+      <div style="font-size:10px; color:#637285; font-family:system-ui; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:10px;">C — Full + Story (9 sections)</div>
+      <div class="page-outline">
+        <div class="s-block hero">
+          <span class="s-dot dot-blue"></span>
+          Hero + floating cards
+          <span class="keep-badge">upgraded</span>
+        </div>
+        <div class="s-block stats">
+          <span class="s-dot dot-muted"></span>
+          Stats bar
+          <span class="keep-badge">upgraded</span>
+        </div>
+        <div class="s-block feat">
+          <span class="s-dot dot-sky"></span>
+          Features grid (6 icons)
+          <span class="keep-badge">upgraded</span>
+        </div>
+        <div class="s-block story">
+          <span class="s-dot dot-muted"></span>
+          Product story (POS / Dashboard / Credit)
+          <span class="keep-badge">kept</span>
+        </div>
+        <div class="s-block howto">
+          <span class="s-dot dot-sky"></span>
+          How it works (3 steps)
+          <span class="new-badge">new</span>
+        </div>
+        <div class="s-block price">
+          <span class="s-dot dot-green"></span>
+          Pricing table
+          <span class="new-badge">new</span>
+        </div>
+        <div class="s-block trust">
+          <span class="s-dot dot-yellow"></span>
+          Trust badges
+          <span class="new-badge">new</span>
+        </div>
+        <div class="s-block cta">
+          <span class="s-dot dot-blue"></span>
+          Founding CTA
+          <span class="keep-badge">upgraded</span>
+        </div>
+        <div class="s-block footer">
+          <span class="s-dot dot-muted"></span>
+          Footer
+        </div>
+      </div>
+    </div>
+    <div class="card-body" style="padding:4px 14px 14px;">
+      <h3 style="font-size:13px; margin:0 0 4px;">Full + Story</h3>
+      <p style="font-size:11px; margin:0;">Keeps the alternating product screenshots. Longest page — most thorough but requires real app screenshots to land.</p>
+    </div>
+  </div>
+
+</div>

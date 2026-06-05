@@ -1,0 +1,350 @@
+<h2>Landing page — full layout wireframe</h2>
+<p class="subtitle">All 9 sections. Scroll to see the whole page. Each section shows its content and purpose.</p>
+
+<style>
+* { box-sizing: border-box; }
+.page-wrap {
+  max-width: 720px;
+  margin: 24px auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: system-ui;
+}
+
+/* ── shared section shell ── */
+.lp-section {
+  border-radius: 12px;
+  padding: 18px 20px;
+  position: relative;
+  overflow: hidden;
+}
+.sec-label {
+  font-size: 9px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.1em; margin-bottom: 8px;
+  display: flex; align-items: center; gap: 6px;
+}
+.sec-num {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: rgba(255,255,255,0.08);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700; color: #637285;
+  flex-shrink: 0;
+}
+.sec-name { color: #637285; }
+.sec-desc { font-size: 11px; color: #8899BB; line-height: 1.5; }
+
+/* ── section colours ── */
+.s-hero  { background: linear-gradient(135deg, rgba(26,86,219,0.14), rgba(26,86,219,0.04)); border: 1px solid rgba(26,86,219,0.35); min-height: 100px; }
+.s-stats { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); }
+.s-feat  { background: rgba(96,165,250,0.06); border: 1px solid rgba(96,165,250,0.18); }
+.s-story { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); }
+.s-how   { background: rgba(96,165,250,0.05); border: 1px solid rgba(96,165,250,0.15); }
+.s-price { background: linear-gradient(135deg, rgba(34,197,94,0.10), rgba(34,197,94,0.03)); border: 1px solid rgba(34,197,94,0.28); }
+.s-trust { background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.20); }
+.s-cta   { background: linear-gradient(135deg, rgba(26,86,219,0.18), rgba(26,86,219,0.06)); border: 1px solid rgba(26,86,219,0.40); }
+.s-foot  { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); }
+
+/* ── inline content previews ── */
+.row { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
+
+/* hero layout */
+.hero-text { flex: 1; min-width: 180px; }
+.hero-head { font-size: 13px; font-weight: 800; color: #E8EDF5; margin-bottom: 4px; line-height: 1.3; }
+.hero-sub  { font-size: 10px; color: #637285; margin-bottom: 8px; }
+.hero-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn-p { background: linear-gradient(135deg,#1A56DB,#1248B3); color:#fff; border:none; border-radius:8px; padding:5px 12px; font-size:10px; font-weight:700; cursor:pointer; }
+.btn-g { background:transparent; color:#C8D5E8; border:1px solid rgba(255,255,255,0.2); border-radius:8px; padding:5px 12px; font-size:10px; font-weight:600; cursor:pointer; }
+
+/* floating cards preview */
+.float-stack { display: flex; flex-direction: column; gap: 5px; min-width: 160px; }
+.f-card {
+  border-radius: 9px; padding: 8px 10px;
+  background: linear-gradient(135deg,rgba(26,86,219,0.14),rgba(255,255,255,0.04));
+  border: 1px solid rgba(26,86,219,0.3);
+  box-shadow: 0 4px 16px rgba(26,86,219,0.12), inset 0 1px 0 rgba(255,255,255,0.07);
+  font-size: 10px;
+}
+.f-card.green { background: linear-gradient(135deg,rgba(34,197,94,0.10),rgba(255,255,255,0.03)); border-color:rgba(34,197,94,0.3); }
+.f-card.amber { background: linear-gradient(135deg,rgba(245,158,11,0.10),rgba(255,255,255,0.03)); border-color:rgba(245,158,11,0.28); }
+.fc-label { color:#637285; font-size:9px; margin-bottom:2px; }
+.fc-val   { color:#E8EDF5; font-weight:800; }
+.fc-sub   { color:#22C55E; font-size:9px; margin-top:1px; }
+.live-d   { width:5px;height:5px;border-radius:50%;background:#22C55E;display:inline-block;box-shadow:0 0 5px rgba(34,197,94,0.8);vertical-align:middle;margin-right:3px; }
+
+/* stats bar */
+.stats-row { display:flex; gap:8px; flex-wrap:wrap; }
+.stat-chip {
+  flex:1; min-width:100px;
+  background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08);
+  border-radius:8px; padding:8px; text-align:center;
+}
+.stat-val  { font-size:16px; font-weight:800; color:#E8EDF5; }
+.stat-lbl  { font-size:9px; color:#637285; margin-top:2px; }
+
+/* features grid */
+.feat-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; width:100%; }
+.feat-card {
+  border-radius:8px; padding:10px;
+  background:linear-gradient(135deg,rgba(26,86,219,0.10),rgba(255,255,255,0.03));
+  border:1px solid rgba(26,86,219,0.22);
+  display:flex; flex-direction:column; gap:4px;
+}
+.feat-icon { font-size:14px; }
+.feat-name { font-size:10px; font-weight:700; color:#E8EDF5; }
+.feat-body { font-size:9px; color:#637285; }
+
+/* product story */
+.story-row { display:flex; gap:8px; align-items:center; margin-bottom:6px; }
+.story-img { width:80px; height:48px; border-radius:6px; background:linear-gradient(135deg,rgba(26,86,219,0.12),rgba(255,255,255,0.04)); border:1px solid rgba(26,86,219,0.2); flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:8px; color:#637285; }
+.story-txt { flex:1; }
+.story-tag { font-size:8px; color:#1A56DB; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:2px; }
+.story-h   { font-size:11px; font-weight:700; color:#E8EDF5; }
+.story-p   { font-size:9px; color:#637285; margin-top:2px; }
+
+/* how it works */
+.steps-row { display:flex; gap:8px; align-items:flex-start; }
+.step { flex:1; text-align:center; }
+.step-num { width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#1A56DB,#1248B3);color:#fff;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;margin:0 auto 5px; }
+.step-name { font-size:10px; font-weight:700; color:#E8EDF5; }
+.step-desc { font-size:9px; color:#637285; margin-top:2px; }
+.step-arrow { color:#3D4F6B; font-size:14px; margin-top:10px; }
+
+/* pricing table */
+.price-wrap { display:flex; gap:8px; flex-wrap:wrap; }
+.price-core {
+  border-radius:10px; padding:12px;
+  background:linear-gradient(135deg,rgba(26,86,219,0.16),rgba(26,86,219,0.06));
+  border:1px solid rgba(26,86,219,0.40);
+  min-width:140px;
+}
+.price-pack {
+  border-radius:8px; padding:10px;
+  background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08);
+  flex:1; min-width:80px;
+}
+.p-name  { font-size:10px; font-weight:700; color:#E8EDF5; margin-bottom:2px; }
+.p-price { font-size:15px; font-weight:800; color:#1A56DB; margin-bottom:4px; }
+.p-price span { font-size:9px; color:#637285; font-weight:400; }
+.p-feat  { font-size:8px; color:#637285; line-height:1.6; }
+.found-badge {
+  display:inline-block; background:rgba(34,197,94,0.15); color:#22C55E;
+  border:1px solid rgba(34,197,94,0.3); border-radius:20px;
+  padding:2px 8px; font-size:9px; margin-bottom:6px;
+}
+
+/* trust badges */
+.trust-row { display:flex; gap:8px; flex-wrap:wrap; }
+.trust-badge {
+  flex:1; min-width:100px;
+  border-radius:8px; padding:8px 10px;
+  background:rgba(245,158,11,0.07); border:1px solid rgba(245,158,11,0.22);
+  display:flex; align-items:center; gap:6px;
+}
+.t-icon { font-size:14px; }
+.t-text { font-size:9px; color:#C8D5E8; font-weight:600; }
+
+/* CTA */
+.cta-inner { text-align:center; padding:6px 0; }
+.cta-h  { font-size:14px; font-weight:800; color:#E8EDF5; margin-bottom:4px; }
+.cta-p  { font-size:10px; color:#637285; margin-bottom:10px; }
+.cta-spots { font-size:9px; color:#637285; margin-top:6px; }
+
+/* footer */
+.foot-row { display:flex; justify-content:space-between; align-items:center; }
+.foot-brand { font-size:13px; font-weight:700; color:#E8EDF5; }
+.foot-links { display:flex; gap:12px; }
+.foot-link  { font-size:10px; color:#637285; }
+.foot-pay   { display:flex; gap:6px; }
+.pay-badge  { font-size:9px; color:#637285; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); border-radius:4px; padding:2px 6px; }
+</style>
+
+<div class="page-wrap">
+
+  <!-- 1. Hero -->
+  <div class="lp-section s-hero">
+    <div class="sec-label"><span class="sec-num">1</span><span class="sec-name">Hero — full-viewport, breathing radial glow behind floating cards</span></div>
+    <div class="row">
+      <div class="hero-text">
+        <div class="hero-head">متجرك.<br><span style="color:#3B7FFF;">تحت سيطرتك الكاملة.</span></div>
+        <div class="hero-sub">نظام إدارة متجر للتجار السوريين — يعمل بدون إنترنت، عربي بالكامل، على أي جهاز تملكه.</div>
+        <div class="hero-btns">
+          <button class="btn-p">ابدأ الآن / Start Now</button>
+          <button class="btn-g">شاهد العرض</button>
+        </div>
+      </div>
+      <div class="float-stack">
+        <div class="f-card" style="transform:rotate(-1deg);">
+          <div class="fc-label"><span class="live-d"></span>مباشر</div>
+          <div class="fc-val">$4,820 <span style="color:#637285;font-size:9px;">المبيعات</span></div>
+          <div class="fc-sub">↑ 12% عن أمس</div>
+        </div>
+        <div class="f-card green" style="transform:rotate(0.5deg);">
+          <div class="fc-label">الربح الإجمالي</div>
+          <div class="fc-val" style="color:#22C55E;">$1,240</div>
+          <div class="fc-sub">هامش 26% — صحي ✓</div>
+        </div>
+        <div class="f-card amber" style="transform:rotate(-0.5deg);">
+          <div class="fc-label">تنبيه مخزون</div>
+          <div class="fc-val" style="color:#F59E0B;font-size:12px;">٣ أصناف منخفضة</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Stats bar -->
+  <div class="lp-section s-stats">
+    <div class="sec-label"><span class="sec-num">2</span><span class="sec-name">Stats bar — 4 numbers, full-width strip</span></div>
+    <div class="stats-row">
+      <div class="stat-chip"><div class="stat-val">10s</div><div class="stat-lbl">وقت البيع</div></div>
+      <div class="stat-chip"><div class="stat-val">2</div><div class="stat-lbl">عملتان</div></div>
+      <div class="stat-chip"><div class="stat-val">∞</div><div class="stat-lbl">بدون إنترنت</div></div>
+      <div class="stat-chip"><div class="stat-val">30 min</div><div class="stat-lbl">للتهيئة</div></div>
+    </div>
+  </div>
+
+  <!-- 3. Features grid -->
+  <div class="lp-section s-feat">
+    <div class="sec-label"><span class="sec-num">3</span><span class="sec-name">Features grid — 6 icon cards (3→6, upgraded from current pillars)</span></div>
+    <div class="feat-grid">
+      <div class="feat-card"><div class="feat-icon">⚡</div><div class="feat-name">دائماً يعمل</div><div class="feat-body">يعمل بدون إنترنت ويتزامن عند العودة</div></div>
+      <div class="feat-card"><div class="feat-icon">🌐</div><div class="feat-name">عربي + دولار + ليرة</div><div class="feat-body">سعر الصرف بيدك، تبديل فوري</div></div>
+      <div class="feat-card"><div class="feat-icon">📱</div><div class="feat-name">أي جهاز</div><div class="feat-body">موبايل، تابلت، لابتوب — بدون متجر تطبيقات</div></div>
+      <div class="feat-card"><div class="feat-icon">👥</div><div class="feat-name">وردية الصندوق</div><div class="feat-body">فتح وإغلاق وردية، تقرير Z، عزو الكاشير</div></div>
+      <div class="feat-card"><div class="feat-icon">📒</div><div class="feat-name">دفتر الزبائن</div><div class="feat-body">رصيد جارٍ، تسجيل دفعة، كشف حساب واتساب</div></div>
+      <div class="feat-card"><div class="feat-icon">📸</div><div class="feat-name">تتبع المصاريف</div><div class="feat-body">صوّر الفاتورة، أدخل المبلغ، تنظيم بالفئات</div></div>
+    </div>
+  </div>
+
+  <!-- 4. Product story -->
+  <div class="lp-section s-story">
+    <div class="sec-label"><span class="sec-num">4</span><span class="sec-name">Product story — 3 alternating rows (glass mockup + text, same structure as current)</span></div>
+    <div class="story-row">
+      <div class="story-img">POS Screen</div>
+      <div class="story-txt">
+        <div class="story-tag">نقطة البيع</div>
+        <div class="story-h">بيع في أقل من ١٠ ثوانٍ.</div>
+        <div class="story-p">مسح باركود، نقر على المنتج، أو بحث. كل ثانية تحسب خلف الكاونتر.</div>
+      </div>
+    </div>
+    <div class="story-row" style="flex-direction:row-reverse;">
+      <div class="story-img">Dashboard</div>
+      <div class="story-txt">
+        <div class="story-tag">لوحة التحكم</div>
+        <div class="story-h">اعرف أرقامك قبل ما تفتح الباب.</div>
+        <div class="story-p">إيرادات اليوم، ربح الشهر، تنبيهات المخزون — دفعة واحدة.</div>
+      </div>
+    </div>
+    <div class="story-row">
+      <div class="story-img">Customers</div>
+      <div class="story-txt">
+        <div class="story-tag">الزبائن والآجل</div>
+        <div class="story-h">زبائنك يثقون بك. الأرقام تثبت ذلك.</div>
+        <div class="story-p">كل بيع مسجّل. كل آجل متتبع. كشف حساب بضغطة واتساب.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. How it works -->
+  <div class="lp-section s-how">
+    <div class="sec-label"><span class="sec-num">5</span><span class="sec-name">How it works — 3 numbered steps, horizontal on desktop</span></div>
+    <div class="steps-row">
+      <div class="step">
+        <div class="step-num">١</div>
+        <div class="step-name">ثبّت التطبيق</div>
+        <div class="step-desc">افتح الرابط على أي جهاز. اضغط "إضافة للشاشة الرئيسية". خلصت.</div>
+      </div>
+      <div class="step-arrow">→</div>
+      <div class="step">
+        <div class="step-num">٢</div>
+        <div class="step-name">هيّئ متجرك</div>
+        <div class="step-desc">أضف منتجاتك، حدد سعر الصرف، وهيّئ الإيصال. ٣٠ دقيقة.</div>
+      </div>
+      <div class="step-arrow">→</div>
+      <div class="step">
+        <div class="step-num">٣</div>
+        <div class="step-name">ابدأ البيع</div>
+        <div class="step-desc">اضغط "بيع جديد". المتجر بيدك — أون لاين أو أوف لاين.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. Pricing table -->
+  <div class="lp-section s-price">
+    <div class="sec-label"><span class="sec-num">6</span><span class="sec-name">Pricing table — Core (required) + 4 optional packs, founding badge</span></div>
+    <div class="price-wrap">
+      <div class="price-core">
+        <div class="found-badge">مؤسسون: ٥٠٪ خصم</div>
+        <div class="p-name">الباقة الأساسية</div>
+        <div class="p-price">$12 <span>/شهر</span></div>
+        <div class="p-feat">✓ نقطة بيع<br>✓ مخزون<br>✓ لوحة ربحية<br>✓ أوف لاين<br>✓ عملتان<br>✓ مستخدم واحد</div>
+      </div>
+      <div style="flex:1; display:flex; flex-direction:column; gap:6px; min-width:160px;">
+        <div class="price-pack">
+          <div class="p-name">باقة الموظفين</div>
+          <div class="p-price" style="font-size:12px;">+$5 <span>/شهر</span></div>
+          <div class="p-feat">ورديات · ٥ مستخدمين · تقرير Z</div>
+        </div>
+        <div class="price-pack">
+          <div class="p-name">باقة الزبائن</div>
+          <div class="p-price" style="font-size:12px;">+$5 <span>/شهر</span></div>
+          <div class="p-feat">دفتر الآجل · كشف حساب واتساب</div>
+        </div>
+        <div class="price-pack">
+          <div class="p-name">باقة التقارير</div>
+          <div class="p-price" style="font-size:12px;">+$5 <span>/شهر</span></div>
+          <div class="p-feat">تقارير متقدمة · تلخيص واتساب</div>
+        </div>
+        <div class="price-pack" style="border-color:rgba(245,158,11,0.25); background:rgba(245,158,11,0.06);">
+          <div class="p-name">إلكترونيات برو</div>
+          <div class="p-price" style="font-size:12px; color:#F59E0B;">+$8 <span>/شهر</span></div>
+          <div class="p-feat">IMEI · تذاكر إصلاح · ربحية الإصلاح</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. Trust badges -->
+  <div class="lp-section s-trust">
+    <div class="sec-label"><span class="sec-num">7</span><span class="sec-name">Trust badges — 4 chips: hardware compat, offline, Arabic-native, no app store</span></div>
+    <div class="trust-row">
+      <div class="trust-badge"><div class="t-icon">🖨️</div><div class="t-text">Epson · Star · طابعات صينية</div></div>
+      <div class="trust-badge"><div class="t-icon">📡</div><div class="t-text">يعمل بدون إنترنت</div></div>
+      <div class="trust-badge"><div class="t-icon">🔤</div><div class="t-text">عربي بالكامل + RTL</div></div>
+      <div class="trust-badge"><div class="t-icon">🔗</div><div class="t-text">PWA — بدون App Store</div></div>
+    </div>
+  </div>
+
+  <!-- 8. Founding CTA -->
+  <div class="lp-section s-cta">
+    <div class="sec-label"><span class="sec-num">8</span><span class="sec-name">Founding CTA — glass card, 50% off offer, spots counter</span></div>
+    <div class="cta-inner">
+      <div class="cta-h">انضم لدائرة المؤسسين.</div>
+      <div class="cta-p">أول ١٥ متجراً يحصل على خصم ٥٠٪ بشكل دائم. تهيئة شخصية. خط مباشر مع المؤسسين.</div>
+      <button class="btn-p" style="font-size:12px; padding:8px 20px; margin:0 auto;">احجز مكانك / Reserve Your Spot</button>
+      <div class="cta-spots">١٢ من أصل ١٥ مكاناً متبقية.</div>
+    </div>
+  </div>
+
+  <!-- 9. Footer -->
+  <div class="lp-section s-foot">
+    <div class="sec-label"><span class="sec-num">9</span><span class="sec-name">Footer — brand, nav links, payment methods</span></div>
+    <div class="foot-row">
+      <div>
+        <div class="foot-brand">وافي</div>
+        <div style="font-size:9px; color:#637285;">نظام إدارة أعمال متكامل</div>
+      </div>
+      <div class="foot-links">
+        <span class="foot-link">لوحة التحكم</span>
+        <span class="foot-link">نقطة البيع</span>
+        <span class="foot-link">حول</span>
+      </div>
+      <div class="foot-pay">
+        <span class="pay-badge">USDT</span>
+        <span class="pay-badge">Wire</span>
+        <span class="pay-badge">Cash</span>
+      </div>
+    </div>
+  </div>
+
+</div>

@@ -1,0 +1,271 @@
+<h2>What does the hero's data visual look like?</h2>
+<p class="subtitle">The right side of the hero section. Which treatment communicates "powerful analytics" best?</p>
+
+<style>
+.hero-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+  margin: 24px 0;
+}
+
+/* Shared hero preview container */
+.hero-preview {
+  border-radius: 16px;
+  background: #05080F;
+  padding: 16px;
+  min-height: 220px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hero-preview::before {
+  content: '';
+  position: absolute;
+  top: -60px; right: -60px;
+  width: 200px; height: 200px;
+  background: radial-gradient(circle, rgba(26,86,219,0.18) 0%, transparent 65%);
+  pointer-events: none;
+}
+
+/* Glass card shared */
+.g-card {
+  backdrop-filter: blur(20px) saturate(180%);
+  background: linear-gradient(135deg, rgba(26,86,219,0.12) 0%, rgba(255,255,255,0.04) 100%);
+  border: 1px solid rgba(26,86,219,0.28);
+  border-radius: 12px;
+  padding: 12px 14px;
+  box-shadow: 0 4px 20px rgba(26,86,219,0.1), inset 0 1px 0 rgba(255,255,255,0.07);
+  font-family: system-ui;
+}
+.g-label { font-size: 10px; color: #637285; margin-bottom: 3px; }
+.g-value { font-size: 18px; font-weight: 800; color: #E8EDF5; }
+.g-sub   { font-size: 9px; color: #22C55E; margin-top: 2px; }
+
+/* Option A: Dashboard mockup (full mini-dashboard) */
+.dash-kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.dash-chart {
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(26,86,219,0.10) 0%, rgba(255,255,255,0.03) 100%);
+  border: 1px solid rgba(26,86,219,0.2);
+  padding: 10px;
+  height: 72px;
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+}
+.dash-chart span {
+  flex: 1;
+  border-radius: 3px 3px 0 0;
+  background: linear-gradient(180deg, #3B7FFF 0%, #1A56DB 100%);
+  opacity: 0.75;
+}
+.dash-chart span.hi { opacity: 1; box-shadow: 0 0 8px rgba(59,127,255,0.5); }
+
+/* Option B: Floating metric cards */
+.float-cards {
+  position: relative;
+  min-height: 180px;
+}
+.float-card {
+  position: absolute;
+  font-family: system-ui;
+}
+.fc1 { top: 0; left: 0; right: 30px; }
+.fc2 { top: 72px; left: 20px; right: 0; }
+.fc3 { top: 144px; left: 0; right: 40px; }
+
+.live-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #22C55E;
+  box-shadow: 0 0 6px rgba(34,197,94,0.8);
+  display: inline-block;
+  margin-left: 5px;
+}
+
+/* Option C: Big chart hero */
+.chart-hero {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.chart-area {
+  flex: 1;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.chart-lines {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+.chart-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  justify-content: flex-end;
+}
+.chart-col .sales-bar {
+  width: 100%;
+  border-radius: 3px 3px 0 0;
+  background: linear-gradient(180deg, #3B7FFF 0%, rgba(26,86,219,0.3) 100%);
+}
+.chart-col .profit-bar {
+  width: 60%;
+  border-radius: 3px 3px 0 0;
+  background: linear-gradient(180deg, #22C55E 0%, rgba(34,197,94,0.3) 100%);
+}
+.chart-x { font-size: 8px; color: #3D4F6B; font-family: system-ui; }
+.chart-metric-row { display: flex; gap: 8px; }
+.chart-metric {
+  flex: 1;
+  background: linear-gradient(135deg, rgba(26,86,219,0.10) 0%, rgba(255,255,255,0.03) 100%);
+  border: 1px solid rgba(26,86,219,0.22);
+  border-radius: 8px;
+  padding: 8px;
+  font-family: system-ui;
+}
+.cm-label { font-size: 9px; color: #637285; }
+.cm-value { font-size: 14px; font-weight: 800; color: #E8EDF5; }
+</style>
+
+<div class="hero-options">
+
+  <!-- A: Mini Dashboard -->
+  <div class="option" data-choice="mini-dashboard" onclick="toggleSelect(this)" style="padding:0; border-radius:14px; overflow:hidden; background:#05080F;">
+    <div style="padding:14px; background:#05080F; position:relative; overflow:hidden;">
+      <div style="position:absolute; top:-50px; right:-50px; width:160px; height:160px; background:radial-gradient(circle, rgba(26,86,219,0.18) 0%, transparent 65%); pointer-events:none;"></div>
+      <!-- header bar -->
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+        <div style="font-size:10px; font-weight:700; color:#E8EDF5; font-family:system-ui;">لوحة التحكم</div>
+        <div style="display:flex; align-items:center; gap:4px;">
+          <span class="live-dot"></span>
+          <span style="font-size:9px; color:#22C55E; font-family:system-ui;">مباشر</span>
+        </div>
+      </div>
+      <!-- KPI grid -->
+      <div class="dash-kpis" style="margin-bottom:8px;">
+        <div class="g-card" style="padding:8px 10px;">
+          <div class="g-label">المبيعات</div>
+          <div class="g-value" style="font-size:15px;">$4,820</div>
+          <div class="g-sub">↑ 12%</div>
+        </div>
+        <div class="g-card" style="padding:8px 10px; border-color:rgba(34,197,94,0.3); background:linear-gradient(135deg,rgba(34,197,94,0.08) 0%,rgba(255,255,255,0.03) 100%);">
+          <div class="g-label">الربح</div>
+          <div class="g-value" style="font-size:15px; color:#22C55E;">$1,240</div>
+          <div class="g-sub">هامش 26%</div>
+        </div>
+      </div>
+      <!-- Mini bar chart -->
+      <div class="dash-chart">
+        <span style="height:40%;"></span>
+        <span style="height:55%;"></span>
+        <span style="height:42%;"></span>
+        <span style="height:68%;"></span>
+        <span style="height:50%;"></span>
+        <span style="height:82%;"></span>
+        <span class="hi" style="height:95%;"></span>
+      </div>
+    </div>
+    <div class="card-body" style="padding:10px 14px 14px;">
+      <h3 style="font-size:13px; margin:0 0 4px;">Mini Dashboard</h3>
+      <p style="font-size:11px; margin:0;">A scaled-down version of the real app inside the hero. Familiar, trustworthy, shows the product.</p>
+    </div>
+  </div>
+
+  <!-- B: Floating Metric Cards -->
+  <div class="option" data-choice="floating-cards" onclick="toggleSelect(this)" style="padding:0; border-radius:14px; overflow:hidden; background:#05080F;">
+    <div style="padding:14px; background:#05080F; position:relative; min-height:190px; overflow:hidden;">
+      <div style="position:absolute; top:-40px; right:-40px; width:160px; height:160px; background:radial-gradient(circle, rgba(26,86,219,0.15) 0%, transparent 65%); pointer-events:none;"></div>
+      <div style="position:absolute; bottom:-30px; left:-30px; width:120px; height:120px; background:radial-gradient(circle, rgba(34,197,94,0.10) 0%, transparent 65%); pointer-events:none;"></div>
+      <!-- Stacked floating cards -->
+      <div class="g-card" style="margin-bottom:8px; transform:rotate(-1deg);">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <div>
+            <div class="g-label">المبيعات اليوم</div>
+            <div class="g-value">$4,820</div>
+          </div>
+          <div style="text-align:left;">
+            <span class="live-dot"></span>
+            <div class="g-sub" style="color:#22C55E; margin-top:3px;">↑ 12%</div>
+          </div>
+        </div>
+      </div>
+      <div class="g-card" style="margin-bottom:8px; transform:rotate(0.5deg); border-color:rgba(34,197,94,0.3); background:linear-gradient(135deg,rgba(34,197,94,0.08) 0%,rgba(255,255,255,0.03) 100%);">
+        <div class="g-label">الربح الإجمالي</div>
+        <div class="g-value" style="color:#22C55E;">$1,240</div>
+        <div class="g-sub">هامش 26% — صحي ✓</div>
+      </div>
+      <div class="g-card" style="transform:rotate(-0.5deg); border-color:rgba(245,158,11,0.3); background:linear-gradient(135deg,rgba(245,158,11,0.08) 0%,rgba(255,255,255,0.03) 100%);">
+        <div class="g-label">تحذير: مخزون منخفض</div>
+        <div class="g-value" style="font-size:14px; color:#F59E0B;">٣ أصناف</div>
+      </div>
+    </div>
+    <div class="card-body" style="padding:10px 14px 14px;">
+      <h3 style="font-size:13px; margin:0 0 4px;">Floating Cards</h3>
+      <p style="font-size:11px; margin:0;">Stacked metric cards with slight rotation — dynamic, modern. Shows multiple data points at once.</p>
+    </div>
+  </div>
+
+  <!-- C: Big Chart -->
+  <div class="option" data-choice="big-chart" onclick="toggleSelect(this)" style="padding:0; border-radius:14px; overflow:hidden; background:#05080F;">
+    <div style="padding:14px; background:#05080F; position:relative; overflow:hidden;">
+      <div style="position:absolute; top:-50px; left:50%; transform:translateX(-50%); width:200px; height:200px; background:radial-gradient(circle, rgba(26,86,219,0.12) 0%, transparent 65%); pointer-events:none;"></div>
+      <div style="font-size:10px; color:#637285; font-family:system-ui; margin-bottom:8px;">المبيعات والربح — آخر ٧ أيام</div>
+      <!-- Multi-bar chart -->
+      <div style="display:flex; align-items:flex-end; gap:5px; height:80px; margin-bottom:8px;">
+        <div style="flex:1; display:flex; flex-direction:column; align-items:stretch; justify-content:flex-end; gap:2px;">
+          <div style="height:40%; background:linear-gradient(180deg,#3B7FFF,rgba(26,86,219,0.4)); border-radius:3px 3px 0 0;"></div>
+          <div style="height:22%; background:rgba(34,197,94,0.6); border-radius:3px 3px 0 0;"></div>
+        </div>
+        <div style="flex:1; display:flex; flex-direction:column; align-items:stretch; justify-content:flex-end; gap:2px;">
+          <div style="height:55%; background:linear-gradient(180deg,#3B7FFF,rgba(26,86,219,0.4)); border-radius:3px 3px 0 0;"></div>
+          <div style="height:30%; background:rgba(34,197,94,0.6); border-radius:3px 3px 0 0;"></div>
+        </div>
+        <div style="flex:1; display:flex; flex-direction:column; align-items:stretch; justify-content:flex-end; gap:2px;">
+          <div style="height:48%; background:linear-gradient(180deg,#3B7FFF,rgba(26,86,219,0.4)); border-radius:3px 3px 0 0;"></div>
+          <div style="height:26%; background:rgba(34,197,94,0.6); border-radius:3px 3px 0 0;"></div>
+        </div>
+        <div style="flex:1; display:flex; flex-direction:column; align-items:stretch; justify-content:flex-end; gap:2px;">
+          <div style="height:75%; background:linear-gradient(180deg,#3B7FFF,rgba(26,86,219,0.4)); border-radius:3px 3px 0 0; box-shadow:0 0 10px rgba(59,127,255,0.4);"></div>
+          <div style="height:40%; background:rgba(34,197,94,0.8); border-radius:3px 3px 0 0; box-shadow:0 0 8px rgba(34,197,94,0.4);"></div>
+        </div>
+        <div style="flex:1; display:flex; flex-direction:column; align-items:stretch; justify-content:flex-end; gap:2px;">
+          <div style="height:62%; background:linear-gradient(180deg,#3B7FFF,rgba(26,86,219,0.4)); border-radius:3px 3px 0 0;"></div>
+          <div style="height:34%; background:rgba(34,197,94,0.6); border-radius:3px 3px 0 0;"></div>
+        </div>
+        <div style="flex:1; display:flex; flex-direction:column; align-items:stretch; justify-content:flex-end; gap:2px;">
+          <div style="height:88%; background:linear-gradient(180deg,#3B7FFF,rgba(26,86,219,0.4)); border-radius:3px 3px 0 0; box-shadow:0 0 12px rgba(59,127,255,0.5);"></div>
+          <div style="height:46%; background:rgba(34,197,94,0.9); border-radius:3px 3px 0 0; box-shadow:0 0 10px rgba(34,197,94,0.5);"></div>
+        </div>
+      </div>
+      <!-- Legend + metrics row -->
+      <div style="display:flex; gap:6px;">
+        <div class="g-card" style="flex:1; padding:7px 10px;">
+          <div class="g-label">المبيعات</div>
+          <div style="font-size:13px; font-weight:800; color:#3B7FFF; font-family:system-ui;">$4,820</div>
+        </div>
+        <div class="g-card" style="flex:1; padding:7px 10px; border-color:rgba(34,197,94,0.3); background:linear-gradient(135deg,rgba(34,197,94,0.08) 0%,rgba(255,255,255,0.03) 100%);">
+          <div class="g-label">الربح</div>
+          <div style="font-size:13px; font-weight:800; color:#22C55E; font-family:system-ui;">$1,240</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body" style="padding:10px 14px 14px;">
+      <h3 style="font-size:13px; margin:0 0 4px;">Big Chart</h3>
+      <p style="font-size:11px; margin:0;">A grouped bar chart front and center. Sales vs profit, 7 days. Bold, analytical — screams "real data."</p>
+    </div>
+  </div>
+
+</div>
