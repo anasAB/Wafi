@@ -23,9 +23,7 @@ const { hasAnyStaff }     = useStaff()
 const appReady  = ref(false)
 const hasStaff  = ref(false)
 
-const showSidebar = computed(() =>
-  !route.path.startsWith('/pos')
-)
+const showSidebar = computed(() => true)
 
 const showBottomNav = computed(() => {
   if (route.path === '/pos/confirmation')                  return false
