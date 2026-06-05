@@ -94,13 +94,40 @@ watch(
       :lang="settings.language"
       class="h-dvh bg-bg-void text-text-primary flex overflow-hidden"
     >
-      <AppSidebar v-if="showSidebar" class="hidden lg:flex" />
+      <div class="sidebar-wrap">
+        <AppSidebar v-if="showSidebar" />
+      </div>
       <div class="flex-1 min-w-0 flex flex-col overflow-hidden">
         <div class="flex-1 overflow-y-auto">
           <RouterView />
         </div>
-        <AppBottomNav v-if="showBottomNav" class="lg:hidden" />
+        <div class="bottomnav-wrap">
+          <AppBottomNav v-if="showBottomNav" />
+        </div>
       </div>
     </div>
   </template>
 </template>
+
+<style scoped>
+/* Sidebar: hidden on mobile, flex on desktop */
+.sidebar-wrap {
+  display: none;
+}
+@media (min-width: 1024px) {
+  .sidebar-wrap {
+    display: flex;
+  }
+}
+
+/* Bottom nav: flex on mobile, hidden on desktop */
+.bottomnav-wrap {
+  display: flex;
+  flex-direction: column;
+}
+@media (min-width: 1024px) {
+  .bottomnav-wrap {
+    display: none;
+  }
+}
+</style>

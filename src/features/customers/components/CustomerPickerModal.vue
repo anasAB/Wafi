@@ -159,10 +159,11 @@ async function handleQuickAdd() {
   display: flex;
   flex-direction: column;
   border-radius: 1.25rem 1.25rem 0 0;
-  backdrop-filter: blur(20px) saturate(180%);
-  background: linear-gradient(135deg, rgba(26,86,219,0.16), rgba(26,86,219,0.06));
-  border: 1px solid rgba(26,86,219,0.45);
-  box-shadow: 0 8px 48px rgba(26,86,219,0.22), inset 0 1px 0 rgba(255,255,255,0.09);
+  backdrop-filter: blur(24px) saturate(180%);
+  background: linear-gradient(180deg, rgba(26,86,219,0.22) 0%, rgba(7,11,20,0.98) 72px);
+  border: 1px solid rgba(26,86,219,0.28);
+  border-bottom: none;
+  box-shadow: 0 -8px 48px rgba(0,0,0,0.55), 0 0 40px rgba(26,86,219,0.14), inset 0 1px 0 rgba(255,255,255,0.07);
   overflow: hidden;
 }
 
@@ -272,7 +273,7 @@ async function handleQuickAdd() {
 
 .result-item:last-child { border-bottom: none; }
 
-.result-item:hover { background: rgba(26,86,219,0.06); }
+.result-item:hover { background: rgba(26,86,219,0.12); }
 
 .result-name {
   font-size: 0.875rem;
