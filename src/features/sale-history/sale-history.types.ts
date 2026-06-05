@@ -16,6 +16,7 @@ export interface SaleRecord {
   changeDue?:          number
   isPending:           boolean
   isSplit:             boolean
+  hasReturn:           boolean
 }
 
 export interface SaleLineRecord {

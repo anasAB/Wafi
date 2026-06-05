@@ -7,6 +7,8 @@ import PeriodToggle from '@/features/dashboard/components/PeriodToggle.vue'
 import { useSaleHistory } from './useSaleHistory'
 import { usePeriodToggle } from '@/features/dashboard/composables/usePeriodToggle'
 import { getDateRange } from '@/features/dashboard/composables/periodUtils'
+import type { SaleRecord } from './sale-history.types'
+import ReturnSheet from '@/features/returns/components/ReturnSheet.vue'
 
 const router  = useRouter()
 const route   = useRoute()
@@ -15,6 +17,17 @@ const { period, setPeriod } = usePeriodToggle()
 const expandedId = ref<string | null>(null)
 const toast      = ref<string | null>(null)
 const toastType  = ref<'info' | 'error'>('info')
+const returnSaleId     = ref<string | null>(null)
+const returnSaleNumber = ref('')
+
+function openReturn(sale: SaleRecord) {
+  returnSaleId.value     = sale.id
+  returnSaleNumber.value = sale.displaySaleNumber
+}
+
+function onReturnConfirmed() {
+  loadHistory(isPeriodDrillDown.value ? getDateRange(period.value) : undefined)
+}
 
 // If ?period= is in the URL, use that period; otherwise use the current singleton value
 const isPeriodDrillDown = computed(() => !!route.query.period)
@@ -141,9 +154,15 @@ async function handleReprint(saleId: string) {
                   <span v-else class="td-muted text-xs">مكتمل</span>
                 </td>
                 <td class="td">
-                  <button type="button" class="btn-reprint" @click="handleReprint(sale.id)">
-                    إعادة طباعة
-                  </button>
+                  <div style="display:flex;gap:6px;align-items:center;">
+                    <span v-if="sale.hasReturn" class="badge-return">مرتجع</span>
+                    <button type="button" class="btn-reprint" @click="handleReprint(sale.id)">
+                      إعادة طباعة
+                    </button>
+                    <button type="button" class="btn-reprint" @click="openReturn(sale)">
+                      إرجاع
+                    </button>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -175,11 +194,17 @@ async function handleReprint(saleId: string) {
                 <span>بالليرة: {{ sale.totalSyp.toLocaleString() }} ل.س</span>
                 <span>السعر: {{ sale.exchangeRateAtSale.toLocaleString() }}</span>
               </div>
+              <span v-if="sale.hasReturn" class="badge-return" style="width:fit-content;">مرتجع</span>
               <button
                 type="button"
                 class="btn-reprint-full"
                 @click="handleReprint(sale.id)"
               >إعادة طباعة</button>
+              <button
+                type="button"
+                class="btn-reprint-full"
+                @click="openReturn(sale)"
+              >إرجاع</button>
             </div>
           </div>
         </div>
@@ -189,6 +214,16 @@ async function handleReprint(saleId: string) {
   </div>
 
   <AppToast v-if="toast" :message="toast" :type="toastType" @dismiss="toast = null" />
+
+  <Teleport to="body">
+    <ReturnSheet
+      v-if="returnSaleId"
+      :sale-id="returnSaleId"
+      :sale-number="returnSaleNumber"
+      @close="returnSaleId = null"
+      @confirmed="onReturnConfirmed"
+    />
+  </Teleport>
 </template>
 
 <style scoped>
@@ -375,6 +410,18 @@ async function handleReprint(saleId: string) {
   background: rgba(245, 158, 11, 0.12);
   border: 1px solid rgba(245, 158, 11, 0.28);
   color: #F59E0B;
+}
+
+.badge-return {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  color: #10B981;
 }
 
 /* ─── Reprint buttons ─────────────────────────────────────── */
