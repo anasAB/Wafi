@@ -149,6 +149,37 @@ const cashier_shifts = new Table({
   status:           column.text,    // 'open' | 'closed'
 })
 
+const returns = new Table({
+  shop_id:                 column.text,
+  original_sale_id:        column.text,
+  created_at:              column.text,
+  refund_method:           column.text,   // 'cash_usd' | 'cash_syp' | 'store_credit' | 'transfer'
+  refund_amount_usd:       column.real,
+  refund_amount_syp:       column.real,
+  exchange_rate_at_return: column.real,
+  reason:                  column.text,   // nullable snapshot of reason label
+  notes:                   column.text,   // nullable free text
+  shift_id:                column.text,   // nullable FK → cashier_shifts.id
+  sync_status:             column.text,
+})
+
+const return_line_items = new Table({
+  return_id:      column.text,
+  shop_id:        column.text,
+  product_id:     column.text,
+  qty_returned:   column.integer,
+  unit_price_usd: column.real,
+  unit_price_syp: column.real,
+  restock:        column.integer,  // 0 | 1
+})
+
+const return_reasons = new Table({
+  shop_id:    column.text,
+  label:      column.text,
+  sort_order: column.integer,
+  is_active:  column.integer,  // 0 | 1
+})
+
 export const AppSchema = new Schema({
   products,
   stock_adjustments,
@@ -162,4 +193,7 @@ export const AppSchema = new Schema({
   sale_payments,
   staff,
   cashier_shifts,
+  returns,
+  return_line_items,
+  return_reasons,
 })
