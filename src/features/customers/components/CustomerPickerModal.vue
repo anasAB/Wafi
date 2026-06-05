@@ -46,75 +46,88 @@ async function handleQuickAdd() {
 <template>
   <Teleport to="body">
     <div
-      class="fixed inset-0 z-50 flex items-end justify-center"
-      style="background: rgb(0 0 0 / 0.6)"
+      class="modal-overlay"
       data-testid="backdrop"
       @click.self="emit('cancel')"
     >
-      <div
-        class="bg-bg-void border-t border-border-glass rounded-t-2xl w-full max-w-lg p-5 shadow-xl max-h-[80dvh] flex flex-col"
-        dir="rtl"
-      >
-        <div class="w-9 h-1 bg-text-muted/30 rounded-full mx-auto mb-4 flex-shrink-0"></div>
-        <h2 class="text-base font-semibold text-text-primary mb-3 flex-shrink-0">اختر الزبون</h2>
+      <div class="modal-sheet" dir="rtl">
+        <!-- Handle -->
+        <div class="sheet-handle"></div>
+
+        <!-- Title -->
+        <div class="sheet-header">
+          <h2 class="sheet-title">اختر الزبون</h2>
+          <button type="button" class="close-btn" @click="emit('cancel')">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
 
         <!-- Search -->
-        <input
-          :value="query"
-          data-testid="search-input"
-          type="text"
-          placeholder="ابحث باسم الزبون..."
-          class="w-full border border-border-glass rounded-xl px-4 py-3 bg-surface-raised text-text-primary
-                 focus:outline-none focus:ring-2 focus:ring-gold-primary/40 text-sm mb-3 flex-shrink-0"
-          @input="handleSearch(($event.target as HTMLInputElement).value)"
-        />
+        <div class="search-wrap">
+          <svg class="search-icon" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+          </svg>
+          <input
+            :value="query"
+            data-testid="search-input"
+            type="text"
+            placeholder="ابحث باسم الزبون..."
+            class="search-input"
+            @input="handleSearch(($event.target as HTMLInputElement).value)"
+          />
+        </div>
 
-        <!-- Results -->
-        <div class="flex-1 overflow-y-auto flex flex-col gap-1 mb-3">
+        <!-- Results list -->
+        <div class="results-list">
           <button
             v-for="c in results"
             :key="c.id"
             type="button"
             :data-testid="`customer-${c.id}`"
-            class="w-full flex items-center justify-between px-4 py-3 rounded-xl hover:bg-surface-raised transition-colors text-right"
+            class="result-item"
             @click="emit('select', c)"
           >
-            <span class="text-sm font-medium text-text-primary">{{ c.name }}</span>
-            <span v-if="c.phone" class="text-xs text-text-muted">{{ c.phone }}</span>
+            <span class="result-name">{{ c.name }}</span>
+            <span v-if="c.phone" class="result-phone">{{ c.phone }}</span>
           </button>
 
-          <div v-if="results.length === 0" class="text-center py-6 text-text-muted text-sm">
+          <div v-if="results.length === 0" class="empty-state">
             لا توجد نتائج
           </div>
         </div>
 
-        <!-- Add new -->
-        <div class="flex-shrink-0 border-t border-border-glass pt-3">
+        <!-- Add new footer -->
+        <div class="add-footer">
           <div v-if="!showAddNew">
             <button
               type="button"
               data-testid="add-new-btn"
-              class="w-full text-sm text-gold-primary font-medium py-2"
+              class="add-new-btn"
               @click="showAddNew = true"
-            >+ إضافة زبون جديد</button>
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
+              إضافة زبون جديد
+            </button>
           </div>
 
-          <div v-else data-testid="quick-add-form" class="flex gap-2">
+          <div v-else data-testid="quick-add-form" class="quick-add-row">
             <input
               v-model="newName"
               data-testid="quick-add-name"
               type="text"
               placeholder="اسم الزبون"
-              class="flex-1 border border-border-glass rounded-xl px-3 py-2 bg-surface-raised text-text-primary
-                     focus:outline-none focus:ring-2 focus:ring-gold-primary/40 text-sm"
+              class="quick-add-input"
               @keydown.enter="handleQuickAdd"
             />
             <button
               type="button"
               data-testid="quick-add-save"
               :disabled="saving || !newName.trim()"
-              class="h-10 px-4 rounded-xl text-sm font-semibold text-bg-void disabled:opacity-40"
-              style="background: linear-gradient(135deg, var(--color-gold-primary), var(--color-gold-to))"
+              class="quick-add-save"
               @click="handleQuickAdd"
             >{{ saving ? '...' : 'إضافة' }}</button>
           </div>
@@ -123,3 +136,232 @@ async function handleQuickAdd() {
     </div>
   </Teleport>
 </template>
+
+<style scoped>
+/* ── Overlay ─────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0,0,0,0.75);
+  backdrop-filter: blur(4px);
+  font-family: 'Tajawal', system-ui, sans-serif;
+}
+
+/* ── Sheet container ─────────────────────────────────────── */
+.modal-sheet {
+  width: 100%;
+  max-width: 32rem;
+  max-height: 80dvh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 1.25rem 1.25rem 0 0;
+  backdrop-filter: blur(20px) saturate(180%);
+  background: linear-gradient(135deg, rgba(26,86,219,0.16), rgba(26,86,219,0.06));
+  border: 1px solid rgba(26,86,219,0.45);
+  box-shadow: 0 8px 48px rgba(26,86,219,0.22), inset 0 1px 0 rgba(255,255,255,0.09);
+  overflow: hidden;
+}
+
+/* ── Handle ──────────────────────────────────────────────── */
+.sheet-handle {
+  width: 2.25rem;
+  height: 0.25rem;
+  background: rgba(255,255,255,0.20);
+  border-radius: 9999px;
+  margin: 0.75rem auto 0;
+  flex-shrink: 0;
+}
+
+/* ── Header ──────────────────────────────────────────────── */
+.sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.875rem 1.25rem 0.5rem;
+  flex-shrink: 0;
+}
+
+.sheet-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #E8EDF5;
+}
+
+.close-btn {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.625rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #637285;
+  background: rgba(255,255,255,0.06);
+  border: none;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.close-btn:hover { background: rgba(255,255,255,0.10); }
+
+/* ── Search ──────────────────────────────────────────────── */
+.search-wrap {
+  position: relative;
+  padding: 0 1.25rem 0.75rem;
+  flex-shrink: 0;
+}
+
+.search-icon {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 2rem;
+  margin: auto;
+  margin-bottom: 0.75rem;
+  width: 1rem;
+  height: 1rem;
+  color: #637285;
+  pointer-events: none;
+}
+
+.search-input {
+  width: 100%;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 0.75rem;
+  padding: 0.625rem 2.5rem 0.625rem 0.875rem;
+  color: #E8EDF5;
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  font-family: inherit;
+  height: 44px;
+}
+
+.search-input::placeholder { color: #3D4F6B; }
+
+.search-input:focus {
+  border-color: rgba(26,86,219,0.8);
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.25), 0 0 12px rgba(26,86,219,0.15);
+}
+
+/* ── Results list ────────────────────────────────────────── */
+.results-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 0.75rem;
+}
+
+.result-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-radius: 0.75rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: right;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  transition: background 0.12s;
+  font-family: inherit;
+}
+
+.result-item:last-child { border-bottom: none; }
+
+.result-item:hover { background: rgba(26,86,219,0.06); }
+
+.result-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #E8EDF5;
+}
+
+.result-phone {
+  font-size: 0.75rem;
+  color: #637285;
+}
+
+/* ── Empty state ─────────────────────────────────────────── */
+.empty-state {
+  text-align: center;
+  padding: 1.5rem;
+  font-size: 0.875rem;
+  color: #637285;
+}
+
+/* ── Add footer ──────────────────────────────────────────── */
+.add-footer {
+  flex-shrink: 0;
+  padding: 0.75rem 1.25rem 1.25rem;
+  border-top: 1px solid rgba(26,86,219,0.14);
+}
+
+.add-new-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem;
+  border-radius: 0.75rem;
+  background: rgba(26,86,219,0.10);
+  border: 1px solid rgba(26,86,219,0.25);
+  color: #60A5FA;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s;
+  font-family: inherit;
+}
+
+.add-new-btn:hover { background: rgba(26,86,219,0.18); }
+
+/* ── Quick add row ───────────────────────────────────────── */
+.quick-add-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.quick-add-input {
+  flex: 1;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 0.75rem;
+  padding: 0.5rem 0.875rem;
+  color: #E8EDF5;
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  font-family: inherit;
+  height: 40px;
+}
+
+.quick-add-input::placeholder { color: #3D4F6B; }
+
+.quick-add-input:focus {
+  border-color: rgba(26,86,219,0.8);
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.25), 0 0 12px rgba(26,86,219,0.15);
+}
+
+.quick-add-save {
+  height: 40px;
+  padding-inline: 1rem;
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(26,86,219,0.40);
+  transition: opacity 0.15s;
+  font-family: inherit;
+}
+
+.quick-add-save:hover { opacity: 0.88; }
+.quick-add-save:disabled { opacity: 0.4; cursor: not-allowed; }
+</style>
