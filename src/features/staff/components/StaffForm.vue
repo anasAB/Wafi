@@ -5,7 +5,7 @@ import PinPad             from './PinPad.vue'
 import type { StaffRole, StaffPermissions } from '../staff.types'
 import { DEFAULT_CASHIER_PERMISSIONS }      from '../staff.types'
 
-const props = defineProps<{ editStaffId?: string }>()
+const props = defineProps<{ editStaffId?: string; forceRole?: StaffRole }>()
 const emit  = defineEmits<{ done: [] }>()
 
 const { createStaff, updateStaffPin } = useStaff()
@@ -13,7 +13,7 @@ const { createStaff, updateStaffPin } = useStaff()
 // step: 'info' (new staff only) → 'pin' → 'confirm'
 const step      = ref<'info' | 'pin' | 'confirm'>(props.editStaffId ? 'pin' : 'info')
 const name      = ref('')
-const role      = ref<StaffRole>('cashier')
+const role      = ref<StaffRole>(props.forceRole ?? 'cashier')
 const firstPin  = ref('')
 const nameError = ref('')
 const pinError  = ref('')
@@ -93,7 +93,7 @@ async function saveStaff(pin: string) {
           <p v-if="nameError" class="field-error-msg">{{ nameError }}</p>
         </div>
 
-        <div class="field-group">
+        <div v-if="!forceRole" class="field-group">
           <label class="field-label">الدور الوظيفي</label>
           <div class="role-toggle">
             <button
@@ -109,7 +109,7 @@ async function saveStaff(pin: string) {
           </div>
         </div>
 
-        <div v-if="role === 'cashier'" class="perms-card">
+        <div v-if="role === 'cashier' && !forceRole" class="perms-card">
           <p class="perms-title">الصلاحيات</p>
           <label v-for="[key, label] in PERM_LABELS" :key="key" class="perm-row">
             <span class="perm-label">{{ label }}</span>

@@ -14,7 +14,7 @@ function onDone() {
     <div class="text-white text-3xl font-bold mb-2">وافي</div>
     <p class="text-[#637285] mb-8 text-sm text-center">إعداد أول مرة — أنشئ حساب المالك</p>
     <div class="w-full max-w-sm bg-[#0D1828] rounded-3xl p-6">
-      <StaffForm @done="onDone" />
+      <StaffForm force-role="owner" @done="onDone" />
     </div>
   </div>
 </template>
