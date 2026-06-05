@@ -8,7 +8,7 @@ import type { Product } from './pos.types'
 const props = defineProps<{ searchQuery: string }>()
 const emit  = defineEmits<{ (e: 'product-tap', productId: string): void }>()
 
-const device   = useDeviceStore()
+const device     = useDeviceStore()
 const products   = ref<Product[]>([])
 const flashId    = ref<string | null>(null)
 const flashTimer = ref<ReturnType<typeof setTimeout> | null>(null)
@@ -51,28 +51,176 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div
-    v-if="products.length === 0"
-    class="flex items-center justify-center h-32 text-gray-400 text-sm"
-  >
-    {{ searchQuery ? 'لا توجد نتائج' : 'لا توجد منتجات' }}
-  </div>
+  <div class="grid-root" dir="rtl">
+    <!-- Empty state -->
+    <div v-if="products.length === 0" class="empty-state">
+      <div class="empty-icon">
+        <svg fill="none" stroke="#3D4F6B" stroke-width="1" viewBox="0 0 24 24" width="28" height="28">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+        </svg>
+      </div>
+      <p class="empty-text">{{ searchQuery ? 'لا توجد نتائج مطابقة' : 'لا توجد منتجات' }}</p>
+    </div>
 
-  <div v-else class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 p-2">
-    <button
-      v-for="p in products"
-      :key="p.id"
-      type="button"
-      :class="[
-        'flex flex-col items-center justify-center text-center rounded-xl p-3 min-h-[56px] transition-all',
-        'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700',
-        'hover:border-blue-400 active:scale-95',
-        flashId === p.id ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-500 scale-95' : '',
-      ]"
-      @click="handleTap(p.id)"
-    >
-      <span class="text-sm font-medium text-gray-900 dark:text-white leading-tight">{{ p.nameAr }}</span>
-      <span class="text-xs text-blue-600 dark:text-blue-400 mt-1">${{ p.salePriceUsd.toFixed(2) }}</span>
-    </button>
+    <!-- Product grid -->
+    <div v-else class="product-grid">
+      <button
+        v-for="p in products"
+        :key="p.id"
+        type="button"
+        :class="['product-btn', flashId === p.id ? 'product-btn-flash' : '']"
+        @click="handleTap(p.id)"
+      >
+        <!-- Photo or placeholder -->
+        <div v-if="p.photoUrl" class="product-photo-wrap">
+          <img :src="p.photoUrl" :alt="p.nameAr" class="product-photo" />
+        </div>
+
+        <span class="product-name">{{ p.nameAr }}</span>
+        <span class="product-price">${{ p.salePriceUsd.toFixed(2) }}</span>
+
+        <!-- Low stock warning -->
+        <span v-if="p.currentStock <= p.lowStockThreshold && p.currentStock > 0" class="low-stock-dot" title="مخزون منخفض" />
+        <span v-if="p.currentStock <= 0" class="out-stock-dot" title="نفد المخزون" />
+      </button>
+    </div>
   </div>
 </template>
+
+<style scoped>
+.grid-root {
+  padding: 10px;
+  font-family: 'Tajawal', system-ui, sans-serif;
+}
+
+/* Empty state */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  gap: 12px;
+}
+
+.empty-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: rgba(26,86,219,0.08);
+  border: 1px solid rgba(26,86,219,0.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.empty-text {
+  font-size: 14px;
+  color: #637285;
+}
+
+/* Grid */
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+@media (min-width: 480px) {
+  .product-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (min-width: 768px) {
+  .product-grid { grid-template-columns: repeat(4, 1fr); }
+}
+
+/* Product tile */
+.product-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 4px;
+  padding: 12px 8px;
+  min-height: 80px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(26,86,219,0.10), rgba(255,255,255,0.04));
+  border: 1px solid rgba(26,86,219,0.20);
+  box-shadow: 0 2px 12px rgba(26,86,219,0.06), inset 0 1px 0 rgba(255,255,255,0.06);
+  cursor: pointer;
+  transition: transform 0.1s, border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.product-btn:hover {
+  border-color: rgba(26,86,219,0.40);
+  box-shadow: 0 4px 20px rgba(26,86,219,0.16), inset 0 1px 0 rgba(255,255,255,0.08);
+  background: linear-gradient(135deg, rgba(26,86,219,0.16), rgba(255,255,255,0.06));
+}
+
+.product-btn:active {
+  transform: scale(0.96);
+}
+
+.product-btn-flash {
+  border-color: rgba(26,86,219,0.70) !important;
+  box-shadow: 0 0 20px rgba(26,86,219,0.40), inset 0 1px 0 rgba(255,255,255,0.10) !important;
+  background: linear-gradient(135deg, rgba(26,86,219,0.24), rgba(26,86,219,0.10)) !important;
+}
+
+/* Photo */
+.product-photo-wrap {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 2px;
+  flex-shrink: 0;
+}
+
+.product-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Text */
+.product-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #E8EDF5;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.product-price {
+  font-size: 12px;
+  font-weight: 700;
+  color: #60A5FA;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Stock indicators */
+.low-stock-dot {
+  position: absolute;
+  top: 6px;
+  inset-inline-start: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #F59E0B;
+  box-shadow: 0 0 6px rgba(245,158,11,0.60);
+}
+
+.out-stock-dot {
+  position: absolute;
+  top: 6px;
+  inset-inline-start: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #EF4444;
+  box-shadow: 0 0 6px rgba(239,68,68,0.60);
+}
+</style>
