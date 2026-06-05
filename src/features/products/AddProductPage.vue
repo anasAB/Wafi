@@ -18,13 +18,13 @@ function handleSaved() {
 </script>
 
 <template>
-  <div class="flex flex-col min-h-dvh bg-bg-void" dir="rtl">
+  <div class="page-root" dir="rtl">
     <AppHeader
       title="إضافة منتج"
       :show-back="true"
       @back="router.back()"
     />
-    <main class="flex-1 px-4 py-4 max-w-2xl mx-auto w-full">
+    <main class="page-main">
       <ProductForm
         mode="add"
         :initial-barcode="initialBarcode"
@@ -35,3 +35,28 @@ function handleSaved() {
     <AppToast v-if="toast" :message="toast.message" :type="toast.type" @dismiss="toast = null" />
   </div>
 </template>
+
+<style scoped>
+.page-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: #06090F;
+  font-family: 'Tajawal', system-ui, sans-serif;
+}
+
+.page-main {
+  flex: 1;
+  padding: 1rem;
+  width: 100%;
+  max-width: 42rem;
+  margin-inline: auto;
+}
+
+@media (min-width: 1024px) {
+  .page-main {
+    padding: 1.25rem 1.5rem;
+    max-width: 48rem;
+  }
+}
+</style>
