@@ -28,9 +28,7 @@ const displayAmount = computed(() => {
 const amountSufficient = computed(() => {
   const amount = displayAmount.value
   if (amount === null || isNaN(amount)) return false
-  // In split mode: any positive amount is sufficient
   if (pendingPayments.value.length > 0) return amount > 0
-  // Single payment: must cover total
   if (method.value === 'cash_usd') return amount >= totalUsd.value
   if (method.value === 'cash_syp') return amount >= totalSyp.value
   return false
@@ -105,170 +103,155 @@ async function handleConfirm() {
 
 <template>
   <!-- Backdrop -->
-  <div class="fixed inset-0 z-40 bg-black/50" @click="state === 'method-selection' && handleCancel()" />
+  <div class="modal-backdrop" @click="state === 'method-selection' && handleCancel()" />
 
-  <!-- Sheet -->
-  <div class="fixed bottom-0 left-0 right-0 sm:inset-0 sm:flex sm:items-center sm:justify-center z-50">
+  <!-- Sheet wrapper -->
+  <div class="modal-wrap" dir="rtl">
     <div
       role="dialog"
       aria-modal="true"
       aria-labelledby="payment-modal-title"
-      class="bg-white dark:bg-gray-900 rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md max-h-[90dvh] overflow-y-auto"
+      class="modal-card"
     >
 
       <!-- ── Method selection ── -->
-      <div v-if="state === 'method-selection'" class="p-6">
-        <div class="flex justify-start mb-4">
-          <button type="button" class="text-sm text-blue-600 dark:text-blue-400" @click="handleCancel">
-            إلغاء
-          </button>
+      <div v-if="state === 'method-selection'" class="state-pad">
+        <div class="modal-top-bar">
+          <button type="button" class="modal-cancel-btn" @click="handleCancel">إلغاء</button>
         </div>
 
-        <h2 id="payment-modal-title" class="text-lg font-bold text-gray-900 dark:text-white mb-4 text-center">
-          إجمالي البيع
-        </h2>
+        <h2 id="payment-modal-title" class="modal-heading">إجمالي البيع</h2>
 
-        <div class="mb-4 text-center">
-          <p class="text-3xl font-bold text-gray-900 dark:text-white">${{ totalUsd.toFixed(2) }}</p>
-          <p class="text-sm text-gray-400 mt-1">{{ totalSyp.toLocaleString() }} ل.س</p>
+        <div class="total-block">
+          <p class="total-usd">${{ totalUsd.toFixed(2) }}</p>
+          <p class="total-syp">{{ totalSyp.toLocaleString() }} ل.س</p>
         </div>
 
-        <!-- Pending payments list -->
+        <!-- Pending payments -->
         <div
           v-if="pendingPayments.length > 0"
+          class="pending-list"
           data-testid="pending-payments-list"
-          class="mb-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-xl"
-          dir="rtl"
         >
-          <div
-            v-for="(entry, i) in pendingPayments"
-            :key="i"
-            class="flex justify-between items-center py-1 text-sm"
-          >
-            <div class="flex items-center gap-2">
+          <div v-for="(entry, i) in pendingPayments" :key="i" class="pending-row">
+            <div class="pending-method-wrap">
               <span>{{ methodLabels[entry.method] }}</span>
               <button
                 v-if="i === pendingPayments.length - 1"
                 type="button"
+                class="remove-payment-btn"
                 data-testid="remove-last-payment-btn"
-                class="text-red-500 text-xs hover:text-red-700"
                 @click="removeLastPayment"
               >×</button>
             </div>
-            <span class="font-semibold">${{ entry.amountUsd.toFixed(2) }}</span>
+            <span class="pending-amount">${{ entry.amountUsd.toFixed(2) }}</span>
           </div>
-          <div class="border-t border-gray-200 dark:border-gray-700 mt-2 pt-2 flex justify-between text-sm font-semibold">
-            <span dir="rtl">متبقي</span>
-            <span :class="remainingUsd <= 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-900 dark:text-white'">
+          <div class="pending-remaining-row">
+            <span>متبقي</span>
+            <span :class="remainingUsd <= 0 ? 'remaining-zero' : 'remaining-nonzero'">
               ${{ remainingUsd.toFixed(2) }}
             </span>
           </div>
         </div>
 
-        <!-- Confirm split button (when all paid) -->
+        <!-- Ready-to-confirm (all split payments entered) -->
         <button
           v-if="isReadyToConfirm"
           type="button"
+          class="confirm-btn confirm-btn-green"
           data-testid="confirm-split-btn"
-          class="w-full h-12 rounded-xl bg-green-600 text-white font-semibold active:scale-95 transition-all mb-3"
           @click="handleConfirm"
         >تأكيد البيع</button>
 
-        <!-- Method tiles (hidden when ready to confirm) -->
+        <!-- Method tiles -->
         <template v-else>
-          <div class="grid grid-cols-2 gap-3 mb-3">
+          <div class="method-grid">
             <button
               v-for="m in [
-                { key: 'cash_usd', label: 'نقدي دولار' },
-                { key: 'cash_syp', label: 'نقدي ليرة' },
-                { key: 'card',     label: 'بطاقة' },
+                { key: 'cash_usd', label: 'نقدي دولار', icon: '💵' },
+                { key: 'cash_syp', label: 'نقدي ليرة',  icon: '💴' },
+                { key: 'card',     label: 'بطاقة',       icon: '💳' },
               ]"
               :key="m.key"
               type="button"
-              class="py-4 rounded-xl border-2 border-gray-200 dark:border-gray-700 text-sm font-medium text-gray-700 dark:text-gray-200 hover:border-blue-500 hover:text-blue-600 active:scale-95 transition-all"
+              class="method-tile"
               @click="selectMethod(m.key as any)"
-            >{{ m.label }}</button>
+            >
+              <span class="method-tile-icon">{{ m.icon }}</span>
+              <span class="method-tile-label">{{ m.label }}</span>
+            </button>
 
-            <!-- Credit tile (only in single-payment mode) -->
             <button
               v-if="pendingPayments.length === 0"
               type="button"
               data-testid="credit-method-btn"
-              class="py-4 rounded-xl border-2 text-sm font-medium active:scale-95 transition-all"
-              :class="selectedCustomer
-                ? 'border-amber-400 text-amber-600 bg-amber-50 dark:bg-amber-900/20'
-                : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:border-amber-400 hover:text-amber-600'"
+              :class="['method-tile', selectedCustomer ? 'method-tile-credit-sel' : 'method-tile-credit']"
               @click="handleSelectCredit"
-            >📋 آجل</button>
+            >
+              <span class="method-tile-icon">📋</span>
+              <span class="method-tile-label">آجل</span>
+            </button>
           </div>
 
-          <!-- Selected customer chip (credit only) -->
+          <!-- Selected customer chip -->
           <div
             v-if="selectedCustomer && method === 'credit'"
-            class="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 flex items-center justify-between"
-            dir="rtl"
+            class="customer-chip"
           >
             <div>
-              <p class="text-sm font-semibold text-amber-800 dark:text-amber-200">{{ selectedCustomer.name }}</p>
-              <p v-if="selectedCustomer.phone" class="text-xs text-amber-600 dark:text-amber-400">{{ selectedCustomer.phone }}</p>
+              <p class="customer-chip-name">{{ selectedCustomer.name }}</p>
+              <p v-if="selectedCustomer.phone" class="customer-chip-phone">{{ selectedCustomer.phone }}</p>
             </div>
-            <button type="button" class="text-xs text-amber-600 underline" @click="showPicker = true">تغيير</button>
+            <button type="button" class="customer-chip-change" @click="showPicker = true">تغيير</button>
           </div>
 
           <button
             v-if="method === 'credit' && selectedCustomer"
             type="button"
             data-testid="confirm-credit-btn"
-            class="w-full h-12 rounded-xl bg-amber-500 text-white font-semibold active:scale-95 transition-all"
+            class="confirm-btn confirm-btn-amber"
             @click="handleConfirm"
           >تأكيد البيع الآجل</button>
         </template>
 
-        <p v-if="error" class="mt-4 text-red-600 text-sm text-center">{{ error }}</p>
+        <p v-if="error" class="modal-error">{{ error }}</p>
       </div>
 
       <!-- ── Amount entry (cash) ── -->
-      <div v-else-if="state === 'amount-entry'" class="p-6">
-        <div class="flex justify-start mb-4">
-          <button type="button" class="text-sm text-gray-500 dark:text-gray-400" @click="handleBack">
-            رجوع
-          </button>
+      <div v-else-if="state === 'amount-entry'" class="state-pad">
+        <div class="modal-top-bar">
+          <button type="button" class="modal-back-btn" @click="handleBack">رجوع</button>
         </div>
 
-        <h2 id="payment-modal-title" class="text-lg font-bold text-gray-900 dark:text-white mb-4 text-center">
-          المبلغ المستلم
-        </h2>
+        <h2 id="payment-modal-title" class="modal-heading">المبلغ المستلم</h2>
 
-        <!-- Remaining balance banner (split mode only) -->
-        <div v-if="pendingPayments.length > 0" class="mb-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-xl text-center text-sm" dir="rtl">
-          <span class="text-gray-500">متبقي: </span>
-          <span class="font-bold text-blue-600 dark:text-blue-400">${{ remainingUsd.toFixed(2) }}</span>
+        <div v-if="pendingPayments.length > 0" class="remaining-banner">
+          <span class="remaining-banner-label">متبقي:</span>
+          <span class="remaining-banner-value">${{ remainingUsd.toFixed(2) }}</span>
         </div>
 
-        <div class="bg-gray-50 dark:bg-gray-800 rounded-xl p-4 mb-2 text-center">
-          <p class="text-sm text-gray-500 mb-1">
+        <div class="amount-ref-box">
+          <p class="amount-ref-label">
             {{ method === 'cash_syp' ? 'المجموع بالليرة' : 'المجموع بالدولار' }}
           </p>
-          <p class="text-2xl font-bold text-gray-900 dark:text-white">
-            {{ method === 'cash_syp' ? `${totalSyp.toLocaleString()} ل.س` : `$${totalUsd.toFixed(2)}` }}
+          <p class="amount-ref-value">
+            {{ method === 'cash_syp'
+                ? `${totalSyp.toLocaleString()} ل.س`
+                : `$${totalUsd.toFixed(2)}` }}
           </p>
         </div>
 
-        <div class="bg-white dark:bg-gray-900 rounded-xl border-2 border-blue-500 p-4 mb-2 text-center">
-          <p class="text-3xl font-mono font-bold text-gray-900 dark:text-white">
-            {{ amountStr || '0' }}
-          </p>
-          <p v-if="showChangeDue" class="text-sm text-green-600 dark:text-green-400 mt-1">
-            الباقي: {{ method === 'cash_syp' ? `${changeDue?.toLocaleString()} ل.س` : `$${changeDue?.toFixed(2)}` }}
+        <div class="amount-input-box" :class="{ 'amount-input-box-error': amountStr && !amountSufficient }">
+          <p class="amount-input-value">{{ amountStr || '0' }}</p>
+          <p v-if="showChangeDue" class="change-due-row">
+            الباقي:
+            {{ method === 'cash_syp'
+                ? `${changeDue?.toLocaleString()} ل.س`
+                : `$${changeDue?.toFixed(2)}` }}
           </p>
         </div>
 
-        <p
-          v-if="amountStr && !amountSufficient"
-          class="text-red-600 dark:text-red-400 text-sm text-center mb-2"
-        >
-          المبلغ غير كافٍ
-        </p>
+        <p v-if="amountStr && !amountSufficient" class="modal-error">المبلغ غير كافٍ</p>
 
         <NumericKeypad
           :confirm-disabled="!amountSufficient"
@@ -277,105 +260,560 @@ async function handleConfirm() {
           @confirm="handleConfirm"
         />
 
-        <!-- Add split payment button -->
         <button
           v-if="amountSufficient"
           type="button"
+          class="split-add-btn"
           data-testid="add-split-btn"
-          class="w-full h-11 mt-3 rounded-xl border-2 border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-300 active:scale-95 transition-all"
           @click="handleAddSplitPayment"
         >إضافة دفعة أخرى</button>
 
-        <p v-if="error" class="text-red-600 text-sm text-center mt-2">{{ error }}</p>
+        <p v-if="error" class="modal-error">{{ error }}</p>
       </div>
 
       <!-- ── Card confirm ── -->
-      <div v-else-if="state === 'card-confirm'" class="p-6">
-        <div class="flex justify-start mb-4">
-          <button type="button" class="text-sm text-gray-500 dark:text-gray-400" @click="handleBack">
-            رجوع
-          </button>
+      <div v-else-if="state === 'card-confirm'" class="state-pad">
+        <div class="modal-top-bar">
+          <button type="button" class="modal-back-btn" @click="handleBack">رجوع</button>
         </div>
 
-        <h2 id="payment-modal-title" class="text-lg font-bold text-gray-900 dark:text-white mb-4 text-center">
-          إجمالي البيع
-        </h2>
+        <h2 id="payment-modal-title" class="modal-heading">إجمالي البيع</h2>
 
-        <div class="mb-6 text-center">
-          <p class="text-3xl font-bold text-gray-900 dark:text-white">${{ totalUsd.toFixed(2) }}</p>
-          <p class="text-sm text-gray-400 mt-1">{{ totalSyp.toLocaleString() }} ل.س</p>
+        <div class="total-block">
+          <p class="total-usd">${{ totalUsd.toFixed(2) }}</p>
+          <p class="total-syp">{{ totalSyp.toLocaleString() }} ل.س</p>
         </div>
 
-        <div class="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 mb-4 text-center">
-          <p class="text-blue-700 dark:text-blue-300 font-medium">💳 بطاقة</p>
-          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">سيتم تسجيل الدفع بالبطاقة</p>
+        <div class="card-info-box">
+          <span class="card-info-icon">💳</span>
+          <p class="card-info-label">بطاقة ائتمان / دفع</p>
+          <p class="card-info-hint">سيتم تسجيل الدفع بالبطاقة</p>
         </div>
+
+        <button type="button" class="confirm-btn confirm-btn-blue" @click="handleConfirm">تأكيد</button>
 
         <button
           type="button"
-          class="w-full h-12 rounded-xl bg-blue-600 text-white font-semibold active:scale-95 transition-all mb-3"
-          @click="handleConfirm"
-        >تأكيد</button>
-
-        <!-- Add card as split payment -->
-        <button
-          type="button"
+          class="split-add-btn"
           data-testid="add-card-split-btn"
-          class="w-full h-11 rounded-xl border-2 border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-300 active:scale-95 transition-all"
           @click="handleAddCardSplitPayment"
         >إضافة دفعة أخرى</button>
       </div>
 
       <!-- ── Credit confirm ── -->
-      <div v-else-if="state === 'credit-confirm'" class="p-6">
-        <div class="flex justify-start mb-4">
-          <button type="button" class="text-sm text-gray-500 dark:text-gray-400" @click="handleBack">
-            رجوع
-          </button>
+      <div v-else-if="state === 'credit-confirm'" class="state-pad">
+        <div class="modal-top-bar">
+          <button type="button" class="modal-back-btn" @click="handleBack">رجوع</button>
         </div>
 
-        <h2 id="payment-modal-title" class="text-lg font-bold text-gray-900 dark:text-white mb-4 text-center">
-          إجمالي البيع
-        </h2>
+        <h2 id="payment-modal-title" class="modal-heading">إجمالي البيع</h2>
 
-        <div class="mb-6 text-center">
-          <p class="text-3xl font-bold text-gray-900 dark:text-white">${{ totalUsd.toFixed(2) }}</p>
-          <p class="text-sm text-gray-400 mt-1">{{ totalSyp.toLocaleString() }} ل.س</p>
+        <div class="total-block">
+          <p class="total-usd">${{ totalUsd.toFixed(2) }}</p>
+          <p class="total-syp">{{ totalSyp.toLocaleString() }} ل.س</p>
         </div>
 
-        <div
-          v-if="selectedCustomer"
-          class="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 flex items-center justify-between"
-          dir="rtl"
-        >
+        <div v-if="selectedCustomer" class="customer-chip">
           <div>
-            <p class="text-sm font-semibold text-amber-800 dark:text-amber-200">{{ selectedCustomer.name }}</p>
-            <p v-if="selectedCustomer.phone" class="text-xs text-amber-600 dark:text-amber-400">{{ selectedCustomer.phone }}</p>
+            <p class="customer-chip-name">{{ selectedCustomer.name }}</p>
+            <p v-if="selectedCustomer.phone" class="customer-chip-phone">{{ selectedCustomer.phone }}</p>
           </div>
-          <button type="button" class="text-xs text-amber-600 underline" @click="showPicker = true">تغيير</button>
+          <button type="button" class="customer-chip-change" @click="showPicker = true">تغيير</button>
         </div>
 
         <button
           type="button"
+          class="confirm-btn confirm-btn-amber"
           data-testid="confirm-credit-btn"
-          class="w-full h-12 rounded-xl bg-amber-500 text-white font-semibold active:scale-95 transition-all"
           @click="handleConfirm"
         >تأكيد البيع الآجل</button>
       </div>
 
-      <!-- ── Confirming (spinner) ── -->
-      <div v-else-if="state === 'confirming'" class="p-6 flex flex-col items-center gap-4">
-        <div class="w-10 h-10 rounded-full border-4 border-blue-600 border-t-transparent animate-spin" />
-        <p class="text-gray-600 dark:text-gray-300">جارٍ التأكيد...</p>
+      <!-- ── Confirming spinner ── -->
+      <div v-else-if="state === 'confirming'" class="state-pad state-center">
+        <div class="spinner" />
+        <p class="spinner-label">جارٍ التأكيد...</p>
       </div>
 
     </div>
   </div>
 
-  <!-- Customer picker -->
   <CustomerPickerModal
     v-if="showPicker"
     @select="handleCustomerSelected"
     @cancel="showPicker = false"
   />
 </template>
+
+<style scoped>
+/* ── Backdrop ──────────────────────────────────── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+/* ── Wrapper ───────────────────────────────────── */
+.modal-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+@media (min-width: 640px) {
+  .modal-wrap { align-items: center; }
+}
+
+/* ── Card ──────────────────────────────────────── */
+.modal-card {
+  width: 100%;
+  max-width: 440px;
+  max-height: 90dvh;
+  overflow-y: auto;
+  border-radius: 24px 24px 0 0;
+  background: linear-gradient(180deg,
+    rgba(26, 86, 219, 0.20) 0%,
+    rgba(7, 11, 20, 0.99) 80px
+  );
+  border: 1px solid rgba(26, 86, 219, 0.32);
+  border-bottom: none;
+  box-shadow:
+    0 -8px 48px rgba(26, 86, 219, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  font-family: 'Tajawal', system-ui, sans-serif;
+}
+
+@media (min-width: 640px) {
+  .modal-card {
+    border-radius: 20px;
+    border-bottom: 1px solid rgba(26, 86, 219, 0.32);
+    box-shadow:
+      0 32px 80px rgba(0, 0, 0, 0.65),
+      0 0 0 1px rgba(26, 86, 219, 0.18),
+      0 0 40px rgba(26, 86, 219, 0.16),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+}
+
+/* ── State pads ────────────────────────────────── */
+.state-pad {
+  padding: 20px 20px 28px;
+}
+
+.state-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 48px 20px;
+}
+
+/* ── Top bar ───────────────────────────────────── */
+.modal-top-bar {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 20px;
+}
+
+.modal-cancel-btn {
+  font-size: 14px;
+  font-weight: 700;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  color: #EF4444;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: opacity 0.15s;
+}
+
+.modal-cancel-btn:hover { opacity: 0.75; }
+
+.modal-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  color: #60A5FA;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: opacity 0.15s;
+}
+
+.modal-back-btn:hover { opacity: 0.75; }
+
+/* ── Heading ───────────────────────────────────── */
+.modal-heading {
+  font-size: 15px;
+  font-weight: 600;
+  color: #637285;
+  text-align: center;
+  margin: 0 0 10px;
+}
+
+/* ── Total block ───────────────────────────────── */
+.total-block {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.total-usd {
+  font-size: 40px;
+  font-weight: 800;
+  color: #E8EDF5;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  margin: 0;
+  line-height: 1.1;
+}
+
+.total-syp {
+  font-size: 15px;
+  color: #637285;
+  margin: 6px 0 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Pending payments list ─────────────────────── */
+.pending-list {
+  background: rgba(26, 86, 219, 0.08);
+  border: 1px solid rgba(26, 86, 219, 0.18);
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.pending-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 13px;
+  color: #C8D5E8;
+}
+
+.pending-method-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.remove-payment-btn {
+  font-size: 18px;
+  line-height: 1;
+  color: #EF4444;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.pending-amount {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.pending-remaining-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid rgba(26, 86, 219, 0.16);
+  margin-top: 8px;
+  padding-top: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #E8EDF5;
+}
+
+.remaining-zero   { color: #22C55E; }
+.remaining-nonzero { color: #E8EDF5; }
+
+/* ── Method grid ───────────────────────────────── */
+.method-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+/* ── Method tiles ──────────────────────────────── */
+.method-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 84px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(26, 86, 219, 0.12), rgba(255, 255, 255, 0.03));
+  border: 1px solid rgba(26, 86, 219, 0.24);
+  color: #E8EDF5;
+  cursor: pointer;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+
+.method-tile:hover {
+  background: linear-gradient(135deg, rgba(26, 86, 219, 0.22), rgba(255, 255, 255, 0.06));
+  border-color: rgba(26, 86, 219, 0.52);
+  box-shadow: 0 4px 20px rgba(26, 86, 219, 0.22);
+}
+
+.method-tile:active { transform: scale(0.95); }
+
+.method-tile-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.method-tile-label {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.method-tile-credit {
+  border-color: rgba(245, 158, 11, 0.28);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.09), rgba(255, 255, 255, 0.02));
+  color: #FCD34D;
+}
+
+.method-tile-credit:hover {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(255, 255, 255, 0.04));
+  border-color: rgba(245, 158, 11, 0.50);
+  box-shadow: 0 4px 20px rgba(245, 158, 11, 0.16);
+}
+
+.method-tile-credit-sel {
+  border-color: rgba(245, 158, 11, 0.60);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.22), rgba(245, 158, 11, 0.08));
+  color: #FCD34D;
+  box-shadow: 0 0 18px rgba(245, 158, 11, 0.22);
+}
+
+/* ── Customer chip ─────────────────────────────── */
+.customer-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+
+.customer-chip-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #FCD34D;
+  margin: 0;
+}
+
+.customer-chip-phone {
+  font-size: 12px;
+  color: #D97706;
+  margin: 2px 0 0;
+}
+
+.customer-chip-change {
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  color: #D97706;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* ── Confirm buttons ───────────────────────────── */
+.confirm-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 52px;
+  border-radius: 14px;
+  font-size: 16px;
+  font-weight: 800;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  border: none;
+  cursor: pointer;
+  margin-bottom: 8px;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.confirm-btn:hover:not(:disabled) { opacity: 0.90; }
+.confirm-btn:active:not(:disabled) { transform: scale(0.98); }
+
+.confirm-btn-blue {
+  color: #fff;
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  box-shadow: 0 6px 24px rgba(26, 86, 219, 0.52);
+}
+
+.confirm-btn-green {
+  color: #fff;
+  background: linear-gradient(135deg, #16A34A, #15803D);
+  box-shadow: 0 6px 24px rgba(22, 163, 74, 0.40);
+}
+
+.confirm-btn-amber {
+  color: #fff;
+  background: linear-gradient(135deg, #D97706, #B45309);
+  box-shadow: 0 6px 24px rgba(217, 119, 6, 0.40);
+}
+
+/* ── Split add button ──────────────────────────── */
+.split-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 44px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  color: #637285;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  cursor: pointer;
+  margin-top: 8px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.split-add-btn:hover { color: #C8D5E8; background: rgba(255, 255, 255, 0.08); }
+
+/* ── Amount entry ──────────────────────────────── */
+.remaining-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: rgba(26, 86, 219, 0.10);
+  border: 1px solid rgba(26, 86, 219, 0.20);
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.remaining-banner-label { color: #637285; }
+.remaining-banner-value { font-weight: 700; color: #60A5FA; font-variant-numeric: tabular-nums; }
+
+.amount-ref-box {
+  background: rgba(26, 86, 219, 0.08);
+  border: 1px solid rgba(26, 86, 219, 0.16);
+  border-radius: 12px;
+  padding: 10px 16px;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.amount-ref-label {
+  font-size: 12px;
+  color: #637285;
+  margin: 0 0 2px;
+}
+
+.amount-ref-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #E8EDF5;
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+
+.amount-input-box {
+  background: rgba(26, 86, 219, 0.10);
+  border: 2px solid rgba(26, 86, 219, 0.42);
+  border-radius: 12px;
+  padding: 14px 16px;
+  text-align: center;
+  margin-bottom: 4px;
+  transition: border-color 0.15s;
+}
+
+.amount-input-box-error { border-color: rgba(239, 68, 68, 0.52); }
+
+.amount-input-value {
+  font-size: 36px;
+  font-weight: 800;
+  color: #E8EDF5;
+  font-variant-numeric: tabular-nums;
+  font-family: monospace;
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+
+.change-due-row {
+  font-size: 14px;
+  font-weight: 700;
+  color: #22C55E;
+  margin: 6px 0 0;
+}
+
+/* ── Card info box ─────────────────────────────── */
+.card-info-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: rgba(26, 86, 219, 0.10);
+  border: 1px solid rgba(26, 86, 219, 0.22);
+  border-radius: 14px;
+  padding: 20px;
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+.card-info-icon { font-size: 28px; }
+
+.card-info-label {
+  font-size: 15px;
+  font-weight: 700;
+  color: #E8EDF5;
+  margin: 0;
+}
+
+.card-info-hint {
+  font-size: 12px;
+  color: #637285;
+  margin: 0;
+}
+
+/* ── Spinner ───────────────────────────────────── */
+.spinner {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 3px solid rgba(26, 86, 219, 0.22);
+  border-top-color: #1A56DB;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.spinner-label {
+  font-size: 14px;
+  color: #637285;
+}
+
+/* ── Error ─────────────────────────────────────── */
+.modal-error {
+  text-align: center;
+  font-size: 13px;
+  color: #EF4444;
+  margin-top: 8px;
+}
+</style>

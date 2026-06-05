@@ -16,14 +16,15 @@ interface NavItem {
 }
 
 const allNavItems: NavItem[] = [
-  { key: 'home',      label: 'الرئيسية',   href: '/',               permission: null },
-  { key: 'pos',       label: 'نقطة البيع', href: '/pos',            permission: null },
-  { key: 'history',   label: 'المبيعات',   href: '/history',        permission: null },
-  { key: 'products',  label: 'المنتجات',   href: '/products',       permission: 'can_manage_products' },
-  { key: 'expenses',  label: 'المصاريف',   href: '/expenses',       permission: 'can_view_expenses' },
-  { key: 'customers', label: 'العملاء',    href: '/customers',      permission: 'can_manage_customers' },
-  { key: 'shifts',    label: 'الورديات',   href: '/shifts/history', permission: null },
-  { key: 'reports',   label: 'التقارير',   href: null,              permission: 'can_view_reports' },
+  { key: 'home',        label: 'الرئيسية',    href: '/',               permission: null },
+  { key: 'pos',         label: 'نقطة البيع',  href: '/pos',            permission: null },
+  { key: 'history',     label: 'المبيعات',    href: '/history',        permission: null },
+  { key: 'products',    label: 'المنتجات',    href: '/products',       permission: 'can_manage_products' },
+  { key: 'add-product', label: 'منتج جديد',   href: '/products/add',   permission: 'can_manage_products' },
+  { key: 'expenses',    label: 'المصاريف',    href: '/expenses',       permission: 'can_view_expenses' },
+  { key: 'customers',   label: 'العملاء',     href: '/customers',      permission: 'can_manage_customers' },
+  { key: 'shifts',      label: 'الورديات',    href: '/shifts/history', permission: null },
+  { key: 'reports',     label: 'التقارير',    href: null,              permission: 'can_view_reports' },
 ]
 
 const navItems = computed(() => {
@@ -68,7 +69,11 @@ function isActive(href: string | null): boolean {
         :key="item.key"
         :is="item.href ? RouterLink : 'div'"
         v-bind="item.href ? { to: item.href } : {}"
-        :class="['nav-item', isActive(item.href) ? 'nav-item-active' : 'nav-item-idle']"
+        :class="[
+          'nav-item',
+          item.key === 'add-product' ? 'nav-item-sub' : '',
+          isActive(item.href) ? 'nav-item-active' : 'nav-item-idle',
+        ]"
       >
         <span :class="['nav-icon-wrap', isActive(item.href) ? 'nav-icon-active' : 'nav-icon-idle']">
           <!-- Home -->
@@ -86,6 +91,10 @@ function isActive(href: string | null): boolean {
           <!-- Products -->
           <svg v-if="item.key === 'products'" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+          </svg>
+          <!-- Add product -->
+          <svg v-if="item.key === 'add-product'" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
           </svg>
           <!-- Reports -->
           <svg v-if="item.key === 'reports'" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -267,6 +276,17 @@ function isActive(href: string | null): boolean {
   border-color: rgba(26,86,219,0.14);
 }
 
+.nav-item-sub {
+  margin-inline-start: 14px;
+  padding-block: 5px;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.nav-item-sub:hover {
+  opacity: 1;
+}
+
 /* ── Nav Icon Wrap ── */
 .nav-icon-wrap {
   width: 30px;
@@ -301,7 +321,7 @@ function isActive(href: string | null): boolean {
 
 /* ── Nav text ── */
 .nav-text {
-  font-size: 13px;
+  font-size: inherit;
   font-weight: 500;
   flex: 1;
   min-width: 0;
