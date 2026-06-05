@@ -24,7 +24,6 @@ const products = useProducts()
 const adj      = useStockAdjustment()
 const scanner  = useBarcodeScan()
 
-// Form fields
 const nameAr    = ref(props.product?.nameAr       ?? '')
 const nameEn    = ref(props.product?.nameEn       ?? '')
 const barcode   = ref(props.product?.barcode ?? props.initialBarcode ?? '')
@@ -42,7 +41,6 @@ const priceWarning = ref(false)
 const saving       = ref(false)
 const photoError   = ref<string | null>(null)
 
-// margin = markup over cost: ((sale - cost) / cost) * 100
 const margin = computed(() => {
   const cost = Number(costPrice.value)
   const sale = Number(salePrice.value)
@@ -52,28 +50,24 @@ const margin = computed(() => {
 
 function validate(): boolean {
   const e: Record<string, string> = {}
-  if (!nameAr.value.trim())           e['name-ar']       = 'هذا الحقل مطلوب'
-  if (costPrice.value === '')         e['cost-price']    = 'هذا الحقل مطلوب'
-  if (salePrice.value === '')         e['sale-price']    = 'هذا الحقل مطلوب'
-  if (stock.value === '')             e['current-stock'] = 'هذا الحقل مطلوب'
+  if (!nameAr.value.trim())   e['name-ar']       = 'هذا الحقل مطلوب'
+  if (costPrice.value === '') e['cost-price']    = 'هذا الحقل مطلوب'
+  if (salePrice.value === '') e['sale-price']    = 'هذا الحقل مطلوب'
+  if (stock.value === '')     e['current-stock'] = 'هذا الحقل مطلوب'
   errors.value = e
   return Object.keys(e).length === 0
 }
 
 async function handleSave(addAnother = false) {
   if (!validate()) return
-
   const cost = Number(costPrice.value)
   const sale = Number(salePrice.value)
   if (sale < cost) { priceWarning.value = true; return }
-
   const newStock = Number(stock.value)
-
   if (props.mode === 'edit' && props.product && newStock !== originalStock) {
     adj.open(props.product.id, props.product.nameAr, originalStock, newStock)
     return
   }
-
   await commitSave(newStock, addAnother)
 }
 
@@ -96,7 +90,6 @@ async function commitSave(newStock: number, addAnother = false) {
       createdAt:         props.product?.createdAt ?? '',
       updatedAt:         '',
     })
-
     if (addAnother) {
       nameAr.value = ''; nameEn.value = ''; barcode.value = ''; category.value = ''
       costPrice.value = ''; salePrice.value = ''; stock.value = ''
@@ -128,119 +121,147 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-col gap-4 pb-24" dir="rtl">
+  <div class="form-root" dir="rtl">
 
-    <div class="glass-sm p-4 flex flex-col gap-3">
-      <p class="text-xs font-semibold text-text-muted uppercase tracking-wide">المعلومات الأساسية</p>
+    <!-- ── Section: Basic Info ─────────────────────────── -->
+    <div class="form-section">
+      <p class="section-label">المعلومات الأساسية</p>
 
-      <div>
-        <label class="block text-sm text-text-muted mb-1">الاسم بالعربي *</label>
+      <!-- Name AR -->
+      <div class="field">
+        <label class="field-label">الاسم بالعربي <span class="required">*</span></label>
         <input
           v-model="nameAr"
           data-testid="name-ar"
           type="text"
-          class="w-full rounded-xl px-3 py-2 text-sm text-text-primary bg-surface-glass border focus:outline-none focus:ring-1"
-          :class="errors['name-ar'] ? 'border-red-500' : 'border-border-glass'"
-          style="--tw-ring-color: var(--color-gold-primary)"
+          class="form-input"
+          :class="{ 'input-error': errors['name-ar'] }"
           placeholder="مثال: شاشة سامسونج 55 بوصة"
+          @focus="($event.target as HTMLInputElement).style.borderColor = errors['name-ar'] ? '#EF4444' : 'rgba(26,86,219,0.8)'"
+          @blur="($event.target as HTMLInputElement).style.borderColor = errors['name-ar'] ? '#EF4444' : 'rgba(255,255,255,0.18)'"
           @input="delete errors['name-ar']"
         />
-        <p v-if="errors['name-ar']" data-testid="error-name-ar" class="text-xs text-red-500 mt-1">
+        <p v-if="errors['name-ar']" data-testid="error-name-ar" class="field-error">
           {{ errors['name-ar'] }}
         </p>
       </div>
 
-      <div>
-        <label class="block text-sm text-text-muted mb-1">الاسم بالإنجليزي</label>
+      <!-- Name EN -->
+      <div class="field">
+        <label class="field-label">الاسم بالإنجليزي <span class="optional">(اختياري)</span></label>
         <input v-model="nameEn" data-testid="name-en" type="text"
-          class="w-full rounded-xl px-3 py-2 text-sm text-text-primary bg-surface-glass border border-border-glass focus:outline-none focus:ring-1"
-          style="--tw-ring-color: var(--color-gold-primary)"
-          placeholder="اختياري" />
+          class="form-input"
+          placeholder="مثال: Samsung TV 55 inch"
+          @focus="($event.target as HTMLInputElement).style.borderColor = 'rgba(26,86,219,0.8)'"
+          @blur="($event.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.18)'" />
       </div>
 
-      <div>
-        <label class="block text-sm text-text-muted mb-1">الباركود</label>
+      <!-- Barcode -->
+      <div class="field">
+        <label class="field-label">
+          الباركود <span class="optional">(اختياري)</span>
+        </label>
         <input v-model="barcode" data-testid="barcode" type="text"
-          class="w-full rounded-xl px-3 py-2 text-sm text-text-primary bg-surface-glass border border-border-glass focus:outline-none focus:ring-1"
-          style="--tw-ring-color: var(--color-gold-primary)"
-          placeholder="اختياري" />
+          class="form-input"
+          placeholder="امسح الباركود أو أدخله يدوياً"
+          @focus="($event.target as HTMLInputElement).style.borderColor = 'rgba(26,86,219,0.8)'"
+          @blur="($event.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.18)'" />
       </div>
 
-      <div>
-        <label class="block text-sm text-text-muted mb-1">الفئة</label>
+      <!-- Category -->
+      <div class="field">
+        <label class="field-label">
+          الفئة <span class="optional">(اختياري)</span>
+        </label>
         <input v-model="category" data-testid="category" type="text"
-          class="w-full rounded-xl px-3 py-2 text-sm text-text-primary bg-surface-glass border border-border-glass focus:outline-none focus:ring-1"
-          style="--tw-ring-color: var(--color-gold-primary)"
-          placeholder="اختياري" />
+          class="form-input"
+          placeholder="مثال: إلكترونيات، شواحن..."
+          @focus="($event.target as HTMLInputElement).style.borderColor = 'rgba(26,86,219,0.8)'"
+          @blur="($event.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.18)'" />
       </div>
     </div>
 
-    <div class="glass-sm p-4 flex flex-col gap-3">
-      <p class="text-xs font-semibold text-text-muted uppercase tracking-wide">التسعير</p>
+    <!-- ── Section: Pricing ───────────────────────────── -->
+    <div class="form-section">
+      <p class="section-label">التسعير</p>
 
-      <div v-if="priceWarning" data-testid="price-warning"
-        class="glass-sm px-3 py-2 text-sm text-gold-primary"
-        style="border-color: var(--color-border-gold)">
-        سعر البيع أقل من سعر التكلفة — هل أنت متأكد؟
-        <div class="flex gap-2 mt-2">
-          <button type="button" class="text-xs font-semibold underline text-gold-primary" data-testid="confirm-price-warning"
+      <!-- Price warning -->
+      <div v-if="priceWarning" data-testid="price-warning" class="price-warning">
+        <p class="price-warning-title">سعر البيع أقل من سعر التكلفة — هل أنت متأكد؟</p>
+        <div class="price-warning-actions">
+          <button type="button" class="warning-confirm-btn" data-testid="confirm-price-warning"
             @click="priceWarning = false; commitSave(Number(stock.value))">نعم، احفظ</button>
-          <button type="button" class="text-xs text-text-muted" @click="priceWarning = false">لا، تراجع</button>
+          <button type="button" class="warning-cancel-btn"
+            @click="priceWarning = false">لا، تراجع</button>
         </div>
       </div>
 
-      <div class="flex gap-3">
-        <div class="flex-1">
-          <label class="block text-sm text-text-muted mb-1">سعر التكلفة $ *</label>
+      <!-- Cost + Sale prices -->
+      <div class="grid-2">
+        <div class="field">
+          <label class="field-label">سعر التكلفة $ <span class="required">*</span></label>
           <input v-model="costPrice" data-testid="cost-price" type="number" min="0" step="0.01"
-            class="w-full rounded-xl px-3 py-2 text-sm text-text-primary bg-surface-glass border focus:outline-none focus:ring-1"
-            :class="errors['cost-price'] ? 'border-red-500' : 'border-border-glass'"
-            style="--tw-ring-color: var(--color-gold-primary)"
+            class="form-input"
+            :class="{ 'input-error': errors['cost-price'] }"
+            placeholder="0.00"
+            @focus="($event.target as HTMLInputElement).style.borderColor = errors['cost-price'] ? '#EF4444' : 'rgba(26,86,219,0.8)'"
+            @blur="($event.target as HTMLInputElement).style.borderColor = errors['cost-price'] ? '#EF4444' : 'rgba(255,255,255,0.18)'"
             @input="delete errors['cost-price']" />
-          <p v-if="errors['cost-price']" class="text-xs text-red-500 mt-1">{{ errors['cost-price'] }}</p>
+          <p v-if="errors['cost-price']" class="field-error">{{ errors['cost-price'] }}</p>
         </div>
-        <div class="flex-1">
-          <label class="block text-sm text-text-muted mb-1">سعر البيع $ *</label>
+        <div class="field">
+          <label class="field-label">سعر البيع $ <span class="required">*</span></label>
           <input v-model="salePrice" data-testid="sale-price" type="number" min="0" step="0.01"
-            class="w-full rounded-xl px-3 py-2 text-sm text-text-primary bg-surface-glass border focus:outline-none focus:ring-1"
-            :class="errors['sale-price'] ? 'border-red-500' : 'border-border-glass'"
-            style="--tw-ring-color: var(--color-gold-primary)"
+            class="form-input"
+            :class="{ 'input-error': errors['sale-price'] }"
+            placeholder="0.00"
+            @focus="($event.target as HTMLInputElement).style.borderColor = errors['sale-price'] ? '#EF4444' : 'rgba(26,86,219,0.8)'"
+            @blur="($event.target as HTMLInputElement).style.borderColor = errors['sale-price'] ? '#EF4444' : 'rgba(255,255,255,0.18)'"
             @input="delete errors['sale-price']" />
-          <p v-if="errors['sale-price']" class="text-xs text-red-500 mt-1">{{ errors['sale-price'] }}</p>
+          <p v-if="errors['sale-price']" class="field-error">{{ errors['sale-price'] }}</p>
         </div>
       </div>
 
-      <p v-if="margin !== null" data-testid="margin-display"
-        class="text-xs font-medium"
-        :class="margin >= 0 ? 'text-gold-primary' : 'text-red-500'">
-        هامش الربح على التكلفة: {{ margin }}%
-      </p>
+      <!-- Margin badge -->
+      <div v-if="margin !== null" data-testid="margin-display" class="margin-row">
+        <span class="margin-label">هامش الربح على التكلفة:</span>
+        <span class="margin-badge" :class="margin >= 0 ? 'margin-positive' : 'margin-negative'">
+          {{ margin }}%
+        </span>
+      </div>
     </div>
 
-    <div class="glass-sm p-4 flex flex-col gap-3">
-      <p class="text-xs font-semibold text-text-muted uppercase tracking-wide">المخزون</p>
-      <div class="flex gap-3">
-        <div class="flex-1">
-          <label class="block text-sm text-text-muted mb-1">الكمية الحالية *</label>
+    <!-- ── Section: Stock ─────────────────────────────── -->
+    <div class="form-section">
+      <p class="section-label">المخزون</p>
+
+      <div class="grid-2">
+        <div class="field">
+          <label class="field-label">الكمية الحالية <span class="required">*</span></label>
           <input v-model="stock" data-testid="current-stock" type="number" step="1"
-            class="w-full rounded-xl px-3 py-2 text-sm text-text-primary bg-surface-glass border focus:outline-none focus:ring-1"
-            :class="errors['current-stock'] ? 'border-red-500' : 'border-border-glass'"
-            style="--tw-ring-color: var(--color-gold-primary)"
+            class="form-input"
+            :class="{ 'input-error': errors['current-stock'] }"
+            placeholder="0"
+            @focus="($event.target as HTMLInputElement).style.borderColor = errors['current-stock'] ? '#EF4444' : 'rgba(26,86,219,0.8)'"
+            @blur="($event.target as HTMLInputElement).style.borderColor = errors['current-stock'] ? '#EF4444' : 'rgba(255,255,255,0.18)'"
             @input="delete errors['current-stock']" />
-          <p v-if="errors['current-stock']" class="text-xs text-red-500 mt-1">{{ errors['current-stock'] }}</p>
+          <p v-if="errors['current-stock']" class="field-error">{{ errors['current-stock'] }}</p>
         </div>
-        <div class="flex-1">
-          <label class="block text-sm text-text-muted mb-1">حد التنبيه</label>
+        <div class="field">
+          <label class="field-label">حد التنبيه</label>
           <input v-model="threshold" data-testid="threshold" type="number" min="0" step="1"
-            class="w-full rounded-xl px-3 py-2 text-sm text-text-primary bg-surface-glass border border-border-glass focus:outline-none focus:ring-1"
-            style="--tw-ring-color: var(--color-gold-primary)" />
+            class="form-input"
+            @focus="($event.target as HTMLInputElement).style.borderColor = 'rgba(26,86,219,0.8)'"
+            @blur="($event.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.18)'" />
+          <p class="field-hint">إنذار عند الوصول لهذه الكمية</p>
         </div>
       </div>
     </div>
 
-    <div class="glass-sm p-4">
-      <p class="text-xs font-semibold text-text-muted uppercase tracking-wide mb-3">الصورة</p>
-      <p v-if="photoError" class="text-xs text-red-500 mb-2">{{ photoError }}</p>
+    <!-- ── Section: Photo ─────────────────────────────── -->
+    <div class="form-section">
+      <p class="section-label">الصورة <span class="optional">(اختياري)</span></p>
+      <p v-if="photoError" class="field-error mb-2">{{ photoError }}</p>
       <ProductPhotoUpload
         :model-value="photoUrl"
         @change="photoUrl = $event"
@@ -248,29 +269,30 @@ onMounted(() => {
       />
     </div>
 
-    <div class="fixed bottom-0 inset-x-0 z-10" style="background: var(--color-bg-void); border-top: 1px solid var(--color-border-gold)">
-      <div class="max-w-2xl mx-auto px-4 py-3 flex gap-3" dir="rtl">
+    <!-- ── Sticky Save Bar ─────────────────────────────── -->
+    <div class="save-bar">
+      <div class="save-bar-inner" dir="rtl">
         <button
           type="button"
           data-testid="save-btn"
           :disabled="saving"
-          class="flex-1 btn-gold h-12 text-sm disabled:opacity-50"
+          class="btn-primary"
           @click="handleSave(false)"
-        >{{ saving ? '...' : 'حفظ' }}</button>
+        >{{ saving ? 'جاري الحفظ...' : 'حفظ' }}</button>
 
         <button
           v-if="mode === 'add'"
           type="button"
           data-testid="save-another-btn"
           :disabled="saving"
-          class="btn-ghost h-12 px-4 text-sm disabled:opacity-50"
+          class="btn-secondary"
           @click="handleSave(true)"
         >إضافة آخر</button>
 
         <button
           type="button"
           data-testid="cancel-btn"
-          class="h-12 px-4 rounded-xl text-sm text-text-muted hover:text-text-primary transition-colors"
+          class="btn-ghost"
           @click="emit('cancel')"
         >إلغاء</button>
       </div>
@@ -290,3 +312,274 @@ onMounted(() => {
     />
   </div>
 </template>
+
+<style scoped>
+.form-root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 7rem;
+  font-family: 'Tajawal', system-ui, sans-serif;
+}
+
+/* ── Form Section ─────────────────────────────────── */
+.form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: linear-gradient(135deg, rgba(26,86,219,0.08), rgba(255,255,255,0.03));
+  border: 1px solid rgba(26,86,219,0.18);
+  border-radius: 0.75rem;
+  padding: 16px;
+}
+
+.section-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #637285;
+  margin: 0;
+}
+
+/* ── Fields ───────────────────────────────────────── */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.field-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #637285;
+  margin-bottom: 6px;
+}
+
+.required {
+  color: #EF4444;
+}
+
+.optional {
+  color: #3D4F6B;
+  font-weight: 400;
+}
+
+.field-error {
+  font-size: 11px;
+  color: #EF4444;
+  margin-top: 5px;
+}
+
+.field-hint {
+  font-size: 11px;
+  color: #637285;
+  margin-top: 5px;
+}
+
+/* ── Form Input ───────────────────────────────────── */
+.form-input {
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 0.75rem;
+  padding: 0.625rem 0.875rem;
+  color: #E8EDF5;
+  font-size: 0.875rem;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  outline: none;
+  width: 100%;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.form-input::placeholder {
+  color: #3D4F6B;
+}
+
+.form-input:focus {
+  border-color: rgba(26,86,219,0.8);
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.25), 0 0 12px rgba(26,86,219,0.15);
+}
+
+.form-input.input-error {
+  border-color: #EF4444;
+}
+
+/* ── Grid ─────────────────────────────────────────── */
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+/* ── Price Warning ────────────────────────────────── */
+.price-warning {
+  background: rgba(245,158,11,0.08);
+  border: 1px solid rgba(245,158,11,0.30);
+  border-radius: 0.75rem;
+  padding: 12px 14px;
+}
+
+.price-warning-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #FCD34D;
+  margin: 0 0 10px 0;
+}
+
+.price-warning-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.warning-confirm-btn {
+  font-size: 12px;
+  font-weight: 700;
+  color: #FCD34D;
+  text-decoration: underline;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.warning-cancel-btn {
+  font-size: 12px;
+  color: #637285;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* ── Margin Badge ─────────────────────────────────── */
+.margin-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.margin-label {
+  color: #637285;
+}
+
+.margin-badge {
+  border-radius: 8px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.margin-positive {
+  background: rgba(34,197,94,0.15);
+  color: #22C55E;
+}
+
+.margin-negative {
+  background: rgba(239,68,68,0.15);
+  color: #EF4444;
+}
+
+/* ── Save Bar ─────────────────────────────────────── */
+.save-bar {
+  position: fixed;
+  bottom: 0;
+  inset-inline-start: 0;
+  inset-inline-end: 0;
+  z-index: 20;
+  background: #06090F;
+  border-top: 1px solid rgba(26,86,219,0.14);
+}
+
+@media (min-width: 1024px) {
+  .save-bar {
+    inset-inline-start: 220px;
+  }
+}
+
+.save-bar-inner {
+  display: flex;
+  gap: 10px;
+  padding: 12px 16px;
+  max-width: 42rem;
+  margin: 0 auto;
+}
+
+@media (min-width: 1024px) {
+  .save-bar-inner {
+    max-width: none;
+  }
+}
+
+/* ── Buttons ──────────────────────────────────────── */
+.btn-primary {
+  flex: 1;
+  height: 48px;
+  border-radius: 0.75rem;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  color: #fff;
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  border: none;
+  box-shadow: 0 4px 16px rgba(26,86,219,0.40);
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.btn-primary:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  height: 48px;
+  padding: 0 16px;
+  border-radius: 0.75rem;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  color: #60A5FA;
+  background: rgba(26,86,219,0.12);
+  border: 1px solid rgba(26,86,219,0.30);
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  opacity: 0.80;
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  height: 48px;
+  padding: 0 16px;
+  border-radius: 0.75rem;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  color: #637285;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.18);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.btn-ghost:hover {
+  color: #E8EDF5;
+}
+</style>
