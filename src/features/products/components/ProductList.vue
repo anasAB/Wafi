@@ -112,7 +112,7 @@ function handleDelete(id: string) {
             <th class="th w-24">التكلفة</th>
             <th class="th w-24">البيع</th>
             <th class="th w-24">المخزون</th>
-            <th class="w-10" />
+            <th v-if="!filterLowStock" class="w-10" />
           </tr>
         </thead>
         <tbody>
@@ -168,8 +168,8 @@ function handleDelete(id: string) {
                 </span>
               </div>
             </td>
-            <!-- Actions -->
-            <td class="td relative" @click.stop>
+            <!-- Actions (hidden in low-stock view — row click already navigates to edit) -->
+            <td v-if="!filterLowStock" class="td relative" @click.stop>
               <button
                 type="button"
                 class="kebab-btn opacity-0 group-hover:opacity-100"
@@ -243,8 +243,9 @@ function handleDelete(id: string) {
             {{ p.currentStock }}
           </p>
         </div>
-        <!-- Delete -->
+        <!-- Delete (hidden in low-stock view) -->
         <button
+          v-if="!filterLowStock"
           type="button"
           class="mobile-delete"
           aria-label="حذف"

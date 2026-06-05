@@ -40,6 +40,7 @@ const errors       = ref<Record<string, string>>({})
 const priceWarning = ref(false)
 const saving       = ref(false)
 const photoError   = ref<string | null>(null)
+const showOptional = ref(false)
 
 const margin = computed(() => {
   const cost = Number(costPrice.value)
@@ -123,7 +124,7 @@ onMounted(() => {
 <template>
   <div class="form-root" dir="rtl">
 
-    <!-- ── Section: Basic Info ─────────────────────────── -->
+    <!-- ── Section: Basic Info (required) ───────────────── -->
     <div class="form-section">
       <p class="section-label">المعلومات الأساسية</p>
 
@@ -144,40 +145,6 @@ onMounted(() => {
         <p v-if="errors['name-ar']" data-testid="error-name-ar" class="field-error">
           {{ errors['name-ar'] }}
         </p>
-      </div>
-
-      <!-- Name EN -->
-      <div class="field">
-        <label class="field-label">الاسم بالإنجليزي <span class="optional">(اختياري)</span></label>
-        <input v-model="nameEn" data-testid="name-en" type="text"
-          class="form-input"
-          placeholder="مثال: Samsung TV 55 inch"
-          @focus="($event.target as HTMLInputElement).style.borderColor = 'rgba(26,86,219,0.8)'"
-          @blur="($event.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.18)'" />
-      </div>
-
-      <!-- Barcode -->
-      <div class="field">
-        <label class="field-label">
-          الباركود <span class="optional">(اختياري)</span>
-        </label>
-        <input v-model="barcode" data-testid="barcode" type="text"
-          class="form-input"
-          placeholder="امسح الباركود أو أدخله يدوياً"
-          @focus="($event.target as HTMLInputElement).style.borderColor = 'rgba(26,86,219,0.8)'"
-          @blur="($event.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.18)'" />
-      </div>
-
-      <!-- Category -->
-      <div class="field">
-        <label class="field-label">
-          الفئة <span class="optional">(اختياري)</span>
-        </label>
-        <input v-model="category" data-testid="category" type="text"
-          class="form-input"
-          placeholder="مثال: إلكترونيات، شواحن..."
-          @focus="($event.target as HTMLInputElement).style.borderColor = 'rgba(26,86,219,0.8)'"
-          @blur="($event.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.18)'" />
       </div>
     </div>
 
@@ -235,39 +202,84 @@ onMounted(() => {
     <div class="form-section">
       <p class="section-label">المخزون</p>
 
-      <div class="grid-2">
+      <div class="field">
+        <label class="field-label">الكمية الحالية <span class="required">*</span></label>
+        <input v-model="stock" data-testid="current-stock" type="number" step="1"
+          class="form-input"
+          :class="{ 'input-error': errors['current-stock'] }"
+          placeholder="0"
+          @focus="($event.target as HTMLInputElement).style.borderColor = errors['current-stock'] ? '#EF4444' : 'rgba(26,86,219,0.8)'"
+          @blur="($event.target as HTMLInputElement).style.borderColor = errors['current-stock'] ? '#EF4444' : 'rgba(255,255,255,0.18)'"
+          @input="delete errors['current-stock']" />
+        <p v-if="errors['current-stock']" class="field-error">{{ errors['current-stock'] }}</p>
+      </div>
+    </div>
+
+    <!-- ── Optional Details Toggle ────────────────────── -->
+    <button type="button" class="expand-btn" @click="showOptional = !showOptional">
+      <svg class="expand-chevron" :class="{ 'expand-chevron-open': showOptional }" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+      </svg>
+      {{ showOptional ? 'إخفاء التفاصيل الإضافية' : 'تفاصيل إضافية (باركود، فئة، صورة...)' }}
+    </button>
+
+    <!-- ── Optional Fields ────────────────────────────── -->
+    <template v-if="showOptional">
+      <div class="form-section">
+        <p class="section-label">تفاصيل إضافية</p>
+
+        <!-- Name EN -->
         <div class="field">
-          <label class="field-label">الكمية الحالية <span class="required">*</span></label>
-          <input v-model="stock" data-testid="current-stock" type="number" step="1"
+          <label class="field-label">الاسم بالإنجليزي <span class="optional">(اختياري)</span></label>
+          <input v-model="nameEn" data-testid="name-en" type="text"
             class="form-input"
-            :class="{ 'input-error': errors['current-stock'] }"
-            placeholder="0"
-            @focus="($event.target as HTMLInputElement).style.borderColor = errors['current-stock'] ? '#EF4444' : 'rgba(26,86,219,0.8)'"
-            @blur="($event.target as HTMLInputElement).style.borderColor = errors['current-stock'] ? '#EF4444' : 'rgba(255,255,255,0.18)'"
-            @input="delete errors['current-stock']" />
-          <p v-if="errors['current-stock']" class="field-error">{{ errors['current-stock'] }}</p>
+            placeholder="مثال: Samsung TV 55 inch"
+            @focus="($event.target as HTMLInputElement).style.borderColor = 'rgba(26,86,219,0.8)'"
+            @blur="($event.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.18)'" />
         </div>
+
+        <!-- Barcode -->
         <div class="field">
-          <label class="field-label">حد التنبيه</label>
+          <label class="field-label">الباركود <span class="optional">(اختياري)</span></label>
+          <input v-model="barcode" data-testid="barcode" type="text"
+            class="form-input"
+            placeholder="امسح الباركود أو أدخله يدوياً"
+            @focus="($event.target as HTMLInputElement).style.borderColor = 'rgba(26,86,219,0.8)'"
+            @blur="($event.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.18)'" />
+        </div>
+
+        <!-- Category -->
+        <div class="field">
+          <label class="field-label">الفئة <span class="optional">(اختياري)</span></label>
+          <input v-model="category" data-testid="category" type="text"
+            class="form-input"
+            placeholder="مثال: إلكترونيات، شواحن..."
+            @focus="($event.target as HTMLInputElement).style.borderColor = 'rgba(26,86,219,0.8)'"
+            @blur="($event.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.18)'" />
+        </div>
+
+        <!-- Low stock threshold -->
+        <div class="field">
+          <label class="field-label">حد التنبيه للمخزون</label>
           <input v-model="threshold" data-testid="threshold" type="number" min="0" step="1"
             class="form-input"
             @focus="($event.target as HTMLInputElement).style.borderColor = 'rgba(26,86,219,0.8)'"
             @blur="($event.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.18)'" />
-          <p class="field-hint">إنذار عند الوصول لهذه الكمية</p>
+          <p class="field-hint">إنذار عند الوصول لهذه الكمية (الافتراضي: 5)</p>
         </div>
       </div>
-    </div>
 
-    <!-- ── Section: Photo ─────────────────────────────── -->
-    <div class="form-section">
-      <p class="section-label">الصورة <span class="optional">(اختياري)</span></p>
-      <p v-if="photoError" class="field-error mb-2">{{ photoError }}</p>
-      <ProductPhotoUpload
-        :model-value="photoUrl"
-        @change="photoUrl = $event"
-        @error="photoError = $event"
-      />
-    </div>
+      <!-- Photo -->
+      <div class="form-section">
+        <p class="section-label">الصورة <span class="optional">(اختياري)</span></p>
+        <p v-if="photoError" class="field-error mb-2">{{ photoError }}</p>
+        <ProductPhotoUpload
+          :model-value="photoUrl"
+          @change="photoUrl = $event"
+          @error="photoError = $event"
+        />
+      </div>
+    </template>
 
     <!-- ── Sticky Save Bar ─────────────────────────────── -->
     <div class="save-bar">
@@ -410,6 +422,42 @@ onMounted(() => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+}
+
+/* ── Optional Expand Button ──────────────────────── */
+.expand-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 0.75rem;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  color: #637285;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.10);
+  cursor: pointer;
+  text-align: right;
+  transition: color 0.15s, background 0.15s;
+}
+
+.expand-btn:hover {
+  color: #C8D5E8;
+  background: rgba(26,86,219,0.08);
+  border-color: rgba(26,86,219,0.20);
+}
+
+.expand-chevron {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+
+.expand-chevron-open {
+  transform: rotate(180deg);
 }
 
 /* ── Price Warning ────────────────────────────────── */
