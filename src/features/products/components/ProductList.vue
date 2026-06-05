@@ -102,7 +102,7 @@ function handleDelete(id: string) {
     </div>
 
     <!-- ─── DESKTOP TABLE (lg+) ─── -->
-    <div v-if="displayed.length" class="table-wrap hidden lg:block">
+    <div v-if="displayed.length" class="table-wrap">
       <table class="data-table" dir="rtl">
         <thead>
           <tr class="table-head-row">
@@ -205,8 +205,8 @@ function handleDelete(id: string) {
       <div v-if="openKebab" class="fixed inset-0 z-20" @click="closeKebab" />
     </div>
 
-    <!-- ─── MOBILE CARDS (< lg) — also always rendered for test compatibility ─── -->
-    <div class="mobile-list lg:hidden">
+    <!-- ─── MOBILE CARDS (< lg) ─── -->
+    <div class="mobile-list">
       <div
         v-for="p in displayed"
         :key="p.id"
@@ -367,7 +367,12 @@ function handleDelete(id: string) {
 
 /* ── Desktop Table ───────────────────────────────── */
 .table-wrap {
+  display: none;
   overflow-x: auto;
+}
+
+@media (min-width: 1024px) {
+  .table-wrap { display: block; }
 }
 
 .data-table {
@@ -548,6 +553,10 @@ function handleDelete(id: string) {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+@media (min-width: 1024px) {
+  .mobile-list { display: none; }
 }
 
 .mobile-card {

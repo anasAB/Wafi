@@ -62,7 +62,7 @@ async function confirmDelete() {
         <p class="product-count">{{ products.length }} منتج</p>
         <button
           type="button"
-          class="btn-primary hidden lg:flex"
+          class="btn-primary"
           @click="router.push('/products/add')"
         >
           <svg class="btn-icon" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
@@ -91,19 +91,6 @@ async function confirmDelete() {
         @delete="handleDelete"
       />
     </main>
-
-    <!-- Mobile FAB -->
-    <button
-      type="button"
-      data-testid="add-fab"
-      class="fab lg:hidden"
-      @click="router.push('/products/add')"
-    >
-      <svg class="btn-icon" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-      </svg>
-      إضافة منتج
-    </button>
 
     <AppDialog
       v-if="deleteTarget"
@@ -224,29 +211,4 @@ async function confirmDelete() {
   opacity: 0.85;
 }
 
-/* Mobile FAB */
-.fab {
-  position: fixed;
-  bottom: 5rem;
-  inset-inline-start: 1rem;
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  padding-inline: 1.25rem;
-  height: 3rem;
-  border-radius: 1rem;
-  font-size: 0.875rem;
-  font-weight: 700;
-  color: #fff;
-  background: linear-gradient(135deg, #1A56DB, #1248B3);
-  border: none;
-  box-shadow: 0 6px 24px rgba(26, 86, 219, 0.50);
-  z-index: 20;
-  cursor: pointer;
-  transition: transform 0.15s, opacity 0.15s;
-}
-
-.fab:active {
-  transform: scale(0.95);
-}
 </style>
