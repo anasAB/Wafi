@@ -26,13 +26,15 @@ export function buildAndDownload(
   } else {
     const ws  = wb.Sheets[wb.SheetNames[0]]
     const csv = XLSX.utils.sheet_to_csv(ws)
-    const bom = '﻿'
+    const bom = '\uFEFF'
     const blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8;' })
     const url  = URL.createObjectURL(blob)
     const a    = document.createElement('a')
     a.href     = url
     a.download = filename
+    document.body.appendChild(a)
     a.click()
+    document.body.removeChild(a)
     URL.revokeObjectURL(url)
   }
 }
