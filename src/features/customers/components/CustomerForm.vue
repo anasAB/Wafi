@@ -46,79 +46,169 @@ async function handleSave() {
 </script>
 
 <template>
-  <div class="flex flex-col gap-4" dir="rtl">
+  <div class="form-root" dir="rtl">
     <!-- Name -->
-    <div>
-      <label class="block text-sm text-text-muted mb-1">الاسم *</label>
+    <div class="field">
+      <label class="field-label">الاسم *</label>
       <input
         v-model="name"
         data-testid="name-input"
         type="text"
         placeholder="اسم الزبون أو المحل"
-        class="w-full border border-border-glass rounded-xl px-4 py-3 bg-surface-raised text-text-primary
-               focus:outline-none focus:ring-2 focus:ring-gold-primary/40 text-sm"
-        :class="errors['name'] ? 'border-red-500' : ''"
+        class="field-input"
+        :class="{ 'field-input--error': errors['name'] }"
         @input="delete errors['name']"
       />
-      <p v-if="errors['name']" data-testid="error-name" class="text-xs text-red-500 mt-1">{{ errors['name'] }}</p>
+      <p v-if="errors['name']" data-testid="error-name" class="field-error">{{ errors['name'] }}</p>
     </div>
 
     <!-- Phone -->
-    <div>
-      <label class="block text-sm text-text-muted mb-1">الهاتف</label>
+    <div class="field">
+      <label class="field-label">الهاتف</label>
       <input
         v-model="phone"
         data-testid="phone-input"
         type="tel"
         placeholder="09XXXXXXXX"
-        class="w-full border border-border-glass rounded-xl px-4 py-3 bg-surface-raised text-text-primary
-               focus:outline-none focus:ring-2 focus:ring-gold-primary/40 text-sm"
+        class="field-input"
       />
     </div>
 
     <!-- Mobile -->
-    <div>
-      <label class="block text-sm text-text-muted mb-1">الجوال</label>
+    <div class="field">
+      <label class="field-label">الجوال</label>
       <input
         v-model="mobile"
         data-testid="mobile-input"
         type="tel"
         placeholder="09XXXXXXXX"
-        class="w-full border border-border-glass rounded-xl px-4 py-3 bg-surface-raised text-text-primary
-               focus:outline-none focus:ring-2 focus:ring-gold-primary/40 text-sm"
+        class="field-input"
       />
     </div>
 
     <!-- Address -->
-    <div>
-      <label class="block text-sm text-text-muted mb-1">العنوان</label>
+    <div class="field">
+      <label class="field-label">العنوان</label>
       <input
         v-model="address"
         data-testid="address-input"
         type="text"
         placeholder="الحي أو المنطقة"
-        class="w-full border border-border-glass rounded-xl px-4 py-3 bg-surface-raised text-text-primary
-               focus:outline-none focus:ring-2 focus:ring-gold-primary/40 text-sm"
+        class="field-input"
       />
     </div>
 
     <!-- Buttons -->
-    <div class="flex gap-2 pt-2">
+    <div class="actions">
       <button
         type="button"
         data-testid="save-btn"
         :disabled="saving"
-        class="flex-1 h-11 rounded-xl text-sm font-semibold text-bg-void disabled:opacity-50 transition-colors"
-        style="background: linear-gradient(135deg, var(--color-gold-primary), var(--color-gold-to))"
+        class="btn-primary"
         @click="handleSave"
       >{{ saving ? '...' : (initial ? 'حفظ التغييرات' : 'إضافة زبون') }}</button>
 
       <button
         type="button"
         data-testid="cancel-btn"
-        class="h-11 px-5 rounded-xl text-sm text-text-muted border border-border-glass"
+        class="btn-ghost"
         @click="emit('cancel')"
       >إلغاء</button>
     </div>
   </div>
 </template>
+
+<style scoped>
+/* ── Root ────────────────────────────────────────────────── */
+.form-root {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  font-family: 'Tajawal', system-ui, sans-serif;
+}
+
+/* ── Field ───────────────────────────────────────────────── */
+.field { display: flex; flex-direction: column; }
+
+.field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #637285;
+  margin-bottom: 6px;
+  display: block;
+}
+
+.field-input {
+  width: 100%;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 0.75rem;
+  padding: 0.625rem 0.875rem;
+  color: #E8EDF5;
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  font-family: inherit;
+  height: 44px;
+}
+
+.field-input::placeholder { color: #3D4F6B; }
+
+.field-input:focus {
+  border-color: rgba(26,86,219,0.8);
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.25), 0 0 12px rgba(26,86,219,0.15);
+}
+
+.field-input--error {
+  border-color: rgba(239,68,68,0.8) !important;
+}
+
+.field-error {
+  font-size: 0.75rem;
+  color: #EF4444;
+  margin-top: 0.25rem;
+}
+
+/* ── Actions ─────────────────────────────────────────────── */
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+}
+
+/* ── Primary button ──────────────────────────────────────── */
+.btn-primary {
+  flex: 1;
+  height: 44px;
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(26,86,219,0.40);
+  transition: opacity 0.15s, box-shadow 0.15s, transform 0.1s;
+  font-family: inherit;
+}
+
+.btn-primary:hover { opacity: 0.88; box-shadow: 0 6px 24px rgba(26,86,219,0.55); }
+.btn-primary:active { transform: scale(0.98); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Ghost button ────────────────────────────────────────── */
+.btn-ghost {
+  height: 44px;
+  padding-inline: 1.25rem;
+  border-radius: 0.75rem;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.18);
+  color: #E8EDF5;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background 0.12s;
+  font-family: inherit;
+}
+
+.btn-ghost:hover { background: rgba(255,255,255,0.06); }
+</style>
