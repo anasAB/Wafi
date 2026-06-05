@@ -171,6 +171,7 @@ const return_line_items = new Table({
   unit_price_usd: column.real,
   unit_price_syp: column.real,
   restock:        column.integer,  // 0 | 1
+  sync_status:    column.text,
 })
 
 const return_reasons = new Table({

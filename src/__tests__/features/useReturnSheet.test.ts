@@ -142,6 +142,16 @@ describe('useReturnSheet — confirm()', () => {
     vi.clearAllMocks()
   })
 
+  // Helper: creates a per-test txExecute spy and wires writeTransaction to use it.
+  // Returns txExecute so tests can inspect calls on tx.execute.
+  function setupWriteTransaction(txMockFn?: ReturnType<typeof vi.fn>) {
+    const txExecute = txMockFn ?? vi.fn().mockResolvedValue({ rows: { _array: [] } })
+    vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => {
+      await fn({ execute: txExecute })
+    })
+    return txExecute
+  }
+
   async function loadSheet(customerId: string | null = 'cust-1') {
     // call order: execute(sale), getAll(lineItems), getAll(priorReturns)
     vi.mocked(db.execute).mockResolvedValueOnce({
@@ -152,19 +162,21 @@ describe('useReturnSheet — confirm()', () => {
       .mockResolvedValueOnce([] as any)  // no prior returns
     const sheet = useReturnSheet(SALE_ID)
     await sheet.load()
-    sheet.lines.value[0].selected   = true
+    sheet.lines.value[0].selected    = true
     sheet.lines.value[0].qtyToReturn = 1
-    sheet.lines.value[0].restock    = true
-    sheet.refundMethod.value        = 'cash_usd'
-    // After load(), reset execute mock for confirm() calls
+    sheet.lines.value[0].restock     = true
+    sheet.refundMethod.value         = 'cash_usd'
+    // After load(), configure exchange-rate lookup (db.execute, outside transaction)
     vi.mocked(db.execute).mockResolvedValue({ rows: { _array: [{ rate: 12500 }] } } as any)
     return sheet
   }
 
   it('inserts a returns row with correct fields', async () => {
+    const txExecute = setupWriteTransaction()
     const { confirm } = await loadSheet()
     await confirm()
-    const insertCall = (vi.mocked(db.execute).mock.calls as any[])
+    expect(db.writeTransaction).toHaveBeenCalled()
+    const insertCall = (txExecute.mock.calls as any[])
       .find(([sql]) => sql.includes('INSERT INTO returns'))
     expect(insertCall).toBeDefined()
     expect(insertCall[1][2]).toBe(SALE_ID)          // original_sale_id
@@ -173,9 +185,10 @@ describe('useReturnSheet — confirm()', () => {
   })
 
   it('inserts return_line_items for each selected line', async () => {
+    const txExecute = setupWriteTransaction()
     const { confirm } = await loadSheet()
     await confirm()
-    const insertCall = (vi.mocked(db.execute).mock.calls as any[])
+    const insertCall = (txExecute.mock.calls as any[])
       .find(([sql]) => sql.includes('INSERT INTO return_line_items'))
     expect(insertCall).toBeDefined()
     expect(insertCall[1][3]).toBe('p1')   // product_id
@@ -184,33 +197,40 @@ describe('useReturnSheet — confirm()', () => {
   })
 
   it('updates product stock and inserts stock_adjustment when restock=true', async () => {
-    // loadSheet sets restock=true. db.execute mock returns { rate:12500 } for all calls,
-    // so SELECT current_stock returns undefined → oldStock=0, newStock=1
+    // txExecute: SELECT current_stock returns 0, rest succeed
+    const txExecute = vi.fn()
+      .mockResolvedValueOnce({ rows: { _array: [] } })  // INSERT returns
+      .mockResolvedValueOnce({ rows: { _array: [] } })  // INSERT return_line_items
+      .mockResolvedValueOnce({ rows: { _array: [{ current_stock: 0 }] } })  // SELECT current_stock
+      .mockResolvedValue({})  // UPDATE products + INSERT stock_adjustments
+    setupWriteTransaction(txExecute)
     const sheet = await loadSheet(null)
     await sheet.confirm()
-    const updateCall = (vi.mocked(db.execute).mock.calls as any[])
+    const updateCall = (txExecute.mock.calls as any[])
       .find(([sql]: [string]) => sql.includes('UPDATE products'))
     expect(updateCall).toBeDefined()
     expect(updateCall[1][2]).toBe('p1')  // product_id (index 2: [newStock, now, product_id])
-    const adjCall = (vi.mocked(db.execute).mock.calls as any[])
+    const adjCall = (txExecute.mock.calls as any[])
       .find(([sql]: [string]) => sql.includes('INSERT INTO stock_adjustments'))
     expect(adjCall).toBeDefined()
   })
 
   it('does NOT update stock when restock=false', async () => {
+    const txExecute = setupWriteTransaction()
     const sheet = await loadSheet(null)
     sheet.lines.value[0].restock = false  // override the default restock=true
     await sheet.confirm()
-    const updateCall = (vi.mocked(db.execute).mock.calls as any[])
+    const updateCall = (txExecute.mock.calls as any[])
       .find(([sql]: [string]) => sql.includes('UPDATE products'))
     expect(updateCall).toBeUndefined()
   })
 
   it('inserts negative customer_payments row for store_credit', async () => {
+    const txExecute = setupWriteTransaction()
     const sheet = await loadSheet('cust-1')
     sheet.refundMethod.value = 'store_credit'  // override cash_usd default
     await sheet.confirm()
-    const cpCall = (vi.mocked(db.execute).mock.calls as any[])
+    const cpCall = (txExecute.mock.calls as any[])
       .find(([sql]: [string]) => sql.includes('INSERT INTO customer_payments'))
     expect(cpCall).toBeDefined()
     expect(cpCall[1][4]).toBe(-500)     // amount_usd is negative
@@ -218,9 +238,10 @@ describe('useReturnSheet — confirm()', () => {
   })
 
   it('does NOT insert customer_payments for cash_usd method', async () => {
+    const txExecute = setupWriteTransaction()
     const sheet = await loadSheet('cust-1')  // has customer but method is cash_usd
     await sheet.confirm()
-    const cpCall = (vi.mocked(db.execute).mock.calls as any[])
+    const cpCall = (txExecute.mock.calls as any[])
       .find(([sql]: [string]) => sql.includes('INSERT INTO customer_payments'))
     expect(cpCall).toBeUndefined()
   })

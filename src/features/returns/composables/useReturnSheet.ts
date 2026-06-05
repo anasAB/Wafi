@@ -74,7 +74,7 @@ export function useReturnSheet(saleId: string) {
 
     const { shopId, deviceId } = useDeviceStore()
 
-    // Get current exchange rate
+    // Get current exchange rate (outside transaction — read-only lookup)
     const rateResult = await db.execute(
       `SELECT rate FROM exchange_rates WHERE shop_id = ? ORDER BY set_at DESC LIMIT 1`,
       [shopId],
@@ -85,51 +85,54 @@ export function useReturnSheet(saleId: string) {
     const refundAmountUsd = selectedLines.reduce((sum, l) => sum + l.qtyToReturn * l.unitPriceUsd, 0)
     const refundAmountSyp = refundAmountUsd * exchangeRate
 
-    // Insert returns row
     const returnId  = uuidv4()
     const now       = new Date().toISOString()
-    await db.execute(
-      `INSERT INTO returns (id, shop_id, original_sale_id, created_at, refund_method, refund_amount_usd, refund_amount_syp, exchange_rate_at_return, reason, notes, sync_status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-      [returnId, shopId, saleId, now, refundMethod.value!, refundAmountUsd, refundAmountSyp, exchangeRate, reason.value || null, notes.value || null],
-    )
 
-    // Insert return_line_items
-    for (const line of selectedLines) {
-      await db.execute(
-        `INSERT INTO return_line_items (id, return_id, shop_id, product_id, qty_returned, unit_price_usd, unit_price_syp, restock)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [uuidv4(), returnId, shopId, line.productId, line.qtyToReturn, line.unitPriceUsd, line.unitPriceUsd * exchangeRate, line.restock ? 1 : 0],
+    await db.writeTransaction(async (tx) => {
+      // Insert returns row
+      await tx.execute(
+        `INSERT INTO returns (id, shop_id, original_sale_id, created_at, refund_method, refund_amount_usd, refund_amount_syp, exchange_rate_at_return, reason, notes, sync_status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+        [returnId, shopId, saleId, now, refundMethod.value!, refundAmountUsd, refundAmountSyp, exchangeRate, reason.value || null, notes.value || null],
       )
-    }
 
-    // Restock + stock_adjustments
-    for (const line of selectedLines.filter(l => l.restock)) {
-      const stockResult = await db.execute(
-        `SELECT current_stock FROM products WHERE id = ?`,
-        [line.productId],
-      )
-      const oldStock: number = (stockResult as any).rows._array[0]?.current_stock ?? 0
-      const newStock          = oldStock + line.qtyToReturn
-      await db.execute(
-        `UPDATE products SET current_stock = ?, updated_at = ?, sync_status = 'pending' WHERE id = ?`,
-        [newStock, now, line.productId],
-      )
-      await db.execute(
-        `INSERT INTO stock_adjustments (id, shop_id, product_id, old_value, new_value, reason, created_at, device_id)
-         VALUES (?, ?, ?, ?, ?, 'return', ?, ?)`,
-        [uuidv4(), shopId, line.productId, oldStock, newStock, now, deviceId],
-      )
-    }
+      // Insert return_line_items
+      for (const line of selectedLines) {
+        await tx.execute(
+          `INSERT INTO return_line_items (id, return_id, shop_id, product_id, qty_returned, unit_price_usd, unit_price_syp, restock, sync_status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+          [uuidv4(), returnId, shopId, line.productId, line.qtyToReturn, line.unitPriceUsd, line.unitPriceUsd * exchangeRate, line.restock ? 1 : 0],
+        )
+      }
 
-    // Store credit
-    if (refundMethod.value === 'store_credit' && customerId.value) {
-      await db.execute(
-        `INSERT INTO customer_payments (id, shop_id, customer_id, sale_id, amount_usd, currency, amount_raw, exchange_rate_at_payment, notes, paid_at, created_at, sync_status)
-         VALUES (?, ?, ?, ?, ?, 'USD', ?, ?, 'مرتجع', ?, ?, 'pending')`,
-        [uuidv4(), shopId, customerId.value, saleId, -refundAmountUsd, -refundAmountUsd, exchangeRate, now.slice(0, 10), now],
-      )
-    }
+      // Restock + stock_adjustments
+      for (const line of selectedLines.filter(l => l.restock)) {
+        const stockResult = await tx.execute(
+          `SELECT current_stock FROM products WHERE id = ?`,
+          [line.productId],
+        )
+        const oldStock: number = (stockResult as any).rows._array[0]?.current_stock ?? 0
+        const newStock          = oldStock + line.qtyToReturn
+        await tx.execute(
+          `UPDATE products SET current_stock = ?, updated_at = ?, sync_status = 'pending' WHERE id = ?`,
+          [newStock, now, line.productId],
+        )
+        await tx.execute(
+          `INSERT INTO stock_adjustments (id, shop_id, product_id, old_value, new_value, reason, created_at, device_id)
+           VALUES (?, ?, ?, ?, ?, 'return', ?, ?)`,
+          [uuidv4(), shopId, line.productId, oldStock, newStock, now, deviceId],
+        )
+      }
+
+      // Store credit
+      if (refundMethod.value === 'store_credit' && customerId.value) {
+        await tx.execute(
+          `INSERT INTO customer_payments (id, shop_id, customer_id, sale_id, amount_usd, currency, amount_raw, exchange_rate_at_payment, notes, paid_at, created_at, sync_status)
+           VALUES (?, ?, ?, ?, ?, 'USD', ?, ?, 'مرتجع', ?, ?, 'pending')`,
+          [uuidv4(), shopId, customerId.value, saleId, -refundAmountUsd, -refundAmountUsd, exchangeRate, now.slice(0, 10), now],
+        )
+      }
+    })
   }
 
   return { lines, refundMethod, reason, notes, hasCustomer, refundTotalUsd, canConfirm, load, confirm }
