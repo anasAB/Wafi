@@ -5,20 +5,24 @@
 
 /* ─── Design Tokens ─────────────────────────────────── */
 @theme {
-  /* Colors */
-  --color-gold-primary:   #C9A84C;
-  --color-gold-to:        #A07830;
-  --color-gold-subtle:    rgb(201 168 76 / 0.25);
+  /* Colors — brand blue default (#1A56DB) */
+  --color-gold-primary:   #1A56DB;
+  --color-gold-to:        #1248B3;
+  --color-gold-subtle:    rgb(26 86 219 / 0.22);
   --color-platinum:       #E8E8E8;
-  --color-text-primary:   #F5F0E8;
-  --color-text-muted:     #8A8070;
-  --color-bg-void:        #05080F;
-  --color-surface-glass:  rgb(255 255 255 / 0.06);
-  --color-surface-raised: rgb(255 255 255 / 0.10);
-  --color-border-glass:   rgb(255 255 255 / 0.12);
-  --color-border-gold:    rgb(201 168 76 / 0.30);
-  --color-btn-ghost-text:   #E8E8E8;
-  --color-btn-ghost-border: rgb(255 255 255 / 0.20);
+  --color-text-primary:   #E8EDF5;
+  --color-text-muted:     #637285;
+  --color-bg-void:        #06090F;
+  --color-surface-glass:  rgb(255 255 255 / 0.05);
+  --color-surface-raised: rgb(255 255 255 / 0.09);
+  --color-border-glass:   rgb(255 255 255 / 0.07);
+  --color-border-gold:    rgb(26 86 219 / 0.25);
+  --color-btn-ghost-text:   #E8EDF5;
+  --color-btn-ghost-border: rgb(255 255 255 / 0.18);
+  --color-glow-blue:   rgba(26, 86, 219, 0.15);
+  --color-border-glow: rgba(26, 86, 219, 0.28);
+  --color-glow-green:  rgba(34, 197, 94, 0.12);
+  --color-glow-amber:  rgba(245, 158, 11, 0.10);
 
   /* Typography */
   --font-display:    'Cormorant Garant', Georgia, serif;
@@ -72,21 +76,24 @@ html.dark { color-scheme: dark; }
 /* ─── Glass Utilities ────────────────────────────────── */
 @utility glass-sm {
   backdrop-filter: blur(12px) saturate(160%);
-  background-color: var(--color-surface-glass);
-  border: 1px solid var(--color-border-glass);
+  background: linear-gradient(135deg, rgba(26,86,219,0.10), rgba(255,255,255,0.04));
+  border: 1px solid rgba(26,86,219,0.28);
   border-radius: 1rem;
+  box-shadow: 0 4px 24px rgba(26,86,219,0.12), inset 0 1px 0 rgba(255,255,255,0.07);
 }
 @utility glass-md {
   backdrop-filter: blur(20px) saturate(180%);
-  background-color: var(--color-surface-glass);
-  border: 1px solid var(--color-border-glass);
+  background: linear-gradient(135deg, rgba(26,86,219,0.10), rgba(255,255,255,0.04));
+  border: 1px solid rgba(26,86,219,0.28);
   border-radius: 1rem;
+  box-shadow: 0 4px 24px rgba(26,86,219,0.12), inset 0 1px 0 rgba(255,255,255,0.07);
 }
 @utility glass-lg {
   backdrop-filter: blur(32px) saturate(200%);
-  background-color: var(--color-surface-glass);
-  border: 1px solid var(--color-border-glass);
+  background: linear-gradient(135deg, rgba(26,86,219,0.10), rgba(255,255,255,0.04));
+  border: 1px solid rgba(26,86,219,0.28);
   border-radius: 1rem;
+  box-shadow: 0 4px 24px rgba(26,86,219,0.12), inset 0 1px 0 rgba(255,255,255,0.07);
 }
 
 /* ─── Button Utilities ───────────────────────────────── */
@@ -96,12 +103,12 @@ html.dark { color-scheme: dark; }
   justify-content: center;
   height: 3.5rem;
   padding-inline: 2rem;
-  border-radius: 1rem;
+  border-radius: 0.75rem;
   font-size: 1rem;
   font-weight: 600;
-  color: #05080F;
+  color: #ffffff;
   background: linear-gradient(135deg, var(--color-gold-primary), var(--color-gold-to));
-  box-shadow: 0 0 24px var(--color-gold-subtle);
+  box-shadow: 0 4px 16px var(--color-gold-subtle);
   border: none;
   cursor: pointer;
   text-decoration: none;
@@ -113,7 +120,7 @@ html.dark { color-scheme: dark; }
   justify-content: center;
   height: 3.5rem;
   padding-inline: 2rem;
-  border-radius: 1rem;
+  border-radius: 0.75rem;
   font-size: 1rem;
   font-weight: 500;
   color: var(--color-btn-ghost-text);
@@ -122,6 +129,36 @@ html.dark { color-scheme: dark; }
   cursor: pointer;
   text-decoration: none;
   transition: background 0.2s ease;
+}
+
+/* ─── Card Utilities ─────────────────────────────────── */
+@utility card {
+  background-color: #0D1828;
+  border: 1px solid var(--color-border-glass);
+  border-radius: 1rem;
+}
+
+/* ─── Form Input Utilities ───────────────────────────── */
+@utility form-input {
+  width: 100%;
+  border-radius: 0.75rem;
+  padding: 0.625rem 0.875rem;
+  font-size: 0.875rem;
+  color: #E8EDF5;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+@utility form-input-focus {
+  border-color: rgba(26, 86, 219, 0.8);
+  box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.2);
+}
+@utility form-section {
+  background: #0D1828;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 1rem;
+  padding: 1rem;
 }
 
 /* ─── Animations ─────────────────────────────────────── */
