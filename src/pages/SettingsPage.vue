@@ -81,6 +81,25 @@ const APP_VERSION = 'v0.1.0'
           </svg>
         </button>
 
+        <!-- Return reasons -->
+        <button
+          type="button"
+          class="nav-row"
+          @click="router.push('/settings/return-reasons')"
+        >
+          <div class="nav-row-start">
+            <span class="nav-icon-wrap">
+              <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
+              </svg>
+            </span>
+            <span class="nav-title">أسباب الإرجاع</span>
+          </div>
+          <svg class="nav-arrow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+
         <!-- Sign out (disabled) -->
         <button type="button" class="nav-row nav-row--danger nav-row--last" disabled>
           <div class="nav-row-start">
@@ -147,6 +166,7 @@ const APP_VERSION = 'v0.1.0'
             to="/settings/staff"
             class="desktop-nav-link"
             :class="route.path === '/settings/staff' ? 'desktop-nav-link--active' : ''"
+            style="border-bottom: 1px solid rgba(26,86,219,0.14)"
           >
             <div class="nav-row-start">
               <svg class="nav-icon-sm" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
@@ -155,6 +175,20 @@ const APP_VERSION = 'v0.1.0'
               <span>الموظفون</span>
             </div>
             <span v-if="route.path === '/settings/staff'" class="active-dot" />
+          </RouterLink>
+
+          <RouterLink
+            to="/settings/return-reasons"
+            class="desktop-nav-link"
+            :class="route.path === '/settings/return-reasons' ? 'desktop-nav-link--active' : ''"
+          >
+            <div class="nav-row-start">
+              <svg class="nav-icon-sm" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
+              </svg>
+              <span>أسباب الإرجاع</span>
+            </div>
+            <span v-if="route.path === '/settings/return-reasons'" class="active-dot" />
           </RouterLink>
 
           <!-- About row -->

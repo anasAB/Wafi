@@ -18,9 +18,10 @@ export default createRouter({
       path: '/settings',
       component: () => import('@/pages/SettingsPage.vue'),
       children: [
-        { path: 'personal', component: () => import('@/features/settings/screens/PersonalPreferencesScreen.vue') },
-        { path: 'receipt',  component: () => import('@/features/receipt/ReceiptSettingsScreen.vue') },
-        { path: 'staff',    component: () => import('@/features/staff/components/StaffList.vue') },
+        { path: 'personal',       component: () => import('@/features/settings/screens/PersonalPreferencesScreen.vue') },
+        { path: 'receipt',        component: () => import('@/features/receipt/ReceiptSettingsScreen.vue') },
+        { path: 'staff',          component: () => import('@/features/staff/components/StaffList.vue') },
+        { path: 'return-reasons', component: () => import('@/features/settings/screens/ReturnReasonsScreen.vue') },
       ],
     },
     { path: '/exports', component: () => import('@/features/exports/ExportPage.vue') },
