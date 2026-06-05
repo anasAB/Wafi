@@ -68,6 +68,10 @@ export function useReturnSheet(saleId: string) {
   }
 
   async function confirm(): Promise<void> {
+    if (!refundMethod.value || !lines.value.some(l => l.selected)) {
+      throw new Error('confirm() called without valid state')
+    }
+
     const { shopId, deviceId } = useDeviceStore()
 
     // Get current exchange rate
@@ -108,8 +112,8 @@ export function useReturnSheet(saleId: string) {
       const oldStock: number = (stockResult as any).rows._array[0]?.current_stock ?? 0
       const newStock          = oldStock + line.qtyToReturn
       await db.execute(
-        `UPDATE products SET current_stock = ? WHERE id = ?`,
-        [newStock, line.productId],
+        `UPDATE products SET current_stock = ?, updated_at = ?, sync_status = 'pending' WHERE id = ?`,
+        [newStock, now, line.productId],
       )
       await db.execute(
         `INSERT INTO stock_adjustments (id, shop_id, product_id, old_value, new_value, reason, created_at, device_id)
@@ -123,7 +127,7 @@ export function useReturnSheet(saleId: string) {
       await db.execute(
         `INSERT INTO customer_payments (id, shop_id, customer_id, sale_id, amount_usd, currency, amount_raw, exchange_rate_at_payment, notes, paid_at, created_at, sync_status)
          VALUES (?, ?, ?, ?, ?, 'USD', ?, ?, 'مرتجع', ?, ?, 'pending')`,
-        [uuidv4(), shopId, customerId.value, saleId, -refundAmountUsd, -refundAmountUsd, exchangeRate, now, now],
+        [uuidv4(), shopId, customerId.value, saleId, -refundAmountUsd, -refundAmountUsd, exchangeRate, now.slice(0, 10), now],
       )
     }
   }
