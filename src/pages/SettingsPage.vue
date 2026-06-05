@@ -11,125 +11,410 @@ const APP_VERSION = 'v0.1.0'
 </script>
 
 <template>
-  <div class="flex flex-col min-h-dvh bg-bg-void" dir="rtl">
+  <div class="page-root" dir="rtl">
     <AppHeader
       :title="t('settings.title')"
       :show-back="true"
       @back="router.back()"
     />
 
-    <!-- Mobile layout (hidden on md+) -->
-    <main class="flex-1 md:hidden px-4 py-4 max-w-lg mx-auto w-full">
+    <!-- Mobile layout (hidden on lg+) -->
+    <main class="mobile-main lg:hidden">
 
-      <p class="text-xs font-medium text-text-muted mb-2 px-1 tracking-widest uppercase">{{ t('settings.personal') }}</p>
-      <div class="glass-sm overflow-hidden mb-4">
+      <p class="section-label">{{ t('settings.personal') }}</p>
+      <div class="settings-card">
+
+        <!-- Personal preferences -->
         <button
           type="button"
-          class="w-full flex items-center justify-between px-4 py-3.5 border-b border-border-glass text-sm text-text-primary active:bg-surface-glass"
+          class="nav-row"
           @click="router.push('/settings/personal')"
         >
-          <span>{{ t('settings.personal') }}</span>
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-text-muted rtl:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <div class="nav-row-start">
+            <span class="nav-icon-wrap">
+              <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </span>
+            <span class="nav-title">{{ t('settings.personal') }}</span>
+          </div>
+          <svg class="nav-arrow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
           </svg>
         </button>
+
+        <!-- Receipt settings -->
         <button
           type="button"
-          class="w-full flex items-center justify-between px-4 py-3.5 border-b border-border-glass text-sm text-text-primary active:bg-surface-glass"
+          class="nav-row"
           @click="router.push('/settings/receipt')"
         >
-          <span>إعدادات الفاتورة</span>
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-text-muted rtl:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <div class="nav-row-start">
+            <span class="nav-icon-wrap">
+              <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z" />
+              </svg>
+            </span>
+            <span class="nav-title">إعدادات الفاتورة</span>
+          </div>
+          <svg class="nav-arrow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
           </svg>
         </button>
+
+        <!-- Staff -->
         <button
           type="button"
-          class="w-full flex items-center justify-between px-4 py-3.5 border-b border-border-glass text-sm text-text-primary active:bg-surface-glass"
+          class="nav-row"
           @click="router.push('/settings/staff')"
         >
-          <span>الموظفون</span>
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-text-muted rtl:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <div class="nav-row-start">
+            <span class="nav-icon-wrap">
+              <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+              </svg>
+            </span>
+            <span class="nav-title">الموظفون</span>
+          </div>
+          <svg class="nav-arrow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
           </svg>
         </button>
-        <button
-          type="button"
-          class="w-full flex items-center justify-between px-4 py-3.5 text-sm text-red-500 opacity-50 cursor-not-allowed"
-          disabled
-        >
-          <span>{{ t('personal.signOut') }}</span>
-          <span class="text-xs text-text-muted">{{ t('common.comingSoon') }}</span>
+
+        <!-- Sign out (disabled) -->
+        <button type="button" class="nav-row nav-row--danger nav-row--last" disabled>
+          <div class="nav-row-start">
+            <span class="nav-icon-wrap nav-icon-wrap--danger">
+              <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+              </svg>
+            </span>
+            <span class="nav-title nav-title--danger">{{ t('personal.signOut') }}</span>
+          </div>
+          <span class="coming-soon">{{ t('common.comingSoon') }}</span>
         </button>
+
       </div>
 
-      <p class="text-xs font-medium text-text-muted mb-2 px-1 tracking-widest uppercase">{{ t('settings.about') }}</p>
-      <div class="glass-sm overflow-hidden">
-        <div class="flex items-center justify-between px-4 py-3.5 text-sm text-text-primary">
-          <span>{{ t('personal.aboutVersionLabel') }}</span>
-          <span class="text-xs text-text-muted">{{ APP_VERSION }}</span>
+      <p class="section-label">{{ t('settings.about') }}</p>
+      <div class="settings-card">
+        <div class="about-row">
+          <span class="nav-title">{{ t('personal.aboutVersionLabel') }}</span>
+          <span class="version-badge">{{ APP_VERSION }}</span>
         </div>
       </div>
 
     </main>
 
-    <!-- Desktop layout (md+): sidebar (right in RTL) + content panel (left) -->
-    <div class="hidden md:flex flex-1 max-w-4xl mx-auto w-full px-6 py-6 gap-6">
+    <!-- Desktop layout (lg+) -->
+    <div class="desktop-layout hidden lg:flex">
 
-      <!-- Sidebar nav — appears on RIGHT in RTL because it's first in flex-row -->
-      <nav class="w-52 flex-shrink-0">
-        <div class="glass-sm overflow-hidden">
+      <!-- Settings nav sidebar -->
+      <nav class="desktop-nav">
+        <div class="settings-card">
+
           <RouterLink
             to="/settings/personal"
-            class="flex items-center justify-between px-4 py-3.5 text-sm border-b border-border-glass transition-colors"
-            :class="route.path === '/settings/personal'
-              ? 'text-gold-primary bg-surface-raised font-semibold'
-              : 'text-text-muted hover:bg-surface-glass hover:text-text-primary'"
+            class="desktop-nav-link"
+            :class="route.path === '/settings/personal' ? 'desktop-nav-link--active' : ''"
+            style="border-bottom: 1px solid rgba(26,86,219,0.14)"
           >
-            <span>{{ t('settings.personal') }}</span>
-            <span v-if="route.path === '/settings/personal'" class="w-1.5 h-1.5 rounded-full bg-gold-primary" />
+            <div class="nav-row-start">
+              <svg class="nav-icon-sm" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span>{{ t('settings.personal') }}</span>
+            </div>
+            <span v-if="route.path === '/settings/personal'" class="active-dot" />
           </RouterLink>
+
           <RouterLink
             to="/settings/receipt"
-            class="flex items-center justify-between px-4 py-3.5 text-sm border-b border-border-glass transition-colors"
-            :class="route.path === '/settings/receipt'
-              ? 'text-gold-primary bg-surface-raised font-semibold'
-              : 'text-text-muted hover:bg-surface-glass hover:text-text-primary'"
+            class="desktop-nav-link"
+            :class="route.path === '/settings/receipt' ? 'desktop-nav-link--active' : ''"
+            style="border-bottom: 1px solid rgba(26,86,219,0.14)"
           >
-            <span>إعدادات الفاتورة</span>
-            <span v-if="route.path === '/settings/receipt'" class="w-1.5 h-1.5 rounded-full bg-gold-primary" />
+            <div class="nav-row-start">
+              <svg class="nav-icon-sm" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z" />
+              </svg>
+              <span>إعدادات الفاتورة</span>
+            </div>
+            <span v-if="route.path === '/settings/receipt'" class="active-dot" />
           </RouterLink>
+
           <RouterLink
             to="/settings/staff"
-            class="flex items-center justify-between px-4 py-3.5 text-sm border-b border-border-glass transition-colors"
-            :class="route.path === '/settings/staff'
-              ? 'text-gold-primary bg-surface-raised font-semibold'
-              : 'text-text-muted hover:bg-surface-glass hover:text-text-primary'"
+            class="desktop-nav-link"
+            :class="route.path === '/settings/staff' ? 'desktop-nav-link--active' : ''"
           >
-            <span>الموظفون</span>
-            <span v-if="route.path === '/settings/staff'" class="w-1.5 h-1.5 rounded-full bg-gold-primary" />
+            <div class="nav-row-start">
+              <svg class="nav-icon-sm" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+              </svg>
+              <span>الموظفون</span>
+            </div>
+            <span v-if="route.path === '/settings/staff'" class="active-dot" />
           </RouterLink>
-          <div class="flex items-center justify-between px-4 py-3.5 text-sm text-text-muted">
-            <span>{{ t('settings.about') }}</span>
-            <span class="text-xs opacity-50">{{ APP_VERSION }}</span>
+
+          <!-- About row -->
+          <div class="desktop-about-row">
+            <span class="about-label">{{ t('settings.about') }}</span>
+            <span class="version-mono">{{ APP_VERSION }}</span>
           </div>
         </div>
       </nav>
 
       <!-- Content panel -->
-      <div class="flex-1 glass-sm overflow-hidden min-h-0">
+      <div class="content-panel">
         <RouterView />
-        <div
-          v-if="route.path === '/settings'"
-          class="flex flex-col items-center justify-center h-48 gap-2 text-text-muted"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+        <!-- Placeholder when no section is selected -->
+        <div v-if="route.path === '/settings'" class="content-placeholder">
+          <svg class="placeholder-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
           </svg>
-          <p class="text-sm">{{ t('settings.selectSection') }}</p>
+          <p class="placeholder-text">{{ t('settings.selectSection') }}</p>
         </div>
       </div>
 
     </div>
   </div>
 </template>
+
+<style scoped>
+/* ─── Layout ─────────────────────────────────────────────── */
+.page-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: #06090F;
+  font-family: 'Tajawal', system-ui, sans-serif;
+}
+
+/* ─── Mobile main ─────────────────────────────────────────── */
+.mobile-main {
+  flex: 1;
+  padding: 20px 16px;
+  max-width: 512px;
+  margin: 0 auto;
+  width: 100%;
+  padding-bottom: 80px;
+}
+
+/* ─── Section label ───────────────────────────────────────── */
+.section-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #3D4F6B;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 8px 4px;
+  margin-bottom: 6px;
+  margin-top: 16px;
+}
+
+.section-label:first-child { margin-top: 0; }
+
+/* ─── Settings card ───────────────────────────────────────── */
+.settings-card {
+  background: linear-gradient(135deg, rgba(26, 86, 219, 0.11), rgba(255, 255, 255, 0.04));
+  border: 1px solid rgba(26, 86, 219, 0.28);
+  border-radius: 1rem;
+  box-shadow: 0 4px 20px rgba(26, 86, 219, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+/* ─── Nav rows ────────────────────────────────────────────── */
+.nav-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: transparent;
+  border-inline: none;
+  border-top: none;
+  text-align: right;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.nav-row:hover:not(:disabled) { background: rgba(26, 86, 219, 0.06); }
+
+.nav-row--last { border-bottom: none; }
+
+.nav-row--danger {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ─── Nav row internals ───────────────────────────────────── */
+.nav-row-start {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.nav-icon-wrap {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(26, 86, 219, 0.15);
+  flex-shrink: 0;
+}
+
+.nav-icon-wrap--danger { background: rgba(239, 68, 68, 0.12); }
+
+.nav-icon {
+  width: 16px;
+  height: 16px;
+  color: #60A5FA;
+}
+
+.nav-icon-wrap--danger .nav-icon { color: #EF4444; }
+
+.nav-title {
+  font-size: 14px;
+  color: #E8EDF5;
+  font-weight: 500;
+}
+
+.nav-title--danger { color: #EF4444; }
+
+.nav-arrow {
+  width: 16px;
+  height: 16px;
+  color: #3D4F6B;
+  /* RTL: flip chevron direction */
+  transform: rotate(180deg);
+}
+
+[dir="rtl"] .nav-arrow { transform: rotate(180deg); }
+[dir="ltr"] .nav-arrow { transform: none; }
+
+/* ─── About row (mobile) ──────────────────────────────────── */
+.about-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+}
+
+.version-badge {
+  font-size: 0.75rem;
+  font-family: monospace;
+  color: #637285;
+}
+
+/* ─── Coming soon ─────────────────────────────────────────── */
+.coming-soon {
+  font-size: 0.75rem;
+  color: #637285;
+}
+
+/* ─── Desktop layout ──────────────────────────────────────── */
+.desktop-layout {
+  flex: 1;
+  padding: 24px;
+  gap: 24px;
+}
+
+/* ─── Desktop nav sidebar ─────────────────────────────────── */
+.desktop-nav {
+  width: 224px;
+  flex-shrink: 0;
+}
+
+.desktop-nav-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  font-size: 0.875rem;
+  color: #637285;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+
+.desktop-nav-link:hover { background: rgba(26, 86, 219, 0.06); color: #E8EDF5; }
+
+.desktop-nav-link--active {
+  color: #60A5FA;
+  font-weight: 600;
+  background: rgba(26, 86, 219, 0.10);
+}
+
+.nav-icon-sm {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.active-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #1A56DB;
+  flex-shrink: 0;
+}
+
+/* ─── Desktop about row ───────────────────────────────────── */
+.desktop-about-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-top: 1px solid rgba(26, 86, 219, 0.14);
+}
+
+.about-label {
+  font-size: 0.75rem;
+  color: #637285;
+  opacity: 0.6;
+}
+
+.version-mono {
+  font-size: 0.75rem;
+  font-family: monospace;
+  color: #637285;
+  opacity: 0.5;
+}
+
+/* ─── Content panel ───────────────────────────────────────── */
+.content-panel {
+  flex: 1;
+  min-width: 0;
+  border-radius: 1rem;
+  overflow: auto;
+  background: linear-gradient(135deg, rgba(26, 86, 219, 0.11), rgba(255, 255, 255, 0.04));
+  border: 1px solid rgba(26, 86, 219, 0.28);
+  box-shadow: 0 4px 20px rgba(26, 86, 219, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+/* ─── Content placeholder ─────────────────────────────────── */
+.content-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 192px;
+  gap: 12px;
+  color: #637285;
+}
+
+.placeholder-icon {
+  width: 32px;
+  height: 32px;
+  opacity: 0.2;
+}
+
+.placeholder-text {
+  font-size: 0.875rem;
+  color: #637285;
+}
+</style>
