@@ -19,10 +19,10 @@ const emit = defineEmits<{
 }>()
 
 const reasonOptions: { value: AdjustmentReason; label: string }[] = [
-  { value: 'stocktake', label: 'جرد (Stocktake)' },
-  { value: 'damaged',   label: 'تالف (Damaged)' },
-  { value: 'lost',      label: 'مفقود (Lost)' },
-  { value: 'other',     label: 'أخرى (Other)' },
+  { value: 'stocktake', label: 'جرد' },
+  { value: 'damaged',   label: 'تالف' },
+  { value: 'lost',      label: 'مفقود' },
+  { value: 'other',     label: 'أخرى' },
 ]
 
 const canConfirm = computed(() =>
@@ -34,65 +34,70 @@ const canConfirm = computed(() =>
   <Teleport to="body">
     <div
       v-if="isOpen"
-      class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40"
+      class="overlay"
       dir="rtl"
       @click.self="emit('cancel')"
     >
-      <div class="bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-2xl w-full max-w-sm p-6 shadow-xl">
-        <h2 class="text-base font-semibold text-gray-900 dark:text-white mb-1">
-          سبب تعديل المخزون
-        </h2>
-        <p class="text-sm text-gray-500 dark:text-gray-400 mb-5">
-          {{ productName }}: {{ oldValue }} → {{ newValue }}
-        </p>
+      <div class="dialog">
+        <!-- Drag handle (mobile) -->
+        <div class="drag-handle sm:hidden"></div>
 
-        <div class="flex flex-col gap-2 mb-5">
+        <!-- Header -->
+        <div class="dialog-header">
+          <h2 class="dialog-title">سبب تعديل المخزون</h2>
+          <p class="dialog-subtitle">{{ productName }}: {{ oldValue }} → {{ newValue }}</p>
+        </div>
+
+        <!-- Reason options -->
+        <div class="reason-list">
           <label
             v-for="opt in reasonOptions"
             :key="opt.value"
-            class="flex items-center gap-3 border rounded-xl p-3 cursor-pointer transition-colors"
-            :class="reason === opt.value
-              ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-              : 'border-gray-200 dark:border-gray-700'"
+            class="reason-option"
+            :class="reason === opt.value ? 'reason-selected' : 'reason-idle'"
           >
             <input
               type="radio"
               :value="opt.value"
               :checked="reason === opt.value"
               :data-testid="`reason-${opt.value}`"
-              class="accent-blue-600"
+              class="reason-radio"
               @change="emit('update:reason', opt.value)"
             />
-            <span class="text-sm text-gray-800 dark:text-gray-200">{{ opt.label }}</span>
+            <span
+              class="reason-label"
+              :class="reason === opt.value ? 'reason-label-active' : 'reason-label-idle'"
+            >{{ opt.label }}</span>
           </label>
         </div>
 
-        <textarea
-          v-if="reason === 'other'"
-          :value="notes"
-          data-testid="notes-input"
-          placeholder="ملاحظات (مطلوبة)"
-          rows="2"
-          class="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2
-                 text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 mb-4
-                 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          @input="emit('update:notes', ($event.target as HTMLTextAreaElement).value)"
-        />
+        <!-- Notes textarea (when reason = other) -->
+        <div class="notes-wrap">
+          <textarea
+            v-if="reason === 'other'"
+            :value="notes"
+            data-testid="notes-input"
+            placeholder="ملاحظات (مطلوبة)"
+            rows="2"
+            class="notes-input"
+            @input="emit('update:notes', ($event.target as HTMLTextAreaElement).value)"
+          />
+        </div>
 
-        <div class="flex gap-3">
+        <!-- Buttons -->
+        <div class="dialog-footer">
           <button
             type="button"
             data-testid="confirm-btn"
             :disabled="!canConfirm"
-            class="flex-1 h-11 rounded-xl text-sm font-semibold text-white bg-blue-600
-                   hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            class="btn-confirm"
+            :class="canConfirm ? 'btn-confirm-active' : 'btn-confirm-disabled'"
             @click="emit('confirm')"
           >تأكيد</button>
           <button
             type="button"
             data-testid="cancel-btn"
-            class="h-11 px-5 rounded-xl text-sm text-gray-600 dark:text-gray-300
-                   border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+            class="btn-cancel"
             @click="emit('cancel')"
           >إلغاء</button>
         </div>
@@ -100,3 +105,205 @@ const canConfirm = computed(() =>
     </div>
   </Teleport>
 </template>
+
+<style scoped>
+/* ── Overlay ─────────────────────────────────────── */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0,0,0,0.75);
+  backdrop-filter: blur(4px);
+  font-family: 'Tajawal', system-ui, sans-serif;
+}
+
+@media (min-width: 640px) {
+  .overlay {
+    align-items: center;
+  }
+}
+
+/* ── Dialog panel ────────────────────────────────── */
+.dialog {
+  width: 100%;
+  max-width: 400px;
+  border-radius: 1.25rem 1.25rem 0 0;
+  overflow: hidden;
+  backdrop-filter: blur(20px) saturate(180%);
+  background: linear-gradient(135deg, rgba(26,86,219,0.16), rgba(26,86,219,0.06));
+  border: 1px solid rgba(26,86,219,0.45);
+  box-shadow: 0 8px 48px rgba(26,86,219,0.22), inset 0 1px 0 rgba(255,255,255,0.09);
+}
+
+@media (min-width: 640px) {
+  .dialog {
+    border-radius: 1.25rem;
+  }
+}
+
+/* ── Drag handle ─────────────────────────────────── */
+.drag-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(255,255,255,0.15);
+  margin: 12px auto 0;
+}
+
+/* ── Header ──────────────────────────────────────── */
+.dialog-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(26,86,219,0.14);
+}
+
+.dialog-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #E8EDF5;
+  margin: 0;
+}
+
+.dialog-subtitle {
+  font-size: 13px;
+  color: #637285;
+  margin: 4px 0 0 0;
+}
+
+/* ── Reason options ──────────────────────────────── */
+.reason-list {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.reason-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: 0.75rem;
+  padding: 12px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.reason-selected {
+  border: 1px solid rgba(26,86,219,0.50);
+  background: rgba(26,86,219,0.12);
+}
+
+.reason-idle {
+  border: 1px solid rgba(255,255,255,0.07);
+  background: transparent;
+}
+
+.reason-idle:hover {
+  background: rgba(26,86,219,0.06);
+  border-color: rgba(26,86,219,0.25);
+}
+
+.reason-radio {
+  accent-color: #1A56DB;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.reason-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.reason-label-active {
+  color: #60A5FA;
+}
+
+.reason-label-idle {
+  color: #C8D5E8;
+}
+
+/* ── Notes ───────────────────────────────────────── */
+.notes-wrap {
+  padding: 0 20px 4px;
+}
+
+.notes-input {
+  width: 100%;
+  border-radius: 0.75rem;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  color: #E8EDF5;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.18);
+  outline: none;
+  resize: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.notes-input::placeholder {
+  color: #3D4F6B;
+}
+
+.notes-input:focus {
+  border-color: rgba(26,86,219,0.8);
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.25), 0 0 12px rgba(26,86,219,0.15);
+}
+
+/* ── Footer buttons ──────────────────────────────── */
+.dialog-footer {
+  padding: 16px 20px;
+  display: flex;
+  gap: 12px;
+}
+
+.btn-confirm {
+  flex: 1;
+  height: 44px;
+  border-radius: 0.75rem;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.btn-confirm-active {
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  box-shadow: 0 4px 16px rgba(26,86,219,0.40);
+}
+
+.btn-confirm-active:hover {
+  opacity: 0.88;
+}
+
+.btn-confirm-disabled {
+  background: #3D4F6B;
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-cancel {
+  height: 44px;
+  padding: 0 20px;
+  border-radius: 0.75rem;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  color: #637285;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.18);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.btn-cancel:hover {
+  color: #E8EDF5;
+  border-color: rgba(255,255,255,0.30);
+}
+</style>
