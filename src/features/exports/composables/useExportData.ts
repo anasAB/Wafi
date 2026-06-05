@@ -61,3 +61,32 @@ export async function fetchSalesRows(
     'إجمالي الفاتورة $': r.total_usd,
   }))
 }
+
+type ExpenseRow = {
+  expense_date: string
+  category: string
+  description: string | null
+  amount_usd: number
+  amount_syp: number
+}
+
+export async function fetchExpensesRows(
+  range: ExportDateRange,
+): Promise<Record<string, unknown>[]> {
+  const { shopId } = useDeviceStore()
+  const rows = await db.getAll<ExpenseRow>(
+    `SELECT expense_date, category, notes AS description, amount_usd, amount_syp
+     FROM expenses
+     WHERE shop_id = ?
+       AND expense_date BETWEEN ? AND ?
+     ORDER BY expense_date DESC, created_at DESC`,
+    [shopId, range.start, range.end],
+  )
+  return rows.map(r => ({
+    'التاريخ':   r.expense_date,
+    'الفئة':     r.category,
+    'الوصف':     r.description ?? '',
+    'المبلغ $':  r.amount_usd,
+    'المبلغ ل.س': r.amount_syp,
+  }))
+}

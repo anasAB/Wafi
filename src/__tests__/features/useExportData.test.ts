@@ -3,7 +3,7 @@ import { setActivePinia, createPinia } from 'pinia'
 
 vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
 
-import { fetchSalesRows } from '@/features/exports/composables/useExportData'
+import { fetchSalesRows, fetchExpensesRows } from '@/features/exports/composables/useExportData'
 import { db } from '@/data/powersync/db'
 
 describe('fetchSalesRows', () => {
@@ -63,5 +63,37 @@ describe('fetchSalesRows', () => {
     const rows = await fetchSalesRows({ start: '2026-06-05', end: '2026-06-05' })
     expect(rows[0]['الكاشير']).toBe('—')
     expect(rows[0]['طريقة الدفع']).toBe('آجل')
+  })
+})
+
+describe('fetchExpensesRows', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    vi.mocked(db.getAll).mockResolvedValue([])
+  })
+
+  it('calls db.getAll with date range and shop_id', async () => {
+    await fetchExpensesRows({ start: '2026-06-01', end: '2026-06-05' })
+    expect(db.getAll).toHaveBeenCalledWith(
+      expect.stringContaining('FROM expenses'),
+      expect.arrayContaining(['2026-06-01', '2026-06-05']),
+    )
+  })
+
+  it('maps a db row to Arabic-keyed export row', async () => {
+    vi.mocked(db.getAll).mockResolvedValueOnce([{
+      expense_date: '2026-06-05',
+      category: 'إيجار',
+      description: 'إيجار شهر يونيو',
+      amount_usd: 200,
+      amount_syp: 2500000,
+    }])
+    const rows = await fetchExpensesRows({ start: '2026-06-01', end: '2026-06-05' })
+    expect(rows).toHaveLength(1)
+    expect(rows[0]['التاريخ']).toBe('2026-06-05')
+    expect(rows[0]['الفئة']).toBe('إيجار')
+    expect(rows[0]['المبلغ $']).toBe(200)
+    expect(rows[0]['المبلغ ل.س']).toBe(2500000)
   })
 })
