@@ -23,6 +23,8 @@ function rowToAuditLog(r: AuditRow): AuditLog {
 
 export function useAuditLog() {
   const entries = ref<AuditLog[]>([])
+  const device  = useDeviceStore()
+  const session = useSessionStore()
 
   async function _log(
     event: AuditEvent,
@@ -31,8 +33,6 @@ export function useAuditLog() {
     meta: Record<string, unknown>,
   ): Promise<void> {
     try {
-      const device  = useDeviceStore()
-      const session = useSessionStore()
       await db.execute(
         `INSERT INTO audit_log
            (id, shop_id, staff_id, staff_name, event, entity_type, entity_id, meta, created_at)
