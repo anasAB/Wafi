@@ -11,13 +11,16 @@ import { useShiftStore } from '@/features/shifts/shift.store'
 import { useShift }      from '@/features/shifts/composables/useShift'
 import { useStaff }      from '@/features/staff/composables/useStaff'
 import LockScreen        from '@/features/shifts/components/LockScreen.vue'
+import StaffPinPrompt    from '@/features/staff/components/StaffPinPrompt.vue'
+import { useSessionStore } from '@/store/session.store'
 
 const route    = useRoute()
 const router   = useRouter()
 const settings = useSettingsStore()
 useThemePalette()
 
-const shiftStore = useShiftStore()
+const shiftStore   = useShiftStore()
+const sessionStore = useSessionStore()
 const { loadActiveShift } = useShift()
 const { hasAnyStaff }     = useStaff()
 const appReady  = ref(false)
@@ -81,8 +84,11 @@ watch(
   </div>
 
   <template v-else>
-    <!-- Shift gate — blocks the whole app when no shift is open -->
-    <LockScreen v-if="hasStaff && !shiftStore.isShiftOpen" />
+    <!-- PIN prompt: staff exist but no active session -->
+    <StaffPinPrompt v-if="hasStaff && !sessionStore.activeStaff" />
+
+    <!-- Shift gate: session set but no shift open -->
+    <LockScreen v-else-if="hasStaff && !shiftStore.isShiftOpen" />
 
     <!-- Normal app shell -->
     <div
