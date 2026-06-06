@@ -14,4 +14,5 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   return { activeStaff, setActiveStaff, clearSession }
+// Persists full Staff object so staff don't re-enter PIN after page refresh (trusted device assumption).
 }, { persist: true })
