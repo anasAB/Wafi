@@ -181,6 +181,17 @@ const return_reasons = new Table({
   is_active:  column.integer,  // 0 | 1
 })
 
+const audit_log = new Table({
+  shop_id:     column.text,
+  staff_id:    column.text,
+  staff_name:  column.text,
+  event:       column.text,
+  entity_type: column.text,
+  entity_id:   column.text,
+  meta:        column.text,
+  created_at:  column.text,
+})
+
 export const AppSchema = new Schema({
   products,
   stock_adjustments,
@@ -197,4 +208,5 @@ export const AppSchema = new Schema({
   returns,
   return_line_items,
   return_reasons,
+  audit_log,
 })
