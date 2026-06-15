@@ -3,6 +3,7 @@ import { useDeviceStore } from '@/store/device.store'
 import { useShiftStore }  from '@/features/shifts/shift.store'
 import type { Staff }     from '@/features/staff/staff.types'
 import type { CashierShift } from '../shift.types'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 
 function rowToShift(r: any): CashierShift {
   return {
@@ -20,6 +21,8 @@ function rowToShift(r: any): CashierShift {
 }
 
 export function useShift() {
+  const { logShiftOpened, logShiftClosed } = useAuditLog()
+
   const device     = useDeviceStore()
   const shiftStore = useShiftStore()
 
@@ -33,6 +36,7 @@ export function useShift() {
       [shiftId, device.shopId, device.deviceId, staff.id, now, openingCashUsd]
     )
     shiftStore.openShift(shiftId, staff)
+    await logShiftOpened(shiftId)
     return shiftId
   }
 
@@ -47,6 +51,7 @@ export function useShift() {
       [now, closingCashUsd, closingCashSyp, shiftId]
     )
     shiftStore.closeShift()
+    await logShiftClosed(shiftId)
   }
 
   async function loadActiveShift(): Promise<CashierShift | null> {

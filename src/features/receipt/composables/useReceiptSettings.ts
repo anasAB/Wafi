@@ -2,8 +2,11 @@ import { ref } from 'vue'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import type { ReceiptSettings, ReceiptSettingsRow } from '@/features/receipt/receipt.types'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 
 export function useReceiptSettings() {
+  const { logReceiptSettingsUpdated } = useAuditLog()
+
   const settings = ref<ReceiptSettings>({
     shopName: '', taxNumber: '', headerText: '', footerText: '',
   })
@@ -35,6 +38,7 @@ export function useReceiptSettings() {
        data.headerText, data.footerText, now]
     )
     settings.value = { ...data }
+    await logReceiptSettingsUpdated()
   }
 
   return { settings, load, save }

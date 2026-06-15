@@ -2,8 +2,11 @@ import { ref } from 'vue'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { v4 as uuidv4 } from 'uuid'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 
 export function useExchangeRate() {
+  const { logExchangeRateChanged } = useAuditLog()
+
   const currentRate       = ref<number | null>(null)
   const rateHistory       = ref<Array<{ rate: number; setAt: string }>>([])
   const needsConfirmation = ref(false)
@@ -45,6 +48,7 @@ export function useExchangeRate() {
     error.value             = null
 
     try {
+      const oldRate = currentRate.value ?? 0
       const device = useDeviceStore()
       await db.execute(
         `INSERT INTO exchange_rates (id, shop_id, device_id, rate, set_at, set_by)
@@ -52,6 +56,7 @@ export function useExchangeRate() {
         [uuidv4(), device.shopId, device.deviceId, newRate, new Date().toISOString()]
       )
       currentRate.value = newRate
+      await logExchangeRateChanged(oldRate, newRate)
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Failed to save rate'
       throw err
