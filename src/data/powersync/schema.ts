@@ -192,6 +192,40 @@ const audit_log = new Table({
   created_at:  column.text,
 })
 
+const suppliers = new Table({
+  shop_id:        column.text,
+  name:           column.text,
+  phone:          column.text,
+  contact_person: column.text,
+  address:        column.text,
+  notes:          column.text,
+  deleted:        column.integer,
+  created_at:     column.text,
+  sync_status:    column.text,
+})
+
+const stock_receivings = new Table({
+  shop_id:                    column.text,
+  supplier_id:                column.text,
+  received_at:                column.text,
+  invoice_photo_url:          column.text,
+  total_cost_usd:             column.real,
+  exchange_rate_at_receiving: column.real,
+  notes:                      column.text,
+  staff_id:                   column.text,
+  sync_status:                column.text,
+})
+
+const stock_receiving_line_items = new Table({
+  receiving_id:  column.text,
+  shop_id:       column.text,
+  product_id:    column.text,
+  qty_received:  column.integer,
+  unit_cost_usd: column.real,
+  cost_updated:  column.integer,
+  sync_status:   column.text,
+})
+
 export const AppSchema = new Schema({
   products,
   stock_adjustments,
@@ -209,4 +243,7 @@ export const AppSchema = new Schema({
   return_line_items,
   return_reasons,
   audit_log,
+  suppliers,
+  stock_receivings,
+  stock_receiving_line_items,
 })
