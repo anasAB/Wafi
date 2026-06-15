@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 import type { Expense, NewExpense } from '@/features/expenses/expense.types'
 
 type ExpenseRow = {
@@ -25,6 +26,7 @@ export function useExpenses() {
   // Store last date range so mutations can reload the same window
   let lastStart = ''
   let lastEnd   = ''
+  const { logExpenseCreated, logExpenseDeleted } = useAuditLog()
 
   async function load(startDate: string, endDate: string) {
     lastStart = startDate
@@ -51,11 +53,16 @@ export function useExpenses() {
        data.photoUrl ?? null, data.paidInCash ? 1 : 0, now]
     )
     if (lastStart) await load(lastStart, lastEnd)
+    await logExpenseCreated(id, data.category, data.amountUsd)
   }
 
   async function deleteExpense(id: string) {
+    const row = await db.getOptional<{ category: string; amount_usd: number }>(
+      `SELECT category, amount_usd FROM expenses WHERE id = ?`, [id]
+    )
     await db.execute(`DELETE FROM expenses WHERE id = ?`, [id])
     if (lastStart) await load(lastStart, lastEnd)
+    if (row) await logExpenseDeleted(id, row.category, row.amount_usd)
   }
 
   return { expenses, load, save, deleteExpense }
