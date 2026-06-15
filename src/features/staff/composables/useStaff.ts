@@ -4,6 +4,7 @@ import { useDeviceStore } from '@/store/device.store'
 import { hashPin } from './usePinAuth'
 import type { Staff, NewStaff, StaffPermissions } from '../staff.types'
 import { OWNER_PERMISSIONS } from '../staff.types'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 
 function rowToStaff(r: any): Staff {
   return {
@@ -22,6 +23,8 @@ function rowToStaff(r: any): Staff {
 }
 
 export function useStaff() {
+  const { logStaffCreated, logStaffDeactivated, logStaffPermissionsChanged } = useAuditLog()
+
   const staff = ref<Staff[]>([])
   const loading = ref(false)
 
@@ -66,6 +69,7 @@ export function useStaff() {
     await loadStaff()
     const created = staff.value.find((s) => s.id === id)
     if (!created) throw new Error(`Staff ${id} not found after insert`)
+    await logStaffCreated(created.id, created.name, created.role)
     return created
   }
 
@@ -80,19 +84,27 @@ export function useStaff() {
     staffId: string,
     permissions: StaffPermissions
   ): Promise<void> {
+    const nameRow = await db.getOptional<{ name: string }>(
+      `SELECT name FROM staff WHERE id = ?`, [staffId]
+    )
     await db.execute(`UPDATE staff SET permissions = ? WHERE id = ?`, [
       JSON.stringify(permissions),
       staffId,
     ])
     await loadStaff()
+    await logStaffPermissionsChanged(staffId, nameRow?.name ?? staffId)
   }
 
   async function deactivateStaff(staffId: string): Promise<void> {
+    const nameRow = await db.getOptional<{ name: string }>(
+      `SELECT name FROM staff WHERE id = ?`, [staffId]
+    )
     await db.execute(
       `UPDATE staff SET is_active = 0 WHERE id = ?`,
       [staffId]
     )
     await loadStaff()
+    await logStaffDeactivated(staffId, nameRow?.name ?? staffId)
   }
 
   return {
