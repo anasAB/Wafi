@@ -5,6 +5,7 @@ import { useSaleDraft } from '@/composables/useSaleDraft'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { useShiftStore } from '@/features/shifts/shift.store'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 import { v4 as uuidv4 } from 'uuid'
 import type { PaymentMethod, PaymentState, CompletedSale, SplitPaymentEntry } from './payment.types'
 
@@ -14,6 +15,7 @@ export function usePayment() {
   const shiftStore     = useShiftStore()
   const { nextNumber } = useSaleNumber()
   const { clearDraft } = useSaleDraft()
+  const { logSaleCompleted } = useAuditLog()
 
   const state          = ref<PaymentState>('method-selection')
   const isOpen         = ref(true)
@@ -250,23 +252,6 @@ export function usePayment() {
             [uuidv4(), deviceStore.shopId, line.productId, currentStock, newStock, now, deviceStore.deviceId]
           )
         }
-        // Log the sale completion inside the transaction for atomicity
-        await tx.execute(
-          `INSERT INTO audit_log
-             (id, shop_id, staff_id, staff_name, event, entity_type, entity_id, meta, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            uuidv4(),
-            deviceStore.shopId,
-            null,
-            'system',
-            'sale.completed',
-            'sale',
-            saleId,
-            JSON.stringify({ totalUsd: sale.totalUsd, itemCount: sale.lines.length }),
-            now,
-          ]
-        )
       })
 
       await clearDraft()
@@ -274,6 +259,7 @@ export function usePayment() {
       pendingPayments.value = []
       state.value           = 'confirmed'
       isOpen.value          = false
+      await logSaleCompleted(saleId, sale.totalUsd, sale.lines.length)
       return sale
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Payment failed'

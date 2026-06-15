@@ -7,6 +7,20 @@ import { usePayment } from '@/features/payment/usePayment'
 import { useSaleStore } from '@/store/sale.store'
 import { db } from '@/data/powersync/db'
 
+// confirm() runs all its writes inside db.writeTransaction. This wires a tx.execute
+// spy whose SELECTs return the given product row (cost + stock); returns the spy so
+// tests can assert on the SQL/params passed to the transaction.
+function setupTx(stockRow: { cost_price_usd: number; current_stock: number } = { cost_price_usd: 0, current_stock: 0 }) {
+  const exec = vi.fn().mockImplementation(async (sql: unknown) => {
+    if (typeof sql === 'string' && sql.trim().startsWith('SELECT')) {
+      return { rows: { _array: [stockRow] } }
+    }
+    return { rows: { _array: [] } }
+  })
+  vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => { await fn({ execute: exec }) })
+  return exec
+}
+
 describe('usePayment', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -84,58 +98,33 @@ describe('usePayment', () => {
   })
 
   it('confirm deducts stock and writes stock_adjustments for each sale line', async () => {
-    // Mock all db.execute calls in order:
-    // 1. INSERT INTO sales
-    // 2. INSERT INTO sale_payments (single entry, non-split path)
-    // 3. INSERT INTO sale_line_items (for the one line in beforeEach)
-    // Note: SELECT is now getOptional, not execute
-    // 4. UPDATE products (stock deduction)
-    // 5. INSERT INTO stock_adjustments
-    vi.mocked(db.execute)
-      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sales
-      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sale_payments
-      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sale_line_items
-      // Note: SELECT is now getOptional, not execute
-      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // UPDATE products
-      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT stock_adjustments
-
-    vi.mocked(db.getOptional)
-      .mockResolvedValueOnce({ cost_price_usd: 0 } as any)   // cost lookup (new)
-      .mockResolvedValueOnce({ current_stock: 10 } as any)   // stock lookup (existing)
+    const tx = setupTx({ cost_price_usd: 0, current_stock: 10 })
 
     const { selectMethod, confirm } = usePayment()
     selectMethod('card')
     await confirm()
 
-    const calls = vi.mocked(db.execute).mock.calls.map(c => c[0] as string)
+    const calls = tx.mock.calls.map(c => c[0] as string)
     expect(calls.some(sql => sql.includes('UPDATE products') && sql.includes('current_stock'))).toBe(true)
     expect(calls.some(sql => sql.includes('INSERT INTO stock_adjustments'))).toBe(true)
 
     // Verify the correct numeric values were passed
-    const updateCall = vi.mocked(db.execute).mock.calls.find(c => (c[0] as string).includes('UPDATE products') && (c[0] as string).includes('current_stock'))
+    const updateCall = tx.mock.calls.find(c => (c[0] as string).includes('UPDATE products') && (c[0] as string).includes('current_stock'))
     expect(updateCall?.[1]).toContain(9) // newStock = 10 - 1
 
-    const insertCall = vi.mocked(db.execute).mock.calls.find(c => (c[0] as string).includes('INSERT INTO stock_adjustments'))
+    const insertCall = tx.mock.calls.find(c => (c[0] as string).includes('INSERT INTO stock_adjustments'))
     expect(insertCall?.[1]).toContain(10) // old_value
     expect(insertCall?.[1]).toContain(9)  // new_value
   })
 
   it('confirm writes unit_cost_usd to sale_line_items from product cost', async () => {
-    vi.mocked(db.getOptional)
-      .mockResolvedValueOnce({ cost_price_usd: 7 } as any)   // cost lookup for p1
-      .mockResolvedValueOnce({ current_stock: 10 } as any)   // stock lookup for p1
-    vi.mocked(db.execute)
-      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sales
-      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sale_payments
-      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sale_line_items
-      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // UPDATE products stock
-      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT stock_adjustments
+    const tx = setupTx({ cost_price_usd: 7, current_stock: 10 })
 
     const { selectMethod, confirm } = usePayment()
     selectMethod('card')
     await confirm()
 
-    const lineInsertCall = vi.mocked(db.execute).mock.calls.find(c =>
+    const lineInsertCall = tx.mock.calls.find(c =>
       (c[0] as string).includes('INSERT INTO sale_line_items') &&
       (c[0] as string).includes('unit_cost_usd')
     )
@@ -143,22 +132,29 @@ describe('usePayment', () => {
     expect(lineInsertCall?.[1]).toContain(7) // unit_cost_usd = 7
   })
 
+  it('confirm writes all sale writes inside a single transaction', async () => {
+    const tx = setupTx({ cost_price_usd: 0, current_stock: 10 })
+    const { selectMethod, confirm } = usePayment()
+    selectMethod('card')
+    await confirm()
+    // All sale inserts/updates go through the transaction.
+    expect(db.writeTransaction).toHaveBeenCalledTimes(1)
+    const calls = tx.mock.calls.map(c => c[0] as string)
+    expect(calls.some(sql => sql.includes('INSERT INTO sales'))).toBe(true)
+    // Audit log is written outside transaction via db.execute (separate from main sale tx).
+    expect(db.execute).toHaveBeenCalledTimes(1)
+    const auditCall = (db.execute as any).mock.calls[0]
+    expect(auditCall[0]).toContain('INSERT INTO audit_log')
+  })
+
   it('confirm writes customer_id and is_credit=1 for credit sales', async () => {
-    vi.mocked(db.getOptional)
-      .mockResolvedValueOnce({ cost_price_usd: 5 } as any)
-      .mockResolvedValueOnce({ current_stock: 10 } as any)
-    vi.mocked(db.execute)
-      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sales
-      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sale_payments
-      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT sale_line_items
-      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // UPDATE products
-      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // INSERT stock_adjustments
+    const tx = setupTx({ cost_price_usd: 5, current_stock: 10 })
 
     const { selectMethod, confirm } = usePayment()
     selectMethod('credit')
     await confirm('customer-abc')
 
-    const salesInsert = vi.mocked(db.execute).mock.calls.find(c =>
+    const salesInsert = tx.mock.calls.find(c =>
       (c[0] as string).includes('INSERT INTO sales') &&
       (c[0] as string).includes('customer_id')
     )
@@ -167,9 +163,30 @@ describe('usePayment', () => {
     expect(salesInsert![1]).toContain(1) // is_credit = 1
   })
 
+  it('credit sale records NO sale_payments row and zero amount_received', async () => {
+    const tx = setupTx({ cost_price_usd: 0, current_stock: 10 })
+
+    const { selectMethod, confirm } = usePayment()
+    selectMethod('credit')
+    await confirm('cust-1')
+
+    const calls = tx.mock.calls.map(c => c[0] as string)
+    expect(calls.some(sql => sql.includes('INSERT INTO sale_payments'))).toBe(false)
+
+    const salesInsert = tx.mock.calls.find(c =>
+      (c[0] as string).includes('INSERT INTO sales')
+    )
+    expect(salesInsert![1][10]).toBe(0) // amount_received column = 0 (unpaid)
+  })
+
   describe('split payments', () => {
     beforeEach(() => {
       setActivePinia(createPinia())
+      // Seed a large-enough sale so split legs aren't capped to zero by the remaining-owed guard.
+      const store = useSaleStore()
+      store.clear()
+      store.addLine({ productId: 'p1', nameAr: 'منتج', quantity: 1, unitPriceUsd: 5000, lineTotalUsd: 5000 })
+      store.setLockedRate(14500)
       vi.clearAllMocks()
       vi.mocked(db.getOptional).mockResolvedValue(null)
       vi.mocked(db.execute).mockResolvedValue({ rows: { _array: [] } } as any)
@@ -223,50 +240,65 @@ describe('usePayment', () => {
       expect(isReadyToConfirm.value).toBe(false)
     })
 
+    it('allows a partial first leg below the total (split can start)', () => {
+      const { selectMethod, amountReceived, canAddLeg, canConfirmSingle } = usePayment()
+      selectMethod('cash_usd')
+      amountReceived.value = 30          // total is 5000
+      expect(canAddLeg.value).toBe(true)        // can add as a split leg
+      expect(canConfirmSingle.value).toBe(false) // but not settle the whole sale
+    })
+
+    it('caps an overpaid cash leg and records the surplus as change', () => {
+      const { addPayment, pendingPayments } = usePayment()
+      addPayment('cash_usd', 6000)       // total is 5000
+      expect(pendingPayments.value[0].amountUsd).toBe(5000) // applied, capped to remaining
+      expect(pendingPayments.value[0].changeDue).toBe(1000) // surplus returned as change
+    })
+
+    it('split legs sum to the total with no phantom overage', async () => {
+      const { addPayment, paidUsd, remainingUsd } = usePayment()
+      addPayment('cash_usd', 2000)
+      addPayment('card', 3000)
+      expect(paidUsd.value).toBe(5000)
+      expect(remainingUsd.value).toBe(0)
+    })
+
     it('confirm with pendingPayments writes is_split=1 and inserts sale_payments rows', async () => {
-      vi.mocked(db.getOptional)
-        .mockResolvedValueOnce({ cost_price_usd: 0 } as any)
-        .mockResolvedValueOnce({ current_stock: 10 } as any)
-      vi.mocked(db.execute)
-        .mockResolvedValue({ rows: { _array: [] } } as any)
+      const tx = setupTx({ cost_price_usd: 0, current_stock: 10 })
 
       const { addPayment, confirm } = usePayment()
       addPayment('cash_usd', 30)
       addPayment('cash_syp', 500_000)
       await confirm()
 
-      const salesInsert = vi.mocked(db.execute).mock.calls.find(c =>
+      const salesInsert = tx.mock.calls.find(c =>
         (c[0] as string).includes('INSERT INTO sales') &&
         (c[0] as string).includes('is_split')
       )
       expect(salesInsert).toBeDefined()
       expect(salesInsert![1]).toContain(1) // is_split = 1
 
-      const paymentInserts = vi.mocked(db.execute).mock.calls.filter(c =>
+      const paymentInserts = tx.mock.calls.filter(c =>
         (c[0] as string).includes('INSERT INTO sale_payments')
       )
       expect(paymentInserts).toHaveLength(2)
     })
 
     it('confirm without pendingPayments (single path) writes is_split=0', async () => {
-      vi.mocked(db.getOptional)
-        .mockResolvedValueOnce({ cost_price_usd: 0 } as any)
-        .mockResolvedValueOnce({ current_stock: 10 } as any)
-      vi.mocked(db.execute)
-        .mockResolvedValue({ rows: { _array: [] } } as any)
+      const tx = setupTx({ cost_price_usd: 0, current_stock: 10 })
 
       const { selectMethod, confirm } = usePayment()
       selectMethod('card')
       await confirm()
 
-      const salesInsert = vi.mocked(db.execute).mock.calls.find(c =>
+      const salesInsert = tx.mock.calls.find(c =>
         (c[0] as string).includes('INSERT INTO sales') &&
         (c[0] as string).includes('is_split')
       )
       expect(salesInsert).toBeDefined()
       expect(salesInsert![1]).toContain(0) // is_split = 0
 
-      const paymentInserts = vi.mocked(db.execute).mock.calls.filter(c =>
+      const paymentInserts = tx.mock.calls.filter(c =>
         (c[0] as string).includes('INSERT INTO sale_payments')
       )
       expect(paymentInserts).toHaveLength(1)
