@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import type { OpenInvoice, PaymentAllocation, CustomerPayment } from '@/features/customers/customer.types'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 
 type InvoiceRow = {
   id: string; display_sale_number: string; created_at: string
@@ -18,6 +19,7 @@ export function useCustomerBalance(customerId: string) {
   const balanceUsd   = ref(0)
   const openInvoices = ref<OpenInvoice[]>([])
   const payments     = ref<CustomerPayment[]>([])
+  const { logCustomerPaymentRecorded } = useAuditLog()
 
   async function load() {
     const device = useDeviceStore()
@@ -85,7 +87,10 @@ export function useCustomerBalance(customerId: string) {
     const device = useDeviceStore()
     const now    = new Date().toISOString()
 
-    // Guard: do not allow allocation amount to exceed current remaining on invoice
+    // Guard: do not allow allocations to exceed the remaining on an invoice. Track the
+    // cumulative amount allocated per sale within THIS batch, so two allocations to the
+    // same invoice can't each pass the guard individually and together overpay.
+    const committedBySale = new Map<string, number>()
     for (const alloc of allocations) {
       const remRow = await db.getOptional<{ remaining_usd: number }>(
         `SELECT s.total_usd - COALESCE(SUM(cp.amount_usd), 0) AS remaining_usd
@@ -98,25 +103,32 @@ export function useCustomerBalance(customerId: string) {
       // If the sale row is not found locally (null) or remaining_usd is not present on the row,
       // skip the guard — this handles offline / newly synced rows not yet visible.
       if (remRow === null || remRow.remaining_usd === undefined) continue
-      if (alloc.amountUsd > remRow.remaining_usd + 0.001) {
+      const already = committedBySale.get(alloc.saleId) ?? 0
+      if (already + alloc.amountUsd > remRow.remaining_usd + 0.001) {
         throw new Error(`المبلغ المدخل يتجاوز المبلغ المتبقي للفاتورة`)
       }
+      committedBySale.set(alloc.saleId, already + alloc.amountUsd)
     }
 
-    for (const alloc of allocations) {
-      await db.execute(
-        `INSERT INTO customer_payments
-           (id, shop_id, customer_id, sale_id, amount_usd, currency, amount_raw,
-            exchange_rate_at_payment, notes, paid_at, created_at, sync_status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, null, ?, ?, 'pending')`,
-        [
-          uuidv4(), device.shopId, customerId, alloc.saleId,
-          alloc.amountUsd, alloc.currency, alloc.amountRaw,
-          alloc.exchangeRateAtPayment ?? null,
-          now.slice(0, 10), now,
-        ]
-      )
-    }
+    // One transaction: either all allocations land or none do.
+    await db.writeTransaction(async (tx) => {
+      for (const alloc of allocations) {
+        await tx.execute(
+          `INSERT INTO customer_payments
+             (id, shop_id, customer_id, sale_id, amount_usd, currency, amount_raw,
+              exchange_rate_at_payment, notes, paid_at, created_at, sync_status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, null, ?, ?, 'pending')`,
+          [
+            uuidv4(), device.shopId, customerId, alloc.saleId,
+            alloc.amountUsd, alloc.currency, alloc.amountRaw,
+            alloc.exchangeRateAtPayment ?? null,
+            now.slice(0, 10), now,
+          ]
+        )
+      }
+    })
+    const totalPaid = allocations.reduce((sum, a) => sum + a.amountUsd, 0)
+    await logCustomerPaymentRecorded(customerId, totalPaid)
     await load()
   }
 

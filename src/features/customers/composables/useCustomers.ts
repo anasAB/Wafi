@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import type { Customer, NewCustomer } from '@/features/customers/customer.types'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 
 type CustomerRow = {
   id: string; shop_id: string; name: string; phone: string | null
@@ -23,6 +24,7 @@ function rowToCustomer(r: CustomerRow): Customer {
 
 export function useCustomers() {
   const customers = ref<Customer[]>([])
+  const { logCustomerCreated, logCustomerUpdated, logCustomerDeleted } = useAuditLog()
 
   async function load() {
     const device = useDeviceStore()
@@ -51,6 +53,7 @@ export function useCustomers() {
        VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'pending')`,
       [id, device.shopId, data.name, data.phone ?? null, data.mobile ?? null, data.address ?? null, now]
     )
+    await logCustomerCreated(id, data.name)
     return id
   }
 
@@ -68,14 +71,22 @@ export function useCustomers() {
       `UPDATE customers SET ${sets.join(', ')} WHERE id = ? AND shop_id = ?`,
       [...vals, id, device.shopId]
     )
+    const nameRow = await db.getOptional<{ name: string }>(
+      `SELECT name FROM customers WHERE id = ?`, [id]
+    )
+    await logCustomerUpdated(id, nameRow?.name ?? id)
   }
 
   async function softDelete(id: string): Promise<void> {
     const device = useDeviceStore()
+    const nameRow = await db.getOptional<{ name: string }>(
+      `SELECT name FROM customers WHERE id = ?`, [id]
+    )
     await db.execute(
       `UPDATE customers SET deleted = 1, sync_status = 'pending' WHERE id = ? AND shop_id = ?`,
       [id, device.shopId]
     )
+    await logCustomerDeleted(id, nameRow?.name ?? id)
   }
 
   return { customers, load, search, save, update, softDelete }
