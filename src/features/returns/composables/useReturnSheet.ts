@@ -1,10 +1,14 @@
 import { ref, computed } from 'vue'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
+import { useShiftStore } from '@/features/shifts/shift.store'
 import { v4 as uuidv4 } from 'uuid'
 import type { ReturnLine, RefundMethod } from '../returns.types'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 
 export function useReturnSheet(saleId: string) {
+  const { logReturnProcessed } = useAuditLog()
+
   const lines        = ref<ReturnLine[]>([])
   const refundMethod = ref<RefundMethod | null>(null)
   const reason       = ref('')
@@ -73,6 +77,7 @@ export function useReturnSheet(saleId: string) {
     }
 
     const { shopId, deviceId } = useDeviceStore()
+    const shiftStore = useShiftStore()
 
     // Get current exchange rate (outside transaction — read-only lookup)
     const rateResult = await db.execute(
@@ -83,17 +88,17 @@ export function useReturnSheet(saleId: string) {
 
     const selectedLines = lines.value.filter(l => l.selected)
     const refundAmountUsd = selectedLines.reduce((sum, l) => sum + l.qtyToReturn * l.unitPriceUsd, 0)
-    const refundAmountSyp = refundAmountUsd * exchangeRate
+    const refundAmountSyp = Math.round(refundAmountUsd * exchangeRate)
 
     const returnId  = uuidv4()
     const now       = new Date().toISOString()
 
     await db.writeTransaction(async (tx) => {
-      // Insert returns row
+      // Insert returns row (shift_id links cash refunds to the open shift for the Z-report)
       await tx.execute(
-        `INSERT INTO returns (id, shop_id, original_sale_id, created_at, refund_method, refund_amount_usd, refund_amount_syp, exchange_rate_at_return, reason, notes, sync_status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-        [returnId, shopId, saleId, now, refundMethod.value!, refundAmountUsd, refundAmountSyp, exchangeRate, reason.value || null, notes.value || null],
+        `INSERT INTO returns (id, shop_id, original_sale_id, created_at, refund_method, refund_amount_usd, refund_amount_syp, exchange_rate_at_return, reason, notes, shift_id, sync_status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+        [returnId, shopId, saleId, now, refundMethod.value!, refundAmountUsd, refundAmountSyp, exchangeRate, reason.value || null, notes.value || null, shiftStore.activeShiftId ?? null],
       )
 
       // Insert return_line_items
@@ -101,7 +106,7 @@ export function useReturnSheet(saleId: string) {
         await tx.execute(
           `INSERT INTO return_line_items (id, return_id, shop_id, product_id, qty_returned, unit_price_usd, unit_price_syp, restock, sync_status)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-          [uuidv4(), returnId, shopId, line.productId, line.qtyToReturn, line.unitPriceUsd, line.unitPriceUsd * exchangeRate, line.restock ? 1 : 0],
+          [uuidv4(), returnId, shopId, line.productId, line.qtyToReturn, line.unitPriceUsd, Math.round(line.unitPriceUsd * exchangeRate), line.restock ? 1 : 0],
         )
       }
 
@@ -133,6 +138,8 @@ export function useReturnSheet(saleId: string) {
         )
       }
     })
+
+    await logReturnProcessed(returnId, saleId, refundAmountUsd)
   }
 
   return { lines, refundMethod, reason, notes, hasCustomer, refundTotalUsd, canConfirm, load, confirm }
