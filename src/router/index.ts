@@ -22,6 +22,7 @@ export default createRouter({
         { path: 'receipt',        component: () => import('@/features/receipt/ReceiptSettingsScreen.vue') },
         { path: 'staff',          component: () => import('@/features/staff/components/StaffList.vue') },
         { path: 'return-reasons', component: () => import('@/features/settings/screens/ReturnReasonsScreen.vue') },
+        { path: 'audit-log', component: () => import('@/features/audit/AuditLogPage.vue') },
       ],
     },
     { path: '/exports', component: () => import('@/features/exports/ExportPage.vue') },
