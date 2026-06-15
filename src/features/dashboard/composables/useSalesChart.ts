@@ -64,7 +64,8 @@ export function useSalesChart() {
         profit: days.map(d => {
           const rev  = salesMap.get(d) ?? 0
           const cogs = cogsMap.get(d)  ?? 0
-          return Math.max(0, rev - cogs)
+          // Do NOT clamp at 0 — a loss day must show as negative, not be hidden.
+          return rev - cogs
         }),
       }
     } finally {

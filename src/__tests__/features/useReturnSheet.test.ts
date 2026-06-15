@@ -225,16 +225,17 @@ describe('useReturnSheet — confirm()', () => {
     expect(updateCall).toBeUndefined()
   })
 
-  it('inserts negative customer_payments row for store_credit', async () => {
+  it('does NOT insert a customer_payments row for store_credit (returns table drives AR)', async () => {
+    // A returned credit sale reduces the customer's balance via the `returns`
+    // table itself; writing a payment row here would double-count it (and the
+    // old negative amount wrongly increased the balance under sales - payments).
     const txExecute = setupWriteTransaction()
     const sheet = await loadSheet('cust-1')
     sheet.refundMethod.value = 'store_credit'  // override cash_usd default
     await sheet.confirm()
     const cpCall = (txExecute.mock.calls as any[])
       .find(([sql]: [string]) => sql.includes('INSERT INTO customer_payments'))
-    expect(cpCall).toBeDefined()
-    expect(cpCall[1][4]).toBe(-500)     // amount_usd is negative
-    expect(cpCall[1][3]).toBe(SALE_ID)  // sale_id
+    expect(cpCall).toBeUndefined()
   })
 
   it('does NOT insert customer_payments for cash_usd method', async () => {

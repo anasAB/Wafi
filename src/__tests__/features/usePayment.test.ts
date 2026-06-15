@@ -26,7 +26,7 @@ describe('usePayment', () => {
     setActivePinia(createPinia())
     const store = useSaleStore()
     store.clear()
-    store.addLine({ productId: 'p1', nameAr: 'منتج', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10 })
+    store.addLine({ productId: 'p1', nameAr: 'منتج', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10, availableStock: 99 })
     store.setLockedRate(14500)
     vi.clearAllMocks()
   })
@@ -185,7 +185,7 @@ describe('usePayment', () => {
       // Seed a large-enough sale so split legs aren't capped to zero by the remaining-owed guard.
       const store = useSaleStore()
       store.clear()
-      store.addLine({ productId: 'p1', nameAr: 'منتج', quantity: 1, unitPriceUsd: 5000, lineTotalUsd: 5000 })
+      store.addLine({ productId: 'p1', nameAr: 'منتج', quantity: 1, unitPriceUsd: 5000, lineTotalUsd: 5000, availableStock: 99 })
       store.setLockedRate(14500)
       vi.clearAllMocks()
       vi.mocked(db.getOptional).mockResolvedValue(null)

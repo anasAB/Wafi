@@ -15,7 +15,7 @@ describe('useSale', () => {
 
   it('addLine locks exchange rate on first item', async () => {
     vi.mocked(db.execute).mockResolvedValueOnce({
-      rows: { _array: [{ id: 'p1', name_ar: 'منتج', price_usd: 10 }] },
+      rows: { _array: [{ id: 'p1', name_ar: 'منتج', price_usd: 10, current_stock: 5 }] },
     } as any)
     const store = useSaleStore()
     const { addLine } = useSale(14500)
@@ -25,8 +25,8 @@ describe('useSale', () => {
 
   it('addLine does not change locked rate when already set', async () => {
     vi.mocked(db.execute)
-      .mockResolvedValueOnce({ rows: { _array: [{ id: 'p1', name_ar: 'أ', price_usd: 10 }] } } as any)
-      .mockResolvedValueOnce({ rows: { _array: [{ id: 'p2', name_ar: 'ب', price_usd: 5 }] } } as any)
+      .mockResolvedValueOnce({ rows: { _array: [{ id: 'p1', name_ar: 'أ', price_usd: 10, current_stock: 5 }] } } as any)
+      .mockResolvedValueOnce({ rows: { _array: [{ id: 'p2', name_ar: 'ب', price_usd: 5, current_stock: 5 }] } } as any)
     const store = useSaleStore()
     const { addLine } = useSale(14500)
     await addLine('p1')
@@ -37,11 +37,34 @@ describe('useSale', () => {
 
   it('totalSyp uses locked rate, not current rate', async () => {
     vi.mocked(db.execute).mockResolvedValueOnce({
-      rows: { _array: [{ id: 'p1', name_ar: 'منتج', price_usd: 10 }] },
+      rows: { _array: [{ id: 'p1', name_ar: 'منتج', price_usd: 10, current_stock: 5 }] },
     } as any)
     const { addLine, totalSyp } = useSale(14500)
     await addLine('p1')
     expect(totalSyp.value).toBe(Math.round(10 * 14500))
+  })
+
+  it('addLine throws and adds nothing when the product is out of stock', async () => {
+    vi.mocked(db.execute).mockResolvedValueOnce({
+      rows: { _array: [{ id: 'p1', name_ar: 'منتج', price_usd: 10, current_stock: 0 }] },
+    } as any)
+    const store = useSaleStore()
+    const { addLine } = useSale(14500)
+    await expect(addLine('p1')).rejects.toThrow('نفد المخزون')
+    expect(store.lines).toHaveLength(0)
+  })
+
+  it('addLine throws when cart quantity already equals available stock', async () => {
+    vi.mocked(db.execute)
+      .mockResolvedValueOnce({ rows: { _array: [{ id: 'p1', name_ar: 'منتج', price_usd: 10, current_stock: 2 }] } } as any)
+      .mockResolvedValueOnce({ rows: { _array: [{ id: 'p1', name_ar: 'منتج', price_usd: 10, current_stock: 2 }] } } as any)
+      .mockResolvedValueOnce({ rows: { _array: [{ id: 'p1', name_ar: 'منتج', price_usd: 10, current_stock: 2 }] } } as any)
+    const store = useSaleStore()
+    const { addLine } = useSale(14500)
+    await addLine('p1')
+    await addLine('p1')
+    await expect(addLine('p1')).rejects.toThrow('الكمية المتوفرة فقط 2')
+    expect(store.lines[0].quantity).toBe(2)
   })
 
   it('addLine throws when currentRate is null', async () => {
@@ -51,7 +74,7 @@ describe('useSale', () => {
 
   it('hasRateChangeNotice is true when rate changes mid-sale', async () => {
     vi.mocked(db.execute).mockResolvedValueOnce({
-      rows: { _array: [{ id: 'p1', name_ar: 'منتج', price_usd: 10 }] },
+      rows: { _array: [{ id: 'p1', name_ar: 'منتج', price_usd: 10, current_stock: 5 }] },
     } as any)
     const { addLine } = useSale(14500)
     await addLine('p1')

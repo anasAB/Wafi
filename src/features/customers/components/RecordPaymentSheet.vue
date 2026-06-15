@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useExchangeRate } from '@/features/exchange-rate'
 import { useCustomerBalance } from '@/features/customers/composables/useCustomerBalance'
 import type { OpenInvoice, PaymentAllocation } from '@/features/customers/customer.types'
@@ -18,9 +18,23 @@ const { recordPayment } = useCustomerBalance(props.customerId)
 const currency    = ref<'USD' | 'SYP'>('USD')
 // Use array instead of Set for Vue 3 reactivity
 const selectedIds = ref<string[]>([])
-const amounts     = ref<Record<string, number>>(
-  Object.fromEntries(props.openInvoices.map(inv => [inv.saleId, inv.remainingUsd]))
+
+// Invoice remaining expressed in the currently selected currency.
+function remainingIn(inv: OpenInvoice): number {
+  if (currency.value === 'USD') return inv.remainingUsd
+  return currentRate.value ? Math.round(inv.remainingUsd * currentRate.value) : inv.remainingUsd
+}
+
+const amounts = ref<Record<string, number>>(
+  Object.fromEntries(props.openInvoices.map(inv => [inv.saleId, remainingIn(inv)]))
 )
+
+// When the cashier switches currency, re-seed the prefilled amounts in that currency —
+// otherwise a USD figure (e.g. 160) gets reinterpreted as 160 SYP.
+watch(currency, () => {
+  amounts.value = Object.fromEntries(props.openInvoices.map(inv => [inv.saleId, remainingIn(inv)]))
+})
+
 const saving = ref(false)
 
 function isSelected(saleId: string): boolean {
@@ -154,7 +168,7 @@ function formatDate(iso: string): string {
                 :data-testid="`amount-${inv.saleId}`"
                 type="number"
                 min="0.01"
-                :max="inv.remainingUsd"
+                :max="remainingIn(inv)"
                 step="0.01"
                 :value="amounts[inv.saleId]"
                 class="amount-input"

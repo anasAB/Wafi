@@ -71,7 +71,10 @@ function handleSaved() {
 
 .page-main {
   flex: 1;
-  padding: 1rem;
+  /* The fixed save bar overlaps the bottom of the page. ProductForm reserves
+     this space on the add page, but here AuditHistory follows the form, so the
+     clearance belongs to the page instead — otherwise the log sits under the bar. */
+  padding: 1rem 1rem 7rem;
   width: 100%;
   max-width: 42rem;
   margin-inline: auto;
@@ -79,9 +82,15 @@ function handleSaved() {
 
 @media (min-width: 1024px) {
   .page-main {
-    padding: 1.25rem 1.5rem;
+    padding: 1.25rem 1.5rem 7rem;
     max-width: 48rem;
   }
+}
+
+/* The form's own bottom reservation would otherwise leave a large empty gap
+   between it and the activity log; the page now provides the bar clearance. */
+:deep(.form-root) {
+  padding-bottom: 1rem;
 }
 
 /* Loading state */

@@ -154,11 +154,17 @@ describe('fetchCustomersRows', () => {
     vi.mocked(db.getAll).mockResolvedValue([])
   })
 
-  it('calls db.getAll with GROUP BY aggregation and shop_id three times', async () => {
+  it('uses correlated subqueries (not a fan-out join) scoped to shop_id', async () => {
     await fetchCustomersRows()
     const call = vi.mocked(db.getAll).mock.calls[0]
-    expect(call[0]).toContain('GROUP BY')
-    expect((call[1] as unknown[]).filter(v => v === '00000000-0000-0000-0000-000000000001')).toHaveLength(3)
+    // Balance comes from per-customer subqueries, not a SUM over joined tables.
+    expect(call[0]).toContain('SELECT SUM(total_usd)')
+    expect(call[0]).not.toContain('GROUP BY')
+    // Balance nets off returned goods, not just payments.
+    expect(call[0]).toContain('refund_amount_usd')
+    // Every table reference is shop-scoped (incl. the returns subqueries that net
+    // off returned goods from the balance, in both USD and SYP).
+    expect((call[1] as unknown[]).filter(v => v === '00000000-0000-0000-0000-000000000001')).toHaveLength(9)
   })
 
   it('maps a db row to Arabic-keyed export row', async () => {
@@ -188,5 +194,45 @@ describe('fetchCustomersRows', () => {
     const rows = await fetchCustomersRows()
     expect(rows[0]['الهاتف']).toBe('—')
     expect(rows[0]['آخر شراء']).toBe('—')
+  })
+})
+
+// The mocked db.getAll above can't detect column-name drift from the real schema.
+// These structural guards assert the SQL references actual schema columns and never
+// the wrong names that previously made every export throw "no such column" at runtime.
+describe('export SQL references real schema columns', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    vi.mocked(db.getAll).mockResolvedValue([])
+  })
+
+  const sql = () => (vi.mocked(db.getAll).mock.calls[0][0] as string)
+
+  it('sales export uses name_ar, li.quantity, exchange_rate_at_sale', async () => {
+    await fetchSalesRows({ start: '2026-06-01', end: '2026-06-05' })
+    expect(sql()).toContain('name_ar')
+    expect(sql()).toContain('li.quantity')
+    expect(sql()).toContain('exchange_rate_at_sale')
+    expect(sql()).not.toContain('li.unit_price_syp') // column does not exist on line items
+  })
+
+  it('expenses export derives SYP from amount/currency (no amount_syp column)', async () => {
+    await fetchExpensesRows({ start: '2026-06-01', end: '2026-06-05' })
+    expect(sql()).toContain("CASE WHEN currency = 'SYP'")
+  })
+
+  it('products export uses name_ar, price_usd, cost_price_usd', async () => {
+    await fetchProductsRows()
+    expect(sql()).toContain('name_ar')
+    expect(sql()).toContain('price_usd')
+    expect(sql()).toContain('cost_price_usd')
+  })
+
+  it('customers export uses c.deleted (not is_deleted) and no amount_syp column', async () => {
+    await fetchCustomersRows()
+    expect(sql()).toContain('c.deleted')
+    expect(sql()).not.toContain('is_deleted')
+    expect(sql()).not.toContain('amount_syp')
   })
 })

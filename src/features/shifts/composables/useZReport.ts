@@ -19,7 +19,8 @@ export function useZReport() {
     loading.value  = true
     error.value    = null
     try {
-      const [countRow, revenueRow, cashUsdRow, cashSypRow, cardRow, creditRow, expRow] =
+      const [countRow, revenueRow, cashUsdRow, cashSypRow, cardRow, creditRow,
+             expUsdRow, expSypRow, refundUsdRow, refundSypRow] =
         await Promise.all([
           db.getOptional<{ count: number }>(
             `SELECT COUNT(*) as count FROM sales WHERE shift_id = ?`,
@@ -52,16 +53,36 @@ export function useZReport() {
              WHERE shift_id = ? AND is_credit = 1`,
             [shift.id]
           ),
+          // Cash expenses, split by currency so each hits the right drawer.
           db.getOptional<{ total: number }>(
             `SELECT COALESCE(SUM(amount_usd), 0) as total FROM expenses
-             WHERE shop_id = ? AND paid_in_cash = 1 AND created_at BETWEEN ? AND ?`,
+             WHERE shop_id = ? AND paid_in_cash = 1 AND currency = 'USD' AND created_at BETWEEN ? AND ?`,
             [device.shopId, shift.openedAt, closedAt]
+          ),
+          db.getOptional<{ total: number }>(
+            `SELECT COALESCE(SUM(amount), 0) as total FROM expenses
+             WHERE shop_id = ? AND paid_in_cash = 1 AND currency = 'SYP' AND created_at BETWEEN ? AND ?`,
+            [device.shopId, shift.openedAt, closedAt]
+          ),
+          // Cash refunds paid out this shift, by currency.
+          db.getOptional<{ total: number }>(
+            `SELECT COALESCE(SUM(refund_amount_usd), 0) as total FROM returns
+             WHERE shift_id = ? AND refund_method = 'cash_usd'`,
+            [shift.id]
+          ),
+          db.getOptional<{ total: number }>(
+            `SELECT COALESCE(SUM(refund_amount_syp), 0) as total FROM returns
+             WHERE shift_id = ? AND refund_method = 'cash_syp'`,
+            [shift.id]
           ),
         ])
 
       const cashUsdSales    = cashUsdRow?.total    ?? 0
       const cashSypSalesRaw = cashSypRow?.total    ?? 0
-      const cashExpensesUsd = expRow?.total        ?? 0
+      const cashExpensesUsd = expUsdRow?.total     ?? 0
+      const cashExpensesSyp = expSypRow?.total     ?? 0
+      const cashRefundsUsd  = refundUsdRow?.total  ?? 0
+      const cashRefundsSyp  = refundSypRow?.total  ?? 0
 
       const recon = computeCashReconciliation({
         openingCashUsd: shift.openingCashUsd,
@@ -70,6 +91,9 @@ export function useZReport() {
         closingCashUsd,
         cashSypSalesRaw,
         closingCashSyp,
+        cashExpensesSyp,
+        cashRefundsUsd,
+        cashRefundsSyp,
       })
 
       const durationMs = new Date(closedAt).getTime() - new Date(shift.openedAt).getTime()
@@ -82,6 +106,9 @@ export function useZReport() {
         cardSales:       cardRow?.total    ?? 0,
         creditSales:     creditRow?.total  ?? 0,
         cashExpensesUsd,
+        cashExpensesSyp,
+        cashRefundsUsd,
+        cashRefundsSyp,
         expectedUsd:     recon.expectedUsd,
         actualUsd:       closingCashUsd,
         varianceUsd:     recon.varianceUsd,
@@ -146,10 +173,14 @@ export function useZReport() {
       `رصيد الفتح:     ${fmtUsd(shift.openingCashUsd)}`,
       `+ نقد مبيعات:   ${fmtUsd(m.cashUsdSales)}`,
       `- مصاريف نقدية: ${fmtUsd(m.cashExpensesUsd)}`,
+      ...(m.cashRefundsUsd > 0 ? [`- مرتجعات نقدية: ${fmtUsd(m.cashRefundsUsd)}`] : []),
       `= متوقع:        ${fmtUsd(m.expectedUsd)}`,
       `عند العد:       ${fmtUsd(m.actualUsd)}`,
       `الفرق:          ${varUsd >= 0 ? '+' : ''}${fmtUsd(varUsd)}${varUsd < 0 ? ' !!!' : ''}`,
       '',
+      `نقد ليرة مبيعات: ${fmtSyp(m.cashSypSalesRaw)}`,
+      ...(m.cashExpensesSyp > 0 ? [`- مصاريف ليرة:  ${fmtSyp(m.cashExpensesSyp)}`] : []),
+      ...(m.cashRefundsSyp > 0 ? [`- مرتجعات ليرة: ${fmtSyp(m.cashRefundsSyp)}`] : []),
       `ليرة متوقع:     ${fmtSyp(m.expectedSyp)}`,
       `ليرة عند العد:  ${fmtSyp(m.actualSyp)}`,
       `فرق الليرة:     ${varSyp >= 0 ? '+' : ''}${fmtSyp(varSyp)}`,

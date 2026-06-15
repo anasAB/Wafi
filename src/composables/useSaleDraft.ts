@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { draftDb } from '@/data/dexie/draft.db'
+import { db } from '@/data/powersync/db'
 import { useSaleStore, type SaleLine } from '@/store/sale.store'
 import { useDeviceStore } from '@/store/device.store'
 
@@ -52,12 +53,25 @@ export function useSaleDraft() {
     // Restore locked rate first so it's in place before lines are added
     sale.setLockedRate(draft.locked_exchange_rate)
     for (const item of draft.line_items) {
+      // Re-read live stock — it may have changed since the draft was saved, and
+      // the draft doesn't persist it. This keeps the no-oversell ceiling accurate.
+      const res = await db.execute(
+        `SELECT current_stock FROM products WHERE id = ? AND is_active = 1`,
+        [item.product_id]
+      )
+      const availableStock: number = (res as any).rows?._array?.[0]?.current_stock ?? 0
+      // Clamp the restored quantity to what's actually in stock; drop the line
+      // entirely if the product is gone or out of stock.
+      const quantity = Math.min(item.quantity, availableStock)
+      if (quantity < 1) continue
+
       const line: SaleLine = {
         productId: item.product_id,
         nameAr: item.name_ar,
-        quantity: item.quantity,
+        quantity,
         unitPriceUsd: item.unit_price_usd,
-        lineTotalUsd: item.quantity * item.unit_price_usd,
+        lineTotalUsd: quantity * item.unit_price_usd,
+        availableStock,
       }
       // Push directly to avoid quantity-merging logic in addLine()
       sale.lines.push(line)

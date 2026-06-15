@@ -9,6 +9,7 @@ export function useDashboardMetrics() {
   const revenueUsd       = ref(0)
   const cogsUsd          = ref(0)
   const expensesUsd      = ref(0)
+  const refundsUsd       = ref(0)
   const missingCostCount = ref(0)
   const invoiceCount     = ref(0)
 
@@ -17,7 +18,7 @@ export function useDashboardMetrics() {
   async function load(period: Period) {
     const { start, end } = getDateRange(period)
 
-    const [revRow, cogsRow, expRow, missingRow, countRow] = await Promise.all([
+    const [revRow, cogsRow, expRow, refundRow, cogsReversalRow, missingRow, countRow] = await Promise.all([
       db.getOptional<{ total: number }>(
         `SELECT COALESCE(SUM(total_usd), 0) as total
          FROM sales WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?`,
@@ -35,6 +36,22 @@ export function useDashboardMetrics() {
          FROM expenses WHERE shop_id = ? AND expense_date BETWEEN ? AND ?`,
         [device.shopId, start, end]
       ),
+      // Refunds reduce revenue (money handed back to the customer).
+      db.getOptional<{ total: number }>(
+        `SELECT COALESCE(SUM(refund_amount_usd), 0) as total
+         FROM returns WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?`,
+        [device.shopId, start, end]
+      ),
+      // Restocked returns reverse COGS at the original sale's unit cost (un-restocked
+      // items stay in COGS — they are a loss, not recovered inventory).
+      db.getOptional<{ cogs: number }>(
+        `SELECT COALESCE(SUM(rli.qty_returned * COALESCE(sli.unit_cost_usd, 0)), 0) as cogs
+         FROM return_line_items rli
+         JOIN returns r ON r.id = rli.return_id
+         JOIN sale_line_items sli ON sli.sale_id = r.original_sale_id AND sli.product_id = rli.product_id
+         WHERE r.shop_id = ? AND rli.restock = 1 AND DATE(r.created_at, 'localtime') BETWEEN ? AND ?`,
+        [device.shopId, start, end]
+      ),
       db.getOptional<{ count: number }>(
         `SELECT COUNT(*) as count FROM products
          WHERE shop_id = ? AND is_active = 1 AND (deleted = 0 OR deleted IS NULL)
@@ -48,12 +65,13 @@ export function useDashboardMetrics() {
       ),
     ])
 
-    revenueUsd.value       = revRow?.total    ?? 0
-    cogsUsd.value          = cogsRow?.cogs    ?? 0
+    refundsUsd.value       = refundRow?.total ?? 0
+    revenueUsd.value       = (revRow?.total ?? 0) - refundsUsd.value
+    cogsUsd.value          = (cogsRow?.cogs ?? 0) - (cogsReversalRow?.cogs ?? 0)
     expensesUsd.value      = expRow?.total    ?? 0
     missingCostCount.value = missingRow?.count ?? 0
     invoiceCount.value     = countRow?.count   ?? 0
   }
 
-  return { revenueUsd, cogsUsd, expensesUsd, profitUsd, missingCostCount, invoiceCount, load }
+  return { revenueUsd, cogsUsd, expensesUsd, refundsUsd, profitUsd, missingCostCount, invoiceCount, load }
 }

@@ -88,11 +88,18 @@ watch(period, async (p) => {
 })
 
 async function loadOpenCreditCount() {
+  // Count customers who still OWE money — credit sales minus payments minus
+  // returned goods. The old query counted anyone who ever bought on credit,
+  // so paid-off and fully-returned customers stayed in the tally forever.
   const row = await db.getOptional<{ count: number }>(
-    `SELECT COUNT(DISTINCT customer_id) as count
-     FROM sales
-     WHERE shop_id = ? AND is_credit = 1 AND customer_id IS NOT NULL`,
-    [device.shopId]
+    `SELECT COUNT(*) as count FROM customers c
+     WHERE c.shop_id = ? AND (c.deleted = 0 OR c.deleted IS NULL)
+       AND (
+         COALESCE((SELECT SUM(total_usd)  FROM sales            WHERE customer_id = c.id AND is_credit = 1 AND shop_id = ?), 0)
+       - COALESCE((SELECT SUM(amount_usd) FROM customer_payments WHERE customer_id = c.id                   AND shop_id = ?), 0)
+       - COALESCE((SELECT SUM(r.refund_amount_usd) FROM returns r JOIN sales s ON s.id = r.original_sale_id WHERE s.customer_id = c.id AND s.is_credit = 1 AND r.shop_id = ?), 0)
+       ) > 0.001`,
+    [device.shopId, device.shopId, device.shopId, device.shopId]
   )
   openCreditCount.value = row?.count ?? 0
 }

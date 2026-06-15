@@ -129,14 +129,11 @@ export function useReturnSheet(saleId: string) {
         )
       }
 
-      // Store credit
-      if (refundMethod.value === 'store_credit' && customerId.value) {
-        await tx.execute(
-          `INSERT INTO customer_payments (id, shop_id, customer_id, sale_id, amount_usd, currency, amount_raw, exchange_rate_at_payment, notes, paid_at, created_at, sync_status)
-           VALUES (?, ?, ?, ?, ?, 'USD', ?, ?, 'مرتجع', ?, ?, 'pending')`,
-          [uuidv4(), shopId, customerId.value, saleId, -refundAmountUsd, -refundAmountUsd, exchangeRate, now.slice(0, 10), now],
-        )
-      }
+      // Note: a returned credit sale reduces the customer's outstanding balance
+      // through the `returns` table itself (see useCustomerBalance / the dashboard
+      // credit count), so no customer_payments row is written here. Doing so would
+      // double-count the return — and a negative payment would wrongly INCREASE the
+      // balance under the `sales - payments` formula.
     })
 
     await logReturnProcessed(returnId, saleId, refundAmountUsd)

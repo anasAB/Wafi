@@ -19,6 +19,9 @@ export interface ZReportMetrics {
   cardSales:       number
   creditSales:     number
   cashExpensesUsd: number
+  cashExpensesSyp: number
+  cashRefundsUsd:  number
+  cashRefundsSyp:  number
   // USD reconciliation
   expectedUsd:     number
   actualUsd:       number

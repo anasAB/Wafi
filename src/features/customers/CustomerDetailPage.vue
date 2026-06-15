@@ -6,10 +6,11 @@ import AppToast from '@/components/ui/AppToast.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import CustomerForm from './components/CustomerForm.vue'
 import RecordPaymentSheet from './components/RecordPaymentSheet.vue'
+import InvoiceDetailSheet from './components/InvoiceDetailSheet.vue'
 import AuditHistory from '@/features/audit/components/AuditHistory.vue'
 import { useCustomers } from './composables/useCustomers'
 import { useCustomerBalance } from './composables/useCustomerBalance'
-import type { Customer } from './customer.types'
+import type { Customer, OpenInvoice } from './customer.types'
 
 const router = useRouter()
 const route  = useRoute()
@@ -22,6 +23,7 @@ const customer    = ref<Customer | undefined>(undefined)
 const showPayment = ref(false)
 const showEdit    = ref(false)
 const showDelete  = ref(false)
+const selectedInvoice = ref<OpenInvoice | null>(null)
 const toast       = ref<{ message: string; type: 'success' | 'error' } | null>(null)
 
 onMounted(async () => {
@@ -128,22 +130,27 @@ async function handleDelete() {
           <div v-if="openInvoices.length > 0" class="section">
             <p class="section-label">فواتير مفتوحة</p>
             <div class="items-list">
-              <div
+              <button
                 v-for="inv in openInvoices"
                 :key="inv.saleId"
+                type="button"
                 :data-testid="`open-invoice-${inv.saleId}`"
                 class="invoice-card"
+                @click="selectedInvoice = inv"
               >
-                <div>
+                <div class="invoice-card-info">
                   <p class="invoice-number">{{ inv.displayNumber }}</p>
                   <p class="item-muted">{{ formatDate(inv.saleDate) }}</p>
                   <p class="item-muted truncate" style="max-width: 180px">{{ inv.itemsSummary }}</p>
                 </div>
-                <div style="text-align: left">
+                <div class="invoice-card-amount">
                   <p class="invoice-amount">{{ inv.remainingUsd.toFixed(2) }}$</p>
                   <p class="item-muted">من ${{ inv.totalUsd.toFixed(2) }}</p>
                 </div>
-              </div>
+                <svg class="invoice-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                </svg>
+              </button>
             </div>
           </div>
 
@@ -177,6 +184,12 @@ async function handleDelete() {
     :open-invoices="openInvoices"
     @saved="handlePaymentSaved"
     @cancel="showPayment = false"
+  />
+
+  <InvoiceDetailSheet
+    v-if="selectedInvoice"
+    :invoice="selectedInvoice"
+    @close="selectedInvoice = null"
   />
 
   <Teleport v-if="showEdit && customer" to="body">
@@ -405,11 +418,35 @@ async function handleDelete() {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: inherit;
   padding: 0.75rem;
   border-radius: 0.75rem;
   background: linear-gradient(135deg, rgba(26,86,219,0.11), rgba(255,255,255,0.04));
   border: 1px solid rgba(245,158,11,0.28);
   box-shadow: 0 4px 20px rgba(26,86,219,0.06);
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.12s, background 0.12s, transform 0.1s;
+}
+
+.invoice-card:hover {
+  border-color: rgba(245,158,11,0.50);
+  background: linear-gradient(135deg, rgba(26,86,219,0.16), rgba(255,255,255,0.06));
+}
+
+.invoice-card:active { transform: scale(0.99); }
+
+.invoice-card-info { min-width: 0; }
+
+.invoice-card-amount { text-align: left; flex-shrink: 0; }
+
+.invoice-chevron {
+  width: 1rem;
+  height: 1rem;
+  color: #637285;
+  flex-shrink: 0;
 }
 
 .invoice-number {

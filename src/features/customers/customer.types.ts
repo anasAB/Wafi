@@ -26,6 +26,13 @@ export interface OpenInvoice {
   itemsSummary:  string  // e.g. "Samsung A55، كابل HDMI"
 }
 
+export interface InvoiceLineItem {
+  nameAr:       string
+  quantity:     number
+  unitPriceUsd: number
+  lineTotalUsd: number
+}
+
 export interface PaymentAllocation {
   saleId:                  string
   amountUsd:               number

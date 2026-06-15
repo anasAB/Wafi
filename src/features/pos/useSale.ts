@@ -17,14 +17,24 @@ export function useSale(currentRateParam: MaybeRef<number | null>) {
     if (currentRate === null) throw new Error('Exchange rate not set')
 
     const result = await db.execute(
-      `SELECT id, name_ar, price_usd FROM products WHERE id = ? AND is_active = 1`,
+      `SELECT id, name_ar, price_usd, current_stock FROM products WHERE id = ? AND is_active = 1`,
       [productId]
     )
-    const rows: Array<{ id: string; name_ar: string; price_usd: number }> =
+    const rows: Array<{ id: string; name_ar: string; price_usd: number; current_stock: number }> =
       (result as any).rows._array
     if (!rows.length) throw new Error(`Product ${productId} not found`)
 
     const p = rows[0]
+    const availableStock = p.current_stock ?? 0
+
+    // Block overselling. The store also clamps as the authoritative guard, but
+    // checking here lets us surface a clear, localized message to the cashier.
+    if (availableStock < 1) throw new Error('نفد المخزون')
+    const inCart = saleStore.lines.find(l => l.productId === p.id)?.quantity ?? 0
+    if (inCart >= availableStock) {
+      throw new Error(`الكمية المتوفرة فقط ${availableStock}`)
+    }
+
     saleStore.setLockedRate(currentRate)
     saleStore.addLine({
       productId:    p.id,
@@ -32,6 +42,7 @@ export function useSale(currentRateParam: MaybeRef<number | null>) {
       quantity:     1,
       unitPriceUsd: p.price_usd,
       lineTotalUsd: p.price_usd,
+      availableStock,
     })
   }
 

@@ -68,7 +68,8 @@ onUnmounted(() => {
         v-for="p in products"
         :key="p.id"
         type="button"
-        :class="['product-btn', flashId === p.id ? 'product-btn-flash' : '']"
+        :class="['product-btn', flashId === p.id ? 'product-btn-flash' : '', p.currentStock <= 0 ? 'product-btn-out' : '']"
+        :disabled="p.currentStock <= 0"
         @click="handleTap(p.id)"
       >
         <!-- Photo or placeholder -->
@@ -161,6 +162,21 @@ onUnmounted(() => {
 
 .product-btn:active {
   transform: scale(0.96);
+}
+
+.product-btn-out {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.product-btn-out:hover {
+  border-color: rgba(26,86,219,0.22);
+  box-shadow: 0 2px 14px rgba(26,86,219,0.08), inset 0 1px 0 rgba(255,255,255,0.07);
+  background: linear-gradient(135deg, rgba(26,86,219,0.12), rgba(255,255,255,0.04));
+}
+
+.product-btn-out:active {
+  transform: none;
 }
 
 .product-btn-flash {

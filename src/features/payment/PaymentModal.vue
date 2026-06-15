@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import NumericKeypad from '@/components/ui/NumericKeypad.vue'
 import CustomerPickerModal from '@/features/customers/components/CustomerPickerModal.vue'
 import { usePayment } from './usePayment'
@@ -14,6 +14,7 @@ const emit = defineEmits<{
 const { state, method, amountReceived, totalUsd, totalSyp, changeDue, error,
         selectMethod, back, cancel, confirm,
         pendingPayments, remainingUsd, isReadyToConfirm,
+        canConfirmSingle, canAddLeg,
         addPayment, removeLastPayment } = usePayment()
 
 const amountStr        = ref('')
@@ -23,15 +24,6 @@ const showPicker       = ref(false)
 const displayAmount = computed(() => {
   if (!amountStr.value) return null
   return parseFloat(amountStr.value)
-})
-
-const amountSufficient = computed(() => {
-  const amount = displayAmount.value
-  if (amount === null || isNaN(amount)) return false
-  if (pendingPayments.value.length > 0) return amount > 0
-  if (method.value === 'cash_usd') return amount >= totalUsd.value
-  if (method.value === 'cash_syp') return amount >= totalSyp.value
-  return false
 })
 
 const showChangeDue = computed(() =>
@@ -55,6 +47,28 @@ function handleDelete() {
   amountReceived.value = displayAmount.value
 }
 
+// Mirror the on-screen keypad on a physical keyboard so the amount can be typed
+// on a laptop/tablet. The on-screen keypad stays the primary input on phones.
+function handleKeydown(e: KeyboardEvent) {
+  if (state.value !== 'amount-entry') return
+  const k = e.key
+  if (k >= '0' && k <= '9') {
+    handleDigit(k)
+  } else if (k === '.' || k === ',') {   // accept comma as a decimal separator too
+    handleDigit('.')
+  } else if (k === 'Backspace') {
+    handleDelete()
+  } else if (k === 'Enter') {
+    handleConfirm()
+  } else {
+    return
+  }
+  e.preventDefault()
+}
+
+onMounted(() => window.addEventListener('keydown', handleKeydown))
+onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
+
 function handleSelectCredit() {
   selectMethod('credit')
   showPicker.value = true
@@ -77,7 +91,7 @@ function handleCancel() {
 }
 
 function handleAddSplitPayment() {
-  if (!amountSufficient.value) return
+  if (!canAddLeg.value) return
   const raw = displayAmount.value ?? 0
   addPayment(method.value as 'cash_usd' | 'cash_syp' | 'card', raw)
   amountStr.value      = ''
@@ -91,7 +105,15 @@ function handleAddCardSplitPayment() {
 }
 
 async function handleConfirm() {
-  if (method.value !== 'card' && method.value !== 'credit' && !amountSufficient.value) return
+  // In split mode a card tender covers whatever is still owed — fold it in before confirming
+  // so the card leg isn't dropped (confirm() settles from pendingPayments only).
+  if (method.value === 'card' && pendingPayments.value.length > 0 && remainingUsd.value > 0.001) {
+    addPayment('card', remainingUsd.value)
+  }
+  const canFinish =
+    method.value === 'card' || method.value === 'credit' ||
+    canConfirmSingle.value || isReadyToConfirm.value
+  if (!canFinish) return
   try {
     const sale = await confirm(selectedCustomer.value?.id)
     emit('confirmed', sale)
@@ -242,7 +264,7 @@ async function handleConfirm() {
           </p>
         </div>
 
-        <div class="amount-input-box" :class="{ 'amount-input-box-error': amountStr && !amountSufficient }">
+        <div class="amount-input-box" :class="{ 'amount-input-box-error': amountStr && !canConfirmSingle && !canAddLeg }">
           <p class="amount-input-value">{{ amountStr || '0' }}</p>
           <p v-if="showChangeDue" class="change-due-row">
             الباقي:
@@ -252,17 +274,17 @@ async function handleConfirm() {
           </p>
         </div>
 
-        <p v-if="amountStr && !amountSufficient" class="modal-error">المبلغ غير كافٍ</p>
+        <p v-if="amountStr && !canConfirmSingle && !canAddLeg" class="modal-error">المبلغ غير كافٍ</p>
 
         <NumericKeypad
-          :confirm-disabled="!amountSufficient"
+          :confirm-disabled="!canConfirmSingle"
           @digit="handleDigit"
           @delete="handleDelete"
           @confirm="handleConfirm"
         />
 
         <button
-          v-if="amountSufficient"
+          v-if="canAddLeg"
           type="button"
           class="split-add-btn"
           data-testid="add-split-btn"

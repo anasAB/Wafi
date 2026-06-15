@@ -30,14 +30,22 @@ export function useCustomerBalance(customerId: string) {
         (SELECT COALESCE(SUM(total_usd), 0)  FROM sales            WHERE customer_id = ? AND is_credit = 1 AND shop_id = ?)
         -
         (SELECT COALESCE(SUM(amount_usd), 0) FROM customer_payments WHERE customer_id = ?                   AND shop_id = ?)
+        -
+        -- Returned goods reduce what the customer owes, regardless of refund method.
+        (SELECT COALESCE(SUM(r.refund_amount_usd), 0) FROM returns r
+           JOIN sales s ON s.id = r.original_sale_id
+          WHERE s.customer_id = ? AND s.is_credit = 1 AND r.shop_id = ?)
         AS balance_usd`,
-      [customerId, shopId, customerId, shopId]
+      [customerId, shopId, customerId, shopId, customerId, shopId]
     )
     balanceUsd.value = balRow?.balance_usd ?? 0
 
     const invoiceRows = await db.getAll<InvoiceRow>(
       `SELECT s.id, s.display_sale_number, s.created_at, s.total_usd,
-         s.total_usd - COALESCE(SUM(cp.amount_usd), 0) AS remaining_usd
+         s.total_usd
+           - COALESCE(SUM(cp.amount_usd), 0)
+           - COALESCE((SELECT SUM(r.refund_amount_usd) FROM returns r WHERE r.original_sale_id = s.id), 0)
+           AS remaining_usd
        FROM sales s
        LEFT JOIN customer_payments cp ON cp.sale_id = s.id
        WHERE s.customer_id = ? AND s.is_credit = 1 AND s.shop_id = ?
@@ -93,7 +101,10 @@ export function useCustomerBalance(customerId: string) {
     const committedBySale = new Map<string, number>()
     for (const alloc of allocations) {
       const remRow = await db.getOptional<{ remaining_usd: number }>(
-        `SELECT s.total_usd - COALESCE(SUM(cp.amount_usd), 0) AS remaining_usd
+        `SELECT s.total_usd
+           - COALESCE(SUM(cp.amount_usd), 0)
+           - COALESCE((SELECT SUM(r.refund_amount_usd) FROM returns r WHERE r.original_sale_id = s.id), 0)
+           AS remaining_usd
          FROM sales s
          LEFT JOIN customer_payments cp ON cp.sale_id = s.id
          WHERE s.id = ?

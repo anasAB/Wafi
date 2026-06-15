@@ -7,6 +7,9 @@ export interface SaleLine {
   quantity:     number
   unitPriceUsd: number
   lineTotalUsd: number
+  /** Stock available for this product at the time it was added. Acts as the
+   *  hard ceiling on quantity so the cart can never oversell. */
+  availableStock: number
 }
 
 export const useSaleStore = defineStore('sale', () => {
@@ -22,11 +25,18 @@ export const useSaleStore = defineStore('sale', () => {
   )
 
   function addLine(line: SaleLine) {
+    const max = line.availableStock ?? Infinity
     const existing = lines.value.find(l => l.productId === line.productId)
     if (existing) {
+      // Keep the latest known stock figure, then increment only if there's room.
+      // This clamp is the authoritative guard against overselling — it holds even
+      // when rapid taps race past the pre-check in useSale.addLine.
+      existing.availableStock = line.availableStock
+      if (existing.quantity >= max) return
       existing.quantity    += 1
       existing.lineTotalUsd = existing.quantity * existing.unitPriceUsd
     } else {
+      if (max < 1) return
       lines.value.push({ ...line })
     }
   }
@@ -40,8 +50,10 @@ export const useSaleStore = defineStore('sale', () => {
     if (quantity < 1) return
     const line = lines.value.find(l => l.productId === productId)
     if (line) {
-      line.quantity     = quantity
-      line.lineTotalUsd = quantity * line.unitPriceUsd
+      // Clamp to available stock so the "+" control can never push past it.
+      const clamped     = Math.min(quantity, line.availableStock ?? Infinity)
+      line.quantity     = clamped
+      line.lineTotalUsd = clamped * line.unitPriceUsd
     }
   }
 

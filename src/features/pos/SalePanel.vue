@@ -79,6 +79,8 @@ function handleClearSale() {
           <button
             type="button"
             class="qty-btn"
+            :disabled="line.quantity >= line.availableStock"
+            :title="line.quantity >= line.availableStock ? `الكمية المتوفرة فقط ${line.availableStock}` : undefined"
             @click="store.updateQuantity(line.productId, line.quantity + 1)"
           >+</button>
         </div>
@@ -315,8 +317,13 @@ function handleClearSale() {
   transition: background 0.12s, transform 0.1s;
 }
 
-.qty-btn:hover { background: rgba(26,86,219,0.28); }
-.qty-btn:active { transform: scale(0.88); }
+.qty-btn:hover:not(:disabled) { background: rgba(26,86,219,0.28); }
+.qty-btn:active:not(:disabled) { transform: scale(0.88); }
+
+.qty-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
 
 .qty-value {
   font-size: 14px;

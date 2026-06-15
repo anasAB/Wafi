@@ -16,18 +16,37 @@ describe('useSaleStore', () => {
 
   it('addLine adds a new line', () => {
     const store = useSaleStore()
-    store.addLine({ productId: 'p1', nameAr: 'تست', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10 })
+    store.addLine({ productId: 'p1', nameAr: 'تست', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10, availableStock: 99 })
     expect(store.lines).toHaveLength(1)
     expect(store.totalUsd).toBe(10)
   })
 
   it('addLine increments quantity for existing product', () => {
     const store = useSaleStore()
-    store.addLine({ productId: 'p1', nameAr: 'تست', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10 })
-    store.addLine({ productId: 'p1', nameAr: 'تست', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10 })
+    store.addLine({ productId: 'p1', nameAr: 'تست', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10, availableStock: 99 })
+    store.addLine({ productId: 'p1', nameAr: 'تست', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10, availableStock: 99 })
     expect(store.lines).toHaveLength(1)
     expect(store.lines[0].quantity).toBe(2)
     expect(store.lines[0].lineTotalUsd).toBe(20)
+  })
+
+  it('addLine never increments quantity beyond availableStock', () => {
+    const store = useSaleStore()
+    const line = { productId: 'p1', nameAr: 'تست', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10, availableStock: 2 }
+    // Five taps, but only 2 in stock.
+    store.addLine(line)
+    store.addLine(line)
+    store.addLine(line)
+    store.addLine(line)
+    store.addLine(line)
+    expect(store.lines[0].quantity).toBe(2)
+    expect(store.lines[0].lineTotalUsd).toBe(20)
+  })
+
+  it('addLine refuses to add a product with zero stock', () => {
+    const store = useSaleStore()
+    store.addLine({ productId: 'p1', nameAr: 'تست', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10, availableStock: 0 })
+    expect(store.lines).toHaveLength(0)
   })
 
   it('setLockedRate sets rate only on first call', () => {
@@ -39,7 +58,7 @@ describe('useSaleStore', () => {
 
   it('clear resets lines and locked rate', () => {
     const store = useSaleStore()
-    store.addLine({ productId: 'p1', nameAr: 'تست', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10 })
+    store.addLine({ productId: 'p1', nameAr: 'تست', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10, availableStock: 99 })
     store.setLockedRate(14500)
     store.clear()
     expect(store.lines).toHaveLength(0)
@@ -48,8 +67,8 @@ describe('useSaleStore', () => {
 
   it('removeLine removes the correct product', () => {
     const store = useSaleStore()
-    store.addLine({ productId: 'p1', nameAr: 'أ', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10 })
-    store.addLine({ productId: 'p2', nameAr: 'ب', quantity: 1, unitPriceUsd: 5, lineTotalUsd: 5 })
+    store.addLine({ productId: 'p1', nameAr: 'أ', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10, availableStock: 99 })
+    store.addLine({ productId: 'p2', nameAr: 'ب', quantity: 1, unitPriceUsd: 5, lineTotalUsd: 5, availableStock: 99 })
     store.removeLine('p1')
     expect(store.lines).toHaveLength(1)
     expect(store.lines[0].productId).toBe('p2')
@@ -65,11 +84,19 @@ describe('useSaleStore', () => {
 
   it('updateQuantity updates lineTotalUsd; ignores quantity < 1', () => {
     const store = useSaleStore()
-    store.addLine({ productId: 'p1', nameAr: 'تست', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10 })
+    store.addLine({ productId: 'p1', nameAr: 'تست', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10, availableStock: 99 })
     store.updateQuantity('p1', 3)
     expect(store.lines[0].quantity).toBe(3)
     expect(store.lines[0].lineTotalUsd).toBe(30)
     store.updateQuantity('p1', 0)
     expect(store.lines[0].quantity).toBe(3) // no-op: quantity < 1 rejected
+  })
+
+  it('updateQuantity clamps to availableStock', () => {
+    const store = useSaleStore()
+    store.addLine({ productId: 'p1', nameAr: 'تست', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10, availableStock: 2 })
+    store.updateQuantity('p1', 5)
+    expect(store.lines[0].quantity).toBe(2) // clamped to stock ceiling
+    expect(store.lines[0].lineTotalUsd).toBe(20)
   })
 })

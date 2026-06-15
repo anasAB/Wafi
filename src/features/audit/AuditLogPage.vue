@@ -8,7 +8,7 @@ import { getDateRange }  from '@/features/dashboard/composables/periodUtils'
 import { useAuditLog }   from '@/features/audit/composables/useAuditLog'
 import { useSessionStore } from '@/store/session.store'
 import { useStaff }      from '@/features/staff/composables/useStaff'
-import type { AuditLog } from '@/features/audit/audit.types'
+import { eventLabel, formatAuditTime } from '@/features/audit/audit.format'
 
 const router    = useRouter()
 const session   = useSessionStore()
@@ -47,41 +47,6 @@ watch([filterStaffId, filterEvent], reload)
 
 function toggleExpand(id: string) {
   expandedId.value = expandedId.value === id ? null : id
-}
-
-function eventLabel(entry: AuditLog): string {
-  const m = entry.meta
-  switch (entry.event) {
-    case 'sale.completed':            return `أكمل بيع بقيمة $${(m.totalUsd as number)?.toFixed(2)}`
-    case 'sale.deleted':              return `حذف بيع بقيمة $${(m.totalUsd as number)?.toFixed(2)}`
-    case 'return.processed':          return `أرجع بضاعة بقيمة $${(m.refundUsd as number)?.toFixed(2)}`
-    case 'product.created':           return `أضاف منتج: ${m.name}`
-    case 'product.updated':           return `عدّل منتج: ${m.name}`
-    case 'product.deleted':           return `حذف منتج: ${m.name}`
-    case 'product.price_changed':     return `غيّر سعر ${m.name} من $${m.old_price} إلى $${m.new_price}`
-    case 'expense.created':           return `أضاف مصروف ${m.category}: $${(m.amountUsd as number)?.toFixed(2)}`
-    case 'expense.deleted':           return `حذف مصروف ${m.category}: $${(m.amountUsd as number)?.toFixed(2)}`
-    case 'customer.created':          return `أضاف عميل: ${m.name}`
-    case 'customer.updated':          return `عدّل عميل: ${m.name}`
-    case 'customer.deleted':          return `حذف عميل: ${m.name}`
-    case 'customer.payment_recorded': return `سجّل دفعة $${(m.amountUsd as number)?.toFixed(2)}`
-    case 'stock.adjusted':            return `عدّل مخزون ${m.name}: ${m.old_qty} ← ${m.new_qty}`
-    case 'shift.opened':              return `فتح وردية`
-    case 'shift.closed':              return `أغلق وردية`
-    case 'exchange_rate.changed':     return `غيّر سعر الصرف من ${m.old_rate} إلى ${m.new_rate}`
-    case 'settings.receipt_updated':  return `عدّل إعدادات الفاتورة`
-    case 'staff.created':             return `أضاف موظف: ${m.name} (${m.role})`
-    case 'staff.deactivated':         return `عطّل حساب: ${m.name}`
-    case 'staff.permissions_changed': return `عدّل صلاحيات: ${m.name}`
-    default:                          return entry.event
-  }
-}
-
-function formatTime(iso: string): string {
-  return new Intl.DateTimeFormat('ar-SY', {
-    month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  }).format(new Date(iso))
 }
 </script>
 
@@ -128,7 +93,7 @@ function formatTime(iso: string): string {
                 <span class="log-label">{{ eventLabel(e) }}</span>
                 <span class="log-staff">{{ e.staffName }}</span>
               </div>
-              <span class="log-time">{{ formatTime(e.createdAt) }}</span>
+              <span class="log-time">{{ formatAuditTime(e.createdAt) }}</span>
             </div>
             <!-- Expanded meta -->
             <div v-if="expandedId === e.id" class="log-meta">
