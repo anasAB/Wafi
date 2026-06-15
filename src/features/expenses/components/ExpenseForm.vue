@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useExchangeRate } from '@/features/exchange-rate'
 import { useExpenses } from '@/features/expenses/composables/useExpenses'
 import ExpenseCategoryChips from './ExpenseCategoryChips.vue'
+import AuditHistory from '@/features/audit/components/AuditHistory.vue'
 import type { NewExpense, Expense } from '@/features/expenses/expense.types'
 
 const props = defineProps<{ initialExpense?: Expense }>()
@@ -20,6 +21,7 @@ const currency    = ref<'USD' | 'SYP'>(props.initialExpense?.currency ?? 'USD')
 const category    = ref(props.initialExpense?.category ?? '')
 const expenseDate = ref(props.initialExpense?.expenseDate ?? new Date().toISOString().slice(0, 10))
 const notes       = ref(props.initialExpense?.notes ?? '')
+const paidInCash  = ref(props.initialExpense?.paidInCash ?? true)
 const saving      = ref(false)
 const errors      = ref<Record<string, string>>({})
 
@@ -54,7 +56,7 @@ async function handleSave(addAnother = false) {
       category:    category.value.trim(),
       expenseDate: expenseDate.value,
       notes:       notes.value.trim() || undefined,
-      paidInCash:  true,
+      paidInCash:  paidInCash.value,
     }
 
     if (props.initialExpense) {
@@ -163,6 +165,26 @@ async function handleSave(addAnother = false) {
           />
         </div>
 
+        <!-- Payment method (cash vs non-cash) -->
+        <div class="field-group">
+          <label class="field-label">طريقة الدفع</label>
+          <div class="currency-toggle">
+            <button
+              type="button"
+              data-testid="paid-cash"
+              :class="['currency-btn', paidInCash ? 'currency-active' : 'currency-idle']"
+              @click="paidInCash = true"
+            >نقدًا</button>
+            <button
+              type="button"
+              data-testid="paid-noncash"
+              :class="['currency-btn', !paidInCash ? 'currency-active' : 'currency-idle']"
+              @click="paidInCash = false"
+            >تحويل / بطاقة</button>
+          </div>
+          <p class="field-hint">المصاريف النقدية فقط تُخصم من الصندوق</p>
+        </div>
+
         <!-- Notes -->
         <div class="field-group">
           <label class="field-label">
@@ -179,6 +201,12 @@ async function handleSave(addAnother = false) {
             @blur="($event.target as HTMLTextAreaElement).style.borderColor = 'rgba(255,255,255,0.18)'"
           />
         </div>
+
+        <AuditHistory
+          v-if="initialExpense"
+          entity-type="expense"
+          :entity-id="initialExpense.id"
+        />
 
         <!-- Action buttons -->
         <div class="action-row">

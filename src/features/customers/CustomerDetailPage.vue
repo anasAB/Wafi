@@ -6,6 +6,7 @@ import AppToast from '@/components/ui/AppToast.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import CustomerForm from './components/CustomerForm.vue'
 import RecordPaymentSheet from './components/RecordPaymentSheet.vue'
+import AuditHistory from '@/features/audit/components/AuditHistory.vue'
 import { useCustomers } from './composables/useCustomers'
 import { useCustomerBalance } from './composables/useCustomerBalance'
 import type { Customer } from './customer.types'
@@ -163,6 +164,7 @@ async function handleDelete() {
 
         </div>
       </div>
+      <AuditHistory entity-type="customer" :entity-id="route.params.id as string" />
     </main>
 
     <div v-else class="loading-state">جارٍ التحميل...</div>

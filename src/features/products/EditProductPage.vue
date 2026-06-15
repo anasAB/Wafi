@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import ProductForm from './components/ProductForm.vue'
 import AppToast from '@/components/ui/AppToast.vue'
+import AuditHistory from '@/features/audit/components/AuditHistory.vue'
 import { useProducts } from './composables/useProducts'
 import type { Product } from '@/features/pos/pos.types'
 
@@ -48,6 +49,11 @@ function handleSaved() {
         :product="product"
         @saved="handleSaved"
         @cancel="router.push('/products')"
+      />
+      <AuditHistory
+        v-if="product"
+        entity-type="product"
+        :entity-id="route.params.id as string"
       />
     </main>
     <AppToast v-if="toast" :message="toast.message" :type="toast.type" @dismiss="toast = null" />

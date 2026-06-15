@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import AppToast from '@/components/ui/AppToast.vue'
 import ReturnLineItem from './ReturnLineItem.vue'
+import AuditHistory from '@/features/audit/components/AuditHistory.vue'
 import { useReturnSheet } from '../composables/useReturnSheet'
 import { useReturnReasons } from '../composables/useReturnReasons'
 import type { RefundMethod, ReturnLine } from '../returns.types'
@@ -108,6 +109,8 @@ async function handleConfirm() {
             />
           </div>
         </div>
+
+        <AuditHistory entity-type="return" :entity-id="saleId" />
 
         <!-- Fixed footer -->
         <div class="sheet-footer">
