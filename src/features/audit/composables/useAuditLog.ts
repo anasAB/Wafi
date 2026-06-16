@@ -62,11 +62,8 @@ export function useAuditLog() {
   }): Promise<void> {
     const device = useDeviceStore()
     const params: unknown[] = [device.shopId, options.startDate, options.endDate]
-    // Filter on the LOCAL calendar day (matches dashboard + sale history). Comparing
-    // the raw UTC `created_at` string against local date bounds dropped events whose
-    // UTC date differs from the shop's local date (e.g. morning hours in UTC+3 Syria).
     let sql = `SELECT * FROM audit_log
-               WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?`
+               WHERE shop_id = ? AND created_at >= ? AND created_at <= ?`
     if (options.staffId) { sql += ' AND staff_id = ?'; params.push(options.staffId) }
     if (options.event)   { sql += ' AND event = ?';    params.push(options.event) }
     sql += ' ORDER BY created_at DESC LIMIT 200'

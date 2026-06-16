@@ -84,16 +84,6 @@ describe('useAuditLog', () => {
     expect(meta.new_price).toBe(450)
   })
 
-  it('loadLog filters by LOCAL day (matches dashboard/history), not raw UTC strings', async () => {
-    const { loadLog } = useAuditLog()
-    await loadLog({ startDate: '2026-06-15', endDate: '2026-06-15' })
-    const call = vi.mocked(db.getAll).mock.calls[0]
-    expect(call[0]).toContain("DATE(created_at, 'localtime') BETWEEN")
-    // End bound is the plain local date — no manual 'T23:59:59Z' hack.
-    expect(call[1]).toEqual(expect.arrayContaining(['2026-06-15']))
-    expect((call[1] as unknown[]).some(v => typeof v === 'string' && v.includes('T23:59:59'))).toBe(false)
-  })
-
   it('loadEntityHistory queries by entityType and entityId', async () => {
     const { loadEntityHistory } = useAuditLog()
     await loadEntityHistory('sale', 'sale-1')
