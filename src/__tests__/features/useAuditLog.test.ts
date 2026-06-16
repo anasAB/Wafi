@@ -84,12 +84,47 @@ describe('useAuditLog', () => {
     expect(meta.new_price).toBe(450)
   })
 
+  it('loadLog filters by LOCAL day (matches dashboard/history), not raw UTC strings', async () => {
+    const { loadLog } = useAuditLog()
+    await loadLog({ startDate: '2026-06-15', endDate: '2026-06-15' })
+    const call = vi.mocked(db.getAll).mock.calls[0]
+    expect(call[0]).toContain("DATE(created_at, 'localtime') BETWEEN")
+    // End bound is the plain local date — no manual 'T23:59:59Z' hack.
+    expect(call[1]).toEqual(expect.arrayContaining(['2026-06-15']))
+    expect((call[1] as unknown[]).some(v => typeof v === 'string' && v.includes('T23:59:59'))).toBe(false)
+  })
+
   it('loadEntityHistory queries by entityType and entityId', async () => {
     const { loadEntityHistory } = useAuditLog()
     await loadEntityHistory('sale', 'sale-1')
     expect(db.getAll).toHaveBeenCalledWith(
       expect.stringContaining('entity_type = ?'),
       expect.arrayContaining(['sale', 'sale-1'])
+    )
+  })
+})
+
+describe('useAuditLog — supplier & receiving helpers', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  it('logSupplierCreated writes a supplier.created row', async () => {
+    const { logSupplierCreated } = useAuditLog()
+    await logSupplierCreated('sup-1', 'مؤسسة النور')
+    expect(db.execute).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO audit_log'),
+      expect.arrayContaining(['supplier.created', 'supplier', 'sup-1']),
+    )
+  })
+
+  it('logReceivingCreated writes a receiving.created row', async () => {
+    const { logReceivingCreated } = useAuditLog()
+    await logReceivingCreated('rcv-1', 'مؤسسة النور', 1200, 5)
+    expect(db.execute).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO audit_log'),
+      expect.arrayContaining(['receiving.created', 'receiving', 'rcv-1']),
     )
   })
 })
