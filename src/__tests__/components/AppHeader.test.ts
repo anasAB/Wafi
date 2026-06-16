@@ -1,8 +1,11 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { createPinia } from 'pinia'
 import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
+
+vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
+
 import AppHeader from '@/components/ui/AppHeader.vue'
 
 const router = createRouter({

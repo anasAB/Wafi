@@ -29,42 +29,39 @@ describe('LandingPage', () => {
     const wrapper = mount(LandingPage, {
       global: { plugins: [router, makePinia()] },
     })
-    expect(wrapper.find('[data-testid="hero"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('Fully in command')
+    expect(wrapper.find('.lp-hero').exists()).toBe(true)
+    expect(wrapper.text()).toContain('تحت سيطرتك الكاملة.')
   })
 
-  it('renders three pillar cards', async () => {
+  it('renders the features grid', async () => {
     const router = makeRouter()
     await router.push('/')
     const wrapper = mount(LandingPage, {
       global: { plugins: [router, makePinia()] },
     })
-    expect(wrapper.find('[data-testid="pillars"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('Always On')
-    expect(wrapper.text()).toContain('Speaks Your Language')
-    expect(wrapper.text()).toContain('Any Device You Have')
+    expect(wrapper.find('.lp-features-grid').exists()).toBe(true)
+    expect(wrapper.text()).toContain('كل ما يحتاجه متجرك.')
   })
 
   it('renders product story section', async () => {
     const router = makeRouter()
     await router.push('/')
     const wrapper = mount(LandingPage, { global: { plugins: [router, makePinia()] } })
-    expect(wrapper.find('[data-testid="product-story"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('Ring up a sale in under 10 seconds')
+    expect(wrapper.find('.lp-story-wrap').exists()).toBe(true)
   })
 
   it('renders founding CTA section', async () => {
     const router = makeRouter()
     await router.push('/')
     const wrapper = mount(LandingPage, { global: { plugins: [router, makePinia()] } })
-    expect(wrapper.find('[data-testid="founding-cta"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('Join the founding circle')
+    expect(wrapper.find('.lp-cta-card').exists()).toBe(true)
+    expect(wrapper.text()).toContain('انضم لدائرة المؤسسين.')
   })
 
   it('renders footer', async () => {
     const router = makeRouter()
     await router.push('/')
     const wrapper = mount(LandingPage, { global: { plugins: [router, makePinia()] } })
-    expect(wrapper.find('[data-testid="footer"]').exists()).toBe(true)
+    expect(wrapper.find('.lp-footer').exists()).toBe(true)
   })
 })
