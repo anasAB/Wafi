@@ -135,7 +135,7 @@ function handleClearSale() {
 
       <button
         type="button"
-        :disabled="store.lines.length === 0"
+        :disabled="store.lines.length === 0 || store.totalUsd <= 0"
         class="pay-btn"
         @click="emit('pay')"
       >

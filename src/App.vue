@@ -78,8 +78,25 @@ watch(
 </script>
 
 <template>
-  <!-- Loading splash -->
-  <div v-if="!appReady" class="fixed inset-0 bg-[#06090F] flex items-center justify-center">
+  <!-- Branded loading splash (BUG-001) -->
+  <div
+    v-if="!appReady"
+    class="fixed inset-0 bg-[#06090F] flex flex-col items-center justify-center gap-6"
+    role="status"
+    aria-live="polite"
+    aria-label="جاري تحميل وافي"
+  >
+    <!-- App wordmark -->
+    <h1
+      class="text-5xl font-bold leading-none"
+      style="font-family: var(--font-display-ar); color: var(--color-gold-primary)"
+    >وافي</h1>
+    <!-- Spinner (brand-colored arc) -->
+    <div
+      class="w-9 h-9 rounded-full border-2 border-white/10 animate-spin"
+      style="border-top-color: var(--color-gold-primary)"
+      aria-hidden="true"
+    ></div>
     <span class="text-[#637285] text-sm">جاري التحميل...</span>
   </div>
 

@@ -5,7 +5,7 @@ import AppHeader from '@/components/ui/AppHeader.vue'
 import AppToast from '@/components/ui/AppToast.vue'
 import ProductGrid from './ProductGrid.vue'
 import SalePanel from './SalePanel.vue'
-import { useSale } from './useSale'
+import { useSale, ExchangeRateNotSetError } from './useSale'
 import { useExchangeRate } from '@/features/exchange-rate'
 import { useBarcodeScan } from '@/composables/useBarcodeScan'
 import { useSaleDraft } from '@/composables/useSaleDraft'
@@ -37,8 +37,12 @@ async function handleProductTap(productId: string) {
     await sale.addLine(productId)
     scheduleSave()
   } catch (err) {
+    // Map known domain errors to localized, actionable Arabic guidance.
+    // The exchange-rate case tells the user exactly how to fix it (BUG-013/014).
     toast.value = {
-      message: err instanceof Error ? err.message : 'خطأ في الإضافة',
+      message: err instanceof ExchangeRateNotSetError
+        ? 'حدّد سعر صرف الدولار من الأعلى قبل البدء في البيع'
+        : err instanceof Error ? err.message : 'خطأ في الإضافة',
       type: 'error',
     }
   }

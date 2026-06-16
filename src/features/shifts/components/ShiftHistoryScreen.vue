@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
+import ZReportScreen from '@/features/shifts/components/ZReportScreen.vue'
 import { useShift } from '@/features/shifts/composables/useShift'
 import { useStaff } from '@/features/staff/composables/useStaff'
 import type { CashierShift } from '@/features/shifts/shift.types'
@@ -11,6 +12,8 @@ const { loadShiftHistory } = useShift()
 const { staff, loadStaff } = useStaff()
 const shifts  = ref<CashierShift[]>([])
 const loading = ref(false)
+// Opens the same Z-report / close-shift flow the sidebar uses (BUG-012 new list).
+const showZReport = ref(false)
 
 onMounted(async () => {
   loading.value = true
@@ -160,6 +163,13 @@ const totalHours = computed(() => {
                   <span class="stat-tiny-value">{{ fmtDuration(s) }}</span>
                 </div>
               </div>
+
+              <!-- Close-shift action, right on the card (BUG-012 new list) -->
+              <div class="shift-card-action">
+                <button type="button" class="close-shift-cta" @click="showZReport = true">
+                  إغلاق الوردية
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -226,6 +236,10 @@ const totalHours = computed(() => {
 
       </template>
     </main>
+
+    <Teleport to="body">
+      <ZReportScreen v-if="showZReport" />
+    </Teleport>
   </div>
 </template>
 
@@ -520,4 +534,27 @@ const totalHours = computed(() => {
   width: 1px;
   background: rgba(26, 86, 219, 0.14);
 }
+
+/* ─── Close-shift action ──────────────────────────────────── */
+.shift-card-action {
+  padding: 10px 16px 14px;
+  border-top: 1px solid rgba(26, 86, 219, 0.14);
+}
+.close-shift-cta {
+  width: 100%;
+  height: 40px;
+  border-radius: 0.75rem;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  font-size: 0.875rem;
+  font-weight: 700;
+  cursor: pointer;
+  /* Routine end-of-day action — primary, not destructive red (BUG-014 new list). */
+  color: #fff;
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  border: none;
+  box-shadow: 0 4px 16px rgba(26, 86, 219, 0.35);
+  transition: opacity 0.15s, transform 0.1s;
+}
+.close-shift-cta:hover { opacity: 0.9; }
+.close-shift-cta:active { transform: scale(0.98); }
 </style>

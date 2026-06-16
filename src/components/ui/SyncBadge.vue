@@ -1,11 +1,20 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { SyncStatus } from '@/store/sync.store'
 
-defineProps<{ status: SyncStatus; pendingCount?: number }>()
+const props = defineProps<{ status: SyncStatus; pendingCount?: number }>()
+
+// Explain the indicator on hover — offline is a supported state here, not an
+// error, so the tooltip reassures rather than alarms (BUG-015 new list).
+const tooltip = computed(() => {
+  if (props.status === 'online')  return 'متصل بالإنترنت — تتم المزامنة تلقائياً'
+  if (props.status === 'syncing') return 'جارٍ مزامنة بياناتك...'
+  return 'غير متصل — يعمل التطبيق دون إنترنت، وستتم المزامنة تلقائياً عند عودة الاتصال'
+})
 </script>
 
 <template>
-  <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full">
+  <span :title="tooltip" class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full">
     <span
       :class="[
         'w-2 h-2 rounded-full',

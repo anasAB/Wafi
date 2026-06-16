@@ -57,10 +57,11 @@ const options: { value: Period; label: string }[] = [
 }
 
 .toggle-btn.active {
-  background: #1A56DB;
+  /* Brand gradient (matches primary buttons) for a clearly distinct active tab. */
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
   color: #ffffff;
   font-weight: 700;
-  box-shadow: 0 2px 10px rgba(26, 86, 219, 0.45);
+  box-shadow: 0 2px 12px rgba(26, 86, 219, 0.50);
 }
 
 .toggle-btn.inactive {

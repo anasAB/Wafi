@@ -286,14 +286,9 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
         </div>
       </div>
 
-      <!-- No rate warning -->
-      <div v-if="!currentRate" class="no-rate-warning">
-        حدد سعر صرف الدولار من الأعلى قبل البدء في البيع.
-      </div>
-
       <!-- KPI strip -->
       <div class="kpi-strip">
-        <div class="kpi-card blue-accent" @click="router.push(`/history?period=${period}`)">
+        <div class="kpi-card" @click="router.push(`/history?period=${period}`)">
           <div class="kc-icon">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
@@ -304,7 +299,7 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
           <div class="kc-accent-bar"></div>
           <div class="kc-sub" v-if="revenueSyp">{{ revenueSyp.toLocaleString('ar-SY') }} ل.س</div>
         </div>
-        <div class="kpi-card green-accent" @click="showProfitSheet = true">
+        <div class="kpi-card" @click="showProfitSheet = true">
           <div class="kc-icon">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
@@ -461,8 +456,14 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
                 </div>
               </div>
 
-              <button class="signal-row sig-green" @click="showCashDrawer = true">
-                <span class="sig-dot dot-green"></span>
+              <!-- $0 in the drawer is not "healthy" — only show green when there's
+                   actually cash; otherwise stay neutral/amber (BUG-008 new list). -->
+              <button
+                class="signal-row"
+                :class="drawer.cashUsd.value > 0 ? 'sig-green' : 'sig-yellow'"
+                @click="showCashDrawer = true"
+              >
+                <span class="sig-dot" :class="drawer.cashUsd.value > 0 ? 'dot-green' : 'dot-yellow'"></span>
                 <div class="sig-body">
                   <div class="sig-main">النقد في الصندوق</div>
                   <div class="sig-sub" dir="ltr">${{ drawer.cashUsd.value.toFixed(2) }}</div>
@@ -665,13 +666,6 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
 .pt-btn.active { background: #1A56DB; color: white; font-weight: 700; }
 .pt-btn:hover:not(.active) { color: #C8D5E8; }
 
-/* ─── NO RATE WARNING ────────────────────────────────── */
-.no-rate-warning {
-  background: rgba(245,158,11,.07); border: 1px solid rgba(245,158,11,.22);
-  border-radius: 10px; padding: 10px 14px; margin-bottom: 14px;
-  font-size: 13px; color: #FCD34D;
-}
-
 /* ─── KPI STRIP ──────────────────────────────────────── */
 .kpi-strip {
   display: grid;
@@ -694,12 +688,9 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
   box-shadow: 0 4px 28px rgba(26,86,219,0.18), inset 0 1px 0 rgba(255,255,255,0.09);
 }
 .kpi-card:active { transform: scale(.98); }
-.kpi-card.blue-accent  { border-color: rgba(26,86,219,.40); }
-.kpi-card.green-accent {
-  background: linear-gradient(135deg, rgba(34,197,94,0.09), rgba(255,255,255,0.03));
-  border-color: rgba(34,197,94,0.30);
-  box-shadow: 0 4px 16px rgba(34,197,94,0.08), inset 0 1px 0 rgba(255,255,255,0.06);
-}
+/* All four KPI cards now share one surface/border for consistency (BUG-006 of
+   the new list). Semantic color stays on the profit *value* (.positive/.negative),
+   not the card, so the cards read as one uniform set. */
 
 .kc-icon { margin-bottom: 8px; color: #637285; }
 .kc-label { font-size: 11px; color: #637285; margin-bottom: 5px; }
@@ -710,16 +701,14 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
 @media (min-width: 1024px) { .kc-value { font-size: 21px; } }
 .kc-value.positive { color: #22C55E; }
 .kc-value.negative { color: #EF4444; }
-.kc-sub { font-size: 10px; color: #3D4F6B; }
+/* Reserve the sub-line height so cards stay equal even when a card has no sub. */
+.kc-sub { font-size: 10px; color: #3D4F6B; min-height: 13px; }
 .kc-accent-bar {
   height: 2px;
   width: 55%;
   border-radius: 1px;
   background: linear-gradient(90deg, #1A56DB, transparent);
   margin: 4px 0 2px;
-}
-.kpi-card.green-accent .kc-accent-bar {
-  background: linear-gradient(90deg, #22C55E, transparent);
 }
 
 /* ─── SELL BUTTONS ───────────────────────────────────── */

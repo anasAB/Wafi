@@ -73,6 +73,31 @@ html[data-text-size="large"]   { font-size: 18px; }
 html[data-text-size="xlarge"]  { font-size: 20px; }
 html.dark { color-scheme: dark; }
 
+/* ─── Form Control Base (app-wide consistency) ─────────── */
+/* BUG-016 / BUG-021: never render native number spinners. Every numeric
+   field in the app is driven by +/- controls or currency toggles, and the
+   native arrows are tiny touch targets that land on the wrong side in RTL. */
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* BUG-003 / BUG-026 / BUG-041: a single focus-ring token for every text-like
+   control. Inputs that don't declare their own focus style now inherit the
+   canonical blue ring instead of a white border or a near-invisible shift. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  border-color: rgba(26, 86, 219, 0.8);
+  box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.25), 0 0 12px rgba(26, 86, 219, 0.15);
+  outline: none;
+}
+
 /* ─── Glass Utilities ────────────────────────────────── */
 @utility glass-sm {
   backdrop-filter: blur(12px) saturate(160%);

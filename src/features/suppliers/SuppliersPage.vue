@@ -3,6 +3,8 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSuppliers } from './composables/useSuppliers'
 import SupplierForm from './components/SupplierForm.vue'
+import BaseModal from '@/components/ui/BaseModal.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import type { NewSupplier } from './supplier.types'
 
 const router = useRouter()
@@ -25,9 +27,23 @@ async function onAdd(data: NewSupplier) {
       <button class="btn-primary" @click="adding = true">+ مورّد جديد</button>
     </header>
 
-    <SupplierForm v-if="adding" @submit="onAdd" @cancel="adding = false" />
+    <!-- Add supplier now opens as a standard modal, consistent with every other
+         "add" action, instead of expanding inline over the empty state (BUG-029). -->
+    <BaseModal v-if="adding" title="مورّد جديد" @close="adding = false">
+      <SupplierForm @submit="onAdd" @cancel="adding = false" />
+    </BaseModal>
 
-    <ul class="list">
+    <!-- Empty state with embedded CTA (consistent with Expenses), instead of a
+         bare banner separated from the header button (BUG-003 of the new list). -->
+    <EmptyState
+      v-if="!suppliers.length"
+      title="لا يوجد موردون بعد"
+      subtitle="أضف أول مورّد بالضغط على الزر أدناه"
+      cta-label="مورّد جديد"
+      @cta="adding = true"
+    />
+
+    <ul v-else class="list">
       <li v-for="s in suppliers" :key="s.id" @click="router.push(`/suppliers/${s.id}`)">
         <div class="top">
           <span class="name">{{ s.name }}</span>
@@ -38,7 +54,6 @@ async function onAdd(data: NewSupplier) {
           <span v-if="s.lastReceivedAt">آخر استلام: {{ new Date(s.lastReceivedAt).toLocaleDateString('ar') }}</span>
         </div>
       </li>
-      <li v-if="!suppliers.length" class="empty">لا يوجد موردون بعد.</li>
     </ul>
   </section>
 </template>

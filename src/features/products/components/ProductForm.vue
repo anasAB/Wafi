@@ -299,7 +299,7 @@ onMounted(() => {
           :disabled="saving"
           class="btn-secondary"
           @click="handleSave(true)"
-        >إضافة آخر</button>
+        >إضافة أخرى</button>
 
         <button
           type="button"

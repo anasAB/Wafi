@@ -1,9 +1,19 @@
 export default {
   settings: {
-    title:         'Settings',
-    personal:      'Personal',
-    about:         'About',
-    selectSection: 'Select a section',
+    title:           'Settings',
+    personal:        'Personal',
+    receiptSettings: 'Receipt settings',
+    staff:           'Staff',
+    returnReasons:   'Return reasons',
+    auditLog:        'Activity log',
+    about:           'About',
+    selectSection:   'Select a section',
+  },
+  luxuryThemes: {
+    darkLuxury: 'Dark Luxury',
+    lightIvory: 'Light Ivory',
+    deepJewel:  'Deep Jewel',
+    sapphire:   'Sapphire',
   },
   personal: {
     preferencesSection: 'Preferences',
@@ -39,5 +49,10 @@ export default {
     online:     'Online',
     offline:    'Offline',
     comingSoon: 'Coming soon',
+    saveAndAddAnother: 'Add another',
+  },
+  validation: {
+    required:      'This field is required',
+    requiredNamed: '{field} is required',
   },
 }

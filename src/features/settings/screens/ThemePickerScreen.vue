@@ -1,15 +1,20 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useSettingsStore } from '@/features/settings'
 import type { LuxuryTheme } from '@/features/settings'
 
 const settings = useSettingsStore()
+const { t } = useI18n()
 
-const themes: { value: LuxuryTheme; label: string; dot: string; bg: string }[] = [
-  { value: 'dark-luxury',  label: 'Dark Luxury',  dot: '#C9A84C', bg: '#05080F' },
-  { value: 'light-ivory',  label: 'Light Ivory',  dot: '#B8965A', bg: '#FAF8F4' },
-  { value: 'deep-jewel',   label: 'Deep Jewel',   dot: '#2ECC8F', bg: '#080D1A' },
-  { value: 'sapphire',     label: 'Sapphire',     dot: '#3B7FFF', bg: '#05080F' },
-]
+// Labels pulled from i18n so the swatch names match the active locale instead of
+// staying English in an Arabic UI (BUG: color-theme labels).
+const themes = computed<{ value: LuxuryTheme; label: string; dot: string; bg: string }[]>(() => [
+  { value: 'dark-luxury',  label: t('luxuryThemes.darkLuxury'), dot: '#C9A84C', bg: '#05080F' },
+  { value: 'light-ivory',  label: t('luxuryThemes.lightIvory'), dot: '#B8965A', bg: '#FAF8F4' },
+  { value: 'deep-jewel',   label: t('luxuryThemes.deepJewel'),  dot: '#2ECC8F', bg: '#080D1A' },
+  { value: 'sapphire',     label: t('luxuryThemes.sapphire'),   dot: '#3B7FFF', bg: '#05080F' },
+])
 </script>
 
 <template>

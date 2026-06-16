@@ -22,6 +22,11 @@ const filterEvent    = ref<string | null>(null)
 
 const isOwner = computed(() => session.activeStaff?.role === 'owner')
 
+// Name the active period so the empty state says *which* period had no activity (#20).
+const periodLabel = computed(() =>
+  ({ today: 'اليوم', week: 'هذا الأسبوع', month: 'هذا الشهر' } as Record<string, string>)[period.value] ?? ''
+)
+
 async function reload() {
   loading.value = true
   try {
@@ -73,7 +78,7 @@ watch([filterStaffId, filterEvent], reload)
 
         <!-- Empty state -->
         <div v-else-if="entries.length === 0" class="empty">
-          <p class="empty-title">لا يوجد نشاط في هذه الفترة</p>
+          <p class="empty-title">لا يوجد نشاط خلال {{ periodLabel }}</p>
         </div>
 
         <!-- Log rows -->

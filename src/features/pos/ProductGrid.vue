@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { rowToProduct } from '@/features/products/product.utils'
+import ProductAvatar from '@/components/ui/ProductAvatar.vue'
 import type { Product } from './pos.types'
 
 const props = defineProps<{ searchQuery: string }>()
@@ -12,6 +13,22 @@ const device     = useDeviceStore()
 const products   = ref<Product[]>([])
 const flashId    = ref<string | null>(null)
 const flashTimer = ref<ReturnType<typeof setTimeout> | null>(null)
+
+// Category tabs let the cashier browse by category instead of one flat dump (#2).
+const selectedCategory = ref<string | null>(null)
+const categories = computed(() => {
+  const set = new Set<string>()
+  for (const p of products.value) {
+    const c = p.category?.trim()
+    if (c) set.add(c)
+  }
+  return [...set].sort((a, b) => a.localeCompare(b, 'ar'))
+})
+const visibleProducts = computed(() =>
+  selectedCategory.value
+    ? products.value.filter(p => (p.category ?? '').trim() === selectedCategory.value)
+    : products.value
+)
 
 async function loadProducts() {
   const q = props.searchQuery.trim()
@@ -52,8 +69,26 @@ onUnmounted(() => {
 
 <template>
   <div class="grid-root" dir="rtl">
+    <!-- Category tabs (#2) -->
+    <div v-if="categories.length" class="cat-tabs" role="tablist" aria-label="تصفية حسب الفئة">
+      <button
+        type="button"
+        class="cat-tab"
+        :class="{ 'cat-tab--active': selectedCategory === null }"
+        @click="selectedCategory = null"
+      >الكل</button>
+      <button
+        v-for="cat in categories"
+        :key="cat"
+        type="button"
+        class="cat-tab"
+        :class="{ 'cat-tab--active': selectedCategory === cat }"
+        @click="selectedCategory = cat"
+      >{{ cat }}</button>
+    </div>
+
     <!-- Empty state -->
-    <div v-if="products.length === 0" class="empty-state">
+    <div v-if="visibleProducts.length === 0" class="empty-state">
       <div class="empty-icon">
         <svg fill="none" stroke="#3D4F6B" stroke-width="1" viewBox="0 0 24 24" width="28" height="28">
           <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
@@ -65,16 +100,16 @@ onUnmounted(() => {
     <!-- Product grid -->
     <div v-else class="product-grid">
       <button
-        v-for="p in products"
+        v-for="p in visibleProducts"
         :key="p.id"
         type="button"
         :class="['product-btn', flashId === p.id ? 'product-btn-flash' : '', p.currentStock <= 0 ? 'product-btn-out' : '']"
         :disabled="p.currentStock <= 0"
         @click="handleTap(p.id)"
       >
-        <!-- Photo or placeholder -->
-        <div v-if="p.photoUrl" class="product-photo-wrap">
-          <img :src="p.photoUrl" :alt="p.nameAr" class="product-photo" />
+        <!-- Photo, or colored initial fallback (#15) — every tile gets a visual -->
+        <div class="product-photo-wrap">
+          <ProductAvatar :name="p.nameAr" :photo-url="p.photoUrl" />
         </div>
 
         <span class="product-name">{{ p.nameAr }}</span>
@@ -96,6 +131,39 @@ onUnmounted(() => {
 .grid-root {
   padding: 12px;
   font-family: 'Tajawal', system-ui, sans-serif;
+}
+
+/* ── Category tabs (#2) ── */
+.cat-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-bottom: 12px;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.cat-tabs::-webkit-scrollbar { display: none; }
+.cat-tab {
+  flex-shrink: 0;
+  padding: 7px 16px;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  color: #637285;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.10);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.cat-tab:hover { color: #C8D5E8; border-color: rgba(26,86,219,0.30); }
+.cat-tab--active {
+  color: #fff;
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  border-color: transparent;
 }
 
 /* Empty state */

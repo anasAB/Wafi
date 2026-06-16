@@ -62,21 +62,21 @@ async function handleSave() {
       <p v-if="errors['name']" data-testid="error-name" class="field-error">{{ errors['name'] }}</p>
     </div>
 
-    <!-- Phone -->
+    <!-- Landline -->
     <div class="field">
-      <label class="field-label">الهاتف</label>
+      <label class="field-label">هاتف ثابت</label>
       <input
         v-model="phone"
         data-testid="phone-input"
         type="tel"
-        placeholder="09XXXXXXXX"
+        placeholder="011XXXXXXX"
         class="field-input"
       />
     </div>
 
     <!-- Mobile -->
     <div class="field">
-      <label class="field-label">الجوال</label>
+      <label class="field-label">جوال</label>
       <input
         v-model="mobile"
         data-testid="mobile-input"

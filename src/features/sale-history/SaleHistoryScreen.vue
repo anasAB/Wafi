@@ -120,15 +120,12 @@ async function handleReprint(saleId: string) {
   <div class="page-root">
     <AppHeader :title="periodTitle" :show-back="isPeriodDrillDown" @back="router.push('/')" />
 
-    <!-- Filters: period range + search by invoice number + payment method -->
+    <!-- Filters: period range + search by invoice number + payment method.
+         All controls live on one wrapping row so they read as one group and
+         stay aligned instead of drifting to opposite edges (BUG-011 new list). -->
     <div class="filter-bar" dir="rtl">
-      <div class="filter-top">
-        <PeriodToggle />
-        <div v-if="filteredSales.length > 0" class="period-total">
-          إجمالي: ${{ periodTotal.toFixed(2) }}
-        </div>
-      </div>
-      <div class="filter-controls">
+      <div class="filter-row">
+        <PeriodToggle class="filter-period" />
         <div class="search-wrap">
           <svg class="search-icon" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
@@ -143,6 +140,9 @@ async function handleReprint(saleId: string) {
         <select v-model="methodFilter" class="method-select">
           <option v-for="m in METHOD_OPTIONS" :key="m.value" :value="m.value">{{ m.label }}</option>
         </select>
+        <div v-if="filteredSales.length > 0" class="period-total">
+          إجمالي: ${{ periodTotal.toFixed(2) }}
+        </div>
       </div>
     </div>
 
@@ -327,28 +327,28 @@ async function handleReprint(saleId: string) {
   .filter-bar { padding: 12px 24px 0; }
 }
 
-.filter-top {
+.filter-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
 }
+
+/* Period tabs keep their natural width; don't stretch in the flex row. */
+.filter-period { flex-shrink: 0; }
 
 .period-total {
   font-size: 0.875rem;
   font-weight: 700;
   color: #60A5FA;
-  text-align: left;
-}
-
-.filter-controls {
-  display: flex;
-  gap: 8px;
+  /* Pushed to the row's end (left in RTL), away from the filters. */
+  margin-inline-start: auto;
 }
 
 .search-wrap {
   position: relative;
   flex: 1;
+  min-width: 160px;
 }
 
 .search-icon {

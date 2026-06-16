@@ -140,12 +140,12 @@ function isActive(href: string | null): boolean {
       </RouterLink>
 
       <button class="close-shift-btn" @click="showZReport = true">
-        <span class="nav-icon-wrap nav-icon-danger">
+        <span class="nav-icon-wrap nav-icon-warn">
           <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
           </svg>
         </span>
-        <span class="nav-text nav-text-danger">إغلاق الوردية</span>
+        <span class="nav-text nav-text-warn">إغلاق الوردية</span>
       </button>
     </div>
 
@@ -318,9 +318,11 @@ function isActive(href: string | null): boolean {
   color: #93B4F0;
 }
 
-.nav-icon-danger {
-  background: rgba(239,68,68,0.10);
-  color: #EF4444;
+/* Closing a shift is a routine end-of-day action → amber/warning, not red.
+   Red stays reserved for genuinely destructive actions (BUG-014 new list). */
+.nav-icon-warn {
+  background: rgba(245,158,11,0.12);
+  color: #F59E0B;
 }
 
 /* ── Nav text ── */
@@ -344,8 +346,8 @@ function isActive(href: string | null): boolean {
   color: #C8D5E8;
 }
 
-.nav-text-danger {
-  color: #EF4444 !important;
+.nav-text-warn {
+  color: #F59E0B !important;
   font-weight: 600;
 }
 
@@ -383,7 +385,7 @@ function isActive(href: string | null): boolean {
 }
 
 .close-shift-btn:hover {
-  background: rgba(239,68,68,0.08);
-  border-color: rgba(239,68,68,0.20);
+  background: rgba(245,158,11,0.08);
+  border-color: rgba(245,158,11,0.20);
 }
 </style>

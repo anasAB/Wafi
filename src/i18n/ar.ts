@@ -1,9 +1,19 @@
 export default {
   settings: {
-    title:         'الإعدادات',
-    personal:      'شخصي',
-    about:         'حول التطبيق',
-    selectSection: 'اختر قسماً من القائمة',
+    title:           'الإعدادات',
+    personal:        'شخصي',
+    receiptSettings: 'إعدادات الفاتورة',
+    staff:           'الموظفون',
+    returnReasons:   'أسباب الإرجاع',
+    auditLog:        'سجل النشاط',
+    about:           'حول التطبيق',
+    selectSection:   'اختر قسماً من القائمة',
+  },
+  luxuryThemes: {
+    darkLuxury: 'فخامة داكنة',
+    lightIvory: 'عاج فاتح',
+    deepJewel:  'جوهرة غامقة',
+    sapphire:   'ياقوت أزرق',
   },
   personal: {
     preferencesSection: 'التفضيلات',
@@ -39,5 +49,11 @@ export default {
     online:     'متصل',
     offline:    'غير متصل',
     comingSoon: 'قريباً',
+    saveAndAddAnother: 'إضافة أخرى',
+  },
+  validation: {
+    // One canonical template for "this field is required" (BUG-007).
+    required:      'هذا الحقل مطلوب',
+    requiredNamed: '{field} مطلوب',
   },
 }

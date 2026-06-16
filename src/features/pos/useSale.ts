@@ -3,6 +3,19 @@ import { useSaleStore } from '@/store/sale.store'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 
+/**
+ * Thrown by `addLine` when no exchange rate is configured.
+ * Carries a stable English `message` (machine-facing / asserted in tests),
+ * while the UI layer maps the typed error to a localized Arabic string.
+ * (BUG-013 / BUG-014)
+ */
+export class ExchangeRateNotSetError extends Error {
+  constructor() {
+    super('Exchange rate not set')
+    this.name = 'ExchangeRateNotSetError'
+  }
+}
+
 export function useSale(currentRateParam: MaybeRef<number | null>) {
   const saleStore = useSaleStore()
 
@@ -14,7 +27,7 @@ export function useSale(currentRateParam: MaybeRef<number | null>) {
 
   async function addLine(productId: string) {
     const currentRate = toValue(currentRateParam)
-    if (currentRate === null) throw new Error('Exchange rate not set')
+    if (currentRate === null) throw new ExchangeRateNotSetError()
 
     const result = await db.execute(
       `SELECT id, name_ar, price_usd, current_stock FROM products WHERE id = ? AND is_active = 1`,

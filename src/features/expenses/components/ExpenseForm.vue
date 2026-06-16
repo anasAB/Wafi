@@ -92,13 +92,21 @@ async function handleSave(addAnother = false) {
       <div class="sheet-handle"></div>
 
       <div class="sheet-body">
-        <!-- Title -->
-        <h2 class="sheet-title">
-          {{ initialExpense ? 'تعديل مصروف' : 'إضافة مصروف' }}
-        </h2>
+        <!-- Header: title + standardized close (BUG-024 new list) -->
+        <div class="sheet-header">
+          <h2 class="sheet-title">
+            {{ initialExpense ? 'تعديل مصروف' : 'إضافة مصروف' }}
+          </h2>
+          <button type="button" class="sheet-close" aria-label="إغلاق" @click="emit('cancel')">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
 
         <!-- Amount row -->
         <div class="field-group">
+          <label class="field-label">المبلغ <span class="label-required">*</span></label>
           <div class="amount-row">
             <div class="amount-input-wrap">
               <input
@@ -252,6 +260,11 @@ async function handleSave(addAnother = false) {
   backdrop-filter: blur(4px);
 }
 
+/* Desktop: behave as a centered dialog, not a bottom sheet (BUG-039 new list). */
+@media (min-width: 640px) {
+  .backdrop { align-items: center; padding: 1rem; }
+}
+
 /* ── Sheet ─────────────────────────────────────────── */
 .sheet {
   width: 100%;
@@ -272,6 +285,34 @@ async function handleSave(addAnother = false) {
   margin: 0.75rem auto 1.25rem;
 }
 
+/* On desktop the drag handle is meaningless — hide it and round all corners. */
+@media (min-width: 640px) {
+  .sheet { border-radius: 1.25rem; max-width: 28rem; }
+  .sheet-handle { display: none; }
+}
+
+/* ── Header (title + close) ── */
+.sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+}
+.sheet-close {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.625rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #637285;
+  background: rgba(255, 255, 255, 0.06);
+  border: none;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.sheet-close:hover { background: rgba(255, 255, 255, 0.10); }
+
 .sheet-body {
   padding: 0 1.25rem 1.5rem;
   font-family: 'Tajawal', system-ui, sans-serif;
@@ -282,7 +323,7 @@ async function handleSave(addAnother = false) {
   font-size: 1rem;
   font-weight: 700;
   color: #E8EDF5;
-  margin-bottom: 1.25rem;
+  margin-bottom: 0;
 }
 
 /* ── Field groups ──────────────────────────────────── */

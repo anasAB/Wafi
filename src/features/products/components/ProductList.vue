@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import ProductAvatar from '@/components/ui/ProductAvatar.vue'
 import type { Product } from '@/features/pos/pos.types'
 
 const props = defineProps<{
@@ -16,10 +17,39 @@ const emit = defineEmits<{
 const search    = ref('')
 const openKebab = ref<string | null>(null)
 
+// ── Category filter (#9) ──
+const selectedCategory = ref<string | null>(null)   // null = all categories
+const categories = computed(() => {
+  const set = new Set<string>()
+  for (const p of props.products) {
+    const c = p.category?.trim()
+    if (c) set.add(c)
+  }
+  return [...set].sort((a, b) => a.localeCompare(b, 'ar'))
+})
+
+// ── Column sorting (#9) ──
+type SortKey = 'nameAr' | 'category' | 'costPriceUsd' | 'salePriceUsd' | 'currentStock'
+const sortKey = ref<SortKey | null>(null)            // null = original order
+const sortDir = ref<'asc' | 'desc'>('asc')
+
+function toggleSort(key: SortKey) {
+  if (sortKey.value === key) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortKey.value = key
+    sortDir.value = 'asc'
+  }
+}
+
 const displayed = computed(() => {
   let list = props.filterLowStock
     ? props.products.filter(p => p.currentStock <= p.lowStockThreshold)
     : props.products
+
+  if (selectedCategory.value) {
+    list = list.filter(p => (p.category ?? '').trim() === selectedCategory.value)
+  }
 
   if (search.value.trim()) {
     const q = search.value.trim().toLowerCase()
@@ -28,6 +58,17 @@ const displayed = computed(() => {
       (p.nameEn ?? '').toLowerCase().includes(q) ||
       (p.barcode ?? '').toLowerCase().includes(q)
     )
+  }
+
+  if (sortKey.value) {
+    const key = sortKey.value
+    const dir = sortDir.value === 'asc' ? 1 : -1
+    // Copy before sorting so we never mutate the incoming products prop.
+    list = [...list].sort((a, b) => {
+      const av = a[key], bv = b[key]
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir
+      return String(av ?? '').localeCompare(String(bv ?? ''), 'ar') * dir
+    })
   }
 
   return list
@@ -84,6 +125,7 @@ function handleAdjustStock(id: string) {
       <!-- Barcode scan affordance -->
       <button
         type="button"
+        aria-label="مسح الباركود"
         title="امسح الباركود بالماسح الضوئي أو اكتبه في خانة البحث"
         class="scan-btn"
       >
@@ -92,6 +134,24 @@ function handleAdjustStock(id: string) {
           <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75V16.5zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM13.5 19.5h.75v.75h-.75v-.75zM19.5 13.5h.75v.75h-.75v-.75zM19.5 19.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75z" />
         </svg>
       </button>
+    </div>
+
+    <!-- Category filter chips (#9) — only when products have categories -->
+    <div v-if="categories.length" class="cat-filter" role="tablist" aria-label="تصفية حسب الفئة">
+      <button
+        type="button"
+        class="cat-chip"
+        :class="{ 'cat-chip--active': selectedCategory === null }"
+        @click="selectedCategory = null"
+      >الكل</button>
+      <button
+        v-for="cat in categories"
+        :key="cat"
+        type="button"
+        class="cat-chip"
+        :class="{ 'cat-chip--active': selectedCategory === cat }"
+        @click="selectedCategory = cat"
+      >{{ cat }}</button>
     </div>
 
     <!-- Empty state -->
@@ -113,11 +173,21 @@ function handleAdjustStock(id: string) {
         <thead>
           <tr class="table-head-row">
             <th class="th w-14">صورة</th>
-            <th class="th">الاسم</th>
-            <th class="th w-28">الفئة</th>
-            <th class="th w-24">التكلفة</th>
-            <th class="th w-24">البيع</th>
-            <th class="th w-24">المخزون</th>
+            <th class="th th-sort" :class="{ 'th-sort--active': sortKey === 'nameAr' }" @click="toggleSort('nameAr')">
+              الاسم<span class="sort-arrow">{{ sortKey === 'nameAr' ? (sortDir === 'asc' ? '▲' : '▼') : '' }}</span>
+            </th>
+            <th class="th th-sort w-28" :class="{ 'th-sort--active': sortKey === 'category' }" @click="toggleSort('category')">
+              الفئة<span class="sort-arrow">{{ sortKey === 'category' ? (sortDir === 'asc' ? '▲' : '▼') : '' }}</span>
+            </th>
+            <th class="th th-sort w-24" :class="{ 'th-sort--active': sortKey === 'costPriceUsd' }" @click="toggleSort('costPriceUsd')">
+              التكلفة<span class="sort-arrow">{{ sortKey === 'costPriceUsd' ? (sortDir === 'asc' ? '▲' : '▼') : '' }}</span>
+            </th>
+            <th class="th th-sort w-24" :class="{ 'th-sort--active': sortKey === 'salePriceUsd' }" @click="toggleSort('salePriceUsd')">
+              البيع<span class="sort-arrow">{{ sortKey === 'salePriceUsd' ? (sortDir === 'asc' ? '▲' : '▼') : '' }}</span>
+            </th>
+            <th class="th th-sort w-24" :class="{ 'th-sort--active': sortKey === 'currentStock' }" @click="toggleSort('currentStock')">
+              المخزون<span class="sort-arrow">{{ sortKey === 'currentStock' ? (sortDir === 'asc' ? '▲' : '▼') : '' }}</span>
+            </th>
             <th v-if="!filterLowStock" class="w-10" />
           </tr>
         </thead>
@@ -131,10 +201,7 @@ function handleAdjustStock(id: string) {
             <!-- Photo -->
             <td class="td">
               <div class="thumb-wrap">
-                <img v-if="p.photoUrl" :src="p.photoUrl" :alt="p.nameAr" class="thumb-img" />
-                <svg v-else xmlns="http://www.w3.org/2000/svg" class="thumb-placeholder" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
-                </svg>
+                <ProductAvatar :name="p.nameAr" :photo-url="p.photoUrl" />
               </div>
             </td>
             <!-- Name -->
@@ -230,10 +297,7 @@ function handleAdjustStock(id: string) {
       >
         <!-- Photo -->
         <div class="mobile-thumb">
-          <img v-if="p.photoUrl" :src="p.photoUrl" :alt="p.nameAr" class="thumb-img" />
-          <svg v-else xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-muted opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
-          </svg>
+          <ProductAvatar :name="p.nameAr" :photo-url="p.photoUrl" />
         </div>
         <!-- Name + barcode -->
         <div class="mobile-info">
@@ -411,6 +475,53 @@ function handleAdjustStock(id: string) {
   font-weight: 700;
   color: #637285;
   white-space: nowrap;
+}
+
+/* ── Sortable headers (#9) ── */
+.th-sort {
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.12s;
+}
+.th-sort:hover { color: #93B4F0; }
+.th-sort--active { color: #60A5FA; }
+.sort-arrow {
+  display: inline-block;
+  margin-inline-start: 4px;
+  font-size: 9px;
+}
+
+/* ── Category filter chips (#9) ── */
+.cat-filter {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-bottom: 12px;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.cat-filter::-webkit-scrollbar { display: none; }
+.cat-chip {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  color: #637285;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.10);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.cat-chip:hover { color: #C8D5E8; border-color: rgba(26,86,219,0.30); }
+.cat-chip--active {
+  color: #fff;
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  border-color: transparent;
 }
 
 .table-row {
