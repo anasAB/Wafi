@@ -75,3 +75,25 @@ describe('PaymentModal — physical keyboard in amount entry', () => {
     removeSpy.mockRestore()
   })
 })
+
+describe('PaymentModal — credit sale requires a customer', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('disables "تأكيد البيع الآجل" until a customer is chosen and never emits without one', async () => {
+    const w = mountModal()
+    // Choose the آجل (credit) method.
+    await w.find('[data-testid="credit-method-btn"]').trigger('click')
+
+    // No customer selected yet → confirm is disabled, and a "pick customer" CTA is shown.
+    const confirmBtn = w.find('[data-testid="confirm-credit-btn"]')
+    expect(confirmBtn.exists()).toBe(true)
+    expect(confirmBtn.attributes('disabled')).toBeDefined()
+    expect(w.find('[data-testid="pick-credit-customer-btn"]').exists()).toBe(true)
+
+    // Even if clicked, no sale is completed.
+    await confirmBtn.trigger('click')
+    expect(w.emitted('confirmed')).toBeFalsy()
+  })
+})

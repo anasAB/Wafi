@@ -1,26 +1,38 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import AppToast from '@/components/ui/AppToast.vue'
 import CustomerForm from './components/CustomerForm.vue'
 import { useCustomers } from './composables/useCustomers'
 
 const router = useRouter()
-const { customers, load, search } = useCustomers()
+const route  = useRoute()
+const { customers, load } = useCustomers()
 const showAddForm = ref(false)
 const query = ref('')
 const toast = ref<{ message: string; type: 'success' | 'error' } | null>(null)
 
+// Arrived from the dashboard "زبائن بفواتير آجلة" signal → show only debtors.
+const onlyDebtors = computed(() => route.query.filter === 'debtors')
+
 onMounted(load)
 
 const filtered = computed(() => {
-  if (!query.value.trim()) return customers.value
+  let list = customers.value
+  if (onlyDebtors.value) {
+    list = list.filter(c => (c.balanceUsd ?? 0) > 0.001)
+  }
+  if (!query.value.trim()) return list
   const q = query.value.trim().toLowerCase()
-  return customers.value.filter(c =>
+  return list.filter(c =>
     c.name.toLowerCase().includes(q) || (c.phone ?? '').includes(q)
   )
 })
+
+function clearDebtorFilter() {
+  router.replace({ query: {} })
+}
 
 async function handleSaved() {
   showAddForm.value = false
@@ -60,6 +72,12 @@ async function handleSaved() {
         </button>
       </div>
 
+      <!-- Debtor filter banner -->
+      <div v-if="onlyDebtors" class="debtor-banner">
+        <span>عرض الزبائن المدينين فقط</span>
+        <button type="button" class="debtor-banner-clear" @click="clearDebtorFilter">عرض الكل</button>
+      </div>
+
       <!-- Count -->
       <p class="count-label">{{ filtered.length }} زبون</p>
 
@@ -78,8 +96,8 @@ async function handleSaved() {
             <tr class="table-header-row">
               <th class="th">الاسم</th>
               <th class="th">الهاتف</th>
-              <th class="th">الجوال</th>
               <th class="th">العنوان</th>
+              <th class="th">الرصيد المستحق</th>
               <th class="w-10"></th>
             </tr>
           </thead>
@@ -93,8 +111,11 @@ async function handleSaved() {
             >
               <td class="td"><p class="td-name">{{ c.name }}</p></td>
               <td class="td td-muted">{{ c.phone || '—' }}</td>
-              <td class="td td-muted">{{ c.mobile || '—' }}</td>
               <td class="td td-muted truncate" style="max-width: 200px">{{ c.address || '—' }}</td>
+              <td class="td">
+                <span v-if="(c.balanceUsd ?? 0) > 0.001" class="balance-owing" dir="ltr">${{ (c.balanceUsd ?? 0).toFixed(2) }}</span>
+                <span v-else class="balance-clear">مسوّى</span>
+              </td>
               <td class="td">
                 <svg class="chevron-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
@@ -119,9 +140,13 @@ async function handleSaved() {
             <p class="card-name">{{ c.name }}</p>
             <p v-if="c.phone" class="card-phone">{{ c.phone }}</p>
           </div>
-          <svg class="chevron-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
-          </svg>
+          <div class="card-right">
+            <span v-if="(c.balanceUsd ?? 0) > 0.001" class="balance-owing" dir="ltr">${{ (c.balanceUsd ?? 0).toFixed(2) }}</span>
+            <span v-else class="balance-clear">مسوّى</span>
+            <svg class="chevron-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+          </div>
         </button>
 
         <div v-if="filtered.length === 0" class="empty-state-mobile">
@@ -266,11 +291,59 @@ async function handleSaved() {
 .btn-add-desktop { display: none; }
 @media (min-width: 1024px) { .btn-add-desktop { display: flex; } }
 
+/* ── Debtor filter banner ────────────────────────────────── */
+.debtor-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.625rem 0.875rem;
+  margin-bottom: 0.75rem;
+  border-radius: 0.75rem;
+  background: rgba(245, 158, 11, 0.10);
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  color: #FCD34D;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.debtor-banner-clear {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #60A5FA;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  font-family: inherit;
+}
+
 /* ── Count label ─────────────────────────────────────────── */
 .count-label {
   font-size: 0.75rem;
   color: #637285;
   margin-bottom: 0.75rem;
+}
+
+/* ── Balance ─────────────────────────────────────────────── */
+.balance-owing {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #F59E0B;
+  font-variant-numeric: tabular-nums;
+}
+
+.balance-clear {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #22C55E;
+}
+
+.card-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
 }
 
 /* ── Desktop table ───────────────────────────────────────── */

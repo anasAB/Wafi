@@ -16,3 +16,23 @@ export interface ReturnReason {
   label:     string
   sortOrder: number
 }
+
+/** A single returned line, for the read-only return-details view. */
+export interface ReturnDetailLine {
+  nameAr:       string
+  qtyReturned:  number
+  unitPriceUsd: number
+  restock:      boolean
+}
+
+/** One processed return (a sale can have several over time), read-only. */
+export interface ReturnDetailRecord {
+  id:              string
+  createdAt:       string
+  refundMethod:    RefundMethod
+  refundAmountUsd: number
+  refundAmountSyp: number
+  reason:          string | null
+  notes:           string | null
+  lines:           ReturnDetailLine[]
+}

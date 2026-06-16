@@ -17,6 +17,7 @@ export interface SaleRecord {
   isPending:           boolean
   isSplit:             boolean
   hasReturn:           boolean
+  isFullyReturned:     boolean
 }
 
 export interface SaleLineRecord {

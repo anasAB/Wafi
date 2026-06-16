@@ -2,28 +2,34 @@
 import { ref, reactive, computed } from 'vue'
 import { useStaff }       from '../composables/useStaff'
 import PinPad             from './PinPad.vue'
-import type { StaffRole, StaffPermissions } from '../staff.types'
+import type { StaffRole, StaffPermissions, Staff } from '../staff.types'
 import { DEFAULT_CASHIER_PERMISSIONS }      from '../staff.types'
 
-const props = defineProps<{ editStaffId?: string; forceRole?: StaffRole }>()
+const props = defineProps<{ editStaff?: Staff; forceRole?: StaffRole }>()
 const emit  = defineEmits<{ done: [] }>()
 
-const { createStaff, updateStaffPin } = useStaff()
+const { createStaff, updateStaffPin, updateStaff } = useStaff()
 
-// step: 'info' (new staff only) → 'pin' → 'confirm'
-const step      = ref<'info' | 'pin' | 'confirm'>(props.editStaffId ? 'pin' : 'info')
-const name      = ref('')
-const role      = ref<StaffRole>(props.forceRole ?? 'cashier')
+const isEdit = computed(() => !!props.editStaff)
+
+// step: 'info' → 'pin' → 'confirm'. Both add and edit start on 'info'; in edit
+// mode the owner can change name/role/permissions and optionally the PIN.
+const step      = ref<'info' | 'pin' | 'confirm'>('info')
+const name      = ref(props.editStaff?.name ?? '')
+const role      = ref<StaffRole>(props.forceRole ?? props.editStaff?.role ?? 'cashier')
 const firstPin  = ref('')
 const nameError = ref('')
 const pinError  = ref('')
 const pinPadRef = ref<InstanceType<typeof PinPad> | null>(null)
 const saving    = ref(false)
-const perms     = reactive<StaffPermissions>({ ...DEFAULT_CASHIER_PERMISSIONS })
+const perms     = reactive<StaffPermissions>({
+  ...DEFAULT_CASHIER_PERMISSIONS,
+  ...(props.editStaff?.permissions ?? {}),
+})
 
 const stepLabel = computed(() => {
   if (step.value === 'info')    return ''
-  if (step.value === 'pin')     return props.editStaffId ? 'أدخل الرقم السري الجديد' : 'أنشئ رقماً سرياً (4 أرقام)'
+  if (step.value === 'pin')     return isEdit.value ? 'أدخل الرقم السري الجديد' : 'أنشئ رقماً سرياً (4 أرقام)'
   return 'أكّد الرقم السري'
 })
 
@@ -39,6 +45,24 @@ function submitInfo() {
   if (!name.value.trim()) { nameError.value = 'يرجى إدخال الاسم'; return }
   nameError.value = ''
   step.value = 'pin'
+}
+
+// Edit mode: save name/role/permissions without touching the PIN.
+async function saveEdits() {
+  if (!props.editStaff) return
+  if (!name.value.trim()) { nameError.value = 'يرجى إدخال الاسم'; return }
+  nameError.value = ''
+  saving.value = true
+  try {
+    await updateStaff(props.editStaff.id, {
+      name: name.value.trim(),
+      role: role.value,
+      permissions: { ...perms },
+    })
+    emit('done')
+  } finally {
+    saving.value = false
+  }
 }
 
 function onPin(pin: string) {
@@ -60,8 +84,8 @@ function onPin(pin: string) {
 async function saveStaff(pin: string) {
   saving.value = true
   try {
-    if (props.editStaffId) {
-      await updateStaffPin(props.editStaffId, pin)
+    if (props.editStaff) {
+      await updateStaffPin(props.editStaff.id, pin)
     } else {
       await createStaff({ name: name.value, pin, role: role.value, permissions: { ...perms } })
     }
@@ -122,7 +146,18 @@ async function saveStaff(pin: string) {
           </label>
         </div>
 
-        <button @click="submitInfo" class="btn-next" type="button">
+        <!-- Edit mode: save changes + optional PIN change -->
+        <template v-if="isEdit">
+          <button @click="saveEdits" class="btn-next" type="button" :disabled="saving">
+            {{ saving ? 'جاري الحفظ...' : 'حفظ التغييرات' }}
+          </button>
+          <button @click="step = 'pin'; pinError = ''" class="btn-secondary" type="button">
+            تغيير الرقم السري
+          </button>
+        </template>
+
+        <!-- Add mode: continue to PIN -->
+        <button v-else @click="submitInfo" class="btn-next" type="button">
           التالي — تعيين الرقم السري
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
@@ -138,7 +173,7 @@ async function saveStaff(pin: string) {
       <PinPad ref="pinPadRef" @complete="onPin" />
 
       <button
-        v-if="!editStaffId"
+        v-if="!forceRole"
         @click="step = 'info'; firstPin = ''; pinError = ''"
         class="btn-back"
         type="button"
@@ -315,6 +350,21 @@ async function saveStaff(pin: string) {
   font-family: 'Tajawal', system-ui, sans-serif;
   margin-top: 2px;
 }
+
+.btn-secondary {
+  width: 100%;
+  height: 42px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #60A5FA;
+  background: rgba(26,86,219,0.12);
+  border: 1px solid rgba(26,86,219,0.30);
+  cursor: pointer;
+  font-family: 'Tajawal', system-ui, sans-serif;
+}
+
+.btn-secondary:hover { background: rgba(26,86,219,0.20); }
 
 /* PIN step */
 .pin-step-label {

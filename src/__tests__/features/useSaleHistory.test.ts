@@ -33,4 +33,29 @@ describe('useSaleHistory', () => {
       expect.arrayContaining(['2025-01-01', '2025-01-31'])
     )
   })
+
+  it('flags hasReturn and isFullyReturned from the returns query', async () => {
+    vi.mocked(db.execute)
+      .mockResolvedValueOnce({ rows: { _array: [
+        { id: 's1', total_usd: 75 },
+        { id: 's2', total_usd: 50 },
+        { id: 's3', total_usd: 30 },
+      ] } } as any) // sales
+      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // ps_crud (pending)
+      .mockResolvedValueOnce({ rows: { _array: [
+        { sale_id: 's1', fully_returned: 1 }, // all items returned
+        { sale_id: 's2', fully_returned: 0 }, // partial return
+      ] } } as any) // returns
+
+    const { sales, loadHistory } = useSaleHistory()
+    await loadHistory()
+
+    const byId = Object.fromEntries(sales.value.map(s => [s.id, s]))
+    expect(byId['s1'].hasReturn).toBe(true)
+    expect(byId['s1'].isFullyReturned).toBe(true)
+    expect(byId['s2'].hasReturn).toBe(true)
+    expect(byId['s2'].isFullyReturned).toBe(false)
+    expect(byId['s3'].hasReturn).toBe(false)
+    expect(byId['s3'].isFullyReturned).toBe(false)
+  })
 })

@@ -36,16 +36,31 @@ export function useSaleHistory() {
         db.execute(
           `SELECT DISTINCT json_extract(data, '$.id') as sale_id FROM ps_crud WHERE "table" = 'sales'`
         ).catch(() => ({ rows: { _array: [] } })),
+        // Per sale: does it have any return, and is every sold unit returned?
+        // A sale is "fully returned" when total returned qty ≥ total sold qty.
         db.execute(
-          `SELECT DISTINCT original_sale_id FROM returns WHERE shop_id = ?`,
+          `SELECT r.original_sale_id AS sale_id,
+             CASE WHEN
+               (SELECT COALESCE(SUM(quantity), 0) FROM sale_line_items WHERE sale_id = r.original_sale_id)
+               <=
+               (SELECT COALESCE(SUM(rli.qty_returned), 0) FROM return_line_items rli
+                  JOIN returns r2 ON r2.id = rli.return_id WHERE r2.original_sale_id = r.original_sale_id)
+             THEN 1 ELSE 0 END AS fully_returned
+           FROM returns r
+           WHERE r.shop_id = ?
+           GROUP BY r.original_sale_id`,
           [device.shopId]
         ).catch(() => ({ rows: { _array: [] } })),
       ])
       const pendingIds = new Set<string>(
         ((crudResult as any).rows._array as any[]).map((r: any) => r.sale_id).filter(Boolean)
       )
+      const returnRows = (returnsResult as any).rows._array as any[]
       const returnedIds = new Set<string>(
-        ((returnsResult as any).rows._array as any[]).map((r: any) => r.original_sale_id).filter(Boolean)
+        returnRows.map((r: any) => r.sale_id).filter(Boolean)
+      )
+      const fullyReturnedIds = new Set<string>(
+        returnRows.filter((r: any) => r.fully_returned === 1).map((r: any) => r.sale_id)
       )
       sales.value = ((result as any).rows._array as any[]).map(r => ({
         id:                  r.id,
@@ -64,6 +79,7 @@ export function useSaleHistory() {
         isPending:           pendingIds.has(r.id),
         isSplit:             (r.is_split ?? 0) === 1,
         hasReturn:           returnedIds.has(r.id),
+        isFullyReturned:     fullyReturnedIds.has(r.id),
       }))
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)

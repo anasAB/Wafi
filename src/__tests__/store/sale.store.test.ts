@@ -99,4 +99,43 @@ describe('useSaleStore', () => {
     expect(store.lines[0].quantity).toBe(2) // clamped to stock ceiling
     expect(store.lines[0].lineTotalUsd).toBe(20)
   })
+
+  it('updateUnitPrice overrides the charged price and recomputes the line total', () => {
+    const store = useSaleStore()
+    store.addLine({ productId: 'p1', nameAr: 'تست', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10, availableStock: 99, listPriceUsd: 10 })
+    store.updateQuantity('p1', 2)
+    store.updateUnitPrice('p1', 15) // sold above the listed $10
+    expect(store.lines[0].unitPriceUsd).toBe(15)
+    expect(store.lines[0].lineTotalUsd).toBe(30)
+    expect(store.lines[0].listPriceUsd).toBe(10) // list snapshot unchanged
+  })
+
+  it('scalePricesToTotal raises line prices so the cart total matches the amount paid', () => {
+    const store = useSaleStore()
+    store.addLine({ productId: 'p1', nameAr: 'تست', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10, availableStock: 99, listPriceUsd: 10 })
+    // Customer paid $20 for the $10 cart → record it as a $20 sale, not $10 + change.
+    store.scalePricesToTotal(20)
+    expect(store.totalUsd).toBe(20)
+    expect(store.lines[0].unitPriceUsd).toBe(20)
+    expect(store.lines[0].listPriceUsd).toBe(10) // list snapshot unchanged → delta shows +$10
+  })
+
+  it('scalePricesToTotal distributes proportionally across multiple lines', () => {
+    const store = useSaleStore()
+    store.addLine({ productId: 'p1', nameAr: 'أ', quantity: 1, unitPriceUsd: 6, lineTotalUsd: 6, availableStock: 99 })
+    store.addLine({ productId: 'p2', nameAr: 'ب', quantity: 1, unitPriceUsd: 4, lineTotalUsd: 4, availableStock: 99 })
+    store.scalePricesToTotal(20) // factor 2
+    expect(store.lines[0].unitPriceUsd).toBe(12)
+    expect(store.lines[1].unitPriceUsd).toBe(8)
+    expect(store.totalUsd).toBe(20)
+  })
+
+  it('updateUnitPrice ignores negative or NaN prices', () => {
+    const store = useSaleStore()
+    store.addLine({ productId: 'p1', nameAr: 'تست', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10, availableStock: 99 })
+    store.updateUnitPrice('p1', -5)
+    expect(store.lines[0].unitPriceUsd).toBe(10)
+    store.updateUnitPrice('p1', NaN)
+    expect(store.lines[0].unitPriceUsd).toBe(10)
+  })
 })

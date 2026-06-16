@@ -161,18 +161,28 @@ async function handleConfirm() {
 
 <style scoped>
 .sheet-backdrop {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.55);
-  display: flex; align-items: flex-end; z-index: 50;
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(0,0,0,0.75);
+  backdrop-filter: blur(4px);
+  display: flex; align-items: flex-end; justify-content: center;
+  font-family: 'Tajawal', system-ui, sans-serif;
+}
+@media (min-width: 640px) {
+  .sheet-backdrop { align-items: center; }
 }
 .sheet {
-  width: 100%; max-height: 90dvh; display: flex; flex-direction: column;
-  background: #0D1828;
-  border-top: 1px solid rgba(26,86,219,0.28);
+  width: 100%; max-width: 32rem; max-height: 90dvh; display: flex; flex-direction: column;
+  backdrop-filter: blur(20px) saturate(180%);
+  background: linear-gradient(135deg, rgba(26,86,219,0.16), rgba(26,86,219,0.06)), #0D1828;
+  border: 1px solid rgba(26,86,219,0.45);
   border-radius: 1.25rem 1.25rem 0 0;
-  box-shadow: 0 -4px 32px rgba(26,86,219,0.18);
+  box-shadow: 0 8px 48px rgba(26,86,219,0.22), inset 0 1px 0 rgba(255,255,255,0.09);
+}
+@media (min-width: 640px) {
+  .sheet { border-radius: 1.25rem; }
 }
 .sheet-handle-wrap { display: flex; justify-content: center; padding: 10px 0 4px; }
-.sheet-handle { width: 40px; height: 4px; border-radius: 2px; background: #374151; }
+.sheet-handle { width: 2.25rem; height: 0.25rem; border-radius: 9999px; background: rgba(255,255,255,0.20); }
 .sheet-header {
   padding: 12px 16px 8px;
   border-bottom: 1px solid rgba(255,255,255,0.06);

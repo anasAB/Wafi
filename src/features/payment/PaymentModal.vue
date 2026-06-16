@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import NumericKeypad from '@/components/ui/NumericKeypad.vue'
 import CustomerPickerModal from '@/features/customers/components/CustomerPickerModal.vue'
 import { usePayment } from './usePayment'
+import { useSaleStore } from '@/store/sale.store'
 import type { CompletedSale } from './payment.types'
 import type { Customer } from '@/features/customers/customer.types'
 
@@ -11,11 +12,13 @@ const emit = defineEmits<{
   (e: 'close'):                          void
 }>()
 
-const { state, method, amountReceived, totalUsd, totalSyp, changeDue, error,
+const { state, method, amountReceived, totalUsd, totalSyp, changeDue, error, enteredUsd,
         selectMethod, back, cancel, confirm,
         pendingPayments, remainingUsd, isReadyToConfirm,
         canConfirmSingle, canAddLeg,
         addPayment, removeLastPayment } = usePayment()
+
+const saleStore = useSaleStore()
 
 const amountStr        = ref('')
 const selectedCustomer = ref<Customer | null>(null)
@@ -105,6 +108,12 @@ function handleAddCardSplitPayment() {
 }
 
 async function handleConfirm() {
+  // A credit (آجل) sale must be attributed to a customer — otherwise we record a
+  // debt no one owns. Reopen the picker instead of completing the sale.
+  if (method.value === 'credit' && !selectedCustomer.value) {
+    showPicker.value = true
+    return
+  }
   // In split mode a card tender covers whatever is still owed — fold it in before confirming
   // so the card leg isn't dropped (confirm() settles from pendingPayments only).
   if (method.value === 'card' && pendingPayments.value.length > 0 && remainingUsd.value > 0.001) {
@@ -120,6 +129,16 @@ async function handleConfirm() {
   } catch {
     // error is set in usePayment
   }
+}
+
+// Cash received exceeds the total. The cashier confirms the surplus is a higher
+// sale price (not change): scale the cart up to the amount paid so it's recorded
+// as revenue, then complete with no change.
+function confirmAsHigherPrice() {
+  if (enteredUsd.value && enteredUsd.value > totalUsd.value) {
+    saleStore.scalePricesToTotal(enteredUsd.value)
+  }
+  handleConfirm()
 }
 </script>
 
@@ -278,10 +297,28 @@ async function handleConfirm() {
 
         <NumericKeypad
           :confirm-disabled="!canConfirmSingle"
+          :hide-confirm="showChangeDue && pendingPayments.length === 0"
           @digit="handleDigit"
           @delete="handleDelete"
           @confirm="handleConfirm"
         />
+
+        <!-- Overpaid: was it change, or a higher sale price? Don't let the surplus vanish. -->
+        <div v-if="showChangeDue && pendingPayments.length === 0" class="overpay-choice">
+          <p class="overpay-q">المبلغ المدفوع أكبر من المطلوب —</p>
+          <button
+            type="button"
+            class="overpay-btn overpay-btn-change"
+            data-testid="confirm-change-btn"
+            @click="handleConfirm"
+          >باقي للزبون ({{ method === 'cash_syp' ? `${changeDue?.toLocaleString()} ل.س` : `$${changeDue?.toFixed(2)}` }})</button>
+          <button
+            type="button"
+            class="overpay-btn overpay-btn-price"
+            data-testid="confirm-higher-price-btn"
+            @click="confirmAsHigherPrice"
+          >سعر بيع أعلى (سجّله كبيع كامل)</button>
+        </div>
 
         <button
           v-if="canAddLeg"
@@ -346,10 +383,20 @@ async function handleConfirm() {
           <button type="button" class="customer-chip-change" @click="showPicker = true">تغيير</button>
         </div>
 
+        <!-- No customer chosen yet → must pick one before a credit sale can complete -->
+        <button
+          v-else
+          type="button"
+          class="confirm-btn confirm-btn-amber"
+          data-testid="pick-credit-customer-btn"
+          @click="showPicker = true"
+        >اختر الزبون</button>
+
         <button
           type="button"
           class="confirm-btn confirm-btn-amber"
           data-testid="confirm-credit-btn"
+          :disabled="!selectedCustomer"
           @click="handleConfirm"
         >تأكيد البيع الآجل</button>
       </div>
@@ -680,6 +727,7 @@ async function handleConfirm() {
 
 .confirm-btn:hover:not(:disabled) { opacity: 0.90; }
 .confirm-btn:active:not(:disabled) { transform: scale(0.98); }
+.confirm-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .confirm-btn-blue {
   color: #fff;
@@ -788,6 +836,48 @@ async function handleConfirm() {
   color: #22C55E;
   margin: 6px 0 0;
 }
+
+/* ── Overpaid: change vs higher price ──────────────── */
+.overpay-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 4px 0;
+}
+
+.overpay-q {
+  font-size: 12px;
+  color: #637285;
+  text-align: center;
+  margin: 0;
+}
+
+.overpay-btn {
+  height: 48px;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 800;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.overpay-btn:active { transform: scale(0.98); }
+
+.overpay-btn-change {
+  color: #fff;
+  background: linear-gradient(135deg, #16A34A, #15803D);
+  box-shadow: 0 4px 16px rgba(22,163,74,0.35);
+}
+
+.overpay-btn-price {
+  color: #60A5FA;
+  background: rgba(26,86,219,0.12);
+  border: 1px solid rgba(26,86,219,0.35);
+}
+
+.overpay-btn-price:hover { background: rgba(26,86,219,0.20); }
 
 /* ── Card info box ─────────────────────────────── */
 .card-info-box {

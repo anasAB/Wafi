@@ -43,6 +43,7 @@ export function useSale(currentRateParam: MaybeRef<number | null>) {
       unitPriceUsd: p.price_usd,
       lineTotalUsd: p.price_usd,
       availableStock,
+      listPriceUsd: p.price_usd,
     })
   }
 

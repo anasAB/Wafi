@@ -8,7 +8,7 @@ import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 type CustomerRow = {
   id: string; shop_id: string; name: string; phone: string | null
   mobile: string | null; address: string | null; deleted: number
-  created_at: string; sync_status: string
+  created_at: string; sync_status: string; balance_usd?: number
 }
 
 function rowToCustomer(r: CustomerRow): Customer {
@@ -19,6 +19,7 @@ function rowToCustomer(r: CustomerRow): Customer {
     address:  r.address  ?? undefined,
     deleted:  r.deleted === 1,
     createdAt: r.created_at, syncStatus: r.sync_status,
+    balanceUsd: r.balance_usd,
   }
 }
 
@@ -28,9 +29,18 @@ export function useCustomers() {
 
   async function load() {
     const device = useDeviceStore()
+    const s = device.shopId
+    // Each customer carries their outstanding credit so the list can show balances
+    // and filter to debtors. Mirrors the AR formula in useCustomerBalance.
     const rows = await db.getAll<CustomerRow>(
-      `SELECT * FROM customers WHERE shop_id = ? AND (deleted = 0 OR deleted IS NULL) ORDER BY name ASC`,
-      [device.shopId]
+      `SELECT c.*,
+         (COALESCE((SELECT SUM(total_usd)  FROM sales            WHERE customer_id = c.id AND is_credit = 1 AND shop_id = ?), 0)
+        - COALESCE((SELECT SUM(amount_usd) FROM customer_payments WHERE customer_id = c.id                   AND shop_id = ?), 0)
+        - COALESCE((SELECT SUM(r.refund_amount_usd) FROM returns r JOIN sales s ON s.id = r.original_sale_id WHERE s.customer_id = c.id AND s.is_credit = 1 AND r.shop_id = ?), 0)) AS balance_usd
+       FROM customers c
+       WHERE c.shop_id = ? AND (c.deleted = 0 OR c.deleted IS NULL)
+       ORDER BY c.name ASC`,
+      [s, s, s, s]
     )
     customers.value = rows.map(rowToCustomer)
   }

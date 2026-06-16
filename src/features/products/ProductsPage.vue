@@ -3,20 +3,35 @@ import { onMounted, onUnmounted, computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import ProductList from './components/ProductList.vue'
+import QuickStockSheet from './components/QuickStockSheet.vue'
 import { useProducts } from './composables/useProducts'
 import { useBarcodeScan } from '@/composables/useBarcodeScan'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import AppToast from '@/components/ui/AppToast.vue'
+import type { AdjustmentReason } from '@/features/products/product.types'
 
 const router  = useRouter()
 const route   = useRoute()
-const { products, load, softDelete } = useProducts()
+const { products, load, softDelete, adjustStock } = useProducts()
 const scanner = useBarcodeScan()
 
 const filterLowStock = computed(() => route.query.filter === 'low-stock')
 const deleteTarget   = ref<string | null>(null)
 const toast          = ref<{ message: string; type: 'success' | 'error' } | null>(null)
 const missedBarcode  = ref<string | null>(null)
+const stockTargetId  = ref<string | null>(null)
+
+const stockTarget = computed(() =>
+  products.value.find(p => p.id === stockTargetId.value) ?? null
+)
+
+async function handleStockConfirm(payload: { newValue: number; reason: AdjustmentReason; notes: string }) {
+  if (!stockTargetId.value) return
+  await adjustStock(stockTargetId.value, payload.newValue, payload.reason, payload.notes || undefined)
+  stockTargetId.value = null
+  toast.value = { message: 'تم تحديث الكمية', type: 'success' }
+  await load()
+}
 
 onMounted(() => {
   load()
@@ -89,8 +104,17 @@ async function confirmDelete() {
         :filter-low-stock="filterLowStock"
         @edit="id => router.push(`/products/${id}/edit`)"
         @delete="handleDelete"
+        @adjust-stock="id => stockTargetId = id"
       />
     </main>
+
+    <QuickStockSheet
+      v-if="stockTarget"
+      :product-name="stockTarget.nameAr"
+      :current-stock="stockTarget.currentStock"
+      @confirm="handleStockConfirm"
+      @close="stockTargetId = null"
+    />
 
     <AppDialog
       v-if="deleteTarget"

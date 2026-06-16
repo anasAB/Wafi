@@ -431,7 +431,7 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
               </RouterLink>
 
               <RouterLink
-                to="/customers"
+                :to="openCreditCount > 0 ? '/customers?filter=debtors' : '/customers'"
                 class="signal-row"
                 :class="openCreditCount > 0 ? 'sig-blue' : 'sig-green'"
               >
