@@ -46,7 +46,7 @@ describe('ProductList', () => {
   it('shows stock in red when negative', () => {
     const w = mountList([makeProduct({ id: 'p1', currentStock: -1 })])
     const stockEl = w.find('[data-testid="stock-p1"]')
-    expect(stockEl.classes()).toContain('text-red-600')
+    expect(stockEl.classes()).toContain('stock-neg')
   })
 
   it('filters by search query on Arabic name', async () => {

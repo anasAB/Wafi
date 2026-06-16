@@ -8,6 +8,9 @@ export interface Customer {
   deleted:    boolean
   createdAt:  string
   syncStatus: string
+  /** Outstanding credit (credit sales − payments − returns). Populated by the
+   *  list query; undefined when not computed. */
+  balanceUsd?: number
 }
 
 export interface NewCustomer {

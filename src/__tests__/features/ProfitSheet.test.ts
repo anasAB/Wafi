@@ -28,12 +28,12 @@ describe('ProfitSheet', () => {
 
   it('shows net profit in green when positive', () => {
     const w = mountSheet({ profitUsd: 134 })
-    expect(w.find('[data-testid="row-net"]').classes()).toContain('text-green-600')
+    expect(w.find('[data-testid="row-net"] .net-value').classes()).toContain('positive')
   })
 
   it('shows net profit in red when negative', () => {
     const w = mountSheet({ profitUsd: -50, cogsUsd: 0, expensesUsd: 500, revenueUsd: 450 })
-    expect(w.find('[data-testid="row-net"]').classes()).toContain('text-red-600')
+    expect(w.find('[data-testid="row-net"] .net-value').classes()).toContain('negative')
   })
 
   it('shows COGS warning when cogsUsd is 0 and revenue > 0', () => {

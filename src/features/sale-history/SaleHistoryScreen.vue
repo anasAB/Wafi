@@ -9,6 +9,7 @@ import { usePeriodToggle } from '@/features/dashboard/composables/usePeriodToggl
 import { getDateRange } from '@/features/dashboard/composables/periodUtils'
 import type { SaleRecord } from './sale-history.types'
 import ReturnSheet from '@/features/returns/components/ReturnSheet.vue'
+import ReturnDetailSheet from '@/features/returns/components/ReturnDetailSheet.vue'
 
 const router  = useRouter()
 const route   = useRoute()
@@ -19,14 +20,21 @@ const toast      = ref<string | null>(null)
 const toastType  = ref<'info' | 'error'>('info')
 const returnSaleId     = ref<string | null>(null)
 const returnSaleNumber = ref('')
+const detailSaleId     = ref<string | null>(null)
+const detailSaleNumber = ref('')
 
 function openReturn(sale: SaleRecord) {
   returnSaleId.value     = sale.id
   returnSaleNumber.value = sale.displaySaleNumber
 }
 
+function openReturnDetail(sale: SaleRecord) {
+  detailSaleId.value     = sale.id
+  detailSaleNumber.value = sale.displaySaleNumber
+}
+
 function onReturnConfirmed() {
-  loadHistory(isPeriodDrillDown.value ? getDateRange(period.value) : undefined)
+  loadHistory(getDateRange(period.value))
 }
 
 // If ?period= is in the URL, use that period; otherwise use the current singleton value
@@ -37,8 +45,30 @@ const periodTitle = computed(() => {
   return isPeriodDrillDown.value ? `مبيعات ${labels[period.value] ?? ''}` : 'آخر المبيعات'
 })
 
+// ── Filters ──────────────────────────────────────────────
+const searchQuery  = ref('')
+const methodFilter = ref<'all' | string>('all')
+
+const METHOD_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'all',      label: 'كل الطرق' },
+  { value: 'cash_usd', label: 'نقد $' },
+  { value: 'cash_syp', label: 'نقد ل.س' },
+  { value: 'card',     label: 'بطاقة' },
+  { value: 'credit',   label: 'آجل' },
+  { value: 'split',    label: 'مقسّم' },
+]
+
+const filteredSales = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  return sales.value.filter(s => {
+    if (methodFilter.value !== 'all' && s.paymentMethod !== methodFilter.value) return false
+    if (q && !s.displaySaleNumber.toLowerCase().includes(q)) return false
+    return true
+  })
+})
+
 const periodTotal = computed(() =>
-  sales.value.reduce((sum, s) => sum + s.totalUsd, 0)
+  filteredSales.value.reduce((sum, s) => sum + s.totalUsd, 0)
 )
 
 onMounted(async () => {
@@ -47,12 +77,12 @@ onMounted(async () => {
     const p = route.query.period as string
     if (p === 'today' || p === 'week' || p === 'month') setPeriod(p)
   }
-  await loadHistory(isPeriodDrillDown.value ? getDateRange(period.value) : undefined)
+  await loadHistory(getDateRange(period.value))
 })
 
-// Reload when period changes (user taps toggle)
+// Reload from the DB whenever the selected period changes.
 watch(period, async (newPeriod) => {
-  if (isPeriodDrillDown.value) await loadHistory(getDateRange(newPeriod))
+  await loadHistory(getDateRange(newPeriod))
 })
 
 function formatDate(iso: string): string {
@@ -90,10 +120,29 @@ async function handleReprint(saleId: string) {
   <div class="page-root">
     <AppHeader :title="periodTitle" :show-back="isPeriodDrillDown" @back="router.push('/')" />
 
-    <div v-if="isPeriodDrillDown" class="period-bar">
-      <PeriodToggle />
-      <div v-if="sales.length > 0" class="period-total">
-        إجمالي: ${{ periodTotal.toFixed(2) }}
+    <!-- Filters: period range + search by invoice number + payment method -->
+    <div class="filter-bar" dir="rtl">
+      <div class="filter-top">
+        <PeriodToggle />
+        <div v-if="filteredSales.length > 0" class="period-total">
+          إجمالي: ${{ periodTotal.toFixed(2) }}
+        </div>
+      </div>
+      <div class="filter-controls">
+        <div class="search-wrap">
+          <svg class="search-icon" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+          </svg>
+          <input
+            v-model="searchQuery"
+            type="search"
+            class="search-input"
+            placeholder="ابحث برقم الفاتورة..."
+          />
+        </div>
+        <select v-model="methodFilter" class="method-select">
+          <option v-for="m in METHOD_OPTIONS" :key="m.value" :value="m.value">{{ m.label }}</option>
+        </select>
       </div>
     </div>
 
@@ -104,22 +153,25 @@ async function handleReprint(saleId: string) {
         <div class="spinner" />
       </div>
 
-      <!-- Empty state -->
+      <!-- Empty: nothing in this period -->
       <div v-else-if="sales.length === 0" class="empty-state">
         <div class="empty-icon-wrap">
           <svg class="empty-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z"/>
           </svg>
         </div>
-        <p class="empty-text">
-          {{ isPeriodDrillDown ? 'لا توجد مبيعات في هذه الفترة' : 'لا توجد مبيعات في آخر 7 أيام' }}
-        </p>
+        <p class="empty-text">لا توجد مبيعات في هذه الفترة</p>
         <RouterLink to="/pos" class="btn-ghost-sm">بيع جديد</RouterLink>
+      </div>
+
+      <!-- Empty: filtered out -->
+      <div v-else-if="filteredSales.length === 0" class="empty-state">
+        <p class="empty-text">لا توجد فواتير مطابقة للبحث</p>
       </div>
 
       <template v-else>
         <!-- Desktop: table -->
-        <div class="desktop-table-wrap hidden lg:block">
+        <div class="desktop-table-wrap">
           <table class="sale-table">
             <thead>
               <tr class="table-head-row">
@@ -134,7 +186,7 @@ async function handleReprint(saleId: string) {
             </thead>
             <tbody>
               <tr
-                v-for="sale in sales"
+                v-for="sale in filteredSales"
                 :key="sale.id"
                 class="table-row"
               >
@@ -151,15 +203,26 @@ async function handleReprint(saleId: string) {
                 <td class="td td-muted">{{ methodLabel[sale.paymentMethod] ?? '?' }}</td>
                 <td class="td">
                   <span v-if="sale.isPending" class="badge-warning">في الانتظار</span>
-                  <span v-else class="td-muted text-xs">مكتمل</span>
+                  <span v-else-if="sale.paymentMethod === 'credit'" class="badge-credit">آجل (غير مدفوع)</span>
+                  <span v-else class="td-muted text-xs">مدفوع</span>
                 </td>
                 <td class="td">
                   <div style="display:flex;gap:6px;align-items:center;">
-                    <span v-if="sale.hasReturn" class="badge-return">مرتجع</span>
+                    <button
+                      v-if="sale.hasReturn"
+                      type="button"
+                      class="badge-return badge-return--btn"
+                      @click="openReturnDetail(sale)"
+                    >{{ sale.isFullyReturned ? 'مرتجع بالكامل' : 'مرتجع جزئي' }}</button>
                     <button type="button" class="btn-reprint" @click="handleReprint(sale.id)">
                       إعادة طباعة
                     </button>
-                    <button type="button" class="btn-reprint" @click="openReturn(sale)">
+                    <button
+                      v-if="!sale.isFullyReturned"
+                      type="button"
+                      class="btn-reprint"
+                      @click="openReturn(sale)"
+                    >
                       إرجاع
                     </button>
                   </div>
@@ -170,9 +233,9 @@ async function handleReprint(saleId: string) {
         </div>
 
         <!-- Mobile: card list -->
-        <div class="lg:hidden mobile-list">
+        <div class="mobile-list">
           <div
-            v-for="sale in sales"
+            v-for="sale in filteredSales"
             :key="sale.id"
             class="sale-card"
             :class="{ 'sale-card--pending': sale.isPending }"
@@ -194,13 +257,20 @@ async function handleReprint(saleId: string) {
                 <span>بالليرة: {{ sale.totalSyp.toLocaleString() }} ل.س</span>
                 <span>السعر: {{ sale.exchangeRateAtSale.toLocaleString() }}</span>
               </div>
-              <span v-if="sale.hasReturn" class="badge-return" style="width:fit-content;">مرتجع</span>
+              <button
+                v-if="sale.hasReturn"
+                type="button"
+                class="badge-return badge-return--btn"
+                style="width:fit-content;"
+                @click="openReturnDetail(sale)"
+              >{{ sale.isFullyReturned ? 'مرتجع بالكامل — عرض التفاصيل' : 'مرتجع جزئي — عرض التفاصيل' }}</button>
               <button
                 type="button"
                 class="btn-reprint-full"
                 @click="handleReprint(sale.id)"
               >إعادة طباعة</button>
               <button
+                v-if="!sale.isFullyReturned"
                 type="button"
                 class="btn-reprint-full"
                 @click="openReturn(sale)"
@@ -224,6 +294,15 @@ async function handleReprint(saleId: string) {
       @confirmed="onReturnConfirmed"
     />
   </Teleport>
+
+  <Teleport to="body">
+    <ReturnDetailSheet
+      v-if="detailSaleId"
+      :sale-id="detailSaleId"
+      :sale-number="detailSaleNumber"
+      @close="detailSaleId = null"
+    />
+  </Teleport>
 </template>
 
 <style scoped>
@@ -236,16 +315,23 @@ async function handleReprint(saleId: string) {
   font-family: 'Tajawal', system-ui, sans-serif;
 }
 
-.period-bar {
+.filter-bar {
   padding: 12px 16px 0;
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 @media (min-width: 1024px) {
-  .period-bar { padding: 12px 24px 0; }
+  .filter-bar { padding: 12px 24px 0; }
+}
+
+.filter-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .period-total {
@@ -253,6 +339,62 @@ async function handleReprint(saleId: string) {
   font-weight: 700;
   color: #60A5FA;
   text-align: left;
+}
+
+.filter-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.search-wrap {
+  position: relative;
+  flex: 1;
+}
+
+.search-icon {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0.625rem;
+  margin: auto;
+  width: 0.9rem;
+  height: 0.9rem;
+  color: #637285;
+  pointer-events: none;
+}
+
+.search-input {
+  width: 100%;
+  height: 38px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 0.625rem;
+  padding: 0 2.25rem 0 0.75rem;
+  color: #E8EDF5;
+  font-size: 0.8125rem;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.search-input::placeholder { color: #3D4F6B; }
+
+.search-input:focus {
+  border-color: rgba(26,86,219,0.7);
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.18);
+}
+
+.method-select {
+  height: 38px;
+  padding: 0 0.625rem;
+  border-radius: 0.625rem;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.14);
+  color: #E8EDF5;
+  font-size: 0.8125rem;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  outline: none;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 .page-main {
@@ -341,13 +483,19 @@ async function handleReprint(saleId: string) {
 .btn-ghost-sm:hover { opacity: 0.8; }
 
 /* ─── Desktop Table ───────────────────────────────────────── */
+/* Desktop table / mobile cards are mutually exclusive. Use scoped media queries
+   (not Tailwind utilities) — a scoped `.mobile-list { display:flex }` was
+   overriding `lg:hidden`, so both rendered together on laptops. */
 .desktop-table-wrap {
+  display: none;
   border-radius: 1rem;
   overflow: hidden;
   background: linear-gradient(135deg, rgba(26, 86, 219, 0.11), rgba(255, 255, 255, 0.04));
   border: 1px solid rgba(26, 86, 219, 0.28);
   box-shadow: 0 4px 20px rgba(26, 86, 219, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
+
+@media (min-width: 1024px) { .desktop-table-wrap { display: block; } }
 
 .sale-table {
   width: 100%;
@@ -412,6 +560,18 @@ async function handleReprint(saleId: string) {
   color: #F59E0B;
 }
 
+.badge-credit {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  color: #F59E0B;
+}
+
 .badge-return {
   display: inline-flex;
   align-items: center;
@@ -422,6 +582,17 @@ async function handleReprint(saleId: string) {
   background: rgba(16, 185, 129, 0.12);
   border: 1px solid rgba(16, 185, 129, 0.28);
   color: #10B981;
+}
+
+/* Clickable badge → opens the read-only return details */
+.badge-return--btn {
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s, border-color 0.12s;
+}
+.badge-return--btn:hover {
+  background: rgba(16, 185, 129, 0.20);
+  border-color: rgba(16, 185, 129, 0.45);
 }
 
 /* ─── Reprint buttons ─────────────────────────────────────── */
@@ -466,6 +637,8 @@ async function handleReprint(saleId: string) {
   flex-direction: column;
   gap: 8px;
 }
+
+@media (min-width: 1024px) { .mobile-list { display: none; } }
 
 .sale-card {
   border-radius: 1rem;

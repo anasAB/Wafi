@@ -5,11 +5,14 @@ export interface SaleLine {
   productId:    string
   nameAr:       string
   quantity:     number
-  unitPriceUsd: number
+  unitPriceUsd: number       // actual price charged (cashier may negotiate up/down)
   lineTotalUsd: number
   /** Stock available for this product at the time it was added. Acts as the
    *  hard ceiling on quantity so the cart can never oversell. */
   availableStock: number
+  /** Catalog/list price snapshot, so the cart can flag when an item is sold
+   *  above or below its listed price. Optional for back-compat. */
+  listPriceUsd?: number
 }
 
 export const useSaleStore = defineStore('sale', () => {
@@ -44,6 +47,29 @@ export const useSaleStore = defineStore('sale', () => {
   function removeLine(productId: string) {
     const idx = lines.value.findIndex(l => l.productId === productId)
     if (idx !== -1) lines.value.splice(idx, 1)
+  }
+
+  // Override the price charged for a line (e.g. sold above the listed price).
+  function updateUnitPrice(productId: string, unitPriceUsd: number) {
+    if (unitPriceUsd < 0 || Number.isNaN(unitPriceUsd)) return
+    const line = lines.value.find(l => l.productId === productId)
+    if (line) {
+      line.unitPriceUsd = unitPriceUsd
+      line.lineTotalUsd = line.quantity * unitPriceUsd
+    }
+  }
+
+  // Scale every line's price proportionally so the cart total becomes targetUsd.
+  // Used when an "overpaid" cash amount is actually a higher negotiated price:
+  // the surplus is recorded as revenue across the lines rather than as change.
+  function scalePricesToTotal(targetUsd: number) {
+    const current = lines.value.reduce((s, l) => s + l.lineTotalUsd, 0)
+    if (current <= 0 || targetUsd <= 0) return
+    const factor = targetUsd / current
+    for (const line of lines.value) {
+      line.unitPriceUsd = Math.round(line.unitPriceUsd * factor * 100) / 100
+      line.lineTotalUsd = Math.round(line.quantity * line.unitPriceUsd * 100) / 100
+    }
   }
 
   function updateQuantity(productId: string, quantity: number) {
@@ -89,6 +115,8 @@ export const useSaleStore = defineStore('sale', () => {
     addLine,
     removeLine,
     updateQuantity,
+    updateUnitPrice,
+    scalePricesToTotal,
     setLockedRate,
     setRateChangeNotice,
     incrementSequence,

@@ -65,7 +65,25 @@ function handleClearSale() {
         <!-- Product info -->
         <div class="line-info">
           <p class="line-name">{{ line.nameAr }}</p>
-          <p class="line-unit">${{ line.unitPriceUsd.toFixed(2) }} × {{ line.quantity }}</p>
+          <div class="line-unit">
+            <span class="price-edit">$<input
+              type="number"
+              min="0"
+              step="0.01"
+              inputmode="decimal"
+              class="price-input"
+              :value="line.unitPriceUsd"
+              :aria-label="`سعر ${line.nameAr}`"
+              @change="store.updateUnitPrice(line.productId, parseFloat(($event.target as HTMLInputElement).value))"
+            /></span>
+            <span class="times">× {{ line.quantity }}</span>
+            <span
+              v-if="line.listPriceUsd !== undefined && Math.abs(line.unitPriceUsd - line.listPriceUsd) > 0.001"
+              class="price-delta"
+              :class="line.unitPriceUsd > line.listPriceUsd ? 'delta-up' : 'delta-down'"
+              :title="`السعر المعتاد $${line.listPriceUsd.toFixed(2)}`"
+            >{{ line.unitPriceUsd > line.listPriceUsd ? '▲' : '▼' }} ${{ Math.abs(line.unitPriceUsd - line.listPriceUsd).toFixed(2) }}</span>
+          </div>
         </div>
 
         <!-- Qty controls -->
@@ -286,7 +304,47 @@ function handleClearSale() {
   font-size: 11px;
   color: #637285;
   margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
+
+.price-edit {
+  display: inline-flex;
+  align-items: center;
+  color: #60A5FA;
+  font-weight: 700;
+}
+
+.price-input {
+  width: 56px;
+  background: rgba(26,86,219,0.10);
+  border: 1px solid rgba(26,86,219,0.28);
+  border-radius: 6px;
+  padding: 2px 6px;
+  margin-inline-start: 2px;
+  color: #E8EDF5;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: inherit;
+  outline: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.price-input:focus {
+  border-color: rgba(26,86,219,0.7);
+  box-shadow: 0 0 0 2px rgba(26,86,219,0.20);
+}
+
+.times { color: #637285; }
+
+.price-delta {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.price-delta.delta-up   { color: #22C55E; }
+.price-delta.delta-down { color: #F59E0B; }
 
 /* Qty controls */
 .qty-controls {

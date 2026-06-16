@@ -154,6 +154,17 @@ export function useAuditLog() {
   const logStaffPermissionsChanged = (staffId: string, name: string) =>
     _log('staff.permissions_changed', 'staff', staffId, { name })
 
+  const logSupplierCreated = (supplierId: string, name: string) =>
+    _log('supplier.created', 'supplier', supplierId, { name })
+
+  const logSupplierUpdated = (supplierId: string, name: string) =>
+    _log('supplier.updated', 'supplier', supplierId, { name })
+
+  const logReceivingCreated = (
+    receivingId: string, supplierName: string, totalUsd: number, lineCount: number,
+  ) => _log('receiving.created', 'receiving', receivingId,
+            { supplierName, totalUsd, lineCount })
+
   return {
     entries,
     loadLog,
@@ -179,5 +190,8 @@ export function useAuditLog() {
     logStaffCreated,
     logStaffDeactivated,
     logStaffPermissionsChanged,
+    logSupplierCreated,
+    logSupplierUpdated,
+    logReceivingCreated,
   }
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const props = defineProps<{ confirmDisabled?: boolean }>()
+const props = defineProps<{ confirmDisabled?: boolean; hideConfirm?: boolean }>()
 const emit  = defineEmits<{
   (e: 'digit',   d: string): void
   (e: 'delete'):              void
@@ -25,6 +25,7 @@ const keys = ['7','8','9','4','5','6','1','2','3','.',  '0', '⌫']
       @click="key === '⌫' ? emit('delete') : emit('digit', key)"
     >{{ key }}</button>
     <button
+      v-if="!props.hideConfirm"
       type="button"
       aria-label="تأكيد"
       :disabled="props.confirmDisabled"

@@ -5,6 +5,7 @@ import AppHeader from '@/components/ui/AppHeader.vue'
 import ProductForm from './components/ProductForm.vue'
 import AppToast from '@/components/ui/AppToast.vue'
 import AuditHistory from '@/features/audit/components/AuditHistory.vue'
+import ProductActivitySheet from './components/ProductActivitySheet.vue'
 import { useProducts } from './composables/useProducts'
 import type { Product } from '@/features/pos/pos.types'
 
@@ -14,6 +15,7 @@ const { products, load } = useProducts()
 const product = ref<Product | undefined>(undefined)
 const toast   = ref<{ message: string; type: 'success' } | null>(null)
 const loaded  = ref(false)
+const showActivity = ref(false)
 
 onMounted(async () => {
   await load()
@@ -43,13 +45,21 @@ function handleSaved() {
         <p class="empty-text">المنتج غير موجود</p>
         <button type="button" class="empty-back-btn" @click="router.push('/products')">العودة للمنتجات</button>
       </div>
-      <ProductForm
-        v-else
-        mode="edit"
-        :product="product"
-        @saved="handleSaved"
-        @cancel="router.push('/products')"
-      />
+      <template v-else>
+        <button type="button" class="activity-btn" @click="showActivity = true">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+          </svg>
+          نشاط المنتج (المبيعات والأسعار)
+        </button>
+
+        <ProductForm
+          mode="edit"
+          :product="product"
+          @saved="handleSaved"
+          @cancel="router.push('/products')"
+        />
+      </template>
       <AuditHistory
         v-if="product"
         entity-type="product"
@@ -57,6 +67,13 @@ function handleSaved() {
       />
     </main>
     <AppToast v-if="toast" :message="toast.message" :type="toast.type" @dismiss="toast = null" />
+
+    <ProductActivitySheet
+      v-if="showActivity && product"
+      :product-id="product.id"
+      :product-name="product.nameAr"
+      @close="showActivity = false"
+    />
   </div>
 </template>
 
@@ -140,5 +157,30 @@ function handleSaved() {
 
 .empty-back-btn:hover {
   opacity: 0.80;
+}
+
+/* Product activity button */
+.activity-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  margin-bottom: 0.75rem;
+  padding: 0.625rem 0.875rem;
+  border-radius: 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  color: #60A5FA;
+  background: rgba(26,86,219,0.10);
+  border: 1px solid rgba(26,86,219,0.28);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.activity-btn:hover {
+  background: rgba(26,86,219,0.18);
+  border-color: rgba(26,86,219,0.45);
 }
 </style>

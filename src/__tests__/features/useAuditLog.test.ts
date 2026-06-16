@@ -93,3 +93,28 @@ describe('useAuditLog', () => {
     )
   })
 })
+
+describe('useAuditLog — supplier & receiving helpers', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  it('logSupplierCreated writes a supplier.created row', async () => {
+    const { logSupplierCreated } = useAuditLog()
+    await logSupplierCreated('sup-1', 'مؤسسة النور')
+    expect(db.execute).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO audit_log'),
+      expect.arrayContaining(['supplier.created', 'supplier', 'sup-1']),
+    )
+  })
+
+  it('logReceivingCreated writes a receiving.created row', async () => {
+    const { logReceivingCreated } = useAuditLog()
+    await logReceivingCreated('rcv-1', 'مؤسسة النور', 1200, 5)
+    expect(db.execute).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO audit_log'),
+      expect.arrayContaining(['receiving.created', 'receiving', 'rcv-1']),
+    )
+  })
+})

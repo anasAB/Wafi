@@ -1,17 +1,21 @@
 <script setup lang="ts">
 import { ref, onMounted }  from 'vue'
+import { useRouter }       from 'vue-router'
+import AppHeader           from '@/components/ui/AppHeader.vue'
 import { useStaff }        from '../composables/useStaff'
 import StaffForm           from './StaffForm.vue'
 import type { Staff }      from '../staff.types'
 
+const router = useRouter()
+
 const { staff, loadStaff, deactivateStaff } = useStaff()
-const showForm    = ref(false)
-const editStaffId = ref<string | undefined>()
+const showForm   = ref(false)
+const editStaff  = ref<Staff | undefined>()
 
 onMounted(() => loadStaff())
 
-function startEdit(s: Staff) { editStaffId.value = s.id; showForm.value = true }
-function startAdd()          { editStaffId.value = undefined; showForm.value = true }
+function startEdit(s: Staff) { editStaff.value = s; showForm.value = true }
+function startAdd()          { editStaff.value = undefined; showForm.value = true }
 
 async function deactivate(s: Staff) {
   if (!confirm(`هل تريد إلغاء تفعيل ${s.name}؟`)) return
@@ -22,13 +26,13 @@ function onFormDone() { showForm.value = false; loadStaff() }
 </script>
 
 <template>
-  <div class="staff-root" dir="rtl">
-    <!-- Header -->
-    <div class="staff-header">
-      <div>
-        <h1 class="staff-title">الموظفون</h1>
-        <p class="staff-subtitle">إدارة فريق العمل والصلاحيات</p>
-      </div>
+  <div class="page-root" dir="rtl">
+    <AppHeader title="الموظفون" :show-back="true" @back="router.back()" />
+
+    <main class="staff-main">
+    <!-- Toolbar -->
+    <div class="staff-toolbar">
+      <p class="staff-subtitle">إدارة فريق العمل والصلاحيات</p>
       <button @click="startAdd" class="btn-primary">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -56,7 +60,7 @@ function onFormDone() { showForm.value = false; loadStaff() }
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
             </svg>
-            تغيير PIN
+            تعديل
           </button>
           <button @click="deactivate(s)" class="btn-danger">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -84,20 +88,21 @@ function onFormDone() { showForm.value = false; loadStaff() }
         <p class="empty-sub">أضف أول موظف لمنحه صلاحيات الوصول</p>
       </div>
     </div>
+    </main>
 
     <!-- Form modal -->
     <Teleport to="body">
       <div v-if="showForm" class="modal-overlay" @click.self="showForm = false">
         <div class="modal-panel">
           <div class="modal-header">
-            <h2 class="modal-title">{{ editStaffId ? 'تغيير الرقم السري' : 'موظف جديد' }}</h2>
+            <h2 class="modal-title">{{ editStaff ? 'تعديل الموظف' : 'موظف جديد' }}</h2>
             <button @click="showForm = false" class="close-btn">
               <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           </div>
-          <StaffForm :edit-staff-id="editStaffId" @done="onFormDone" />
+          <StaffForm :edit-staff="editStaff" @done="onFormDone" />
         </div>
       </div>
     </Teleport>
@@ -105,27 +110,28 @@ function onFormDone() { showForm.value = false; loadStaff() }
 </template>
 
 <style scoped>
-.staff-root {
+.page-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: #06090F;
+  font-family: 'Tajawal', system-ui, sans-serif;
+}
+
+.staff-main {
+  flex: 1;
   padding: 20px 16px 80px;
   max-width: 600px;
   margin: 0 auto;
-  background: #06090F;
-  min-height: 100vh;
+  width: 100%;
 }
 
-.staff-header {
+.staff-toolbar {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 24px;
-}
-
-.staff-title {
-  font-size: 20px;
-  font-weight: 800;
-  color: #E8EDF5;
-  margin-bottom: 2px;
+  margin-bottom: 20px;
 }
 
 .staff-subtitle {

@@ -79,6 +79,10 @@ onUnmounted(() => {
 
         <span class="product-name">{{ p.nameAr }}</span>
         <span class="product-price">${{ p.salePriceUsd.toFixed(2) }}</span>
+        <span
+          class="product-stock"
+          :class="p.currentStock <= 0 ? 'stock-out' : (p.currentStock <= p.lowStockThreshold ? 'stock-low' : '')"
+        >{{ p.currentStock > 0 ? `المتبقي: ${p.currentStock}` : 'نفد المخزون' }}</span>
 
         <!-- Low stock warning -->
         <span v-if="p.currentStock <= p.lowStockThreshold && p.currentStock > 0" class="low-stock-dot" title="مخزون منخفض" />
@@ -216,6 +220,16 @@ onUnmounted(() => {
   color: #60A5FA;
   font-variant-numeric: tabular-nums;
 }
+
+/* Remaining stock on the tile */
+.product-stock {
+  font-size: 10px;
+  font-weight: 600;
+  color: #637285;
+  font-variant-numeric: tabular-nums;
+}
+.product-stock.stock-low { color: #F59E0B; }
+.product-stock.stock-out { color: #EF4444; }
 
 /* Stock indicators */
 .low-stock-dot {

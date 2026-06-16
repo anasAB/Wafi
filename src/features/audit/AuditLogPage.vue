@@ -17,7 +17,6 @@ const { period, setPeriod } = usePeriodToggle()
 const { entries, loadLog }  = useAuditLog()
 
 const loading        = ref(false)
-const expandedId     = ref<string | null>(null)
 const filterStaffId  = ref<string | null>(null)
 const filterEvent    = ref<string | null>(null)
 
@@ -29,7 +28,7 @@ async function reload() {
     const { start, end } = getDateRange(period.value)
     await loadLog({
       startDate: start,
-      endDate:   end + 'T23:59:59Z',
+      endDate:   end,
       staffId:   filterStaffId.value,
       event:     filterEvent.value,
     })
@@ -45,9 +44,6 @@ onMounted(async () => {
 watch(period, reload)
 watch([filterStaffId, filterEvent], reload)
 
-function toggleExpand(id: string) {
-  expandedId.value = expandedId.value === id ? null : id
-}
 </script>
 
 <template>
@@ -86,7 +82,6 @@ function toggleExpand(id: string) {
             v-for="e in entries"
             :key="e.id"
             class="log-row"
-            @click="toggleExpand(e.id)"
           >
             <div class="log-row-main">
               <div class="log-left">
@@ -94,10 +89,6 @@ function toggleExpand(id: string) {
                 <span class="log-staff">{{ e.staffName }}</span>
               </div>
               <span class="log-time">{{ formatAuditTime(e.createdAt) }}</span>
-            </div>
-            <!-- Expanded meta -->
-            <div v-if="expandedId === e.id" class="log-meta">
-              <pre class="meta-pre">{{ JSON.stringify(e.meta, null, 2) }}</pre>
             </div>
           </div>
         </div>
@@ -136,20 +127,13 @@ function toggleExpand(id: string) {
 .empty-title { font-size: 0.875rem; color: #637285; }
 .log-list { display: flex; flex-direction: column; gap: 0.375rem; }
 .log-row {
-  border-radius: 0.875rem; padding: 0.75rem 1rem; cursor: pointer;
+  border-radius: 0.875rem; padding: 0.75rem 1rem;
   background: linear-gradient(135deg, rgba(26,86,219,0.08), rgba(255,255,255,0.03));
   border: 1px solid rgba(26,86,219,0.20);
-  transition: background 0.12s;
 }
-.log-row:hover { background: linear-gradient(135deg, rgba(26,86,219,0.14), rgba(255,255,255,0.05)); }
 .log-row-main { display: flex; justify-content: space-between; align-items: flex-start; }
 .log-left { display: flex; flex-direction: column; gap: 0.125rem; flex: 1; min-width: 0; }
 .log-label { font-size: 0.875rem; font-weight: 600; color: #E8EDF5; }
 .log-staff { font-size: 0.75rem; color: #637285; }
 .log-time { font-size: 0.75rem; color: #3D4F6B; flex-shrink: 0; margin-inline-start: 0.75rem; }
-.log-meta { margin-top: 0.625rem; padding-top: 0.625rem; border-top: 1px solid rgba(26,86,219,0.15); }
-.meta-pre {
-  font-size: 0.6875rem; color: #637285; font-family: monospace;
-  white-space: pre-wrap; word-break: break-all; margin: 0;
-}
 </style>

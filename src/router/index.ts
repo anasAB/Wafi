@@ -14,6 +14,9 @@ export default createRouter({
     { path: '/expenses',          component: () => import('@/features/expenses/ExpenseListPage.vue') },
     { path: '/customers',         component: () => import('@/features/customers/CustomersPage.vue') },
     { path: '/customers/:id',     component: () => import('@/features/customers/CustomerDetailPage.vue') },
+    { path: '/suppliers',         component: () => import('@/features/suppliers/SuppliersPage.vue') },
+    { path: '/suppliers/:id',     component: () => import('@/features/suppliers/SupplierDetailPage.vue') },
+    { path: '/receivings',        component: () => import('@/features/suppliers/ReceivingsPage.vue') },
     {
       path: '/settings',
       component: () => import('@/pages/SettingsPage.vue'),

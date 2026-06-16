@@ -80,6 +80,23 @@ export function useStaff() {
     ])
   }
 
+  /** Update a staff member's name, role and permissions (owner-only action). */
+  async function updateStaff(
+    staffId: string,
+    data: { name: string; role: Staff['role']; permissions: StaffPermissions }
+  ): Promise<void> {
+    const permsJson =
+      data.role === 'owner'
+        ? JSON.stringify(OWNER_PERMISSIONS)
+        : JSON.stringify(data.permissions)
+    await db.execute(
+      `UPDATE staff SET name = ?, role = ?, permissions = ? WHERE id = ?`,
+      [data.name, data.role, permsJson, staffId]
+    )
+    await loadStaff()
+    await logStaffPermissionsChanged(staffId, data.name)
+  }
+
   async function updateStaffPermissions(
     staffId: string,
     permissions: StaffPermissions
@@ -114,6 +131,7 @@ export function useStaff() {
     hasAnyStaff,
     createStaff,
     updateStaffPin,
+    updateStaff,
     updateStaffPermissions,
     deactivateStaff,
   }

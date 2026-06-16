@@ -4,15 +4,18 @@ import { useDeviceStore } from '@/store/device.store'
 import { v4 as uuidv4 } from 'uuid'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 
+// Module-level (shared) state: the exchange rate is a single app-wide value.
+// Declaring these inside the function gave every caller its own copy, so saving
+// the rate in the header widget never reached the POS screen until it remounted.
+const currentRate       = ref<number | null>(null)
+const rateHistory       = ref<Array<{ rate: number; setAt: string }>>([])
+const needsConfirmation = ref(false)
+const pendingRate       = ref<number | null>(null)
+const saving            = ref(false)
+const error             = ref<string | null>(null)
+
 export function useExchangeRate() {
   const { logExchangeRateChanged } = useAuditLog()
-
-  const currentRate       = ref<number | null>(null)
-  const rateHistory       = ref<Array<{ rate: number; setAt: string }>>([])
-  const needsConfirmation = ref(false)
-  const pendingRate       = ref<number | null>(null)
-  const saving            = ref(false)
-  const error             = ref<string | null>(null)
 
   async function loadRate() {
     const device = useDeviceStore()

@@ -20,11 +20,15 @@ export type AuditEvent =
   | 'staff.created'
   | 'staff.deactivated'
   | 'staff.permissions_changed'
+  | 'supplier.created'
+  | 'supplier.updated'
+  | 'receiving.created'
 
 export type AuditEntityType =
   | 'sale' | 'return' | 'product' | 'expense'
   | 'customer' | 'stock' | 'shift'
   | 'exchange_rate' | 'settings' | 'staff'
+  | 'supplier' | 'receiving'
 
 export interface AuditLog {
   id:         string
