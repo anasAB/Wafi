@@ -4,6 +4,7 @@ import { useReceivingSheet } from '../composables/useReceivingSheet'
 import SupplierPickerModal from './SupplierPickerModal.vue'
 import ReceivingProductPicker from './ReceivingProductPicker.vue'
 import ReceivingLineItem from './ReceivingLineItem.vue'
+import ProductPhotoUpload from '@/features/products/components/ProductPhotoUpload.vue'
 
 const props = defineProps<{ presetSupplier?: { id: string; name: string } }>()
 const emit = defineEmits<{ saved: []; close: [] }>()
@@ -12,6 +13,7 @@ const sheet = useReceivingSheet()
 const showSupplierPicker = ref(false)
 const showProductPicker  = ref(false)
 const saving = ref(false)
+const photoError = ref('')
 
 onMounted(() => {
   if (props.presetSupplier) {
@@ -29,6 +31,15 @@ function onSupplierSelect(s: { id: string; name: string }) {
 function onProductSelect(p: { id: string; nameAr: string; costPriceUsd: number }) {
   sheet.addLine(p)
   showProductPicker.value = false
+}
+
+function onPhotoChange(url: string | null) {
+  sheet.invoicePhotoUrl.value = url
+  photoError.value = ''
+}
+
+function onPhotoError(msg: string) {
+  photoError.value = msg
 }
 
 async function onConfirm() {
@@ -68,6 +79,17 @@ async function onConfirm() {
     </div>
     <button class="btn-secondary" @click="showProductPicker = true">+ أضف صنفاً</button>
 
+    <!-- Invoice photo (optional) -->
+    <div class="invoice-photo">
+      <span class="field-label">صورة الفاتورة (اختياري)</span>
+      <ProductPhotoUpload
+        :model-value="sheet.invoicePhotoUrl.value"
+        @change="onPhotoChange"
+        @error="onPhotoError"
+      />
+      <p v-if="photoError" class="photo-error">{{ photoError }}</p>
+    </div>
+
     <!-- Notes -->
     <label class="notes">ملاحظات
       <textarea v-model="sheet.notes.value" rows="2"></textarea>
@@ -100,4 +122,7 @@ async function onConfirm() {
 .btn-primary:disabled { opacity: 0.5; }
 .btn-secondary { background: #16263C; color: #fff; border: none; padding: 0.6rem; border-radius: 0.5rem; }
 .btn-ghost { background: transparent; color: #9CB3D0; border: none; }
+.invoice-photo { display: flex; flex-direction: column; gap: 0.4rem; }
+.field-label { font-size: 0.9rem; color: #9CB3D0; }
+.photo-error { color: #E06A6A; font-size: 0.85rem; margin: 0; }
 </style>
