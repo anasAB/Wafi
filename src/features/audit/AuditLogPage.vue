@@ -13,7 +13,7 @@ import { eventLabel, formatAuditTime } from '@/features/audit/audit.format'
 const router    = useRouter()
 const session   = useSessionStore()
 const { staff, loadStaff } = useStaff()
-const { period, setPeriod } = usePeriodToggle()
+const { period } = usePeriodToggle()
 const { entries, loadLog }  = useAuditLog()
 
 const loading        = ref(false)

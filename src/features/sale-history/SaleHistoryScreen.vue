@@ -13,7 +13,7 @@ import ReturnDetailSheet from '@/features/returns/components/ReturnDetailSheet.v
 
 const router  = useRouter()
 const route   = useRoute()
-const { sales, loading, loadHistory, reprint, reprintError } = useSaleHistory()
+const { sales, loading, loadHistory, reprint } = useSaleHistory()
 const { period, setPeriod } = usePeriodToggle()
 const expandedId = ref<string | null>(null)
 const toast      = ref<string | null>(null)

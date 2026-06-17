@@ -87,7 +87,9 @@ onUnmounted(() => { closeCamera() })
 
 function handlePaymentConfirmed(completedSale: CompletedSale) {
   payOpen.value = false
-  router.push({ path: '/pos/confirmation', state: { sale: completedSale } })
+  // Vue Router's history `state` type requires an index signature; a structured
+  // object is fine at runtime (it's serialized), so cast at this boundary.
+  router.push({ path: '/pos/confirmation', state: { sale: completedSale } as any })
 }
 </script>
 

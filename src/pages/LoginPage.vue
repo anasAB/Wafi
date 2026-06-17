@@ -31,8 +31,6 @@ const showPass = ref(false)
 const loading  = ref(false)
 const error    = ref('')
 
-const selectedDial = () => dialCodes.find(d => d.code === dialCode.value)
-
 async function submit() {
   if (!phone.value || !password.value) { error.value = 'أدخل رقم الهاتف وكلمة المرور'; return }
   error.value = ''

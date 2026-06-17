@@ -3,7 +3,7 @@ import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { usePrinter } from '@/composables/usePrinter'
 import type { ReceiptData } from '@/composables/usePrinter'
-import type { SaleRecord, SaleLineRecord } from './sale-history.types'
+import type { SaleRecord } from './sale-history.types'
 
 export function useSaleHistory() {
   const sales   = ref<SaleRecord[]>([])

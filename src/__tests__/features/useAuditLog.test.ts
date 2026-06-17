@@ -76,7 +76,7 @@ describe('useAuditLog', () => {
     await logProductPriceChanged('prod-1', 'iPhone 14', 500, 450)
 
     const call = vi.mocked(db.execute).mock.calls[0]
-    const metaArg = call[1].find((v: unknown) =>
+    const metaArg = call[1]!.find((v: unknown) =>
       typeof v === 'string' && v.includes('old_price')
     ) as string
     const meta = JSON.parse(metaArg)

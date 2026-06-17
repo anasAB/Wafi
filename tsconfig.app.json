@@ -4,6 +4,11 @@
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
     "types": ["vite/client"],
 
+    /* Path alias — mirrors vite.config.ts `resolve.alias` so vue-tsc can resolve
+       `@/...` imports during type-checking, not just Vite at bundle time.
+       (TS 5+ resolves `paths` relative to this file; no `baseUrl` needed.) */
+    "paths": { "@/*": ["./src/*"] },
+
     /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,

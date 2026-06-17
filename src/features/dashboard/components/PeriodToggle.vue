@@ -24,9 +24,9 @@ const options: { value: Period; label: string }[] = [
       type="button"
       :data-testid="`period-${opt.value}`"
       role="tab"
-      :aria-selected="period.value === opt.value"
+      :aria-selected="period === opt.value"
       class="toggle-btn"
-      :class="period.value === opt.value ? 'active' : 'inactive'"
+      :class="period === opt.value ? 'active' : 'inactive'"
       @click="setPeriod(opt.value)"
     >{{ opt.label }}</button>
   </div>

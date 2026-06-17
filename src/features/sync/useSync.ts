@@ -12,15 +12,21 @@ export function useSync() {
   })
 
   function bindPowerSync() {
-    const unsubscribe = db.status?.onChange?.((status: any) => {
-      if (status.connected) {
-        syncStore.setStatus('online')
-        syncStore.setLastSynced(new Date())
-      } else if (status.dataFlowStatus?.downloading || status.dataFlowStatus?.uploading) {
-        syncStore.setStatus('syncing')
-      } else {
-        syncStore.setStatus('offline')
-      }
+    // PowerSync exposes status via registerListener({ statusChanged }) and the
+    // current snapshot via db.currentStatus — not db.status.onChange (which
+    // didn't exist, so this binding was silently a no-op and the app read as
+    // permanently offline).
+    const unsubscribe = db.registerListener?.({
+      statusChanged: (status) => {
+        if (status.connected) {
+          syncStore.setStatus('online')
+          syncStore.setLastSynced(new Date())
+        } else if (status.dataFlowStatus?.downloading || status.dataFlowStatus?.uploading) {
+          syncStore.setStatus('syncing')
+        } else {
+          syncStore.setStatus('offline')
+        }
+      },
     })
     return unsubscribe
   }

@@ -5,7 +5,6 @@ import VueApexCharts from 'vue3-apexcharts'
 
 import AppDialog   from '@/components/ui/AppDialog.vue'
 import AppToast    from '@/components/ui/AppToast.vue'
-import NavIcon     from '@/components/ui/NavIcon.vue'
 import ExpenseForm from '@/features/expenses/components/ExpenseForm.vue'
 import ProfitSheet from '@/features/dashboard/components/ProfitSheet.vue'
 import CashDrawerSheet from '@/features/dashboard/components/CashDrawerSheet.vue'
@@ -43,7 +42,7 @@ const showCashDrawer     = ref(false)
 const showRateEditor     = ref(false)
 const toast              = ref<{ message: string; type: 'success' | 'error' } | null>(null)
 
-const isOnline     = ref(db.status?.connected ?? false)
+const isOnline     = ref(db.currentStatus?.connected ?? false)
 const lastSyncedAt = ref<string | null>(localStorage.getItem('wafi_last_synced'))
 let syncTimer: ReturnType<typeof setInterval> | null = null
 
@@ -64,7 +63,7 @@ onMounted(async () => {
   } catch { /* errors shown via toast */ }
 
   syncTimer = setInterval(() => {
-    const nowConnected = db.status?.connected ?? false
+    const nowConnected = db.currentStatus?.connected ?? false
     if (nowConnected && !isOnline.value) {
       const now = new Date().toISOString()
       localStorage.setItem('wafi_last_synced', now)
@@ -73,7 +72,7 @@ onMounted(async () => {
     isOnline.value = nowConnected
   }, 60_000)
 
-  if (db.status?.connected) {
+  if (db.currentStatus?.connected) {
     const now = new Date().toISOString()
     localStorage.setItem('wafi_last_synced', now)
     lastSyncedAt.value = now
@@ -133,7 +132,6 @@ const greeting = computed(() => {
 })
 
 const revenueSyp = computed(() => currentRate.value ? Math.round(metrics.revenueUsd.value * currentRate.value) : 0)
-const profitSyp  = computed(() => currentRate.value ? Math.round(metrics.profitUsd.value  * currentRate.value) : 0)
 
 const profitMarginPct = computed(() => {
   if (!metrics.revenueUsd.value) return 0
@@ -204,7 +202,7 @@ const chartOptions = computed(() => ({
     },
   },
   tooltip: {
-    theme: 'dark',
+    theme: 'dark' as const,
     y: { formatter: (v: number) => `$${v.toFixed(2)}` },
   },
   legend: { show: false },

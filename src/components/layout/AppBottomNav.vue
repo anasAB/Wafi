@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { useRoute, RouterLink } from 'vue-router'
-import { useShiftStore } from '@/features/shifts/shift.store'
 import { computed } from 'vue'
 
-const route      = useRoute()
-const shiftStore = useShiftStore()
+const route = useRoute()
 
 const allTabs = [
   { key: 'home',      label: 'الرئيسية', to: '/'           },

@@ -157,7 +157,7 @@ onMounted(() => {
         <p class="price-warning-title">سعر البيع أقل من سعر التكلفة — هل أنت متأكد؟</p>
         <div class="price-warning-actions">
           <button type="button" class="warning-confirm-btn" data-testid="confirm-price-warning"
-            @click="priceWarning = false; commitSave(Number(stock.value))">نعم، احفظ</button>
+            @click="priceWarning = false; commitSave(Number(stock))">نعم، احفظ</button>
           <button type="button" class="warning-cancel-btn"
             @click="priceWarning = false">لا، تراجع</button>
         </div>
