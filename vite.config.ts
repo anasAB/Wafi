@@ -14,6 +14,7 @@ export default defineConfig({
       registerType: 'prompt',
       // Branded icons live in public/; list them so Workbox precaches them too.
       includeAssets: ['favicon.svg', 'pwa-icon.svg'],
+      pwaAssets: { config: true },
       manifest: {
         name:        'وافي — نظام إدارة المتجر',
         short_name:  'وافي',
@@ -26,11 +27,6 @@ export default defineConfig({
         orientation: 'portrait',
         start_url:   '/',
         scope:       '/',
-        icons: [
-          // A single padded SVG serves both the regular ("any") and Android
-          // maskable slots — the glyph sits inside the maskable safe zone.
-          { src: 'pwa-icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' },
-        ],
       },
       workbox: {
         // Precache the built shell so the app cold-starts offline (demo moment #2).
