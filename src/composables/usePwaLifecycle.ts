@@ -3,9 +3,9 @@ import { registerSW } from 'virtual:pwa-register'
 
 /**
  * Wraps the service-worker registration and exposes its lifecycle as reactive
- * refs the app shell renders UI from. `needRefresh`/`applyUpdate` only do
- * anything once vite.config uses registerType 'prompt' (Phase 3); under
- * 'autoUpdate' only `offlineReady` fires.
+ * refs the app shell renders UI from. With registerType 'prompt' (vite.config),
+ * `needRefresh` drives the update toast and `applyUpdate()` reloads to the new
+ * SW; `offlineReady` fires once the app is cached for offline use.
  */
 export function usePwaLifecycle() {
   const offlineReady = ref(false)
