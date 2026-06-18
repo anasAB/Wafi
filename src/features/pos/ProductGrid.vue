@@ -3,19 +3,19 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { rowToProduct } from '@/features/products/product.utils'
-import ProductAvatar from '@/components/ui/ProductAvatar.vue'
 import type { Product } from './pos.types'
 
-const props = defineProps<{ searchQuery: string }>()
-const emit  = defineEmits<{ (e: 'product-tap', productId: string): void }>()
+const props = defineProps<{ searchQuery: string; selectedCategory: string | null }>()
+const emit  = defineEmits<{
+  (e: 'product-tap', productId: string): void
+  (e: 'categories-change', categories: string[]): void
+}>()
 
 const device     = useDeviceStore()
 const products   = ref<Product[]>([])
 const flashId    = ref<string | null>(null)
 const flashTimer = ref<ReturnType<typeof setTimeout> | null>(null)
-
-// Category tabs let the cashier browse by category instead of one flat dump (#2).
-const selectedCategory = ref<string | null>(null)
+// Parent owns the category selection so the filter can sit beside search input.
 const categories = computed(() => {
   const set = new Set<string>()
   for (const p of products.value) {
@@ -25,8 +25,8 @@ const categories = computed(() => {
   return [...set].sort((a, b) => a.localeCompare(b, 'ar'))
 })
 const visibleProducts = computed(() =>
-  selectedCategory.value
-    ? products.value.filter(p => (p.category ?? '').trim() === selectedCategory.value)
+  props.selectedCategory
+    ? products.value.filter(p => (p.category ?? '').trim() === props.selectedCategory)
     : products.value
 )
 
@@ -46,7 +46,9 @@ async function loadProducts() {
   products.value = ((result as any).rows._array as any[]).map(rowToProduct)
 }
 
-onMounted(loadProducts)
+onMounted(() => {
+  loadProducts()
+})
 
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -54,6 +56,10 @@ watch(() => props.searchQuery, () => {
   if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
   searchDebounceTimer = setTimeout(loadProducts, 250)
 })
+
+watch(categories, (next) => {
+  emit('categories-change', next)
+}, { immediate: true })
 
 function handleTap(productId: string) {
   if (flashTimer.value) clearTimeout(flashTimer.value)
@@ -69,24 +75,6 @@ onUnmounted(() => {
 
 <template>
   <div class="grid-root" dir="rtl">
-    <!-- Category tabs (#2) -->
-    <div v-if="categories.length" class="cat-tabs" role="tablist" aria-label="تصفية حسب الفئة">
-      <button
-        type="button"
-        class="cat-tab"
-        :class="{ 'cat-tab--active': selectedCategory === null }"
-        @click="selectedCategory = null"
-      >الكل</button>
-      <button
-        v-for="cat in categories"
-        :key="cat"
-        type="button"
-        class="cat-tab"
-        :class="{ 'cat-tab--active': selectedCategory === cat }"
-        @click="selectedCategory = cat"
-      >{{ cat }}</button>
-    </div>
-
     <!-- Empty state -->
     <div v-if="visibleProducts.length === 0" class="empty-state">
       <div class="empty-icon">
@@ -107,9 +95,14 @@ onUnmounted(() => {
         :disabled="p.currentStock <= 0"
         @click="handleTap(p.id)"
       >
-        <!-- Photo, or colored initial fallback (#15) — every tile gets a visual -->
+        <!-- Photo if present; otherwise a neutral placeholder icon. -->
         <div class="product-photo-wrap">
-          <ProductAvatar :name="p.nameAr" :photo-url="p.photoUrl" />
+          <img v-if="p.photoUrl" :src="p.photoUrl" :alt="p.nameAr" class="product-photo" />
+          <div v-else class="product-photo-fallback" aria-hidden="true">
+            <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+            </svg>
+          </div>
         </div>
 
         <span class="product-name">{{ p.nameAr }}</span>
@@ -129,41 +122,12 @@ onUnmounted(() => {
 
 <style scoped>
 .grid-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
   padding: 12px;
   font-family: 'Tajawal', system-ui, sans-serif;
-}
-
-/* ── Category tabs (#2) ── */
-.cat-tabs {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 6px;
-  overflow-x: auto;
-  padding-bottom: 4px;
-  margin-bottom: 12px;
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-.cat-tabs::-webkit-scrollbar { display: none; }
-.cat-tab {
-  flex-shrink: 0;
-  padding: 7px 16px;
-  border-radius: 999px;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  font-family: 'Tajawal', system-ui, sans-serif;
-  color: #637285;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.10);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
-}
-.cat-tab:hover { color: #C8D5E8; border-color: rgba(26,86,219,0.30); }
-.cat-tab--active {
-  color: #fff;
-  background: linear-gradient(135deg, #1A56DB, #1248B3);
-  border-color: transparent;
 }
 
 /* Empty state */
@@ -194,13 +158,44 @@ onUnmounted(() => {
 
 /* Grid */
 .product-grid {
+  flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
+  gap: 12px;
+  align-content: start;
+  overflow-y: auto;
+  padding-inline-end: 6px;
+  padding-block-end: 6px;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(96,165,250,0.55) rgba(255,255,255,0.06);
+}
+
+.product-grid::-webkit-scrollbar {
+  width: 10px;
+}
+
+.product-grid::-webkit-scrollbar-track {
+  background: rgba(255,255,255,0.06);
+  border-radius: 999px;
+}
+
+.product-grid::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(96,165,250,0.75), rgba(26,86,219,0.75));
+  border-radius: 999px;
+  border: 2px solid rgba(7,11,20,0.8);
+}
+
+.product-grid::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(147,197,253,0.9), rgba(59,130,246,0.9));
 }
 
 @media (min-width: 480px) {
-  .product-grid { grid-template-columns: repeat(3, 1fr); }
+  .product-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 13px;
+  }
 }
 
 @media (min-width: 900px) {
@@ -215,15 +210,21 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   text-align: center;
-  gap: 6px;
-  padding: 14px 8px 12px;
-  min-height: 110px;
+  gap: 8px;
+  padding: 16px 10px 14px;
+  min-height: 132px;
   border-radius: 14px;
   background: linear-gradient(135deg, rgba(26,86,219,0.12), rgba(255,255,255,0.04));
   border: 1px solid rgba(26,86,219,0.22);
   box-shadow: 0 2px 14px rgba(26,86,219,0.08), inset 0 1px 0 rgba(255,255,255,0.07);
   cursor: pointer;
   transition: transform 0.1s, border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+@media (min-width: 480px) {
+  .product-btn {
+    min-height: 138px;
+  }
 }
 
 .product-btn:hover {
@@ -259,11 +260,11 @@ onUnmounted(() => {
 
 /* Photo */
 .product-photo-wrap {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
+  width: 46px;
+  height: 46px;
+  border-radius: 10px;
   overflow: hidden;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
   flex-shrink: 0;
 }
 
@@ -273,17 +274,30 @@ onUnmounted(() => {
   object-fit: cover;
 }
 
+.product-photo-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #60A5FA;
+  background: rgba(26,86,219,0.16);
+}
+
 /* Text */
 .product-name {
   font-size: 13px;
   font-weight: 700;
   color: #E8EDF5;
   line-height: 1.3;
+  display: block;
+  overflow: visible;
+  white-space: normal;
   word-break: break-word;
 }
 
 .product-price {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 800;
   color: #60A5FA;
   font-variant-numeric: tabular-nums;

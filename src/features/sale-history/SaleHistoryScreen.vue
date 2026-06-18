@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import AppToast from '@/components/ui/AppToast.vue'
@@ -10,6 +10,8 @@ import { getDateRange } from '@/features/dashboard/composables/periodUtils'
 import type { SaleRecord } from './sale-history.types'
 import ReturnSheet from '@/features/returns/components/ReturnSheet.vue'
 import ReturnDetailSheet from '@/features/returns/components/ReturnDetailSheet.vue'
+import DataTable from 'primevue/datatable'
+import Column from 'primevue/column'
 
 const router  = useRouter()
 const route   = useRoute()
@@ -18,6 +20,8 @@ const { period, setPeriod } = usePeriodToggle()
 const expandedId = ref<string | null>(null)
 const toast      = ref<string | null>(null)
 const toastType  = ref<'info' | 'error'>('info')
+const methodMenuOpen = ref(false)
+const methodMenuRef  = ref<HTMLElement | null>(null)
 const returnSaleId     = ref<string | null>(null)
 const returnSaleNumber = ref('')
 const detailSaleId     = ref<string | null>(null)
@@ -57,6 +61,30 @@ const METHOD_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'credit',   label: 'آجل' },
   { value: 'split',    label: 'مقسّم' },
 ]
+const selectedMethodLabel = computed(() =>
+  METHOD_OPTIONS.find(m => m.value === methodFilter.value)?.label ?? 'كل الطرق'
+)
+
+function chooseMethod(value: string) {
+  methodFilter.value = value
+  methodMenuOpen.value = false
+}
+
+function toggleMethodMenu() {
+  methodMenuOpen.value = !methodMenuOpen.value
+}
+
+function clearSearch() {
+  searchQuery.value = ''
+}
+
+function onDocumentClick(event: MouseEvent) {
+  const target = event.target as Node | null
+  if (!target) return
+  if (!methodMenuRef.value?.contains(target)) {
+    methodMenuOpen.value = false
+  }
+}
 
 const filteredSales = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
@@ -72,12 +100,17 @@ const periodTotal = computed(() =>
 )
 
 onMounted(async () => {
+  document.addEventListener('click', onDocumentClick)
   if (route.query.period) {
     // Sync singleton to URL param (handles direct navigation)
     const p = route.query.period as string
     if (p === 'today' || p === 'week' || p === 'month') setPeriod(p)
   }
   await loadHistory(getDateRange(period.value))
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocumentClick)
 })
 
 // Reload from the DB whenever the selected period changes.
@@ -118,7 +151,7 @@ async function handleReprint(saleId: string) {
 
 <template>
   <div class="page-root">
-    <AppHeader :title="periodTitle" :show-back="isPeriodDrillDown" @back="router.push('/')" />
+    <AppHeader :title="periodTitle" @back="router.push('/')" />
 
     <!-- Filters: period range + search by invoice number + payment method.
          All controls live on one wrapping row so they read as one group and
@@ -132,14 +165,52 @@ async function handleReprint(saleId: string) {
           </svg>
           <input
             v-model="searchQuery"
-            type="search"
+            type="text"
             class="search-input"
             placeholder="ابحث برقم الفاتورة..."
           />
+          <button
+            v-if="searchQuery"
+            type="button"
+            class="search-clear-btn"
+            aria-label="مسح البحث"
+            @click="clearSearch"
+          >×</button>
         </div>
-        <select v-model="methodFilter" class="method-select">
-          <option v-for="m in METHOD_OPTIONS" :key="m.value" :value="m.value">{{ m.label }}</option>
-        </select>
+        <div ref="methodMenuRef" class="method-filter-wrap">
+          <button
+            type="button"
+            class="method-filter-btn"
+            :aria-expanded="methodMenuOpen"
+            aria-haspopup="listbox"
+            @click="toggleMethodMenu"
+          >
+            <span class="method-filter-text">{{ selectedMethodLabel }}</span>
+            <svg
+              class="method-filter-chevron"
+              :class="{ 'method-filter-chevron-open': methodMenuOpen }"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          <div v-if="methodMenuOpen" class="method-filter-menu" role="listbox" aria-label="تصفية حسب طريقة الدفع">
+            <button
+              v-for="m in METHOD_OPTIONS"
+              :key="m.value"
+              type="button"
+              class="method-filter-item"
+              :class="{ 'method-filter-item-active': methodFilter === m.value }"
+              @click="chooseMethod(m.value)"
+            >{{ m.label }}</button>
+          </div>
+        </div>
         <div v-if="filteredSales.length > 0" class="period-total">
           إجمالي: ${{ periodTotal.toFixed(2) }}
         </div>
@@ -170,66 +241,76 @@ async function handleReprint(saleId: string) {
       </div>
 
       <template v-else>
-        <!-- Desktop: table -->
-        <div class="desktop-table-wrap">
-          <table class="sale-table">
-            <thead>
-              <tr class="table-head-row">
-                <th class="th">رقم الفاتورة</th>
-                <th class="th">التاريخ</th>
-                <th class="th">المبلغ</th>
-                <th class="th">بالليرة</th>
-                <th class="th">طريقة الدفع</th>
-                <th class="th">الحالة</th>
-                <th class="w-28"></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="sale in filteredSales"
-                :key="sale.id"
-                class="table-row"
-              >
-                <td class="td">
-                  <span class="sale-number">{{ sale.displaySaleNumber }}</span>
-                </td>
-                <td class="td td-muted">{{ formatDate(sale.createdAt) }}</td>
-                <td class="td">
-                  <span class="sale-amount" dir="ltr">${{ sale.totalUsd.toFixed(2) }}</span>
-                </td>
-                <td class="td td-muted" dir="ltr">
-                  {{ sale.totalSyp.toLocaleString() }} ل.س
-                </td>
-                <td class="td td-muted">{{ methodLabel[sale.paymentMethod] ?? '?' }}</td>
-                <td class="td">
-                  <span v-if="sale.isPending" class="badge-warning">في الانتظار</span>
-                  <span v-else-if="sale.paymentMethod === 'credit'" class="badge-credit">آجل (غير مدفوع)</span>
-                  <span v-else class="td-muted text-xs">مدفوع</span>
-                </td>
-                <td class="td">
-                  <div style="display:flex;gap:6px;align-items:center;">
-                    <button
-                      v-if="sale.hasReturn"
-                      type="button"
-                      class="badge-return badge-return--btn"
-                      @click="openReturnDetail(sale)"
-                    >{{ sale.isFullyReturned ? 'مرتجع بالكامل' : 'مرتجع جزئي' }}</button>
-                    <button type="button" class="btn-reprint" @click="handleReprint(sale.id)">
-                      إعادة طباعة
-                    </button>
-                    <button
-                      v-if="!sale.isFullyReturned"
-                      type="button"
-                      class="btn-reprint"
-                      @click="openReturn(sale)"
-                    >
-                      إرجاع
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        <!-- Desktop: PrimeVue DataTable (sortable + paginated).
+             Smoke test of the PrimeVue + Tailwind v4 theming path. Styled via
+             scoped :deep() overrides below to match the app's glass/blue
+             surface; RTL is inherited from the dir="rtl" wrapper. -->
+        <div class="desktop-table-wrap" dir="rtl">
+          <DataTable
+            :value="filteredSales"
+            data-key="id"
+            removable-sort
+            paginator
+            :rows="15"
+            :rows-per-page-options="[15, 30, 50]"
+            class="sale-datatable"
+          >
+            <Column field="displaySaleNumber" header="رقم الفاتورة" sortable>
+              <template #body="{ data }">
+                <span class="sale-number">{{ data.displaySaleNumber }}</span>
+              </template>
+            </Column>
+            <Column field="createdAt" header="التاريخ" sortable>
+              <template #body="{ data }">
+                <span class="td-muted">{{ formatDate(data.createdAt) }}</span>
+              </template>
+            </Column>
+            <Column field="totalUsd" header="المبلغ" sortable>
+              <template #body="{ data }">
+                <span class="sale-amount" dir="ltr">${{ data.totalUsd.toFixed(2) }}</span>
+              </template>
+            </Column>
+            <Column field="totalSyp" header="بالليرة" sortable>
+              <template #body="{ data }">
+                <span class="td-muted" dir="ltr">{{ data.totalSyp.toLocaleString() }} ل.س</span>
+              </template>
+            </Column>
+            <Column header="طريقة الدفع">
+              <template #body="{ data }">
+                <span class="td-muted">{{ methodLabel[data.paymentMethod] ?? '?' }}</span>
+              </template>
+            </Column>
+            <Column header="الحالة">
+              <template #body="{ data }">
+                <span v-if="data.isPending" class="badge-warning">في الانتظار</span>
+                <span v-else-if="data.paymentMethod === 'credit'" class="badge-credit">آجل (غير مدفوع)</span>
+                <span v-else class="td-muted text-xs">مدفوع</span>
+              </template>
+            </Column>
+            <Column header="">
+              <template #body="{ data }">
+                <div style="display:flex;gap:6px;align-items:center;">
+                  <button
+                    v-if="data.hasReturn"
+                    type="button"
+                    class="badge-return badge-return--btn"
+                    @click="openReturnDetail(data)"
+                  >{{ data.isFullyReturned ? 'مرتجع بالكامل' : 'مرتجع جزئي' }}</button>
+                  <button type="button" class="btn-reprint" @click="handleReprint(data.id)">
+                    إعادة طباعة
+                  </button>
+                  <button
+                    v-if="!data.isFullyReturned"
+                    type="button"
+                    class="btn-reprint"
+                    @click="openReturn(data)"
+                  >
+                    إرجاع
+                  </button>
+                </div>
+              </template>
+            </Column>
+          </DataTable>
         </div>
 
         <!-- Mobile: card list -->
@@ -335,7 +416,49 @@ async function handleReprint(saleId: string) {
 }
 
 /* Period tabs keep their natural width; don't stretch in the flex row. */
-.filter-period { flex-shrink: 0; }
+.filter-period {
+  flex: 0 0 auto;
+  display: flex;
+  height: 40px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.filter-period :deep(.pt-btn),
+.filter-period :deep(.toggle-btn) {
+  flex: 1;
+  min-height: 100%;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  color: #637285;
+  font-family: 'Tajawal', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.filter-period :deep(.pt-btn.active),
+.filter-period :deep(.toggle-btn.active) {
+  background: #1A56DB;
+  color: #FFFFFF;
+  font-weight: 700;
+}
+
+.filter-period :deep(.pt-btn:hover:not(.active)),
+.filter-period :deep(.toggle-btn:hover:not(.active)) {
+  color: #C8D5E8;
+}
 
 .period-total {
   font-size: 0.875rem;
@@ -347,8 +470,8 @@ async function handleReprint(saleId: string) {
 
 .search-wrap {
   position: relative;
-  flex: 1;
-  min-width: 160px;
+  flex: 1 1 180px;
+  min-width: 180px;
 }
 
 .search-icon {
@@ -364,16 +487,48 @@ async function handleReprint(saleId: string) {
 
 .search-input {
   width: 100%;
-  height: 38px;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.14);
+  height: 40px;
+  background: linear-gradient(135deg, rgba(26,86,219,0.12), rgba(255,255,255,0.04));
+  border: 1px solid rgba(26,86,219,0.22);
   border-radius: 0.625rem;
-  padding: 0 2.25rem 0 0.75rem;
+  padding: 0 2.25rem 0 2.25rem;
   color: #E8EDF5;
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
+  font-weight: 600;
   font-family: 'Tajawal', system-ui, sans-serif;
+  box-shadow: 0 2px 12px rgba(26,86,219,0.08), inset 0 1px 0 rgba(255,255,255,0.07);
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.search-clear-btn {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0.5rem;
+  margin: auto;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #9FB1C8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.search-clear-btn:hover {
+  background: rgba(26, 86, 219, 0.24);
+  color: #E8EDF5;
+}
+
+.search-clear-btn:focus-visible {
+  outline: 2px solid rgba(96, 165, 250, 0.75);
+  outline-offset: 1px;
 }
 
 .search-input::placeholder { color: #3D4F6B; }
@@ -383,18 +538,123 @@ async function handleReprint(saleId: string) {
   box-shadow: 0 0 0 3px rgba(26,86,219,0.18);
 }
 
-.method-select {
-  height: 38px;
-  padding: 0 0.625rem;
-  border-radius: 0.625rem;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.14);
-  color: #E8EDF5;
-  font-size: 0.8125rem;
-  font-family: 'Tajawal', system-ui, sans-serif;
-  outline: none;
-  cursor: pointer;
+.method-filter-wrap {
+  position: relative;
+  width: 118px;
   flex-shrink: 0;
+}
+
+.method-filter-btn {
+  width: 100%;
+  height: 40px;
+  padding: 0 0.75rem;
+  border-radius: 0.625rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: linear-gradient(135deg, rgba(26,86,219,0.12), rgba(255,255,255,0.04));
+  border: 1px solid rgba(26,86,219,0.22);
+  color: #E8EDF5;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  box-shadow: 0 2px 12px rgba(26,86,219,0.08), inset 0 1px 0 rgba(255,255,255,0.07);
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.method-filter-btn:hover {
+  border-color: rgba(26,86,219,0.40);
+}
+
+.method-filter-btn:focus {
+  border-color: rgba(26,86,219,0.70);
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.18);
+}
+
+.method-filter-text {
+  min-width: 0;
+  flex: 1;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.method-filter-chevron {
+  color: #637285;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.method-filter-chevron-open {
+  transform: rotate(180deg);
+}
+
+.method-filter-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  inset-inline-start: 0;
+  width: 100%;
+  max-height: 220px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 6px;
+  border-radius: 12px;
+  backdrop-filter: blur(20px) saturate(180%);
+  background: linear-gradient(180deg, rgba(13,24,40,0.97), rgba(7,11,20,0.97));
+  border: 1px solid rgba(26,86,219,0.30);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.45), 0 4px 18px rgba(26,86,219,0.16);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(96,165,250,0.55) rgba(255,255,255,0.06);
+}
+
+.method-filter-menu::-webkit-scrollbar {
+  width: 10px;
+}
+
+.method-filter-menu::-webkit-scrollbar-track {
+  background: rgba(255,255,255,0.06);
+  border-radius: 999px;
+}
+
+.method-filter-menu::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(96,165,250,0.75), rgba(26,86,219,0.75));
+  border-radius: 999px;
+  border: 2px solid rgba(7,11,20,0.8);
+}
+
+.method-filter-menu::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(147,197,253,0.9), rgba(59,130,246,0.9));
+}
+
+.method-filter-item {
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #E8EDF5;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  text-align: right;
+  cursor: pointer;
+}
+
+.method-filter-item:hover {
+  background: rgba(26,86,219,0.16);
+  border-color: rgba(26,86,219,0.24);
+}
+
+.method-filter-item-active {
+  background: linear-gradient(135deg, rgba(26,86,219,0.28), rgba(18,72,179,0.20));
+  border-color: rgba(26,86,219,0.35);
+  color: #FFFFFF;
 }
 
 .page-main {
@@ -497,35 +757,93 @@ async function handleReprint(saleId: string) {
 
 @media (min-width: 1024px) { .desktop-table-wrap { display: block; } }
 
-.sale-table {
-  width: 100%;
-  border-collapse: collapse;
+/* ─── PrimeVue DataTable theming ──────────────────────────── */
+/* Scoped styles are unlayered, so they reliably win over PrimeVue's
+   `primevue` CSS layer. We strip the Aura surface so the wrapper's glass
+   gradient shows through, then restyle header/rows to match the old table. */
+.sale-datatable :deep(.p-datatable-table),
+.sale-datatable :deep(.p-datatable-thead > tr > th),
+.sale-datatable :deep(.p-datatable-tbody > tr) {
+  background: transparent;
 }
 
-.table-head-row {
-  border-bottom: 1px solid rgba(26, 86, 219, 0.14);
-}
-
-.th {
+.sale-datatable :deep(.p-datatable-thead > tr > th) {
   text-align: right;
   padding: 12px 16px;
   font-size: 0.75rem;
   font-weight: 600;
   color: #637285;
   white-space: nowrap;
+  border-bottom: 1px solid rgba(26, 86, 219, 0.14);
 }
 
-.table-row {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+.sale-datatable :deep(.p-datatable-tbody > tr) {
+  color: #E8EDF5;
   transition: background 0.15s;
 }
 
-.table-row:hover { background: rgba(26, 86, 219, 0.06); }
-.table-row:last-child { border-bottom: none; }
-
-.td {
+.sale-datatable :deep(.p-datatable-tbody > tr > td) {
   padding: 14px 16px;
   vertical-align: middle;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.sale-datatable :deep(.p-datatable-tbody > tr:hover > td) {
+  background: rgba(26, 86, 219, 0.06);
+}
+
+.sale-datatable :deep(.p-datatable-tbody > tr:last-child > td) {
+  border-bottom: none;
+}
+
+/* Sort icons + paginator inherit the muted/blue palette */
+.sale-datatable :deep(.p-datatable-sort-icon) { color: #637285; }
+.sale-datatable :deep(.p-datatable-column-sorted .p-datatable-sort-icon) { color: #60A5FA; }
+
+.sale-datatable :deep(.p-paginator) {
+  background: transparent;
+  border-top: 1px solid rgba(26, 86, 219, 0.14);
+  color: #637285;
+}
+.sale-datatable :deep(.p-paginator .p-paginator-page),
+.sale-datatable :deep(.p-paginator .p-paginator-first),
+.sale-datatable :deep(.p-paginator .p-paginator-prev),
+.sale-datatable :deep(.p-paginator .p-paginator-next),
+.sale-datatable :deep(.p-paginator .p-paginator-last) {
+  color: #C8D5E8;
+  background: linear-gradient(135deg, rgba(26,86,219,0.12), rgba(255,255,255,0.04));
+  border: 1px solid rgba(26,86,219,0.22);
+  box-shadow: 0 2px 12px rgba(26,86,219,0.08), inset 0 1px 0 rgba(255,255,255,0.07);
+  border-radius: 0.5rem;
+  min-width: 2.25rem;
+  height: 2.25rem;
+}
+
+.sale-datatable :deep(.p-paginator .p-paginator-page:hover),
+.sale-datatable :deep(.p-paginator .p-paginator-first:not(:disabled):hover),
+.sale-datatable :deep(.p-paginator .p-paginator-prev:not(:disabled):hover),
+.sale-datatable :deep(.p-paginator .p-paginator-next:not(:disabled):hover),
+.sale-datatable :deep(.p-paginator .p-paginator-last:not(:disabled):hover) {
+  border-color: rgba(26,86,219,0.40);
+  background: linear-gradient(135deg, rgba(26,86,219,0.18), rgba(255,255,255,0.06));
+}
+
+.sale-datatable :deep(.p-paginator .p-paginator-page.p-paginator-page-selected) {
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  border-color: transparent;
+  box-shadow: 0 6px 20px rgba(26,86,219,0.35), inset 0 1px 0 rgba(255,255,255,0.10);
+  color: #fff;
+}
+
+.sale-datatable :deep(.p-paginator .p-paginator-rpp-dropdown) {
+  background: linear-gradient(135deg, rgba(26,86,219,0.12), rgba(255,255,255,0.04));
+  border: 1px solid rgba(26,86,219,0.22);
+  box-shadow: 0 2px 12px rgba(26,86,219,0.08), inset 0 1px 0 rgba(255,255,255,0.07);
+  border-radius: 0.5rem;
+}
+
+.sale-datatable :deep(.p-paginator .p-paginator-rpp-dropdown .p-select-label) {
+  color: #E8EDF5;
 }
 
 .td-muted {
@@ -536,15 +854,15 @@ async function handleReprint(saleId: string) {
 /* ─── Sale data atoms ─────────────────────────────────────── */
 .sale-number {
   font-family: 'Tajawal', monospace;
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
   font-weight: 600;
   color: #60A5FA;
 }
 
 .sale-amount {
-  font-size: 0.875rem;
-  font-weight: 700;
-  color: #E8EDF5;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #F1F5FB;
 }
 
 /* ─── Badges ──────────────────────────────────────────────── */
@@ -615,7 +933,7 @@ async function handleReprint(saleId: string) {
 
 .btn-reprint-full {
   width: 100%;
-  height: 36px;
+  height: 40px;
   border-radius: 0.75rem;
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -635,13 +953,13 @@ async function handleReprint(saleId: string) {
 .mobile-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
 @media (min-width: 1024px) { .mobile-list { display: none; } }
 
 .sale-card {
-  border-radius: 1rem;
+  border-radius: 1.125rem;
   overflow: hidden;
   background: linear-gradient(135deg, rgba(26, 86, 219, 0.11), rgba(255, 255, 255, 0.04));
   border: 1px solid rgba(26, 86, 219, 0.28);
@@ -656,9 +974,9 @@ async function handleReprint(saleId: string) {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 16px;
-  min-height: 60px;
+  gap: 14px;
+  padding: 10px 16px;
+  min-height: 72px;
   text-align: right;
   cursor: pointer;
   background: transparent;
@@ -666,17 +984,17 @@ async function handleReprint(saleId: string) {
 }
 
 .sale-card-body {
-  padding: 12px 16px;
+  padding: 14px 16px;
   border-top: 1px solid rgba(26, 86, 219, 0.14);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .sale-extra-row {
   display: flex;
   justify-content: space-between;
-  font-size: 0.75rem;
-  color: #637285;
+  font-size: 0.8125rem;
+  color: #93A3B8;
 }
 </style>

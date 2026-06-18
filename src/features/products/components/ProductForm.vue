@@ -12,6 +12,11 @@ const props = defineProps<{
   mode:            'add' | 'edit'
   product?:        Product
   initialBarcode?: string
+  // When hosted inside a modal (or the edit page), render the actions inline
+  // instead of a viewport-fixed bar (which otherwise overlaps the nav). (#10)
+  embedded?:       boolean
+  // Optional teleport target for placing the embedded save bar in page layout.
+  saveBarTeleportTo?: string
 }>()
 
 const emit = defineEmits<{
@@ -122,7 +127,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="form-root" dir="rtl">
+  <div class="form-root" :class="{ 'form-root--embedded': embedded }" dir="rtl">
 
     <!-- ── Section: Basic Info (required) ───────────────── -->
     <div class="form-section">
@@ -145,6 +150,16 @@ onMounted(() => {
         <p v-if="errors['name-ar']" data-testid="error-name-ar" class="field-error">
           {{ errors['name-ar'] }}
         </p>
+      </div>
+
+      <!-- Category (moved here from optional details) -->
+      <div class="field">
+        <label class="field-label">الفئة <span class="optional">(اختياري)</span></label>
+        <input v-model="category" data-testid="category" type="text"
+          class="form-input"
+          placeholder="مثال: إلكترونيات، شواحن..."
+          @focus="($event.target as HTMLInputElement).style.borderColor = 'rgba(26,86,219,0.8)'"
+          @blur="($event.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.18)'" />
       </div>
     </div>
 
@@ -248,16 +263,6 @@ onMounted(() => {
             @blur="($event.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.18)'" />
         </div>
 
-        <!-- Category -->
-        <div class="field">
-          <label class="field-label">الفئة <span class="optional">(اختياري)</span></label>
-          <input v-model="category" data-testid="category" type="text"
-            class="form-input"
-            placeholder="مثال: إلكترونيات، شواحن..."
-            @focus="($event.target as HTMLInputElement).style.borderColor = 'rgba(26,86,219,0.8)'"
-            @blur="($event.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.18)'" />
-        </div>
-
         <!-- Low stock threshold -->
         <div class="field">
           <label class="field-label">حد التنبيه للمخزون</label>
@@ -281,9 +286,12 @@ onMounted(() => {
       </div>
     </template>
 
-    <!-- ── Sticky Save Bar ─────────────────────────────── -->
-    <div class="save-bar">
-      <div class="save-bar-inner" dir="rtl">
+    <!-- ── Save Bar ──────────────────────────────────────────────────────
+         Fixed on a full page; inline when embedded in a modal; teleported
+         into the page content (after the audit log) when a target is given. -->
+    <Teleport defer :to="props.saveBarTeleportTo" :disabled="!props.saveBarTeleportTo">
+      <div class="save-bar" :class="{ 'save-bar--embedded': props.embedded || !!props.saveBarTeleportTo }">
+        <div class="save-bar-inner" dir="rtl">
         <button
           type="button"
           data-testid="save-btn"
@@ -293,7 +301,7 @@ onMounted(() => {
         >{{ saving ? 'جاري الحفظ...' : 'حفظ' }}</button>
 
         <button
-          v-if="mode === 'add'"
+          v-if="props.mode === 'add'"
           type="button"
           data-testid="save-another-btn"
           :disabled="saving"
@@ -307,8 +315,9 @@ onMounted(() => {
           class="btn-ghost"
           @click="emit('cancel')"
         >إلغاء</button>
+        </div>
       </div>
-    </div>
+    </Teleport>
 
     <StockAdjustmentDialog
       :is-open="adj.isOpen.value"
@@ -330,8 +339,15 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* Reserve space for the viewport-fixed save bar on the full-page form. */
   padding-bottom: 7rem;
   font-family: 'Tajawal', system-ui, sans-serif;
+}
+
+/* In a modal the save bar flows inline, so the 7rem reservation would just be
+   dead space that forces the modal body to scroll. Drop it. */
+.form-root--embedded {
+  padding-bottom: 0;
 }
 
 /* ── Form Section ─────────────────────────────────── */
@@ -542,9 +558,38 @@ onMounted(() => {
 }
 
 @media (min-width: 1024px) {
-  .save-bar {
-    inset-inline-start: 220px;
+  /* Dodge the 230px sidebar. The bar is viewport-fixed but lives inside the
+     form's hardcoded dir="rtl", so inset-inline-start follows the FORM, not the
+     app shell — and lands on the wrong edge when the shell renders LTR. Key the
+     offset off the shell's actual direction with physical left/right instead. */
+  :global(#app[dir="rtl"]) .save-bar:not(.save-bar--embedded) {
+    right: 230px;
+    left: 0;
   }
+  :global(#app[dir="ltr"]) .save-bar:not(.save-bar--embedded) {
+    left: 230px;
+    right: 0;
+  }
+}
+
+/* Embedded in a modal: flow inline at the end of the form, no viewport pinning. */
+.save-bar--embedded {
+  position: static;
+  inset-inline: auto;
+  background: transparent;
+  margin-top: 0.5rem;
+  width: 100%;
+  max-width: 100%;
+}
+@media (min-width: 1024px) {
+  .save-bar--embedded { inset-inline-start: auto; }
+}
+
+.save-bar--embedded .save-bar-inner {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding-inline: 0;
 }
 
 .save-bar-inner {

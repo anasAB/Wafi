@@ -106,7 +106,6 @@ async function handleSaved() {
               <th class="th">الهاتف</th>
               <th class="th">العنوان</th>
               <th class="th">الرصيد المستحق</th>
-              <th class="w-10"></th>
             </tr>
           </thead>
           <tbody>
@@ -123,11 +122,6 @@ async function handleSaved() {
               <td class="td">
                 <span v-if="(c.balanceUsd ?? 0) > 0.001" class="balance-owing" dir="ltr">${{ (c.balanceUsd ?? 0).toFixed(2) }}</span>
                 <span v-else class="balance-clear">مسوّى</span>
-              </td>
-              <td class="td">
-                <svg class="chevron-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
-                </svg>
               </td>
             </tr>
           </tbody>
@@ -151,9 +145,6 @@ async function handleSaved() {
           <div class="card-right">
             <span v-if="(c.balanceUsd ?? 0) > 0.001" class="balance-owing" dir="ltr">${{ (c.balanceUsd ?? 0).toFixed(2) }}</span>
             <span v-else class="balance-clear">مسوّى</span>
-            <svg class="chevron-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
-            </svg>
           </div>
         </button>
 

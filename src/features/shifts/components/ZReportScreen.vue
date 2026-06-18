@@ -8,6 +8,8 @@ import CashCountSheet      from './CashCountSheet.vue'
 import type { ZReportMetrics } from '@/features/shifts/shift.types'
 import type { CashierShift }   from '@/features/shifts/shift.types'
 
+const emit = defineEmits<{ (e: 'close'): void }>()
+
 const { loadActiveShift, closeShift } = useShift()
 const { compute, printZReport }       = useZReport()
 const shiftStore = useShiftStore()
@@ -53,13 +55,19 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
 </script>
 
 <template>
-  <CashCountSheet v-if="step === 'cash-count'" @confirm="onCashCounted" />
+  <CashCountSheet v-if="step === 'cash-count'" @confirm="onCashCounted" @cancel="emit('close')" />
 
   <div v-else-if="step === 'report' && metrics" class="zreport-overlay" dir="rtl">
 
     <!-- Sticky header bar -->
     <div class="zreport-topbar">
       <div class="zreport-topbar-inner">
+        <!-- Abort: shift isn't closed until a footer action is pressed -->
+        <button type="button" class="zreport-back" aria-label="رجوع دون إغلاق" @click="emit('close')">
+          <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
         <div class="zreport-badge">Z</div>
         <div class="zreport-topbar-text">
           <span class="zreport-title">تقرير الوردية</span>
@@ -221,6 +229,22 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
   align-items: center;
   gap: 14px;
 }
+
+.zreport-back {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #637285;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.zreport-back:hover { background: rgba(255, 255, 255, 0.09); color: #C8D5E8; }
 
 .zreport-topbar-text {
   display: flex;

@@ -11,13 +11,57 @@ type ExpenseRow = {
   paid_in_cash: number; created_at: string; sync_status: string
 }
 
+const RECUR_META_PREFIX = '__wafi_recurring__:'
+
+function parseRecurringMeta(rawNotes: string | null): {
+  cleanNotes?: string
+  isRecurringMonthly?: boolean
+  recurringStartDate?: string
+  recurringEndDate?: string
+} {
+  const text = rawNotes ?? ''
+  if (!text.includes(RECUR_META_PREFIX)) {
+    return { cleanNotes: text || undefined }
+  }
+
+  const lines = text.split('\n')
+  const metaLine = lines.find(l => l.startsWith(RECUR_META_PREFIX))
+  const visibleNotes = lines.filter(l => !l.startsWith(RECUR_META_PREFIX)).join('\n').trim()
+
+  if (!metaLine) return { cleanNotes: visibleNotes || undefined }
+
+  const payload = metaLine.slice(RECUR_META_PREFIX.length)
+  const [start, end] = payload.split('|')
+  if (!start || !end) return { cleanNotes: visibleNotes || undefined }
+
+  return {
+    cleanNotes: visibleNotes || undefined,
+    isRecurringMonthly: true,
+    recurringStartDate: start,
+    recurringEndDate: end,
+  }
+}
+
+function buildStoredNotes(userNotes: string | undefined, recurringStartDate?: string, recurringEndDate?: string): string | null {
+  const plain = (userNotes ?? '').trim()
+  if (recurringStartDate && recurringEndDate) {
+    const meta = `${RECUR_META_PREFIX}${recurringStartDate}|${recurringEndDate}`
+    return plain ? `${plain}\n${meta}` : meta
+  }
+  return plain || null
+}
+
 function rowToExpense(r: ExpenseRow): Expense {
+  const recurring = parseRecurringMeta(r.notes)
   return {
     id: r.id, shopId: r.shop_id, amount: r.amount,
     currency: r.currency as 'USD' | 'SYP', amountUsd: r.amount_usd,
     category: r.category, expenseDate: r.expense_date,
-    notes: r.notes ?? undefined, photoUrl: r.photo_url ?? undefined,
+    notes: recurring.cleanNotes, photoUrl: r.photo_url ?? undefined,
     paidInCash: r.paid_in_cash === 1, createdAt: r.created_at, syncStatus: r.sync_status,
+    isRecurringMonthly: recurring.isRecurringMonthly,
+    recurringStartDate: recurring.recurringStartDate,
+    recurringEndDate: recurring.recurringEndDate,
   }
 }
 
@@ -26,7 +70,7 @@ export function useExpenses() {
   // Store last date range so mutations can reload the same window
   let lastStart = ''
   let lastEnd   = ''
-  const { logExpenseCreated, logExpenseDeleted } = useAuditLog()
+  const { logExpenseCreated, logExpenseUpdated, logExpenseDeleted } = useAuditLog()
 
   async function load(startDate: string, endDate: string) {
     lastStart = startDate
@@ -42,18 +86,83 @@ export function useExpenses() {
 
   async function save(data: NewExpense) {
     const device = useDeviceStore()
-    const id = uuidv4()
     const now = new Date().toISOString()
-    await db.execute(
-      `INSERT INTO expenses (id, shop_id, amount, currency, amount_usd, category, expense_date,
-        notes, photo_url, paid_in_cash, created_at, sync_status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-      [id, device.shopId, data.amount, data.currency, data.amountUsd,
-       data.category, data.expenseDate, data.notes ?? null,
-       data.photoUrl ?? null, data.paidInCash ? 1 : 0, now]
-    )
+    const createdIds: string[] = []
+
+    const insertOne = async (expenseDate: string) => {
+      const id = uuidv4()
+      const storedNotes = buildStoredNotes(
+        data.notes,
+        data.isRecurringMonthly ? data.recurringStartDate : undefined,
+        data.isRecurringMonthly ? data.recurringEndDate : undefined,
+      )
+      await db.execute(
+        `INSERT INTO expenses (id, shop_id, amount, currency, amount_usd, category, expense_date,
+          notes, photo_url, paid_in_cash, created_at, sync_status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+        [id, device.shopId, data.amount, data.currency, data.amountUsd,
+         data.category, expenseDate, storedNotes,
+         data.photoUrl ?? null, data.paidInCash ? 1 : 0, now]
+      )
+      createdIds.push(id)
+    }
+
+    if (data.isRecurringMonthly && data.recurringStartDate && data.recurringEndDate) {
+      const start = new Date(data.recurringStartDate + 'T00:00:00')
+      const end   = new Date(data.recurringEndDate + 'T00:00:00')
+      const dayOfMonth = start.getDate()
+
+      const cursor = new Date(start.getFullYear(), start.getMonth(), 1)
+      const limit  = new Date(end.getFullYear(), end.getMonth(), 1)
+
+      while (cursor <= limit) {
+        const year  = cursor.getFullYear()
+        const month = cursor.getMonth()
+        const lastDay = new Date(year, month + 1, 0).getDate()
+        const day = Math.min(dayOfMonth, lastDay)
+        const occurrence = new Date(year, month, day)
+        if (occurrence >= start && occurrence <= end) {
+          const expenseDate = `${occurrence.getFullYear()}-${String(occurrence.getMonth() + 1).padStart(2, '0')}-${String(occurrence.getDate()).padStart(2, '0')}`
+          await insertOne(expenseDate)
+        }
+        cursor.setMonth(cursor.getMonth() + 1)
+      }
+    } else {
+      await insertOne(data.expenseDate)
+    }
+
     if (lastStart) await load(lastStart, lastEnd)
-    await logExpenseCreated(id, data.category, data.amountUsd)
+    for (const id of createdIds) {
+      await logExpenseCreated(id, data.category, data.amountUsd)
+    }
+  }
+
+  // Copy last month's expenses into the current month (for recurring costs like
+  // rent/salary). Lightweight "duplicate last month" — the owner can delete any
+  // one-offs afterward. Returns how many were copied. (#12)
+  async function duplicateLastMonth(): Promise<number> {
+    const device = useDeviceStore()
+    const now = new Date()
+    const firstLast = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const lastLast  = new Date(now.getFullYear(), now.getMonth(), 0)
+    const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const rows = await db.getAll<ExpenseRow>(
+      `SELECT * FROM expenses WHERE shop_id = ? AND expense_date BETWEEN ? AND ? ORDER BY created_at`,
+      [device.shopId, fmt(firstLast), fmt(lastLast)]
+    )
+    const today  = fmt(now)
+    const nowIso = now.toISOString()
+    for (const r of rows) {
+      await db.execute(
+        `INSERT INTO expenses (id, shop_id, amount, currency, amount_usd, category, expense_date,
+          notes, photo_url, paid_in_cash, created_at, sync_status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+        [uuidv4(), device.shopId, r.amount, r.currency, r.amount_usd, r.category, today,
+         r.notes, r.photo_url, r.paid_in_cash, nowIso]
+      )
+    }
+    if (lastStart) await load(lastStart, lastEnd)
+    return rows.length
   }
 
   async function deleteExpense(id: string) {
@@ -65,5 +174,57 @@ export function useExpenses() {
     if (row) await logExpenseDeleted(id, row.category, row.amount_usd)
   }
 
-  return { expenses, load, save, deleteExpense }
+  async function updateExpense(id: string, data: NewExpense) {
+    const existing = await db.getOptional<ExpenseRow>(
+      `SELECT * FROM expenses WHERE id = ?`, [id]
+    )
+    if (!existing) throw new Error('Expense not found')
+
+    const existingExpense = rowToExpense(existing)
+    const nextExpenseDate = data.isRecurringMonthly
+      ? (data.recurringStartDate || data.expenseDate)
+      : data.expenseDate
+
+    const nextStoredNotes = buildStoredNotes(
+      data.notes,
+      data.isRecurringMonthly ? data.recurringStartDate : undefined,
+      data.isRecurringMonthly ? data.recurringEndDate : undefined,
+    )
+
+    await db.execute(
+      `UPDATE expenses
+       SET amount = ?, currency = ?, amount_usd = ?, category = ?, expense_date = ?,
+           notes = ?, photo_url = ?, paid_in_cash = ?, sync_status = 'pending'
+       WHERE id = ?`,
+      [
+        data.amount,
+        data.currency,
+        data.amountUsd,
+        data.category,
+        nextExpenseDate,
+        nextStoredNotes,
+        data.photoUrl ?? null,
+        data.paidInCash ? 1 : 0,
+        id,
+      ],
+    )
+
+    if (lastStart) await load(lastStart, lastEnd)
+
+    const changedFields: string[] = []
+    if (existingExpense.amount !== data.amount || existingExpense.currency !== data.currency) changedFields.push('المبلغ')
+    if (existingExpense.category !== data.category) changedFields.push('الفئة')
+    if (existingExpense.expenseDate !== nextExpenseDate) changedFields.push('التاريخ')
+    if ((existingExpense.notes ?? '') !== (data.notes ?? '')) changedFields.push('الملاحظات')
+    if (existingExpense.paidInCash !== data.paidInCash) changedFields.push('طريقة الدفع')
+    if (!!existingExpense.isRecurringMonthly !== !!data.isRecurringMonthly
+      || (existingExpense.recurringStartDate ?? '') !== (data.recurringStartDate ?? '')
+      || (existingExpense.recurringEndDate ?? '') !== (data.recurringEndDate ?? '')) {
+      changedFields.push('التكرار')
+    }
+
+    await logExpenseUpdated(id, data.category, data.amountUsd, changedFields)
+  }
+
+  return { expenses, load, save, updateExpense, deleteExpense, duplicateLastMonth }
 }

@@ -3,6 +3,8 @@ import { onMounted, onUnmounted, computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import ProductList from './components/ProductList.vue'
+import ProductForm from './components/ProductForm.vue'
+import BaseModal from '@/components/ui/BaseModal.vue'
 import QuickStockSheet from './components/QuickStockSheet.vue'
 import { useProducts } from './composables/useProducts'
 import { useBarcodeScan } from '@/composables/useBarcodeScan'
@@ -20,6 +22,20 @@ const deleteTarget   = ref<string | null>(null)
 const toast          = ref<{ message: string; type: 'success' | 'error' } | null>(null)
 const missedBarcode  = ref<string | null>(null)
 const stockTargetId  = ref<string | null>(null)
+const showAddForm    = ref(false)
+const addBarcode     = ref<string | undefined>(undefined)
+
+function openAdd(barcode?: string) {
+  addBarcode.value = barcode
+  showAddForm.value = true
+}
+
+async function handleProductAdded() {
+  showAddForm.value = false
+  missedBarcode.value = null
+  toast.value = { message: 'تم حفظ المنتج', type: 'success' }
+  await load()
+}
 
 const stockTarget = computed(() =>
   products.value.find(p => p.id === stockTargetId.value) ?? null
@@ -67,7 +83,6 @@ async function confirmDelete() {
   <div class="page-root" dir="rtl">
     <AppHeader
       title="المنتجات"
-      :show-back="true"
       @back="router.back()"
     />
 
@@ -78,7 +93,7 @@ async function confirmDelete() {
         <button
           type="button"
           class="btn-primary"
-          @click="router.push('/products/add')"
+          @click="openAdd()"
         >
           <svg class="btn-icon" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -95,7 +110,7 @@ async function confirmDelete() {
         <button
           type="button"
           class="barcode-banner-action"
-          @click="router.push(`/products/add?barcode=${encodeURIComponent(missedBarcode!)}`)"
+          @click="openAdd(missedBarcode!)"
         >إضافة بهذا الباركود</button>
       </div>
 
@@ -107,6 +122,17 @@ async function confirmDelete() {
         @adjust-stock="id => stockTargetId = id"
       />
     </main>
+
+    <!-- Add product as a modal (consistent with Add Expense; no navbar overlap) -->
+    <BaseModal v-if="showAddForm" title="إضافة منتج" @close="showAddForm = false">
+      <ProductForm
+        mode="add"
+        :initial-barcode="addBarcode"
+        embedded
+        @saved="handleProductAdded"
+        @cancel="showAddForm = false"
+      />
+    </BaseModal>
 
     <QuickStockSheet
       v-if="stockTarget"

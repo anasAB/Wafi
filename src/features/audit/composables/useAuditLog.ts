@@ -112,6 +112,13 @@ export function useAuditLog() {
   const logExpenseCreated = (expenseId: string, category: string, amountUsd: number) =>
     _log('expense.created', 'expense', expenseId, { category, amountUsd })
 
+  const logExpenseUpdated = (
+    expenseId: string,
+    category: string,
+    amountUsd: number,
+    changedFields: string[],
+  ) => _log('expense.updated', 'expense', expenseId, { category, amountUsd, changed_fields: changedFields })
+
   const logExpenseDeleted = (expenseId: string, category: string, amountUsd: number) =>
     _log('expense.deleted', 'expense', expenseId, { category, amountUsd })
 
@@ -177,6 +184,7 @@ export function useAuditLog() {
     logProductDeleted,
     logProductPriceChanged,
     logExpenseCreated,
+    logExpenseUpdated,
     logExpenseDeleted,
     logCustomerCreated,
     logCustomerUpdated,

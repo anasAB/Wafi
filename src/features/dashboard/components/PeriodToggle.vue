@@ -13,7 +13,7 @@ const options: { value: Period; label: string }[] = [
 
 <template>
   <div
-    class="toggle-container"
+    class="period-toggle toggle-container"
     dir="rtl"
     role="tablist"
     aria-label="اختر الفترة الزمنية"
@@ -25,7 +25,7 @@ const options: { value: Period; label: string }[] = [
       :data-testid="`period-${opt.value}`"
       role="tab"
       :aria-selected="period === opt.value"
-      class="toggle-btn"
+      class="pt-btn toggle-btn"
       :class="period === opt.value ? 'active' : 'inactive'"
       @click="setPeriod(opt.value)"
     >{{ opt.label }}</button>
@@ -33,44 +33,48 @@ const options: { value: Period; label: string }[] = [
 </template>
 
 <style scoped>
+.period-toggle,
 .toggle-container {
   font-family: 'Tajawal', system-ui, sans-serif;
   display: flex;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 10px;
   padding: 3px;
   gap: 2px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.pt-btn,
 .toggle-btn {
   font-family: 'Tajawal', system-ui, sans-serif;
   flex: 1;
-  padding: 0.5rem 0;
-  font-size: 0.875rem;
-  font-weight: 500;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
   border-radius: 8px;
+  background: transparent;
   border: none;
   cursor: pointer;
-  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
-  line-height: 1.25;
+  transition: background 0.15s, color 0.15s;
+  line-height: 1;
+  white-space: nowrap;
 }
 
+.pt-btn.active,
 .toggle-btn.active {
-  /* Brand gradient (matches primary buttons) for a clearly distinct active tab. */
-  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  background: #1A56DB;
   color: #ffffff;
   font-weight: 700;
-  box-shadow: 0 2px 12px rgba(26, 86, 219, 0.50);
 }
 
+.pt-btn.inactive,
 .toggle-btn.inactive {
   background: transparent;
   color: #637285;
 }
 
-.toggle-btn.inactive:hover {
-  color: #E8EDF5;
-  background: rgba(255, 255, 255, 0.06);
+.pt-btn:hover:not(.active),
+.toggle-btn:hover:not(.active) {
+  color: #C8D5E8;
 }
 </style>

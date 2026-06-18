@@ -1,4 +1,7 @@
 @import "tailwindcss";
+/* PrimeVue <-> Tailwind bridge: exposes PrimeVue theme tokens as Tailwind
+   utilities and registers the shared CSS layer ordering. */
+@import "tailwindcss-primeui";
 
 /* Class-based dark mode for Tailwind v4 */
 @custom-variant dark (&:where(.dark, .dark *));
@@ -235,4 +238,178 @@ select:focus-visible {
   .animate-shimmer,
   .animate-float,
   .animate-bounce { animation: none !important; }
+}
+
+/* ─── Global Search + Filter Controls (canonical) ─────────── */
+/* Keeps all search fields and dropdown filters visually identical across pages,
+   even when components define local scoped styles. */
+.search-wrap {
+  position: relative;
+}
+
+.search-icon {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0.625rem;
+  margin: auto;
+  width: 0.9rem;
+  height: 0.9rem;
+  color: #637285;
+  pointer-events: none;
+}
+
+.search-input {
+  width: 100%;
+  height: 40px !important;
+  background: linear-gradient(135deg, rgba(26,86,219,0.12), rgba(255,255,255,0.04)) !important;
+  border: 1px solid rgba(26,86,219,0.22) !important;
+  border-radius: 0.625rem !important;
+  padding: 0 2.25rem 0 2.25rem !important;
+  color: #E8EDF5 !important;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  box-shadow: 0 2px 12px rgba(26,86,219,0.08), inset 0 1px 0 rgba(255,255,255,0.07) !important;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.search-input::placeholder {
+  color: #3D4F6B !important;
+}
+
+.search-input:focus,
+.search-input:focus-visible {
+  border-color: rgba(26,86,219,0.7) !important;
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.18) !important;
+  outline: none;
+}
+
+.search-clear-btn {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0.5rem;
+  margin: auto;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #9FB1C8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.search-clear-btn:hover {
+  background: rgba(26, 86, 219, 0.24);
+  color: #E8EDF5;
+}
+
+.search-clear-btn:focus-visible {
+  outline: 2px solid rgba(96, 165, 250, 0.75);
+  outline-offset: 1px;
+}
+
+.search-filter-btn,
+.method-filter-btn {
+  height: 40px !important;
+  border-radius: 0.625rem !important;
+  background: linear-gradient(135deg, rgba(26,86,219,0.12), rgba(255,255,255,0.04)) !important;
+  border: 1px solid rgba(26,86,219,0.22) !important;
+  color: #E8EDF5 !important;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  box-shadow: 0 2px 12px rgba(26,86,219,0.08), inset 0 1px 0 rgba(255,255,255,0.07) !important;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.search-filter-btn:hover,
+.method-filter-btn:hover {
+  border-color: rgba(26,86,219,0.40) !important;
+}
+
+.search-filter-btn:focus,
+.search-filter-btn:focus-visible,
+.method-filter-btn:focus,
+.method-filter-btn:focus-visible {
+  border-color: rgba(26,86,219,0.70) !important;
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.18) !important;
+  outline: none;
+}
+
+.search-filter-chevron,
+.method-filter-chevron {
+  color: #637285;
+}
+
+.search-filter-menu,
+.method-filter-menu {
+  max-height: 220px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border-radius: 12px;
+  backdrop-filter: blur(20px) saturate(180%);
+  background: linear-gradient(180deg, rgba(13,24,40,0.97), rgba(7,11,20,0.97));
+  border: 1px solid rgba(26,86,219,0.30);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.45), 0 4px 18px rgba(26,86,219,0.16);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(96,165,250,0.55) rgba(255,255,255,0.06);
+}
+
+.search-filter-menu::-webkit-scrollbar,
+.method-filter-menu::-webkit-scrollbar {
+  width: 10px;
+}
+
+.search-filter-menu::-webkit-scrollbar-track,
+.method-filter-menu::-webkit-scrollbar-track {
+  background: rgba(255,255,255,0.06);
+  border-radius: 999px;
+}
+
+.search-filter-menu::-webkit-scrollbar-thumb,
+.method-filter-menu::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(96,165,250,0.75), rgba(26,86,219,0.75));
+  border-radius: 999px;
+  border: 2px solid rgba(7,11,20,0.8);
+}
+
+.search-filter-menu::-webkit-scrollbar-thumb:hover,
+.method-filter-menu::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(147,197,253,0.9), rgba(59,130,246,0.9));
+}
+
+.search-filter-item,
+.method-filter-item {
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #E8EDF5;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  text-align: right;
+  cursor: pointer;
+}
+
+.search-filter-item:hover,
+.method-filter-item:hover {
+  background: rgba(26,86,219,0.16);
+  border-color: rgba(26,86,219,0.24);
+}
+
+.search-filter-item-active,
+.method-filter-item-active {
+  background: linear-gradient(135deg, rgba(26,86,219,0.28), rgba(18,72,179,0.20));
+  border-color: rgba(26,86,219,0.35);
+  color: #FFFFFF;
 }

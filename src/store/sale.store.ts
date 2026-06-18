@@ -6,6 +6,8 @@ export interface SaleLine {
   nameAr:       string
   quantity:     number
   unitPriceUsd: number       // actual price charged (cashier may negotiate up/down)
+  /** Cost snapshot at add-to-cart time, used for in-cart profit preview. */
+  unitCostUsd?: number
   lineTotalUsd: number
   /** Stock available for this product at the time it was added. Acts as the
    *  hard ceiling on quantity so the cart can never oversell. */
@@ -35,6 +37,9 @@ export const useSaleStore = defineStore('sale', () => {
       // This clamp is the authoritative guard against overselling — it holds even
       // when rapid taps race past the pre-check in useSale.addLine.
       existing.availableStock = line.availableStock
+      // Keep a cost snapshot on the line for profit calculations; older cart lines
+      // may not have it if they were created before this field existed.
+      existing.unitCostUsd = line.unitCostUsd ?? existing.unitCostUsd ?? 0
       if (existing.quantity >= max) return
       existing.quantity    += 1
       existing.lineTotalUsd = existing.quantity * existing.unitPriceUsd
@@ -89,6 +94,11 @@ export const useSaleStore = defineStore('sale', () => {
     }
   }
 
+  // Update the in-progress sale rate when the owner changes exchange rate mid-cart.
+  function updateLockedRate(rate: number) {
+    lockedExchangeRate.value = rate
+  }
+
   function setRateChangeNotice(val: boolean) {
     hasRateChangeNotice.value = val
   }
@@ -118,6 +128,7 @@ export const useSaleStore = defineStore('sale', () => {
     updateUnitPrice,
     scalePricesToTotal,
     setLockedRate,
+    updateLockedRate,
     setRateChangeNotice,
     incrementSequence,
     clear,

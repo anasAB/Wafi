@@ -30,10 +30,10 @@ export function useSale(currentRateParam: MaybeRef<number | null>) {
     if (currentRate === null) throw new ExchangeRateNotSetError()
 
     const result = await db.execute(
-      `SELECT id, name_ar, price_usd, current_stock FROM products WHERE id = ? AND is_active = 1`,
+      `SELECT id, name_ar, price_usd, cost_price_usd, current_stock FROM products WHERE id = ? AND is_active = 1`,
       [productId]
     )
-    const rows: Array<{ id: string; name_ar: string; price_usd: number; current_stock: number }> =
+    const rows: Array<{ id: string; name_ar: string; price_usd: number; cost_price_usd: number | null; current_stock: number }> =
       (result as any).rows._array
     if (!rows.length) throw new Error(`Product ${productId} not found`)
 
@@ -54,6 +54,7 @@ export function useSale(currentRateParam: MaybeRef<number | null>) {
       nameAr:       p.name_ar,
       quantity:     1,
       unitPriceUsd: p.price_usd,
+      unitCostUsd:  p.cost_price_usd ?? 0,
       lineTotalUsd: p.price_usd,
       availableStock,
       listPriceUsd: p.price_usd,

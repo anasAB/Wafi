@@ -74,13 +74,14 @@ watch(() => [props.entityType, props.entityId], load)
 }
 
 .history-label {
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   font-weight: 600;
   color: #E8EDF5;
 }
 
 .history-meta {
-  font-size: 0.6875rem;
-  color: #637285;
+  /* Was 0.6875rem/#637285 — too small and dim to read. */
+  font-size: 0.8125rem;
+  color: #93A3B8;
 }
 </style>

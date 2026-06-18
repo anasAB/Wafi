@@ -67,13 +67,62 @@ function toggleRestock() {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 16px;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
-  opacity: 0.55;
-  transition: opacity 0.15s, background 0.15s;
+  margin: 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.03);
+  opacity: 0.72;
+  transition: opacity 0.15s, background 0.15s, border-color 0.15s;
 }
-.rli-row--selected { opacity: 1; background: rgba(26, 86, 219, 0.07); }
-.rli-check { width: 18px; height: 18px; accent-color: #1A56DB; flex-shrink: 0; cursor: pointer; }
+.rli-row--selected {
+  opacity: 1;
+  background: rgba(26, 86, 219, 0.10);
+  border-color: rgba(26, 86, 219, 0.32);
+}
+.rli-check {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  cursor: pointer;
+  border-radius: 5px;
+  border: 1px solid rgba(96,165,250,0.45);
+  background: rgba(255,255,255,0.04);
+  display: grid;
+  place-items: center;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.rli-check::after {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: linear-gradient(135deg, #60A5FA, #1A56DB);
+  transform: scale(0);
+  transition: transform 0.12s ease;
+}
+
+.rli-check:checked {
+  border-color: rgba(96,165,250,0.9);
+  background: rgba(26,86,219,0.20);
+}
+
+.rli-check:checked::after {
+  transform: scale(1);
+}
+
+.rli-check:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.24);
+}
+
+.rli-check:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 .rli-info { flex: 1; }
 .rli-name { font-size: 14px; font-weight: 600; color: #E8EDF5; }
 .rli-sub  { font-size: 12px; color: #637285; margin-top: 2px; }
@@ -81,21 +130,51 @@ function toggleRestock() {
 .rli-qty { display: flex; align-items: center; gap: 6px; }
 .rli-qty-btn {
   width: 28px; height: 28px; border-radius: 6px;
-  background: #1e3a5f; color: #E8EDF5; border: none; font-size: 16px; cursor: pointer;
+  background: rgba(26,86,219,0.22);
+  border: 1px solid rgba(26,86,219,0.34);
+  color: #E8EDF5;
+  font-size: 16px;
+  cursor: pointer;
 }
 .rli-qty-btn:disabled { opacity: 0.35; cursor: default; }
 .rli-qty-val { color: #E8EDF5; font-size: 15px; font-weight: 700; min-width: 20px; text-align: center; }
-.rli-restock { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.rli-restock { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .rli-restock-label { font-size: 10px; color: #637285; }
 .rli-toggle {
-  width: 36px; height: 20px; border-radius: 10px; border: none; cursor: pointer;
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+  border: 1px solid rgba(96,165,250,0.28);
+  cursor: pointer;
   display: flex; align-items: center; padding: 2px;
-  background: #334155; transition: background 0.2s;
+  background: rgba(51,65,85,0.85);
+  transition: background 0.2s, border-color 0.2s;
 }
-.rli-toggle--on { background: #1A56DB; }
+
+.rli-toggle--on {
+  background: linear-gradient(135deg, rgba(96,165,250,0.85), rgba(26,86,219,0.90));
+  border-color: rgba(96,165,250,0.75);
+}
 .rli-toggle-dot {
-  width: 16px; height: 16px; border-radius: 8px; background: white;
-  transition: transform 0.2s; transform: translateX(0);
+  width: 18px; height: 18px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+  /* margin-inline-start: auto is direction-aware, so the knob slides to the
+     correct side in RTL (translateX was hard-coded LTR and pushed it off-edge). */
+  transition: margin 0.2s;
 }
-.rli-toggle--on .rli-toggle-dot { transform: translateX(16px); }
+.rli-toggle--on .rli-toggle-dot { margin-inline-start: auto; }
+
+@media (max-width: 420px) {
+  .rli-row {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: start;
+  }
+
+  .rli-qty,
+  .rli-restock {
+    grid-column: 2;
+    justify-self: end;
+  }
+}
 </style>

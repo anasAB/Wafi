@@ -58,13 +58,20 @@ async function onConfirm() {
   <div class="sheet" dir="rtl">
     <header class="sheet-head">
       <h2>تسجيل استلام بضاعة</h2>
-      <button class="btn-ghost" @click="emit('close')">✕</button>
+      <button class="close-btn" aria-label="إغلاق" @click="emit('close')">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
     </header>
 
-    <!-- Supplier -->
+    <!-- Supplier (combobox — chevron signals it opens a picker, not a text field) -->
     <button class="supplier-row" @click="showSupplierPicker = true">
       <span v-if="sheet.supplierName.value">المورّد: {{ sheet.supplierName.value }}</span>
       <span v-else class="muted">اختر المورّد</span>
+      <svg class="supplier-chevron" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+      </svg>
     </button>
 
     <!-- Lines -->
@@ -112,16 +119,29 @@ async function onConfirm() {
 <style scoped>
 .sheet { display: flex; flex-direction: column; gap: 0.75rem; padding: 1rem; }
 .sheet-head { display: flex; justify-content: space-between; align-items: center; }
-.supplier-row { text-align: start; padding: 0.75rem; border-radius: 0.75rem; border: 1px solid #2A3A52; background: #0D1828; color: #fff; }
+.close-btn {
+  width: 2rem; height: 2rem; border-radius: 0.625rem;
+  display: flex; align-items: center; justify-content: center;
+  color: #637285; background: rgba(255,255,255,0.06); border: none; cursor: pointer;
+  transition: background 0.12s;
+}
+.close-btn:hover { background: rgba(255,255,255,0.10); }
+.supplier-row {
+  display: flex; align-items: center; justify-content: space-between;
+  text-align: start; padding: 0.75rem; border-radius: 0.75rem;
+  border: 1px solid #2A3A52; background: #0D1828; color: #fff; cursor: pointer;
+}
+.supplier-chevron { color: #637285; flex-shrink: 0; }
 .muted { color: #9CB3D0; }
 .lines { display: flex; flex-direction: column; gap: 0.5rem; }
 .notes { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }
-.notes textarea { padding: 0.5rem; border-radius: 0.5rem; border: 1px solid #2A3A52; background: #0D1828; color: #fff; }
-.total-row { display: flex; justify-content: space-between; font-size: 1.1rem; padding: 0.5rem 0; }
-.btn-primary { background: #1A56DB; color: #fff; border: none; padding: 0.8rem; border-radius: 0.5rem; font-size: 1rem; }
+.notes textarea { padding: 0.5rem; border-radius: 0.5rem; border: 1px solid #2A3A52; background: #0D1828; color: #fff; resize: none; }
+.total-row { display: flex; justify-content: space-between; align-items: center; font-size: 1.1rem; padding: 0.75rem 0 0.25rem; border-top: 1px solid rgba(26,86,219,0.18); }
+.btn-primary { background: linear-gradient(135deg, #1A56DB, #1248B3); color: #fff; border: none; padding: 0.8rem; border-radius: 0.5rem; font-size: 1rem; cursor: pointer; box-shadow: 0 4px 16px rgba(26,86,219,0.35); }
 .btn-primary:disabled { opacity: 0.5; }
-.btn-secondary { background: #16263C; color: #fff; border: none; padding: 0.6rem; border-radius: 0.5rem; }
-.btn-ghost { background: transparent; color: #9CB3D0; border: none; }
+/* "Add item" reads as a secondary add-affordance, not a primary CTA */
+.btn-secondary { background: transparent; color: #60A5FA; border: 1px dashed rgba(26,86,219,0.45); padding: 0.6rem; border-radius: 0.5rem; cursor: pointer; }
+.btn-secondary:hover { background: rgba(26,86,219,0.08); }
 .invoice-photo { display: flex; flex-direction: column; gap: 0.4rem; }
 .field-label { font-size: 0.9rem; color: #9CB3D0; }
 .photo-error { color: #E06A6A; font-size: 0.85rem; margin: 0; }

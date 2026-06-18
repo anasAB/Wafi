@@ -2,6 +2,8 @@
 import { ref, computed } from 'vue'
 import { useSaleStore } from '@/store/sale.store'
 import AppDialog from '@/components/ui/AppDialog.vue'
+import BaseModal from '@/components/ui/BaseModal.vue'
+import { db } from '@/data/powersync/db'
 
 const emit = defineEmits<{ (e: 'pay'): void }>()
 const store = useSaleStore()
@@ -12,7 +14,71 @@ const totalSyp = computed(() => {
   return Math.round(store.totalUsd * rate)
 })
 
+const totalProfitUsd = computed(() =>
+  store.lines.reduce((sum, line) => {
+    const unitCost = line.unitCostUsd ?? 0
+    return sum + (line.unitPriceUsd - unitCost) * line.quantity
+  }, 0)
+)
+
 const showClearDialog = ref(false)
+
+type PreviewData = {
+  productId: string
+  nameAr: string
+  salePriceUsd: number
+  listPriceUsd: number | null
+  costPriceUsd: number
+  stockQty: number | null
+  barcode: string | null
+  category: string | null
+}
+
+const previewOpen = ref(false)
+const previewLoading = ref(false)
+const previewData = ref<PreviewData | null>(null)
+
+async function openProductPreview(line: (typeof store.lines)[number]) {
+  previewOpen.value = true
+  previewLoading.value = true
+  previewData.value = {
+    productId: line.productId,
+    nameAr: line.nameAr,
+    salePriceUsd: line.unitPriceUsd,
+    listPriceUsd: line.listPriceUsd ?? null,
+    costPriceUsd: line.unitCostUsd ?? 0,
+    stockQty: line.availableStock ?? null,
+    barcode: null,
+    category: null,
+  }
+
+  try {
+    const result = await db.execute(
+      `SELECT name_ar, price_usd, cost_price_usd, current_stock, barcode, category
+       FROM products WHERE id = ?`,
+      [line.productId]
+    )
+    const row = (result as any).rows?._array?.[0]
+    if (row && previewData.value?.productId === line.productId) {
+      previewData.value = {
+        productId: line.productId,
+        nameAr: row.name_ar ?? line.nameAr,
+        salePriceUsd: line.unitPriceUsd,
+        listPriceUsd: row.price_usd ?? line.listPriceUsd ?? null,
+        costPriceUsd: row.cost_price_usd ?? line.unitCostUsd ?? 0,
+        stockQty: row.current_stock ?? line.availableStock ?? null,
+        barcode: row.barcode ?? null,
+        category: row.category ?? null,
+      }
+    }
+  } finally {
+    previewLoading.value = false
+  }
+}
+
+function closeProductPreview() {
+  previewOpen.value = false
+}
 
 function handleClearSale() {
   store.clear()
@@ -108,6 +174,17 @@ function handleClearSale() {
           <span class="line-total">${{ line.lineTotalUsd.toFixed(2) }}</span>
           <button
             type="button"
+            class="line-view"
+            aria-label="عرض المنتج"
+            @click="openProductPreview(line)"
+          >
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+          </button>
+          <button
+            type="button"
             class="line-delete"
             aria-label="حذف"
             @click="store.removeLine(line.productId)"
@@ -126,6 +203,13 @@ function handleClearSale() {
         <div class="total-main-row">
           <span class="total-main-label">المجموع</span>
           <span class="total-main-value">${{ store.totalUsd.toFixed(2) }}</span>
+        </div>
+        <div class="total-profit-row">
+          <span class="total-profit-label">الربح</span>
+          <span
+            class="total-profit-value"
+            :class="totalProfitUsd >= 0 ? 'profit-pos' : 'profit-neg'"
+          >${{ totalProfitUsd.toFixed(2) }}</span>
         </div>
         <div v-if="totalSyp !== null" class="total-syp-row">
           <span class="total-syp-label">بالليرة</span>
@@ -158,6 +242,45 @@ function handleClearSale() {
     @confirm="handleClearSale"
     @cancel="showClearDialog = false"
   />
+
+  <BaseModal
+    v-if="previewOpen"
+    title="معلومات المنتج"
+    @close="closeProductPreview"
+  >
+    <div v-if="previewLoading || !previewData" class="preview-loading">جارٍ التحميل...</div>
+    <div v-else class="preview-body">
+      <p class="preview-name">{{ previewData.nameAr }}</p>
+      <div class="preview-grid">
+        <div class="preview-item">
+          <span class="preview-label">سعر البيع (في السلة)</span>
+          <span class="preview-value" dir="ltr">${{ previewData.salePriceUsd.toFixed(2) }}</span>
+        </div>
+        <div class="preview-item">
+          <span class="preview-label">سعر التكلفة</span>
+          <span class="preview-value" dir="ltr">${{ previewData.costPriceUsd.toFixed(2) }}</span>
+        </div>
+        <div class="preview-item">
+          <span class="preview-label">السعر المعتاد</span>
+          <span class="preview-value" dir="ltr">
+            {{ previewData.listPriceUsd !== null ? `$${previewData.listPriceUsd.toFixed(2)}` : '—' }}
+          </span>
+        </div>
+        <div class="preview-item">
+          <span class="preview-label">المخزون</span>
+          <span class="preview-value">{{ previewData.stockQty !== null ? previewData.stockQty : '—' }}</span>
+        </div>
+        <div class="preview-item">
+          <span class="preview-label">الفئة</span>
+          <span class="preview-value">{{ previewData.category || '—' }}</span>
+        </div>
+        <div class="preview-item">
+          <span class="preview-label">الباركود</span>
+          <span class="preview-value" dir="ltr">{{ previewData.barcode || '—' }}</span>
+        </div>
+      </div>
+    </div>
+  </BaseModal>
 </template>
 
 <style scoped>
@@ -165,6 +288,7 @@ function handleClearSale() {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
   background: linear-gradient(180deg,
     rgba(26,86,219,0.14) 0%,
     rgba(13,24,40,0.98)  40%,
@@ -240,8 +364,32 @@ function handleClearSale() {
 /* ── Lines list ─────────────────────────────────── */
 .lines-list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 8px 0;
+  padding-inline-end: 4px;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(96,165,250,0.55) rgba(255,255,255,0.06);
+}
+
+.lines-list::-webkit-scrollbar {
+  width: 10px;
+}
+
+.lines-list::-webkit-scrollbar-track {
+  background: rgba(255,255,255,0.06);
+  border-radius: 999px;
+}
+
+.lines-list::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(96,165,250,0.75), rgba(26,86,219,0.75));
+  border-radius: 999px;
+  border: 2px solid rgba(7,11,20,0.8);
+}
+
+.lines-list::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(147,197,253,0.9), rgba(59,130,246,0.9));
 }
 
 /* Empty state */
@@ -276,13 +424,18 @@ function handleClearSale() {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 14px;
-  border-bottom: 1px solid rgba(26,86,219,0.08);
-  transition: background 0.12s;
+  margin: 0 8px 8px;
+  padding: 11px 12px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(26,86,219,0.12), rgba(255,255,255,0.04));
+  border: 1px solid rgba(26,86,219,0.22);
+  box-shadow: 0 2px 10px rgba(26,86,219,0.08), inset 0 1px 0 rgba(255,255,255,0.06);
+  transition: background 0.12s, border-color 0.12s;
 }
 
 .line-row:hover {
-  background: rgba(26,86,219,0.06);
+  border-color: rgba(26,86,219,0.38);
+  background: linear-gradient(135deg, rgba(26,86,219,0.18), rgba(255,255,255,0.06));
 }
 
 .line-info {
@@ -291,9 +444,9 @@ function handleClearSale() {
 }
 
 .line-name {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  color: #E8EDF5;
+  color: #F1F5FB;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -301,8 +454,8 @@ function handleClearSale() {
 }
 
 .line-unit {
-  font-size: 11px;
-  color: #637285;
+  font-size: 12px;
+  color: #9FB0C6;
   margin: 0;
   display: flex;
   align-items: center;
@@ -319,8 +472,8 @@ function handleClearSale() {
 
 .price-input {
   width: 56px;
-  background: rgba(26,86,219,0.10);
-  border: 1px solid rgba(26,86,219,0.28);
+  background: rgba(26,86,219,0.18);
+  border: 1px solid rgba(26,86,219,0.40);
   border-radius: 6px;
   padding: 2px 6px;
   margin-inline-start: 2px;
@@ -352,8 +505,8 @@ function handleClearSale() {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
-  background: rgba(26,86,219,0.10);
-  border: 1px solid rgba(26,86,219,0.22);
+  background: rgba(26,86,219,0.16);
+  border: 1px solid rgba(26,86,219,0.34);
   border-radius: 10px;
   padding: 3px;
 }
@@ -384,9 +537,9 @@ function handleClearSale() {
 }
 
 .qty-value {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
-  color: #E8EDF5;
+  color: #F1F5FB;
   min-width: 22px;
   text-align: center;
   font-variant-numeric: tabular-nums;
@@ -401,9 +554,9 @@ function handleClearSale() {
 }
 
 .line-total {
-  font-size: 13px;
-  font-weight: 700;
-  color: #60A5FA;
+  font-size: 14px;
+  font-weight: 800;
+  color: #93C5FD;
   min-width: 50px;
   text-align: left;
   font-variant-numeric: tabular-nums;
@@ -418,7 +571,7 @@ function handleClearSale() {
   justify-content: center;
   background: transparent;
   border: 1px solid transparent;
-  color: #3D4F6B;
+  color: #7E93AE;
   cursor: pointer;
   transition: color 0.12s, background 0.12s, border-color 0.12s;
   flex-shrink: 0;
@@ -428,6 +581,74 @@ function handleClearSale() {
   color: #EF4444;
   background: rgba(239,68,68,0.10);
   border-color: rgba(239,68,68,0.22);
+}
+
+.line-view {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #7E93AE;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+  flex-shrink: 0;
+}
+
+.line-view:hover {
+  color: #60A5FA;
+  background: rgba(26,86,219,0.10);
+  border-color: rgba(26,86,219,0.26);
+}
+
+.preview-loading {
+  color: #9FB0C6;
+  font-size: 13px;
+  padding: 8px 0;
+}
+
+.preview-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.preview-name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #E8EDF5;
+}
+
+.preview-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.preview-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(26,86,219,0.20);
+  background: rgba(255,255,255,0.03);
+  padding: 8px 10px;
+}
+
+.preview-label {
+  font-size: 12px;
+  color: #637285;
+}
+
+.preview-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: #E8EDF5;
 }
 
 /* ── Footer ─────────────────────────────────────── */
@@ -453,6 +674,12 @@ function handleClearSale() {
   justify-content: space-between;
 }
 
+.total-profit-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
 .total-main-label {
   font-size: 13px;
   color: #637285;
@@ -465,6 +692,20 @@ function handleClearSale() {
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
 }
+
+.total-profit-label {
+  font-size: 12px;
+  color: #637285;
+}
+
+.total-profit-value {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.profit-pos { color: #22C55E; }
+.profit-neg { color: #F87171; }
 
 .total-syp-row {
   display: flex;

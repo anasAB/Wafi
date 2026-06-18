@@ -14,7 +14,6 @@ const APP_VERSION = 'v0.1.0'
   <div class="page-root" dir="rtl">
     <AppHeader
       :title="t('settings.title')"
-      :show-back="true"
       @back="router.back()"
     />
 

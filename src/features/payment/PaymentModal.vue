@@ -50,6 +50,13 @@ function handleDelete() {
   amountReceived.value = displayAmount.value
 }
 
+// Wipe the whole entered amount in one tap (#2) — the value is keypad-driven,
+// so there's no text field to select-and-delete.
+function handleClearAmount() {
+  amountStr.value = ''
+  amountReceived.value = null
+}
+
 // Mirror the on-screen keypad on a physical keyboard so the amount can be typed
 // on a laptop/tablet. The on-screen keypad stays the primary input on phones.
 function handleKeydown(e: KeyboardEvent) {
@@ -107,7 +114,7 @@ function handleAddCardSplitPayment() {
   handleBack()
 }
 
-async function handleConfirm() {
+async function handleConfirm(force = false) {
   // A credit (آجل) sale must be attributed to a customer — otherwise we record a
   // debt no one owns. Reopen the picker instead of completing the sale.
   if (method.value === 'credit' && !selectedCustomer.value) {
@@ -119,7 +126,7 @@ async function handleConfirm() {
   if (method.value === 'card' && pendingPayments.value.length > 0 && remainingUsd.value > 0.001) {
     addPayment('card', remainingUsd.value)
   }
-  const canFinish =
+  const canFinish = force ||
     method.value === 'card' || method.value === 'credit' ||
     canConfirmSingle.value || isReadyToConfirm.value
   if (!canFinish) return
@@ -134,11 +141,13 @@ async function handleConfirm() {
 // Cash received exceeds the total. The cashier confirms the surplus is a higher
 // sale price (not change): scale the cart up to the amount paid so it's recorded
 // as revenue, then complete with no change.
-function confirmAsHigherPrice() {
+async function confirmAsHigherPrice() {
   if (enteredUsd.value && enteredUsd.value > totalUsd.value) {
     saleStore.scalePricesToTotal(enteredUsd.value)
   }
-  handleConfirm()
+  // This path is an explicit cashier decision: treat the extra cash as a higher
+  // sale amount, then confirm even if post-scale rounding leaves canConfirmSingle false.
+  await handleConfirm(true)
 }
 </script>
 
@@ -158,6 +167,7 @@ function confirmAsHigherPrice() {
       <!-- ── Method selection ── -->
       <div v-if="state === 'method-selection'" class="state-pad">
         <div class="modal-top-bar">
+          <button type="button" class="modal-back-btn" @click="handleCancel">رجوع إلى السلة</button>
           <button type="button" class="modal-cancel-btn" @click="handleCancel">إلغاء</button>
         </div>
 
@@ -284,6 +294,7 @@ function confirmAsHigherPrice() {
         </div>
 
         <div class="amount-input-box" :class="{ 'amount-input-box-error': amountStr && !canConfirmSingle && !canAddLeg }">
+          <button v-if="amountStr" type="button" class="amount-clear-btn" aria-label="مسح المبلغ" @click="handleClearAmount">مسح</button>
           <p class="amount-input-value">{{ amountStr || '0' }}</p>
           <p v-if="showChangeDue" class="change-due-row">
             الباقي:
@@ -458,7 +469,10 @@ function confirmAsHigherPrice() {
     0 -8px 48px rgba(26, 86, 219, 0.22),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
   font-family: 'Tajawal', system-ui, sans-serif;
+  /* Keep it scrollable on short screens but hide the bar (#1). */
+  scrollbar-width: none;
 }
+.modal-card::-webkit-scrollbar { display: none; }
 
 @media (min-width: 640px) {
   .modal-card {
@@ -809,6 +823,7 @@ function confirmAsHigherPrice() {
 }
 
 .amount-input-box {
+  position: relative;
   background: rgba(26, 86, 219, 0.10);
   border: 2px solid rgba(26, 86, 219, 0.42);
   border-radius: 12px;
@@ -817,6 +832,23 @@ function confirmAsHigherPrice() {
   margin-bottom: 4px;
   transition: border-color 0.15s;
 }
+
+.amount-clear-btn {
+  position: absolute;
+  top: 8px;
+  inset-inline-start: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  color: #637285;
+  background: rgba(255, 255, 255, 0.06);
+  border: none;
+  border-radius: 6px;
+  padding: 3px 9px;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+.amount-clear-btn:hover { color: #E8EDF5; background: rgba(255, 255, 255, 0.12); }
 
 .amount-input-box-error { border-color: rgba(239, 68, 68, 0.52); }
 

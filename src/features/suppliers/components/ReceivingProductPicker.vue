@@ -64,7 +64,11 @@ async function confirmAdd() {
     <div class="modal-card" dir="rtl">
       <header class="modal-head">
         <h3>أضف منتجاً للاستلام</h3>
-        <button class="btn-ghost" @click="emit('close')">✕</button>
+        <button class="close-btn" aria-label="إغلاق" @click="emit('close')">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
       </header>
 
       <template v-if="!adding">
@@ -96,6 +100,13 @@ async function confirmAdd() {
 .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 50; }
 .modal-card { background: #0D1828; border-radius: 1rem; padding: 1rem; width: min(480px, 92vw); max-height: 80vh; overflow-y: auto; }
 .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
+.close-btn {
+  width: 2rem; height: 2rem; border-radius: 0.625rem;
+  display: flex; align-items: center; justify-content: center;
+  color: #637285; background: rgba(255,255,255,0.06); border: none; cursor: pointer;
+  transition: background 0.12s;
+}
+.close-btn:hover { background: rgba(255,255,255,0.10); }
 .search { width: 100%; padding: 0.6rem; border-radius: 0.5rem; border: 1px solid #2A3A52; background: #0A1320; color: #fff; }
 .list { list-style: none; padding: 0; margin: 0.75rem 0; display: flex; flex-direction: column; gap: 0.25rem; }
 .list li { display: flex; justify-content: space-between; padding: 0.75rem; border-radius: 0.5rem; cursor: pointer; }

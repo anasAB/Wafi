@@ -4,6 +4,8 @@ import { useExchangeRate } from '@/features/exchange-rate'
 import { useExpenses } from '@/features/expenses/composables/useExpenses'
 import ExpenseCategoryChips from './ExpenseCategoryChips.vue'
 import AuditHistory from '@/features/audit/components/AuditHistory.vue'
+import BaseModal from '@/components/ui/BaseModal.vue'
+import DatePicker from 'primevue/datepicker'
 import type { NewExpense, Expense } from '@/features/expenses/expense.types'
 
 const props = defineProps<{ initialExpense?: Expense }>()
@@ -14,12 +16,15 @@ const emit = defineEmits<{
 }>()
 
 const { currentRate } = useExchangeRate()
-const { save, deleteExpense } = useExpenses()
+const { save, updateExpense } = useExpenses()
 
 const amount      = ref<number | ''>(props.initialExpense?.amount ?? '')
 const currency    = ref<'USD' | 'SYP'>(props.initialExpense?.currency ?? 'USD')
 const category    = ref(props.initialExpense?.category ?? '')
 const expenseDate = ref(props.initialExpense?.expenseDate ?? new Date().toISOString().slice(0, 10))
+const isRecurringMonthly = ref(!!props.initialExpense?.isRecurringMonthly)
+const recurringStartDate = ref(props.initialExpense?.recurringStartDate ?? '')
+const recurringEndDate   = ref(props.initialExpense?.recurringEndDate ?? '')
 const notes       = ref(props.initialExpense?.notes ?? '')
 const paidInCash  = ref(props.initialExpense?.paidInCash ?? true)
 const saving      = ref(false)
@@ -32,10 +37,52 @@ const usdEquivalent = computed(() => {
   return (Number(amount.value) / currentRate.value).toFixed(2)
 })
 
+function isoToDate(value: string): Date | null {
+  if (!value) return null
+  const d = new Date(value + 'T00:00:00')
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+function dateToIso(value: Date | null): string {
+  if (!value) return ''
+  const y = value.getFullYear()
+  const m = String(value.getMonth() + 1).padStart(2, '0')
+  const d = String(value.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+const expenseDateModel = computed<Date | null>({
+  get: () => isoToDate(expenseDate.value),
+  set: (v) => { expenseDate.value = dateToIso(v) },
+})
+
+const recurringStartDateModel = computed<Date | null>({
+  get: () => isoToDate(recurringStartDate.value),
+  set: (v) => {
+    recurringStartDate.value = dateToIso(v)
+    delete errors.value['recurringStartDate']
+  },
+})
+
+const recurringEndDateModel = computed<Date | null>({
+  get: () => isoToDate(recurringEndDate.value),
+  set: (v) => {
+    recurringEndDate.value = dateToIso(v)
+    delete errors.value['recurringEndDate']
+  },
+})
+
 function validate(): boolean {
   const e: Record<string, string> = {}
   if (!amount.value || Number(amount.value) <= 0) e['amount']   = 'أدخل المبلغ'
   if (!category.value.trim())                     e['category'] = 'اختر فئة'
+  if (isRecurringMonthly.value) {
+    if (!recurringStartDate.value) e['recurringStartDate'] = 'حدد تاريخ البداية'
+    if (!recurringEndDate.value)   e['recurringEndDate']   = 'حدد تاريخ النهاية'
+    if (recurringStartDate.value && recurringEndDate.value && recurringEndDate.value < recurringStartDate.value) {
+      e['recurringEndDate'] = 'تاريخ النهاية يجب أن يكون بعد البداية'
+    }
+  }
   errors.value = e
   return Object.keys(e).length === 0
 }
@@ -54,21 +101,28 @@ async function handleSave(addAnother = false) {
       currency:    currency.value,
       amountUsd,
       category:    category.value.trim(),
-      expenseDate: expenseDate.value,
+      expenseDate: isRecurringMonthly.value ? (recurringStartDate.value || expenseDate.value) : expenseDate.value,
       notes:       notes.value.trim() || undefined,
       paidInCash:  paidInCash.value,
+      isRecurringMonthly: isRecurringMonthly.value,
+      recurringStartDate: isRecurringMonthly.value ? recurringStartDate.value : undefined,
+      recurringEndDate:   isRecurringMonthly.value ? recurringEndDate.value : undefined,
     }
 
     if (props.initialExpense) {
-      await deleteExpense(props.initialExpense.id)
+      await updateExpense(props.initialExpense.id, data)
+    } else {
+      await save(data)
     }
-    await save(data)
     chipsRef.value?.persistCustom(data.category)
 
     if (addAnother) {
       amount.value   = ''
       category.value = ''
       notes.value    = ''
+      isRecurringMonthly.value = false
+      recurringStartDate.value = ''
+      recurringEndDate.value = ''
       errors.value   = {}
     } else {
       emit('saved')
@@ -80,29 +134,11 @@ async function handleSave(addAnother = false) {
 </script>
 
 <template>
-  <!-- Backdrop -->
-  <div
-    class="backdrop"
-    dir="rtl"
-    @click.self="emit('cancel')"
+  <BaseModal
+    :title="initialExpense ? 'تعديل مصروف' : 'إضافة مصروف'"
+    @close="emit('cancel')"
   >
-    <!-- Sheet panel -->
-    <div class="sheet">
-      <!-- Handle -->
-      <div class="sheet-handle"></div>
-
-      <div class="sheet-body">
-        <!-- Header: title + standardized close (BUG-024 new list) -->
-        <div class="sheet-header">
-          <h2 class="sheet-title">
-            {{ initialExpense ? 'تعديل مصروف' : 'إضافة مصروف' }}
-          </h2>
-          <button type="button" class="sheet-close" aria-label="إغلاق" @click="emit('cancel')">
-            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
+      <div class="sheet-body" dir="rtl">
 
         <!-- Amount row -->
         <div class="field-group">
@@ -159,18 +195,66 @@ async function handleSave(addAnother = false) {
           </p>
         </div>
 
-        <!-- Date -->
-        <div class="field-group">
-          <label class="field-label">التاريخ</label>
-          <input
-            v-model="expenseDate"
+        <!-- Date (single expense only). Recurring uses start/end date range. -->
+        <div v-if="!isRecurringMonthly" class="field-group">
+          <label class="field-label">تاريخ المصروف</label>
+          <DatePicker
+            v-model="expenseDateModel"
+            input-id="expense-date"
             data-testid="expense-date"
-            type="date"
-            :max="new Date().toISOString().slice(0, 10)"
-            class="form-input"
-            @focus="($event.target as HTMLInputElement).style.borderColor = 'rgba(26,86,219,0.8)'"
-            @blur="($event.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.18)'"
+            date-format="yy-mm-dd"
+            placeholder="اختر التاريخ"
+            show-icon
+            icon-display="input"
+            :max-date="new Date()"
+            append-to="self"
+            class="expense-date-picker"
+            :input-class="'form-input date-input prime-date-input'"
           />
+        </div>
+
+        <div class="field-group recurring-wrap">
+          <label class="recurring-toggle-row">
+            <input
+              v-model="isRecurringMonthly"
+              type="checkbox"
+              class="recurring-check"
+            />
+            <span class="field-label recurring-label">مصروف متكرر شهريًا</span>
+          </label>
+
+          <div v-if="isRecurringMonthly" class="recurring-dates-row">
+            <div class="recurring-date-field">
+              <label class="field-label">من تاريخ</label>
+              <DatePicker
+                v-model="recurringStartDateModel"
+                date-format="yy-mm-dd"
+                placeholder="اختر تاريخ البداية"
+                show-icon
+                icon-display="input"
+                append-to="self"
+                class="expense-date-picker"
+                :input-class="['form-input date-input prime-date-input', errors['recurringStartDate'] ? 'input-error' : '']"
+              />
+              <p v-if="errors['recurringStartDate']" class="field-error">{{ errors['recurringStartDate'] }}</p>
+            </div>
+
+            <div class="recurring-date-field">
+              <label class="field-label">إلى تاريخ</label>
+              <DatePicker
+                v-model="recurringEndDateModel"
+                date-format="yy-mm-dd"
+                placeholder="اختر تاريخ النهاية"
+                show-icon
+                icon-display="input"
+                append-to="self"
+                :min-date="isoToDate(recurringStartDate)"
+                class="expense-date-picker"
+                :input-class="['form-input date-input prime-date-input', errors['recurringEndDate'] ? 'input-error' : '']"
+              />
+              <p v-if="errors['recurringEndDate']" class="field-error">{{ errors['recurringEndDate'] }}</p>
+            </div>
+          </div>
         </div>
 
         <!-- Payment method (cash vs non-cash) -->
@@ -243,92 +327,84 @@ async function handleSave(addAnother = false) {
           >إلغاء</button>
         </div>
       </div>
-    </div>
-  </div>
+  </BaseModal>
 </template>
 
 <style scoped>
-/* ── Backdrop ──────────────────────────────────────── */
-.backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(4px);
-}
-
-/* Desktop: behave as a centered dialog, not a bottom sheet (BUG-039 new list). */
-@media (min-width: 640px) {
-  .backdrop { align-items: center; padding: 1rem; }
-}
-
-/* ── Sheet ─────────────────────────────────────────── */
-.sheet {
-  width: 100%;
-  max-width: 32rem;
-  border-radius: 1.25rem 1.25rem 0 0;
-  overflow: hidden;
-  backdrop-filter: blur(20px) saturate(180%);
-  background: linear-gradient(135deg, rgba(26,86,219,0.16), rgba(26,86,219,0.06));
-  border: 1px solid rgba(26,86,219,0.45);
-  box-shadow: 0 8px 48px rgba(26,86,219,0.22), inset 0 1px 0 rgba(255,255,255,0.09);
-}
-
-.sheet-handle {
-  width: 2.5rem;
-  height: 0.25rem;
-  border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.20);
-  margin: 0.75rem auto 1.25rem;
-}
-
-/* On desktop the drag handle is meaningless — hide it and round all corners. */
-@media (min-width: 640px) {
-  .sheet { border-radius: 1.25rem; max-width: 28rem; }
-  .sheet-handle { display: none; }
-}
-
-/* ── Header (title + close) ── */
-.sheet-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 1.25rem;
-}
-.sheet-close {
-  width: 2rem;
-  height: 2rem;
-  border-radius: 0.625rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #637285;
-  background: rgba(255, 255, 255, 0.06);
-  border: none;
-  cursor: pointer;
-  transition: background 0.12s;
-}
-.sheet-close:hover { background: rgba(255, 255, 255, 0.10); }
-
 .sheet-body {
-  padding: 0 1.25rem 1.5rem;
+  padding: 0;
   font-family: 'Tajawal', system-ui, sans-serif;
-}
-
-/* ── Sheet title ───────────────────────────────────── */
-.sheet-title {
-  font-size: 1rem;
-  font-weight: 700;
-  color: #E8EDF5;
-  margin-bottom: 0;
 }
 
 /* ── Field groups ──────────────────────────────────── */
 .field-group {
   margin-bottom: 1rem;
+}
+
+.recurring-wrap {
+  border: 1px solid rgba(26, 86, 219, 0.18);
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 0.75rem;
+}
+
+.recurring-toggle-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.recurring-label {
+  margin-bottom: 0;
+  color: #C8D5E8;
+}
+
+.recurring-check {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1px solid rgba(96,165,250,0.45);
+  background: rgba(255,255,255,0.04);
+  display: grid;
+  place-items: center;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.recurring-check::after {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: linear-gradient(135deg, #60A5FA, #1A56DB);
+  transform: scale(0);
+  transition: transform 0.12s ease;
+}
+
+.recurring-check:checked {
+  border-color: rgba(96,165,250,0.9);
+  background: rgba(26,86,219,0.20);
+}
+
+.recurring-check:checked::after { transform: scale(1); }
+
+.recurring-dates-row {
+  margin-top: 0.75rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.625rem;
+}
+
+.recurring-date-field {
+  min-width: 0;
+}
+
+@media (max-width: 560px) {
+  .recurring-dates-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 .field-label {
@@ -371,6 +447,104 @@ async function handleSave(addAnother = false) {
 .form-input:focus {
   border-color: rgba(26, 86, 219, 0.8);
   box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.25), 0 0 12px rgba(26, 86, 219, 0.15);
+}
+
+.date-input {
+  height: 40px;
+  min-height: 40px;
+  padding-inline-end: 2.75rem;
+  padding-inline-start: 0.875rem;
+  color-scheme: dark;
+  line-height: 1.2;
+}
+
+.prime-date-input {
+  font-variant-numeric: tabular-nums;
+}
+
+.expense-date-picker {
+  width: 100%;
+}
+
+.expense-date-picker :deep(.p-datepicker-input) {
+  height: 40px !important;
+  min-height: 40px !important;
+  line-height: 1.2;
+  box-sizing: border-box;
+  padding-inline-start: 0.875rem !important;
+  padding-inline-end: 2.75rem !important;
+  /* Physical fallback to avoid RTL inconsistencies across engines. */
+  padding-right: 0.875rem !important;
+  padding-left: 2.75rem !important;
+  text-align: right;
+}
+
+.expense-date-picker :deep(.p-inputtext::placeholder) {
+  color: #3D4F6B;
+  opacity: 1;
+}
+
+.expense-date-picker :deep(.p-datepicker-input-icon-container) {
+  position: absolute;
+  inset-inline-end: 0.75rem;
+  inset-block: 0;
+  margin: auto;
+  width: 1rem;
+  height: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #637285;
+  padding: 0;
+  background: transparent;
+  border: none;
+  pointer-events: none;
+}
+
+.expense-date-picker :deep(.p-datepicker-input-icon) {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.expense-date-picker :deep(.p-datepicker-dropdown) {
+  display: none;
+}
+
+.expense-date-picker :deep(.p-datepicker-panel) {
+  margin-top: 6px;
+  border-radius: 12px;
+  border: 1px solid rgba(26,86,219,0.30);
+  backdrop-filter: blur(20px) saturate(180%);
+  background: linear-gradient(180deg, rgba(13,24,40,0.97), rgba(7,11,20,0.97));
+  box-shadow: 0 10px 30px rgba(0,0,0,0.45), 0 4px 18px rgba(26,86,219,0.16);
+  color: #E8EDF5;
+}
+
+.expense-date-picker :deep(.p-datepicker-header) {
+  background: transparent;
+  border-bottom: 1px solid rgba(26,86,219,0.20);
+  color: #E8EDF5;
+}
+
+.expense-date-picker :deep(.p-datepicker-title button),
+.expense-date-picker :deep(.p-datepicker-prev),
+.expense-date-picker :deep(.p-datepicker-next) {
+  color: #C8D5E8;
+}
+
+.expense-date-picker :deep(.p-datepicker-day),
+.expense-date-picker :deep(.p-datepicker-month),
+.expense-date-picker :deep(.p-datepicker-year) {
+  color: #C8D5E8;
+}
+
+.expense-date-picker :deep(.p-datepicker-day:hover) {
+  background: rgba(26,86,219,0.16);
+}
+
+.expense-date-picker :deep(.p-datepicker-day-selected) {
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  color: #FFFFFF;
 }
 
 .amount-input {

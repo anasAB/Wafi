@@ -15,6 +15,8 @@ export function useReturnSheet(saleId: string) {
   const notes        = ref('')
   const hasCustomer  = ref(false)
   const customerId   = ref<string | null>(null)
+  const customerName = ref<string | null>(null)   // original sale's customer (#8)
+  const exchangeRate = ref(1)                       // rate at load, for SYP display (#7)
 
   const refundTotalUsd = computed(() =>
     lines.value
@@ -22,20 +24,35 @@ export function useReturnSheet(saleId: string) {
       .reduce((sum, l) => sum + l.qtyToReturn * l.unitPriceUsd, 0),
   )
 
+  // Refund total in SYP, so the footer can show the amount in the selected currency.
+  const refundTotalSyp = computed(() => Math.round(refundTotalUsd.value * exchangeRate.value))
+
   const canConfirm = computed(() =>
     lines.value.some(l => l.selected) && refundMethod.value !== null,
   )
 
   async function load(): Promise<void> {
-    // 1. Fetch sale header
+    const { shopId } = useDeviceStore()
+
+    // 1. Fetch sale header + the customer it was sold to (#8)
     const saleResult = await db.execute(
-      `SELECT id, display_sale_number, customer_id FROM sales WHERE id = ?`,
+      `SELECT s.id, s.display_sale_number, s.customer_id, c.name AS customer_name
+       FROM sales s LEFT JOIN customers c ON c.id = s.customer_id
+       WHERE s.id = ?`,
       [saleId],
     )
     const sale = (saleResult as any).rows._array[0]
     if (!sale) throw new Error('Sale not found')
-    customerId.value  = sale.customer_id ?? null
-    hasCustomer.value = !!sale.customer_id
+    customerId.value   = sale.customer_id ?? null
+    customerName.value = sale.customer_name ?? null
+    hasCustomer.value  = !!sale.customer_id
+
+    // Current exchange rate, so the refund total can be shown in SYP (#7)
+    const rateResult = await db.execute(
+      `SELECT rate FROM exchange_rates WHERE shop_id = ? ORDER BY set_at DESC LIMIT 1`,
+      [shopId],
+    )
+    exchangeRate.value = (rateResult as any).rows._array[0]?.rate ?? 1
 
     // 2. Fetch original line items
     type LineRow = { product_id: string; product_name: string; quantity: number; unit_price_usd: number }
@@ -139,5 +156,5 @@ export function useReturnSheet(saleId: string) {
     await logReturnProcessed(returnId, saleId, refundAmountUsd)
   }
 
-  return { lines, refundMethod, reason, notes, hasCustomer, refundTotalUsd, canConfirm, load, confirm }
+  return { lines, refundMethod, reason, notes, hasCustomer, customerName, refundTotalUsd, refundTotalSyp, canConfirm, load, confirm }
 }

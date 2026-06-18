@@ -16,6 +16,12 @@ export function eventLabel(entry: AuditLog): string {
     case 'product.deleted':           return `حذف منتج: ${m.name}`
     case 'product.price_changed':     return `غيّر سعر ${m.name} من $${m.old_price} إلى $${m.new_price}`
     case 'expense.created':           return `أضاف مصروف ${m.category}: $${(m.amountUsd as number)?.toFixed(2)}`
+    case 'expense.updated': {
+      const changed = Array.isArray(m.changed_fields) ? (m.changed_fields as string[]).join('، ') : ''
+      return changed
+        ? `عدّل مصروف ${m.category}: $${(m.amountUsd as number)?.toFixed(2)} (${changed})`
+        : `عدّل مصروف ${m.category}: $${(m.amountUsd as number)?.toFixed(2)}`
+    }
     case 'expense.deleted':           return `حذف مصروف ${m.category}: $${(m.amountUsd as number)?.toFixed(2)}`
     case 'customer.created':          return `أضاف عميل: ${m.name}`
     case 'customer.updated':          return `عدّل عميل: ${m.name}`

@@ -31,6 +31,7 @@ export function useSaleDraft() {
         name_ar: l.nameAr,
         quantity: l.quantity,
         unit_price_usd: l.unitPriceUsd,
+        unit_cost_usd: l.unitCostUsd ?? 0,
       })),
       locked_exchange_rate: sale.lockedExchangeRate ?? 0,
       updated_at: Date.now(),
@@ -56,10 +57,12 @@ export function useSaleDraft() {
       // Re-read live stock — it may have changed since the draft was saved, and
       // the draft doesn't persist it. This keeps the no-oversell ceiling accurate.
       const res = await db.execute(
-        `SELECT current_stock FROM products WHERE id = ? AND is_active = 1`,
+        `SELECT current_stock, cost_price_usd FROM products WHERE id = ? AND is_active = 1`,
         [item.product_id]
       )
-      const availableStock: number = (res as any).rows?._array?.[0]?.current_stock ?? 0
+      const row = (res as any).rows?._array?.[0]
+      const availableStock: number = row?.current_stock ?? 0
+      const unitCostUsd: number = item.unit_cost_usd ?? row?.cost_price_usd ?? 0
       // Clamp the restored quantity to what's actually in stock; drop the line
       // entirely if the product is gone or out of stock.
       const quantity = Math.min(item.quantity, availableStock)
@@ -70,6 +73,7 @@ export function useSaleDraft() {
         nameAr: item.name_ar,
         quantity,
         unitPriceUsd: item.unit_price_usd,
+        unitCostUsd,
         lineTotalUsd: quantity * item.unit_price_usd,
         availableStock,
       }

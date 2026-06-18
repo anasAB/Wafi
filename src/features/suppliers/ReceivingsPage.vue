@@ -45,15 +45,24 @@ async function onSaved() {
       @cta="showSheet = true"
     />
 
-    <ul v-else class="list">
-      <li v-for="r in receivings" :key="r.id" @click="open(r.id)">
-        <div class="top">
-          <span class="name">{{ r.supplierName }}</span>
-          <strong>{{ r.totalCostUsd.toFixed(2) }}$</strong>
-        </div>
-        <span class="date">{{ new Date(r.receivedAt).toLocaleString('ar') }}</span>
-      </li>
-    </ul>
+    <div v-else class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr class="table-head-row">
+            <th class="th">المورّد</th>
+            <th class="th">التكلفة</th>
+            <th class="th">التاريخ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="r in receivings" :key="r.id" class="table-row" @click="open(r.id)">
+            <td class="td td-name">{{ r.supplierName }}</td>
+            <td class="td td-total" dir="ltr">{{ r.totalCostUsd.toFixed(2) }}$</td>
+            <td class="td td-muted">{{ new Date(r.receivedAt).toLocaleDateString('ar-SY', { year: 'numeric', month: 'short', day: 'numeric' }) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
     <!-- New receiving -->
     <div v-if="showSheet" class="overlay" @click.self="showSheet = false">
@@ -76,11 +85,21 @@ async function onSaved() {
 .page { padding: 1rem; display: flex; flex-direction: column; gap: 1rem; }
 .page-head { display: flex; justify-content: space-between; align-items: center; }
 .page-head h1 { font-size: 1.25rem; font-weight: 700; color: #E8EDF5; }
-.list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem; }
-.list li { background: #0D1828; border-radius: 0.75rem; padding: 0.85rem; cursor: pointer; }
-.top { display: flex; justify-content: space-between; }
-.name { font-weight: 600; }
-.date { color: #9CB3D0; font-size: 0.8rem; }
+.table-wrap {
+  border-radius: 1rem; overflow: hidden;
+  background: linear-gradient(135deg, rgba(26,86,219,0.11), rgba(255,255,255,0.04));
+  border: 1px solid rgba(26,86,219,0.28); box-shadow: 0 4px 20px rgba(26,86,219,0.10), inset 0 1px 0 rgba(255,255,255,0.07);
+}
+.data-table { width: 100%; border-collapse: collapse; }
+.table-head-row { background: rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.05); }
+.th { text-align: right; padding: 10px 14px; font-size: 11px; font-weight: 700; color: #637285; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; }
+.table-row { cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.12s; }
+.table-row:last-child { border-bottom: none; }
+.table-row:hover { background: rgba(26,86,219,0.06); }
+.td { padding: 12px 14px; font-size: 0.875rem; color: #C8D5E8; }
+.td-name { font-weight: 600; color: #E8EDF5; }
+.td-total { color: #4ADE80; font-weight: 600; font-variant-numeric: tabular-nums; }
+.td-muted { color: #637285; }
 .btn-primary {
   display: flex; align-items: center; gap: 0.5rem;
   background: linear-gradient(135deg, #1A56DB, #1248B3); color: #fff; border: none;

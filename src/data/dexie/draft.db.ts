@@ -5,6 +5,7 @@ export interface DraftLineItem {
   name_ar:        string
   quantity:       number
   unit_price_usd: number
+  unit_cost_usd?: number
 }
 
 export interface SaleDraft {

@@ -148,6 +148,22 @@ onBeforeUnmount(() => {
 .modal-body {
   overflow-y: auto;
   padding: 0 1.25rem 1.25rem;
+  /* Thin, brand-tinted scrollbar instead of the chunky default OS bar. */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(26, 86, 219, 0.45) transparent;
+}
+.modal-body::-webkit-scrollbar {
+  width: 6px;
+}
+.modal-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.modal-body::-webkit-scrollbar-thumb {
+  background: rgba(26, 86, 219, 0.40);
+  border-radius: 3px;
+}
+.modal-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(26, 86, 219, 0.60);
 }
 
 .modal-footer {

@@ -43,19 +43,24 @@ const textSizes = computed(() => [
 
   <div class="page-body" dir="rtl">
 
+    <div class="intro-card">
+      <p class="intro-title">{{ t('settings.personal') }}</p>
+      <p class="intro-sub">التغييرات تُطبّق مباشرة على التطبيق</p>
+    </div>
+
     <!-- Preferences group -->
     <p class="section-label">{{ t('personal.preferencesSection') }}</p>
     <div class="settings-card">
 
       <!-- Luxury theme -->
       <div class="settings-row settings-row--inner">
-        <p class="row-title" style="margin-bottom: 12px;">{{ t('personal.luxuryTheme') }}</p>
+        <p class="row-title row-title--spaced">{{ t('personal.luxuryTheme') }}</p>
         <ThemePickerScreen />
       </div>
 
       <!-- Language -->
       <div class="settings-row settings-row--inner">
-        <p class="row-title" style="margin-bottom: 10px;">{{ t('personal.language') }}</p>
+        <p class="row-title row-title--spaced">{{ t('personal.language') }}</p>
         <div class="tab-bar">
           <button
             v-for="lang in languages"
@@ -72,7 +77,7 @@ const textSizes = computed(() => [
 
       <!-- Theme -->
       <div class="settings-row settings-row--inner">
-        <p class="row-title" style="margin-bottom: 10px;">{{ t('personal.theme') }}</p>
+        <p class="row-title row-title--spaced">{{ t('personal.theme') }}</p>
         <div class="tab-bar">
           <button
             v-for="thm in themes"
@@ -89,7 +94,7 @@ const textSizes = computed(() => [
 
       <!-- Text size -->
       <div class="settings-row settings-row--last settings-row--inner">
-        <p class="row-title" style="margin-bottom: 10px;">{{ t('personal.textSize') }}</p>
+        <p class="row-title row-title--spaced">{{ t('personal.textSize') }}</p>
         <div class="tab-bar">
           <button
             v-for="s in textSizes"
@@ -141,6 +146,28 @@ const textSizes = computed(() => [
   }
 }
 
+.intro-card {
+  margin-bottom: 0.875rem;
+  padding: 0.875rem 1rem;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, rgba(26, 86, 219, 0.11), rgba(255, 255, 255, 0.04));
+  border: 1px solid rgba(26, 86, 219, 0.28);
+  box-shadow: 0 4px 20px rgba(26, 86, 219, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.intro-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #E8EDF5;
+}
+
+.intro-sub {
+  margin: 0.2rem 0 0;
+  font-size: 0.78rem;
+  color: #637285;
+}
+
 /* ─── Section label ───────────────────────────────────────── */
 .section-label {
   font-size: 11px;
@@ -162,13 +189,13 @@ const textSizes = computed(() => [
   border-radius: 1rem;
   box-shadow: 0 4px 20px rgba(26, 86, 219, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.07);
   overflow: hidden;
-  margin-bottom: 8px;
+  margin-bottom: 0.75rem;
 }
 
 /* ─── Settings rows ───────────────────────────────────────── */
 .settings-row {
   padding: 14px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(26, 86, 219, 0.14);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -194,55 +221,71 @@ button.settings-row:hover:not(:disabled) {
 
 /* ─── Row content ─────────────────────────────────────────── */
 .row-title {
-  font-size: 14px;
+  font-size: 0.875rem;
+  font-weight: 600;
   color: #E8EDF5;
   margin: 0;
+}
+
+.row-title--spaced {
+  margin-bottom: 0.625rem;
 }
 
 /* ─── Tab bar ─────────────────────────────────────────────── */
 .tab-bar {
   display: flex;
-  gap: 0;
+  gap: 0.125rem;
   background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
+  border: 1px solid rgba(26, 86, 219, 0.18);
+  border-radius: 0.75rem;
   padding: 3px;
 }
 
 .tab-btn {
   flex: 1;
-  padding: 7px 8px;
+  min-height: 34px;
+  padding: 0.45rem 0.5rem;
   border-radius: 8px;
-  font-size: 0.875rem;
-  font-weight: 500;
+  font-size: 0.8125rem;
+  font-weight: 600;
   color: #637285;
   background: transparent;
   border: none;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, font-weight 0.1s;
+  transition: background 0.15s, color 0.15s, font-weight 0.1s, box-shadow 0.15s;
   font-family: 'Tajawal', system-ui, sans-serif;
 }
 
+.tab-btn:hover {
+  color: #C8D5E8;
+}
+
 .tab-btn--active {
-  background: #1A56DB;
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
   color: white;
   font-weight: 700;
+  box-shadow: 0 4px 12px rgba(26, 86, 219, 0.30);
 }
 
 /* ─── Sign out row ────────────────────────────────────────── */
 .signout-row {
   cursor: not-allowed;
-  opacity: 0.5;
+  opacity: 0.7;
   border-bottom: none;
+  min-height: 52px;
 }
 
 .signout-label {
   font-size: 0.875rem;
+  font-weight: 700;
   color: #EF4444;
 }
 
 .coming-soon-badge {
   font-size: 0.75rem;
-  color: #637285;
+  color: #9CA9BA;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
 }
 </style>

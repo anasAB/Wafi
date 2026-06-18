@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { useRouter, onBeforeRouteLeave } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import AppToast from '@/components/ui/AppToast.vue'
 import ProductGrid from './ProductGrid.vue'
@@ -10,15 +10,50 @@ import { useExchangeRate } from '@/features/exchange-rate'
 import { useBarcodeScan } from '@/composables/useBarcodeScan'
 import { useSaleDraft } from '@/composables/useSaleDraft'
 import PaymentModal from '@/features/payment/PaymentModal.vue'
+import AppDialog from '@/components/ui/AppDialog.vue'
+import { useSaleStore } from '@/store/sale.store'
 import type { CompletedSale } from '@/features/payment/payment.types'
 
 const router     = useRouter()
 const { currentRate, loadRate } = useExchangeRate()
 const sale       = useSale(currentRate)
-const { scheduleSave } = useSaleDraft()
+const { scheduleSave, clearDraft } = useSaleDraft()
 const scanner    = useBarcodeScan()
+const saleStore  = useSaleStore()
+
+// Leaving the POS abandons the cart — confirm first, then clear it so it doesn't
+// silently reappear on return (#4). A completed sale already empties the cart,
+// so checkout navigation passes straight through.
+const showLeaveConfirm = ref(false)
+const pendingTo = ref<string | null>(null)
+let confirmedLeave = false
+
+onBeforeRouteLeave((to) => {
+  if (confirmedLeave || saleStore.lines.length === 0) return true
+  pendingTo.value = to.fullPath
+  showLeaveConfirm.value = true
+  return false
+})
+
+async function confirmLeave() {
+  confirmedLeave = true
+  saleStore.clear()
+  await clearDraft()
+  showLeaveConfirm.value = false
+  if (pendingTo.value) router.push(pendingTo.value)
+}
+
+function cancelLeave() {
+  showLeaveConfirm.value = false
+  pendingTo.value = null
+}
 
 const searchQuery   = ref('')
+const selectedCategory = ref<string | null>(null)
+const categoryOptions = ref<string[]>([])
+const isCategoryMenuOpen = ref(false)
+const categoryMenuRef = ref<HTMLElement | null>(null)
+const selectedCategoryLabel = computed(() => selectedCategory.value ?? 'الكل')
 const payOpen       = ref(false)
 const toast         = ref<{ message: string; type: 'error' | 'success' | 'info' } | null>(null)
 
@@ -30,7 +65,42 @@ let   stopCamera: (() => void) | null = null
 onMounted(async () => {
   await loadRate()
   scanner.onScan(handleBarcode)
+  document.addEventListener('click', onDocumentClick)
 })
+
+watch(currentRate, (newRate) => {
+  if (newRate === null) return
+  // Keep the active cart totals in sync with the currently selected rate.
+  if (saleStore.lines.length > 0 && saleStore.lockedExchangeRate !== newRate) {
+    saleStore.updateLockedRate(newRate)
+    saleStore.setRateChangeNotice(false)
+    scheduleSave()
+  }
+})
+
+function handleCategoriesChange(categories: string[]) {
+  categoryOptions.value = categories
+  if (selectedCategory.value && !categories.includes(selectedCategory.value)) {
+    selectedCategory.value = null
+  }
+}
+
+function chooseCategory(category: string | null) {
+  selectedCategory.value = category
+  isCategoryMenuOpen.value = false
+}
+
+function toggleCategoryMenu() {
+  isCategoryMenuOpen.value = !isCategoryMenuOpen.value
+}
+
+function onDocumentClick(event: MouseEvent) {
+  const target = event.target as Node | null
+  if (!target) return
+  if (!categoryMenuRef.value?.contains(target)) {
+    isCategoryMenuOpen.value = false
+  }
+}
 
 async function handleProductTap(productId: string) {
   try {
@@ -83,9 +153,14 @@ function closeCamera() {
   cameraError.value = null
 }
 
-onUnmounted(() => { closeCamera() })
+onUnmounted(() => {
+  closeCamera()
+  document.removeEventListener('click', onDocumentClick)
+})
 
 function handlePaymentConfirmed(completedSale: CompletedSale) {
+  // Sale is done (cart already cleared in usePayment) — skip the leave guard.
+  confirmedLeave = true
   payOpen.value = false
   // Vue Router's history `state` type requires an index signature; a structured
   // object is fine at runtime (it's serialized), so cast at this boundary.
@@ -121,6 +196,48 @@ function handlePaymentConfirmed(completedSale: CompletedSale) {
               dir="rtl"
             />
           </div>
+
+          <div v-if="categoryOptions.length" ref="categoryMenuRef" class="search-filter-wrap">
+            <button
+              type="button"
+              class="search-filter-btn"
+              :aria-expanded="isCategoryMenuOpen"
+              aria-haspopup="listbox"
+              @click="toggleCategoryMenu"
+            >
+              <span class="search-filter-text">{{ selectedCategoryLabel }}</span>
+              <svg
+                class="search-filter-chevron"
+                :class="{ 'search-filter-chevron-open': isCategoryMenuOpen }"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            <div v-if="isCategoryMenuOpen" class="search-filter-menu" role="listbox" aria-label="تصفية حسب الفئة">
+              <button
+                type="button"
+                class="search-filter-item"
+                :class="{ 'search-filter-item-active': selectedCategory === null }"
+                @click="chooseCategory(null)"
+              >الكل</button>
+              <button
+                v-for="cat in categoryOptions"
+                :key="cat"
+                type="button"
+                class="search-filter-item"
+                :class="{ 'search-filter-item-active': selectedCategory === cat }"
+                @click="chooseCategory(cat)"
+              >{{ cat }}</button>
+            </div>
+          </div>
+
           <button
             v-if="scanner.cameraAvailable.value"
             type="button"
@@ -136,7 +253,12 @@ function handlePaymentConfirmed(completedSale: CompletedSale) {
         </div>
 
         <div class="products-scroll">
-          <ProductGrid :search-query="searchQuery" @product-tap="handleProductTap" />
+          <ProductGrid
+            :search-query="searchQuery"
+            :selected-category="selectedCategory"
+            @product-tap="handleProductTap"
+            @categories-change="handleCategoriesChange"
+          />
         </div>
       </div>
 
@@ -172,13 +294,26 @@ function handlePaymentConfirmed(completedSale: CompletedSale) {
   />
 
   <AppToast v-if="toast" :message="toast.message" :type="toast.type" @dismiss="toast = null" />
+
+  <!-- Confirm before abandoning a non-empty cart (#4) -->
+  <AppDialog
+    v-if="showLeaveConfirm"
+    title="مغادرة البيع"
+    message="ستُحذف العناصر الموجودة في السلة. هل تريد المغادرة؟"
+    confirm-label="نعم، غادر"
+    cancel-label="ابقَ"
+    :danger="true"
+    @confirm="confirmLeave"
+    @cancel="cancelLeave"
+  />
 </template>
 
 <style scoped>
 .pos-root {
   display: flex;
   flex-direction: column;
-  min-height: 100dvh;
+  height: 100%;
+  min-height: 0;
   background: #06090F;
   font-family: 'Tajawal', system-ui, sans-serif;
   overflow: hidden;
@@ -223,7 +358,8 @@ function handlePaymentConfirmed(completedSale: CompletedSale) {
 
 .products-scroll {
   flex: 1;
-  overflow-y: auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .sale-area {
@@ -253,7 +389,8 @@ function handlePaymentConfirmed(completedSale: CompletedSale) {
 
 .search-wrap {
   position: relative;
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .search-icon {
@@ -273,10 +410,12 @@ function handlePaymentConfirmed(completedSale: CompletedSale) {
   border-radius: 10px;
   padding: 0 40px 0 12px;
   font-size: 14px;
+  font-weight: 600;
   font-family: 'Tajawal', system-ui, sans-serif;
   color: #E8EDF5;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.12);
+  background: linear-gradient(135deg, rgba(26,86,219,0.12), rgba(255,255,255,0.04));
+  border: 1px solid rgba(26,86,219,0.22);
+  box-shadow: 0 2px 12px rgba(26,86,219,0.08), inset 0 1px 0 rgba(255,255,255,0.07);
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
@@ -311,6 +450,135 @@ function handlePaymentConfirmed(completedSale: CompletedSale) {
 .camera-icon {
   width: 18px;
   height: 18px;
+}
+
+.search-filter-wrap {
+  position: relative;
+  width: 124px;
+  flex-shrink: 0;
+}
+
+.search-filter-btn {
+  width: 100%;
+  height: 40px;
+  border-radius: 10px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  color: #E8EDF5;
+  background: linear-gradient(135deg, rgba(26,86,219,0.12), rgba(255,255,255,0.04));
+  border: 1px solid rgba(26,86,219,0.22);
+  box-shadow: 0 2px 12px rgba(26,86,219,0.08), inset 0 1px 0 rgba(255,255,255,0.07);
+  cursor: pointer;
+  outline: none;
+}
+
+.search-filter-btn:hover {
+  border-color: rgba(26,86,219,0.40);
+}
+
+.search-filter-btn:focus {
+  border-color: rgba(26,86,219,0.70);
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.18);
+}
+
+.search-filter-text {
+  min-width: 0;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+
+.search-filter-chevron {
+  color: #637285;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.search-filter-chevron-open {
+  transform: rotate(180deg);
+}
+
+.search-filter-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  inset-inline-start: 0;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  max-height: 220px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 6px;
+  border-radius: 12px;
+  backdrop-filter: blur(20px) saturate(180%);
+  background: linear-gradient(180deg, rgba(13,24,40,0.97), rgba(7,11,20,0.97));
+  border: 1px solid rgba(26,86,219,0.30);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.45), 0 4px 18px rgba(26,86,219,0.16);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(96,165,250,0.55) rgba(255,255,255,0.06);
+}
+
+.search-filter-menu::-webkit-scrollbar {
+  width: 10px;
+}
+
+.search-filter-menu::-webkit-scrollbar-track {
+  background: rgba(255,255,255,0.06);
+  border-radius: 999px;
+}
+
+.search-filter-menu::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(96,165,250,0.75), rgba(26,86,219,0.75));
+  border-radius: 999px;
+  border: 2px solid rgba(7,11,20,0.8);
+}
+
+.search-filter-menu::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(147,197,253,0.9), rgba(59,130,246,0.9));
+}
+
+.search-filter-item {
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #E8EDF5;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  text-align: right;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-filter-item:hover {
+  background: rgba(26,86,219,0.16);
+  border-color: rgba(26,86,219,0.24);
+}
+
+.search-filter-item-active {
+  background: linear-gradient(135deg, rgba(26,86,219,0.28), rgba(18,72,179,0.20));
+  border-color: rgba(26,86,219,0.35);
+  color: #FFFFFF;
+}
+
+@media (max-width: 420px) {
+  .search-filter-wrap {
+    width: 108px;
+  }
 }
 
 /* Camera overlay */

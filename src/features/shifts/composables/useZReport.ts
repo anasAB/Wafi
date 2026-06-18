@@ -22,36 +22,40 @@ export function useZReport() {
       const [countRow, revenueRow, cashUsdRow, cashSypRow, cardRow, creditRow,
              expUsdRow, expSypRow, refundUsdRow, refundSypRow] =
         await Promise.all([
+          // Scope sales/payments by the shift's time window (open → close) rather
+          // than shift_id. Sales rung without an open shift carry a null shift_id
+          // and were silently dropped (report showed 0 while the dashboard, which
+          // counts by date, showed them). The window matches the expenses queries.
           db.getOptional<{ count: number }>(
-            `SELECT COUNT(*) as count FROM sales WHERE shift_id = ?`,
-            [shift.id]
+            `SELECT COUNT(*) as count FROM sales WHERE shop_id = ? AND created_at BETWEEN ? AND ?`,
+            [device.shopId, shift.openedAt, closedAt]
           ),
           db.getOptional<{ total: number }>(
-            `SELECT COALESCE(SUM(total_usd), 0) as total FROM sales WHERE shift_id = ?`,
-            [shift.id]
+            `SELECT COALESCE(SUM(total_usd), 0) as total FROM sales WHERE shop_id = ? AND created_at BETWEEN ? AND ?`,
+            [device.shopId, shift.openedAt, closedAt]
           ),
           db.getOptional<{ total: number }>(
             `SELECT COALESCE(SUM(sp.amount_usd), 0) as total
              FROM sale_payments sp JOIN sales s ON sp.sale_id = s.id
-             WHERE s.shift_id = ? AND sp.method = 'cash_usd'`,
-            [shift.id]
+             WHERE s.shop_id = ? AND s.created_at BETWEEN ? AND ? AND sp.method = 'cash_usd'`,
+            [device.shopId, shift.openedAt, closedAt]
           ),
           db.getOptional<{ total: number }>(
             `SELECT COALESCE(SUM(sp.amount_raw), 0) as total
              FROM sale_payments sp JOIN sales s ON sp.sale_id = s.id
-             WHERE s.shift_id = ? AND sp.method = 'cash_syp'`,
-            [shift.id]
+             WHERE s.shop_id = ? AND s.created_at BETWEEN ? AND ? AND sp.method = 'cash_syp'`,
+            [device.shopId, shift.openedAt, closedAt]
           ),
           db.getOptional<{ total: number }>(
             `SELECT COALESCE(SUM(sp.amount_usd), 0) as total
              FROM sale_payments sp JOIN sales s ON sp.sale_id = s.id
-             WHERE s.shift_id = ? AND sp.method = 'card'`,
-            [shift.id]
+             WHERE s.shop_id = ? AND s.created_at BETWEEN ? AND ? AND sp.method = 'card'`,
+            [device.shopId, shift.openedAt, closedAt]
           ),
           db.getOptional<{ total: number }>(
             `SELECT COALESCE(SUM(total_usd), 0) as total FROM sales
-             WHERE shift_id = ? AND is_credit = 1`,
-            [shift.id]
+             WHERE shop_id = ? AND created_at BETWEEN ? AND ? AND is_credit = 1`,
+            [device.shopId, shift.openedAt, closedAt]
           ),
           // Cash expenses, split by currency so each hits the right drawer.
           db.getOptional<{ total: number }>(
@@ -67,13 +71,13 @@ export function useZReport() {
           // Cash refunds paid out this shift, by currency.
           db.getOptional<{ total: number }>(
             `SELECT COALESCE(SUM(refund_amount_usd), 0) as total FROM returns
-             WHERE shift_id = ? AND refund_method = 'cash_usd'`,
-            [shift.id]
+             WHERE shop_id = ? AND created_at BETWEEN ? AND ? AND refund_method = 'cash_usd'`,
+            [device.shopId, shift.openedAt, closedAt]
           ),
           db.getOptional<{ total: number }>(
             `SELECT COALESCE(SUM(refund_amount_syp), 0) as total FROM returns
-             WHERE shift_id = ? AND refund_method = 'cash_syp'`,
-            [shift.id]
+             WHERE shop_id = ? AND created_at BETWEEN ? AND ? AND refund_method = 'cash_syp'`,
+            [device.shopId, shift.openedAt, closedAt]
           ),
         ])
 

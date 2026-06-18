@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import Paginator from 'primevue/paginator'
 import ProductAvatar from '@/components/ui/ProductAvatar.vue'
 import type { Product } from '@/features/pos/pos.types'
 
@@ -16,8 +17,10 @@ const emit = defineEmits<{
 
 const search    = ref('')
 const openKebab = ref<string | null>(null)
+const isCategoryMenuOpen = ref(false)
+const categoryMenuRef = ref<HTMLElement | null>(null)
 
-// ── Category filter (#9) ──
+// ── Category filter (#9) — dropdown, scales to many categories ──
 const selectedCategory = ref<string | null>(null)   // null = all categories
 const categories = computed(() => {
   const set = new Set<string>()
@@ -27,6 +30,11 @@ const categories = computed(() => {
   }
   return [...set].sort((a, b) => a.localeCompare(b, 'ar'))
 })
+const categoryOptions = computed(() => [
+  { label: 'كل الفئات', value: null },
+  ...categories.value.map(c => ({ label: c, value: c })),
+])
+const selectedCategoryLabel = computed(() => selectedCategory.value ?? 'كل الفئات')
 
 // ── Column sorting (#9) ──
 type SortKey = 'nameAr' | 'category' | 'costPriceUsd' | 'salePriceUsd' | 'currentStock'
@@ -53,11 +61,11 @@ const displayed = computed(() => {
 
   if (search.value.trim()) {
     const q = search.value.trim().toLowerCase()
-    list = list.filter(p =>
-      p.nameAr.toLowerCase().includes(q) ||
-      (p.nameEn ?? '').toLowerCase().includes(q) ||
-      (p.barcode ?? '').toLowerCase().includes(q)
-    )
+    // Search across every product field, not just name/barcode.
+    list = list.filter(p => [
+      p.nameAr, p.nameEn, p.barcode, p.category,
+      p.costPriceUsd, p.salePriceUsd, p.currentStock,
+    ].map(v => String(v ?? '').toLowerCase()).join(' ').includes(q))
   }
 
   if (sortKey.value) {
@@ -72,6 +80,54 @@ const displayed = computed(() => {
   }
 
   return list
+})
+
+// ── Pagination (default 10/page) ──
+const first = ref(0)
+const rows  = ref(10)
+const paginated = computed(() => displayed.value.slice(first.value, first.value + rows.value))
+
+function onPage(e: { first: number; rows: number }) {
+  first.value = e.first
+  rows.value  = e.rows
+}
+
+// Jump back to the first page whenever the result set changes (filter, search,
+// category, or a product removed), so we never land on an empty page.
+watch(
+  () => [search.value, selectedCategory.value, props.filterLowStock, displayed.value.length],
+  () => { if (first.value >= displayed.value.length) first.value = 0 },
+)
+watch([search, selectedCategory], () => { first.value = 0 })
+watch(categories, (next) => {
+  if (selectedCategory.value && !next.includes(selectedCategory.value)) {
+    selectedCategory.value = null
+  }
+})
+
+function chooseCategory(category: string | null) {
+  selectedCategory.value = category
+  isCategoryMenuOpen.value = false
+}
+
+function toggleCategoryMenu() {
+  isCategoryMenuOpen.value = !isCategoryMenuOpen.value
+}
+
+function onDocumentClick(event: MouseEvent) {
+  const target = event.target as Node | null
+  if (!target) return
+  if (!categoryMenuRef.value?.contains(target)) {
+    isCategoryMenuOpen.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', onDocumentClick)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', onDocumentClick)
 })
 
 function isLowStock(p: Product): boolean {
@@ -116,12 +172,48 @@ function handleAdjustStock(id: string) {
           data-testid="search"
           dir="rtl"
           type="text"
-          placeholder="بحث بالاسم أو الباركود..."
+          placeholder="بحث بالاسم، الباركود، الفئة، السعر..."
           class="search-input"
           @focus="($event.target as HTMLInputElement).style.borderColor = 'rgba(26,86,219,0.8)'"
           @blur="($event.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.18)'"
         />
       </div>
+
+      <div v-if="categories.length" ref="categoryMenuRef" class="search-filter-wrap">
+        <button
+          type="button"
+          class="search-filter-btn"
+          :aria-expanded="isCategoryMenuOpen"
+          aria-haspopup="listbox"
+          @click="toggleCategoryMenu"
+        >
+          <span class="search-filter-text">{{ selectedCategoryLabel }}</span>
+          <svg
+            class="search-filter-chevron"
+            :class="{ 'search-filter-chevron-open': isCategoryMenuOpen }"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        <div v-if="isCategoryMenuOpen" class="search-filter-menu" role="listbox" aria-label="تصفية حسب الفئة">
+          <button
+            v-for="option in categoryOptions"
+            :key="option.label"
+            type="button"
+            class="search-filter-item"
+            :class="{ 'search-filter-item-active': selectedCategory === option.value }"
+            @click="chooseCategory(option.value)"
+          >{{ option.label }}</button>
+        </div>
+      </div>
+
       <!-- Barcode scan affordance -->
       <button
         type="button"
@@ -134,24 +226,6 @@ function handleAdjustStock(id: string) {
           <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75V16.5zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM13.5 19.5h.75v.75h-.75v-.75zM19.5 13.5h.75v.75h-.75v-.75zM19.5 19.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75z" />
         </svg>
       </button>
-    </div>
-
-    <!-- Category filter chips (#9) — only when products have categories -->
-    <div v-if="categories.length" class="cat-filter" role="tablist" aria-label="تصفية حسب الفئة">
-      <button
-        type="button"
-        class="cat-chip"
-        :class="{ 'cat-chip--active': selectedCategory === null }"
-        @click="selectedCategory = null"
-      >الكل</button>
-      <button
-        v-for="cat in categories"
-        :key="cat"
-        type="button"
-        class="cat-chip"
-        :class="{ 'cat-chip--active': selectedCategory === cat }"
-        @click="selectedCategory = cat"
-      >{{ cat }}</button>
     </div>
 
     <!-- Empty state -->
@@ -193,7 +267,7 @@ function handleAdjustStock(id: string) {
         </thead>
         <tbody>
           <tr
-            v-for="p in displayed"
+            v-for="p in paginated"
             :key="p.id"
             class="table-row group"
             @click="emit('edit', p.id)"
@@ -288,7 +362,7 @@ function handleAdjustStock(id: string) {
     <!-- ─── MOBILE CARDS (< lg) ─── -->
     <div class="mobile-list">
       <div
-        v-for="p in displayed"
+        v-for="p in paginated"
         :key="p.id"
         :data-testid="`product-card-${p.id}`"
         class="mobile-card"
@@ -340,6 +414,18 @@ function handleAdjustStock(id: string) {
         </button>
       </div>
     </div>
+
+    <!-- Pagination — shared by desktop table + mobile cards -->
+    <Paginator
+      v-if="displayed.length > 10"
+      :first="first"
+      :rows="rows"
+      :total-records="displayed.length"
+      :rows-per-page-options="[10, 25, 50]"
+      class="list-paginator"
+      dir="rtl"
+      @page="onPage"
+    />
   </div>
 </template>
 
@@ -357,7 +443,8 @@ function handleAdjustStock(id: string) {
 
 .search-wrap {
   position: relative;
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .search-icon {
@@ -376,10 +463,12 @@ function handleAdjustStock(id: string) {
   border-radius: 0.75rem;
   padding: 10px 40px 10px 16px;
   font-size: 14px;
+  font-weight: 600;
   font-family: 'Tajawal', system-ui, sans-serif;
   color: #E8EDF5;
-  background: rgba(255,255,255,0.07);
-  border: 1px solid rgba(255,255,255,0.18);
+  background: linear-gradient(135deg, rgba(26,86,219,0.12), rgba(255,255,255,0.04));
+  border: 1px solid rgba(26,86,219,0.22);
+  box-shadow: 0 2px 12px rgba(26,86,219,0.08), inset 0 1px 0 rgba(255,255,255,0.07);
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
@@ -389,8 +478,8 @@ function handleAdjustStock(id: string) {
 }
 
 .search-input:focus {
-  border-color: rgba(26,86,219,0.8);
-  box-shadow: 0 0 0 3px rgba(26,86,219,0.25), 0 0 12px rgba(26,86,219,0.15);
+  border-color: rgba(26,86,219,0.70);
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.18);
 }
 
 .scan-btn {
@@ -415,6 +504,135 @@ function handleAdjustStock(id: string) {
 .scan-icon {
   width: 20px;
   height: 20px;
+}
+
+.search-filter-wrap {
+  position: relative;
+  width: 132px;
+  flex-shrink: 0;
+}
+
+.search-filter-btn {
+  width: 100%;
+  height: 44px;
+  border-radius: 0.75rem;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  color: #E8EDF5;
+  background: linear-gradient(135deg, rgba(26,86,219,0.12), rgba(255,255,255,0.04));
+  border: 1px solid rgba(26,86,219,0.22);
+  box-shadow: 0 2px 12px rgba(26,86,219,0.08), inset 0 1px 0 rgba(255,255,255,0.07);
+  cursor: pointer;
+  outline: none;
+}
+
+.search-filter-btn:hover {
+  border-color: rgba(26,86,219,0.40);
+}
+
+.search-filter-btn:focus {
+  border-color: rgba(26,86,219,0.70);
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.18);
+}
+
+.search-filter-text {
+  min-width: 0;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+
+.search-filter-chevron {
+  color: #637285;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.search-filter-chevron-open {
+  transform: rotate(180deg);
+}
+
+.search-filter-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  inset-inline-start: 0;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  max-height: 220px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 6px;
+  border-radius: 12px;
+  backdrop-filter: blur(20px) saturate(180%);
+  background: linear-gradient(180deg, rgba(13,24,40,0.97), rgba(7,11,20,0.97));
+  border: 1px solid rgba(26,86,219,0.30);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.45), 0 4px 18px rgba(26,86,219,0.16);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(96,165,250,0.55) rgba(255,255,255,0.06);
+}
+
+.search-filter-menu::-webkit-scrollbar {
+  width: 10px;
+}
+
+.search-filter-menu::-webkit-scrollbar-track {
+  background: rgba(255,255,255,0.06);
+  border-radius: 999px;
+}
+
+.search-filter-menu::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(96,165,250,0.75), rgba(26,86,219,0.75));
+  border-radius: 999px;
+  border: 2px solid rgba(7,11,20,0.8);
+}
+
+.search-filter-menu::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(147,197,253,0.9), rgba(59,130,246,0.9));
+}
+
+.search-filter-item {
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #E8EDF5;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  text-align: right;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-filter-item:hover {
+  background: rgba(26,86,219,0.16);
+  border-color: rgba(26,86,219,0.24);
+}
+
+.search-filter-item-active {
+  background: linear-gradient(135deg, rgba(26,86,219,0.28), rgba(18,72,179,0.20));
+  border-color: rgba(26,86,219,0.35);
+  color: #FFFFFF;
+}
+
+@media (max-width: 420px) {
+  .search-filter-wrap {
+    width: 112px;
+  }
 }
 
 /* ── Empty state ─────────────────────────────────── */
@@ -491,37 +709,168 @@ function handleAdjustStock(id: string) {
   font-size: 9px;
 }
 
-/* ── Category filter chips (#9) ── */
-.cat-filter {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 6px;
-  overflow-x: auto;
-  padding-bottom: 4px;
-  margin-bottom: 12px;
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+/* ── Paginator (#table navigation) ── */
+.list-paginator {
+  margin-top: 16px;
 }
-.cat-filter::-webkit-scrollbar { display: none; }
-.cat-chip {
-  flex-shrink: 0;
-  padding: 6px 14px;
-  border-radius: 999px;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  font-family: 'Tajawal', system-ui, sans-serif;
+.list-paginator :deep(.p-paginator) {
+  background: transparent;
+  border: none;
   color: #637285;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.10);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  flex-wrap: wrap;
+  gap: 4px;
 }
-.cat-chip:hover { color: #C8D5E8; border-color: rgba(26,86,219,0.30); }
-.cat-chip--active {
-  color: #fff;
+.list-paginator :deep(.p-paginator-page),
+.list-paginator :deep(.p-paginator-first),
+.list-paginator :deep(.p-paginator-prev),
+.list-paginator :deep(.p-paginator-next),
+.list-paginator :deep(.p-paginator-last) {
+  color: #C8D5E8;
+  background: linear-gradient(135deg, rgba(26,86,219,0.12), rgba(255,255,255,0.04));
+  border: 1px solid rgba(26,86,219,0.22);
+  box-shadow: 0 2px 12px rgba(26,86,219,0.08), inset 0 1px 0 rgba(255,255,255,0.07);
+  border-radius: 0.5rem;
+  min-width: 2.25rem;
+  height: 2.25rem;
+}
+.list-paginator :deep(.p-paginator-page:hover),
+.list-paginator :deep(.p-paginator-first:not(:disabled):hover),
+.list-paginator :deep(.p-paginator-prev:not(:disabled):hover),
+.list-paginator :deep(.p-paginator-next:not(:disabled):hover),
+.list-paginator :deep(.p-paginator-last:not(:disabled):hover) {
+  border-color: rgba(26,86,219,0.40);
+  background: linear-gradient(135deg, rgba(26,86,219,0.18), rgba(255,255,255,0.06));
+}
+.list-paginator :deep(.p-paginator-page.p-paginator-page-selected) {
   background: linear-gradient(135deg, #1A56DB, #1248B3);
   border-color: transparent;
+  box-shadow: 0 6px 20px rgba(26,86,219,0.35), inset 0 1px 0 rgba(255,255,255,0.10);
+  color: #fff;
+}
+.list-paginator :deep(.p-paginator-rpp-dropdown) {
+  background: linear-gradient(135deg, rgba(26,86,219,0.12), rgba(255,255,255,0.04));
+  border: 1px solid rgba(26,86,219,0.22);
+  box-shadow: 0 2px 12px rgba(26,86,219,0.08), inset 0 1px 0 rgba(255,255,255,0.07);
+  border-radius: 0.75rem;
+  height: 2.25rem;
+  overflow: hidden;
+}
+.list-paginator :deep(.p-paginator-rpp-dropdown .p-select-label) {
+  color: #E8EDF5;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  text-align: right;
+  padding-block: 0;
+  padding-inline: 10px;
+}
+.list-paginator :deep(.p-paginator-rpp-dropdown .p-select-dropdown) {
+  color: #637285;
+  border-inline-start: 1px solid rgba(26,86,219,0.22);
+  min-width: 2rem;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.list-paginator :deep(.p-paginator-rpp-dropdown:hover .p-select-dropdown) {
+  border-inline-start-color: rgba(26,86,219,0.40);
+}
+.list-paginator :deep(.p-paginator-rpp-dropdown.p-focus) {
+  border-color: rgba(26,86,219,0.70);
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.18);
+}
+
+/* PrimeVue Select panel is portaled, so these need global deep selectors. */
+:deep(.p-select-overlay) {
+  padding: 6px;
+  background: linear-gradient(180deg, rgba(13,24,40,0.97), rgba(7,11,20,0.97));
+  border: 1px solid rgba(26,86,219,0.30);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.45), 0 4px 18px rgba(26,86,219,0.16);
+  backdrop-filter: blur(20px) saturate(180%);
+}
+
+:deep(.p-select-list-container) {
+  max-height: 220px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(96,165,250,0.55) rgba(255,255,255,0.06);
+}
+
+:deep(.p-select-list) {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+:deep(.p-select-list-container::-webkit-scrollbar) {
+  width: 10px;
+}
+
+:deep(.p-select-list-container::-webkit-scrollbar-track) {
+  background: rgba(255,255,255,0.06);
+  border-radius: 999px;
+}
+
+:deep(.p-select-list-container::-webkit-scrollbar-thumb) {
+  background: linear-gradient(180deg, rgba(96,165,250,0.75), rgba(26,86,219,0.75));
+  border-radius: 999px;
+  border: 2px solid rgba(7,11,20,0.8);
+}
+
+:deep(.p-select-list-container::-webkit-scrollbar-thumb:hover) {
+  background: linear-gradient(180deg, rgba(147,197,253,0.9), rgba(59,130,246,0.9));
+}
+
+:deep(.p-select-option) {
+  color: #E8EDF5;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  min-height: 34px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'Tajawal', system-ui, sans-serif;
+}
+
+:deep(.p-select-option-label) {
+  width: 100%;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+:deep(.p-select-option:hover) {
+  background: rgba(26,86,219,0.16);
+  border-color: rgba(26,86,219,0.24);
+}
+
+:deep(.p-select-option.p-select-option-selected),
+:deep(.p-select-option.p-highlight),
+:deep(.p-select-option[aria-selected="true"]) {
+  background: linear-gradient(135deg, rgba(26,86,219,0.28), rgba(18,72,179,0.20)) !important;
+  color: #FFFFFF !important;
+}
+
+:deep(.p-select-option.p-focus),
+:deep(.p-select-option:focus-visible) {
+  background: rgba(26,86,219,0.16) !important;
+  color: #E8EDF5 !important;
+}
+
+:deep(.p-select-option.p-select-option-selected.p-focus),
+:deep(.p-select-option.p-highlight.p-focus),
+:deep(.p-select-option[aria-selected="true"].p-focus) {
+  background: linear-gradient(135deg, rgba(26,86,219,0.28), rgba(18,72,179,0.20)) !important;
+  color: #FFFFFF !important;
 }
 
 .table-row {

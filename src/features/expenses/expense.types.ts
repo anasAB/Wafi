@@ -18,6 +18,9 @@ export interface Expense {
   notes?:      string
   photoUrl?:   string
   paidInCash:  boolean
+  isRecurringMonthly?: boolean
+  recurringStartDate?: string
+  recurringEndDate?: string
   createdAt:   string
   syncStatus:  string
 }
@@ -31,6 +34,9 @@ export interface NewExpense {
   notes?:      string
   photoUrl?:   string
   paidInCash:  boolean
+  isRecurringMonthly?: boolean
+  recurringStartDate?: string
+  recurringEndDate?: string
 }
 
 export const PREDEFINED_CATEGORIES: ExpenseCategory[] = [

@@ -383,18 +383,24 @@ async function handleDelete() {
 
 /* ── Delete link ─────────────────────────────────────────── */
 .delete-link {
-  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
+  font-size: 0.8125rem;
+  font-weight: 600;
   color: #EF4444;
-  background: none;
-  border: none;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.30);
+  border-radius: 0.625rem;
   cursor: pointer;
-  text-align: right;
-  padding: 0.25rem 0.25rem;
-  transition: color 0.12s;
+  text-align: center;
+  padding: 0.5rem 1rem;
+  transition: background 0.12s, border-color 0.12s;
   font-family: inherit;
 }
 
-.delete-link:hover { color: #f87171; }
+.delete-link:hover { background: rgba(239, 68, 68, 0.16); border-color: rgba(239, 68, 68, 0.45); }
 
 /* ── Right column ────────────────────────────────────────── */
 .right-col { display: flex; flex-direction: column; }

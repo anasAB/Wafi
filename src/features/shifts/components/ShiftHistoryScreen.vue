@@ -33,11 +33,13 @@ function staffName(id: string): string {
   return staffMap.value[id] ?? '—'
 }
 
+// Arabic month/day names but Latin digits, to match the Latin amounts/durations
+// on this screen (the dates were the only Arabic-Indic numerals here). (#18)
 function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString('ar-SY', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' })
+  return new Date(iso).toLocaleDateString('ar-SY-u-nu-latn', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' })
 }
 function fmtTime(iso: string) {
-  return new Date(iso).toLocaleTimeString('ar-SY', { hour: '2-digit', minute: '2-digit' })
+  return new Date(iso).toLocaleTimeString('ar-SY-u-nu-latn', { hour: '2-digit', minute: '2-digit' })
 }
 function fmtDuration(s: CashierShift): string {
   if (!s.closedAt) return 'جارية'
@@ -68,7 +70,7 @@ const totalHours = computed(() => {
 
 <template>
   <div class="page-root" dir="rtl">
-    <AppHeader title="سجل الورديات" :show-back="true" @back="router.push('/')" />
+    <AppHeader title="سجل الورديات" @back="router.push('/')" />
 
     <!-- Stats summary bar (desktop) -->
     <div v-if="!loading && shifts.length > 0" class="stats-bar hidden lg:flex">
@@ -238,7 +240,7 @@ const totalHours = computed(() => {
     </main>
 
     <Teleport to="body">
-      <ZReportScreen v-if="showZReport" />
+      <ZReportScreen v-if="showZReport" @close="showZReport = false" />
     </Teleport>
   </div>
 </template>

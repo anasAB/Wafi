@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import BaseModal from '@/components/ui/BaseModal.vue'
 
-const emit      = defineEmits<{ confirm: [usd: number, syp: number] }>()
+const emit      = defineEmits<{ confirm: [usd: number, syp: number]; cancel: [] }>()
 const usdAmount = ref('')
 const sypAmount = ref('')
 
@@ -11,22 +12,11 @@ function confirm() {
 </script>
 
 <template>
-  <div class="overlay" dir="rtl">
-    <div class="sheet">
+  <BaseModal title="عدّ الصندوق" @close="emit('cancel')">
+    <div class="sheet-body" dir="rtl">
+      <p class="sheet-subtitle">كم موجود في الصندوق الآن قبل الإغلاق؟</p>
 
-      <!-- Handle -->
-      <div class="sheet-handle"></div>
-
-      <!-- Title -->
-      <div class="sheet-header">
-        <h2 class="sheet-title">عدّ الصندوق</h2>
-        <p class="sheet-subtitle">كم موجود في الصندوق الآن قبل الإغلاق؟</p>
-      </div>
-
-      <!-- Inputs -->
       <div class="inputs-wrap">
-
-        <!-- USD -->
         <div class="cash-input-card">
           <label class="cash-label">دولار أمريكي $</label>
           <input
@@ -40,7 +30,6 @@ function confirm() {
           />
         </div>
 
-        <!-- SYP -->
         <div class="cash-input-card">
           <label class="cash-label">ليرة سورية ل.س</label>
           <input
@@ -53,88 +42,43 @@ function confirm() {
             dir="ltr"
           />
         </div>
-
       </div>
+    </div>
 
-      <!-- Confirm button -->
+    <template #footer>
       <div class="sheet-footer">
-        <button class="btn-confirm" @click="confirm">
+        <button type="button" class="btn-cancel" @click="emit('cancel')">إلغاء</button>
+        <button type="button" class="btn-confirm" @click="confirm">
           التالي — عرض تقرير الوردية
         </button>
       </div>
-
-    </div>
-  </div>
+    </template>
+  </BaseModal>
 </template>
 
 <style scoped>
-/* ─── Overlay ─────────────────────────────────────────────── */
-.overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(4px);
+.sheet-body {
   font-family: 'Tajawal', system-ui, sans-serif;
 }
 
-/* ─── Sheet container ─────────────────────────────────────── */
-.sheet {
-  width: 100%;
-  max-width: 512px;
-  border-radius: 1.25rem 1.25rem 0 0;
-  overflow: hidden;
-  backdrop-filter: blur(20px) saturate(180%);
-  background: linear-gradient(135deg, rgba(26, 86, 219, 0.16), rgba(26, 86, 219, 0.06));
-  border: 1px solid rgba(26, 86, 219, 0.45);
-  border-bottom: none;
-  box-shadow: 0 8px 48px rgba(26, 86, 219, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.09);
-}
-
-/* ─── Sheet handle ────────────────────────────────────────── */
-.sheet-handle {
-  width: 40px;
-  height: 4px;
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 2px;
-  margin: 12px auto;
-}
-
-/* ─── Sheet header ────────────────────────────────────────── */
-.sheet-header {
-  text-align: center;
-  padding: 0 24px 20px;
-}
-
-.sheet-title {
-  font-size: 1.125rem;
-  font-weight: 700;
-  color: #E8EDF5;
-  margin: 0 0 4px;
-}
-
 .sheet-subtitle {
+  text-align: center;
   font-size: 0.875rem;
   color: #637285;
-  margin: 0;
+  margin: 0 0 1rem;
 }
 
-/* ─── Inputs ──────────────────────────────────────────────── */
 .inputs-wrap {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 0 24px 20px;
+  gap: 0.75rem;
 }
 
 .cash-input-card {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 1rem;
-  padding: 12px 16px;
+  padding: 0.75rem 0.875rem;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
@@ -143,18 +87,14 @@ function confirm() {
   box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.25), 0 0 12px rgba(26, 86, 219, 0.15);
 }
 
-/* ─── Cash label ──────────────────────────────────────────── */
 .cash-label {
   display: block;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   color: #637285;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 6px;
+  margin-bottom: 0.45rem;
 }
 
-/* ─── Cash input ──────────────────────────────────────────── */
 .cash-input {
   width: 100%;
   background: transparent;
@@ -169,19 +109,35 @@ function confirm() {
 
 .cash-input::placeholder { color: #3D4F6B; }
 
-/* ─── Sheet footer / confirm ──────────────────────────────── */
 .sheet-footer {
-  padding: 0 24px 32px;
+  display: flex;
+  gap: 0.75rem;
 }
 
+.btn-cancel {
+  height: 48px;
+  min-width: 112px;
+  padding-inline: 1rem;
+  border-radius: 1rem;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #E8EDF5;
+  font-size: 1rem;
+  font-weight: 500;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-cancel:hover { background: rgba(255, 255, 255, 0.06); }
+
 .btn-confirm {
-  width: 100%;
-  height: 56px;
+  flex: 1;
+  height: 48px;
   border-radius: 1rem;
   background: linear-gradient(135deg, #1A56DB, #1248B3);
   color: white;
   border: none;
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 700;
   font-family: 'Tajawal', system-ui, sans-serif;
   cursor: pointer;
@@ -191,4 +147,15 @@ function confirm() {
 
 .btn-confirm:hover { opacity: 0.88; }
 .btn-confirm:active { transform: scale(0.98); }
+
+@media (max-width: 420px) {
+  .sheet-footer {
+    flex-direction: column-reverse;
+  }
+
+  .btn-cancel,
+  .btn-confirm {
+    width: 100%;
+  }
+}
 </style>
