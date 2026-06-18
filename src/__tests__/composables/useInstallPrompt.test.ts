@@ -26,7 +26,7 @@ describe('useInstallPrompt', () => {
   })
 
   it('captures beforeinstallprompt and promptInstall resolves to the outcome', async () => {
-    const { useInstallPrompt } = await import('@/composables/useInstallPrompt')
+    const useInstallPrompt = await freshComposable()
     const evt = fireBeforeInstallPrompt()
     const api = useInstallPrompt()
     expect(api.canInstall.value).toBe(true)
@@ -38,7 +38,7 @@ describe('useInstallPrompt', () => {
   })
 
   it('promptInstall returns "unavailable" with no stashed event', async () => {
-    const { useInstallPrompt } = await import('@/composables/useInstallPrompt')
+    const useInstallPrompt = await freshComposable()
     const api = useInstallPrompt()
     expect(await api.promptInstall()).toBe('unavailable')
   })
