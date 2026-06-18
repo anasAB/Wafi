@@ -12,7 +12,7 @@ export default defineConfig({
     VitePWA({
       // Auto-update the service worker in the background — right for a demo and
       // for offline-first: the installed app silently picks up new builds.
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       // Branded icons live in public/; list them so Workbox precaches them too.
       includeAssets: ['favicon.svg', 'pwa-icon.svg'],
       manifest: {

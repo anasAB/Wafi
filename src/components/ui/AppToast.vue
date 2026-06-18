@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
 
-const props = defineProps<{ message: string; type?: 'info' | 'error' | 'success' }>()
-const emit  = defineEmits<{ (e: 'dismiss'): void }>()
+const props = defineProps<{ message: string; type?: 'info' | 'error' | 'success'; actionLabel?: string }>()
+const emit  = defineEmits<{ (e: 'dismiss'): void; (e: 'action'): void }>()
 
 let timer: ReturnType<typeof setTimeout>
 onMounted(() => {
@@ -20,6 +20,13 @@ onUnmounted(() => clearTimeout(timer))
   >
     <div class="toast-inner">
       <span class="toast-message">{{ message }}</span>
+      <button
+        v-if="props.actionLabel"
+        type="button"
+        data-testid="toast-action"
+        class="toast-action"
+        @click="emit('action')"
+      >{{ props.actionLabel }}</button>
       <button
         type="button"
         class="toast-close"
@@ -104,6 +111,19 @@ onUnmounted(() => clearTimeout(timer))
 .toast-close:hover {
   opacity: 1;
 }
+
+.toast-action {
+  flex-shrink: 0;
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.20);
+  color: inherit;
+  border-radius: 0.5rem;
+  padding: 4px 12px;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  font-size: 0.8125rem; font-weight: 700;
+  cursor: pointer;
+}
+.toast-action:hover { background: rgba(255,255,255,0.18); }
 
 /* ── Success variant ─────────────────────────────────── */
 .toast--success {

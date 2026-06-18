@@ -16,9 +16,7 @@ import LockScreen        from '@/features/shifts/components/LockScreen.vue'
 import StaffPinPrompt    from '@/features/staff/components/StaffPinPrompt.vue'
 import { useSessionStore } from '@/store/session.store'
 
-// Destructure only what Phase 1 uses (tsconfig has noUnusedLocals: true).
-// Task 6 expands this to add needRefresh/applyUpdate/dismissNeedRefresh.
-const { offlineReady, dismissOfflineReady } = usePwaLifecycle()
+const { offlineReady, dismissOfflineReady, needRefresh, applyUpdate, dismissNeedRefresh } = usePwaLifecycle()
 
 const route    = useRoute()
 const router   = useRouter()
@@ -89,6 +87,14 @@ watch(
     type="success"
     message="التطبيق جاهز للعمل بدون إنترنت"
     @dismiss="dismissOfflineReady"
+  />
+  <AppToast
+    v-if="needRefresh"
+    type="info"
+    message="تحديث متاح"
+    action-label="تحديث"
+    @action="applyUpdate"
+    @dismiss="dismissNeedRefresh"
   />
 
   <!-- Branded loading splash (BUG-001) -->
