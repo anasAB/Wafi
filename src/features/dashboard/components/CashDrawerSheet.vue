@@ -26,6 +26,12 @@ function fmtSyp(n: number): string {
   const abs = Math.round(Math.abs(n)).toLocaleString('en-US')
   return n > 0 ? `+${abs} ل.س` : `−${abs} ل.س`
 }
+
+function movementTone(m: CashMovement): 'positive' | 'negative' | 'neutral' {
+  if (m.usd > 0 || m.syp > 0) return 'positive'
+  if (m.usd < 0 || m.syp < 0) return 'negative'
+  return 'neutral'
+}
 </script>
 
 <template>
@@ -42,22 +48,32 @@ function fmtSyp(n: number): string {
 
       <!-- Header -->
       <div class="sheet-header">
-        <h2 class="sheet-title">حركات النقد — اليوم</h2>
+        <div>
+          <h2 class="sheet-title">حركات النقد — اليوم</h2>
+          <p class="sheet-subtitle">تتبّع كل عمليات الصندوق خلال اليوم</p>
+        </div>
+        <button type="button" class="header-close-btn" aria-label="إغلاق" @click="emit('close')">×</button>
       </div>
 
       <!-- Summary card -->
       <div class="summary-card">
         <p class="summary-label">الإجمالي المتوقع في الصندوق</p>
-        <p class="summary-value" dir="ltr">
-          <span v-if="cashUsd !== 0">${{ cashUsd.toFixed(2) }}</span>
-          <span v-if="cashUsd !== 0 && cashSyp !== 0" class="sep">+</span>
-          <span v-if="cashSyp !== 0">{{ Math.round(cashSyp).toLocaleString('en-US') }} ل.س</span>
-          <span v-if="cashUsd === 0 && cashSyp === 0" class="muted">$0.00</span>
-        </p>
+        <div class="summary-chips">
+          <div class="summary-chip" dir="ltr">
+            <span class="chip-k">USD</span>
+            <span class="chip-v">${{ cashUsd.toFixed(2) }}</span>
+          </div>
+          <div class="summary-chip" dir="ltr">
+            <span class="chip-k">SYP</span>
+            <span class="chip-v">{{ Math.round(cashSyp).toLocaleString('en-US') }} ل.س</span>
+          </div>
+        </div>
       </div>
 
       <!-- Movements list -->
       <div class="movements-list">
+        <p class="list-title">آخر الحركات</p>
+
         <div v-if="movements.length === 0" class="empty-state">
           لا توجد حركات نقدية اليوم
         </div>
@@ -66,7 +82,9 @@ function fmtSyp(n: number): string {
           v-for="m in movements"
           :key="m.createdAt + m.type"
           class="movement-row"
+          :class="`movement-row--${movementTone(m)}`"
         >
+          <span class="movement-dot" :class="`movement-dot--${movementTone(m)}`"></span>
           <div class="movement-info">
             <p class="movement-label">{{ m.label }}</p>
             <p class="movement-time">{{ relativeTime(m.createdAt) }}</p>
@@ -146,6 +164,10 @@ function fmtSyp(n: number): string {
   padding: 1rem 1.25rem;
   border-bottom: 1px solid rgba(26, 86, 219, 0.14);
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 .sheet-title {
@@ -153,6 +175,32 @@ function fmtSyp(n: number): string {
   font-weight: 700;
   color: #E8EDF5;
   margin: 0;
+}
+
+.sheet-subtitle {
+  margin: 0.2rem 0 0;
+  font-size: 0.75rem;
+  color: #637285;
+}
+
+.header-close-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid rgba(26, 86, 219, 0.30);
+  background: rgba(26, 86, 219, 0.10);
+  color: #9CB3D0;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.header-close-btn:hover {
+  color: #E8EDF5;
+  border-color: rgba(26, 86, 219, 0.55);
+  background: rgba(26, 86, 219, 0.18);
 }
 
 .summary-card {
@@ -171,55 +219,124 @@ function fmtSyp(n: number): string {
   margin: 0 0 0.375rem;
 }
 
-.summary-value {
-  font-size: 0.9375rem;
-  font-weight: 700;
-  color: #E8EDF5;
-  margin: 0;
+.summary-chips {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.summary-chip {
+  border-radius: 0.72rem;
+  border: 1px solid rgba(26, 86, 219, 0.24);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 0.48rem 0.6rem;
   display: flex;
-  align-items: center;
-  gap: 0.375rem;
+  flex-direction: column;
+  gap: 0.1rem;
 }
 
-.summary-value .sep {
+.chip-k {
+  font-size: 0.66rem;
   color: #637285;
+  font-weight: 700;
 }
 
-.summary-value .muted {
-  color: #637285;
+.chip-v {
+  color: #E8EDF5;
+  font-size: 0.82rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 
 .movements-list {
   flex: 1;
   overflow-y: auto;
-  padding: 0 1.25rem 0.5rem;
+  padding: 0 1.25rem 0.75rem;
   display: flex;
   flex-direction: column;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(26, 86, 219, 0.45) transparent;
+}
+
+.movements-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.movements-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.movements-list::-webkit-scrollbar-thumb {
+  background: rgba(26, 86, 219, 0.40);
+  border-radius: 999px;
+}
+
+.list-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #3D4F6B;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 8px 4px;
+  margin: 0;
 }
 
 .empty-state {
   text-align: center;
-  padding: 2.5rem 0;
+  padding: 2.2rem 0;
   color: #3D4F6B;
   font-size: 0.875rem;
 }
 
 .movement-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  padding: 12px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  gap: 0.6rem;
+  padding: 0.72rem 0.74rem;
+  border: 1px solid rgba(26, 86, 219, 0.22);
+  border-radius: 0.78rem;
+  background: linear-gradient(135deg, rgba(26, 86, 219, 0.10), rgba(255, 255, 255, 0.03));
+  margin-bottom: 0.45rem;
+}
+
+.movement-row--positive {
+  border-color: rgba(34, 197, 94, 0.30);
+}
+
+.movement-row--negative {
+  border-color: rgba(239, 68, 68, 0.28);
+}
+
+.movement-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  margin-top: 0.38rem;
+  flex-shrink: 0;
+}
+
+.movement-dot--positive {
+  background: #22C55E;
+}
+
+.movement-dot--negative {
+  background: #EF4444;
+}
+
+.movement-dot--neutral {
+  background: #60A5FA;
 }
 
 .movement-info {
   min-width: 0;
+  flex: 1;
 }
 
 .movement-label {
   font-size: 0.875rem;
-  font-weight: 500;
-  color: #C8D5E8;
+  font-weight: 700;
+  color: #E8EDF5;
   margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -227,8 +344,8 @@ function fmtSyp(n: number): string {
 }
 
 .movement-time {
-  font-size: 0.75rem;
-  color: #3D4F6B;
+  font-size: 0.72rem;
+  color: #637285;
   margin: 0.125rem 0 0;
 }
 
@@ -269,16 +386,18 @@ function fmtSyp(n: number): string {
   height: 44px;
   border-radius: 0.75rem;
   font-family: 'Tajawal', system-ui, sans-serif;
-  font-size: 0.875rem;
-  font-weight: 500;
+  font-size: 0.8125rem;
+  font-weight: 800;
   color: #E8EDF5;
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: linear-gradient(135deg, rgba(26,86,219,0.12), rgba(255,255,255,0.04));
+  border: 1px solid rgba(26,86,219,0.28);
+  box-shadow: 0 2px 12px rgba(26,86,219,0.10), inset 0 1px 0 rgba(255,255,255,0.07);
   cursor: pointer;
-  transition: opacity 0.15s;
+  transition: border-color 0.15s, background 0.15s;
 }
 
 .btn-close:hover {
-  opacity: 0.8;
+  border-color: rgba(26,86,219,0.45);
+  background: linear-gradient(135deg, rgba(26,86,219,0.18), rgba(255,255,255,0.06));
 }
 </style>

@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import AppToast from '@/components/ui/AppToast.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
+import BaseModal from '@/components/ui/BaseModal.vue'
 import CustomerForm from './components/CustomerForm.vue'
 import RecordPaymentSheet from './components/RecordPaymentSheet.vue'
 import InvoiceDetailSheet from './components/InvoiceDetailSheet.vue'
@@ -192,17 +193,20 @@ async function handleDelete() {
     @close="selectedInvoice = null"
   />
 
-  <Teleport v-if="showEdit && customer" to="body">
-    <div class="modal-overlay" @click.self="showEdit = false">
-      <div class="modal-sheet" dir="rtl">
-        <div class="sheet-handle"></div>
-        <div class="modal-inner">
-          <h2 class="modal-title">تعديل بيانات الزبون</h2>
-          <CustomerForm :initial="customer" @saved="handleEditSaved" @cancel="showEdit = false" />
-        </div>
-      </div>
+  <BaseModal
+    v-if="showEdit && customer"
+    title="تعديل بيانات الزبون"
+    @close="showEdit = false"
+  >
+    <div class="edit-modal-body" dir="rtl">
+      <p class="edit-modal-subtitle">حدث الاسم ورقم الهاتف والعنوان</p>
+      <CustomerForm
+        :initial="customer"
+        @saved="handleEditSaved"
+        @cancel="showEdit = false"
+      />
     </div>
-  </Teleport>
+  </BaseModal>
 
   <AppDialog
     v-if="showDelete"
@@ -496,44 +500,15 @@ async function handleDelete() {
   font-size: 0.875rem;
 }
 
-/* ── Modal overlay ───────────────────────────────────────── */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
+.edit-modal-body {
   display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  background: rgba(0,0,0,0.75);
-  backdrop-filter: blur(4px);
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
-/* ── Modal sheet ─────────────────────────────────────────── */
-.modal-sheet {
-  width: 100%;
-  max-width: 32rem;
-  border-radius: 1.25rem 1.25rem 0 0;
-  overflow: hidden;
-  backdrop-filter: blur(20px) saturate(180%);
-  background: linear-gradient(135deg, rgba(26,86,219,0.16), rgba(26,86,219,0.06));
-  border: 1px solid rgba(26,86,219,0.45);
-  box-shadow: 0 8px 48px rgba(26,86,219,0.22), inset 0 1px 0 rgba(255,255,255,0.09);
-}
-
-.sheet-handle {
-  width: 2.25rem;
-  height: 0.25rem;
-  background: rgba(255,255,255,0.20);
-  border-radius: 9999px;
-  margin: 0.75rem auto 1.25rem;
-}
-
-.modal-inner { padding: 0 1.25rem 1.5rem; }
-
-.modal-title {
-  font-size: 1rem;
-  font-weight: 700;
-  color: #E8EDF5;
-  margin-bottom: 1rem;
+.edit-modal-subtitle {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #93A3B8;
 }
 </style>

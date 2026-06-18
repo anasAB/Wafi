@@ -169,5 +169,5 @@ function fmtDate(iso: string | null | undefined): string {
 .row-action:hover { background: rgba(26,86,219,0.22); }
 
 .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 1rem; }
-.overlay-card { background: #0A1320; border-radius: 1rem; width: min(560px, 94vw); max-height: 90vh; overflow-y: auto; }
+.overlay-card { background: #0A1320; border-radius: 1rem; width: min(560px, 94vw); max-height: 90vh; overflow: hidden; }
 </style>

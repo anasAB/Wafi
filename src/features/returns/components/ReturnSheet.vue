@@ -92,6 +92,8 @@ async function handleConfirm() {
       <template v-else>
         <!-- Scrollable item list + reason -->
         <div class="sheet-scroll">
+          <p class="section-label">الأصناف</p>
+
           <ReturnLineItem
             v-for="(line, i) in lines"
             :key="line.productId"
@@ -101,7 +103,7 @@ async function handleConfirm() {
 
           <!-- Reason area -->
           <div class="sheet-reason">
-            <div class="sheet-reason-label">السبب (اختياري)</div>
+            <div class="sheet-reason-label">سبب الإرجاع</div>
             <div v-if="reasons.length > 0" class="reason-chips">
               <button
                 v-for="r in reasons"
@@ -114,6 +116,7 @@ async function handleConfirm() {
                 {{ r.label }}
               </button>
             </div>
+            <div v-else class="sheet-reason-empty">لا توجد أسباب جاهزة — أضفها من الإعدادات</div>
             <input
               v-model="notes"
               class="reason-input"
@@ -195,10 +198,10 @@ async function handleConfirm() {
   flex-direction: column;
   overflow: hidden;
   backdrop-filter: blur(20px) saturate(180%);
-  background: linear-gradient(135deg, rgba(26,86,219,0.16), rgba(26,86,219,0.06)), #0D1828;
-  border: 1px solid rgba(26,86,219,0.45);
+  background: linear-gradient(135deg, rgba(26,86,219,0.12), rgba(255,255,255,0.04));
+  border: 1px solid rgba(26,86,219,0.32);
   border-radius: 1.25rem;
-  box-shadow: 0 8px 48px rgba(26,86,219,0.22), inset 0 1px 0 rgba(255,255,255,0.09);
+  box-shadow: 0 12px 56px rgba(0,0,0,0.55), 0 4px 24px rgba(26,86,219,0.16), inset 0 1px 0 rgba(255,255,255,0.08);
 }
 @media (min-width: 640px) {
   .sheet {
@@ -208,9 +211,12 @@ async function handleConfirm() {
 }
 .sheet-handle-wrap { display: flex; justify-content: center; padding: 10px 0 4px; }
 .sheet-handle { width: 2.25rem; height: 0.25rem; border-radius: 9999px; background: rgba(255,255,255,0.20); }
+@media (min-width: 640px) {
+  .sheet-handle-wrap { display: none; }
+}
 .sheet-header {
-  padding: 8px 16px 10px;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  padding: 10px 16px 12px;
+  border-bottom: 1px solid rgba(26,86,219,0.14);
 }
 
 .sheet-header-main {
@@ -235,21 +241,22 @@ async function handleConfirm() {
 .close-btn {
   width: 2rem;
   height: 2rem;
-  border-radius: 0.625rem;
+  border-radius: 0.7rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #637285;
-  background: rgba(255,255,255,0.06);
-  border: none;
+  color: #9CB3D0;
+  background: rgba(26,86,219,0.10);
+  border: 1px solid rgba(26,86,219,0.28);
   cursor: pointer;
   flex-shrink: 0;
-  transition: background 0.12s, color 0.12s;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 
 .close-btn:hover {
-  background: rgba(255,255,255,0.10);
+  background: rgba(26,86,219,0.18);
   color: #E8EDF5;
+  border-color: rgba(26,86,219,0.45);
 }
 
 .sheet-scroll { flex: 1; overflow-y: auto; }
@@ -288,21 +295,47 @@ async function handleConfirm() {
   border: 2px solid rgba(255,255,255,0.3); border-top-color: white;
   animation: spin 0.8s linear infinite;
 }
-.sheet-reason {
-  margin: 10px 12px 14px;
-  padding: 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(26,86,219,0.20);
-  background: rgba(255,255,255,0.03);
+.section-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #3D4F6B;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 10px 16px 4px;
+  margin: 0;
 }
-.sheet-reason-label { font-size: 12px; color: #637285; margin-bottom: 6px; }
+
+.sheet-reason {
+  margin: 8px 12px 14px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(26,86,219,0.26);
+  background: linear-gradient(135deg, rgba(26,86,219,0.10), rgba(255,255,255,0.03));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.sheet-reason-label { font-size: 12px; color: #9CB3D0; margin-bottom: 8px; font-weight: 700; }
 .reason-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
 .reason-chip {
-  padding: 6px 12px; border-radius: 999px; font-size: 12px; cursor: pointer;
-  background: rgba(26,86,219,0.12); border: 1px solid rgba(26,86,219,0.22); color: #94A3B8;
-  transition: background 0.15s, color 0.15s;
+  min-height: 32px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(26,86,219,0.20);
+  color: #AFC0D8;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
+.reason-chip:hover { border-color: rgba(26,86,219,0.40); color: #E8EDF5; }
 .reason-chip--active { background: #1A56DB; color: white; border-color: #1A56DB; }
+
+.sheet-reason-empty {
+  font-size: 12px;
+  color: #637285;
+  margin-bottom: 8px;
+}
+
 .reason-input {
   width: 100%; height: 40px; background: rgba(26,86,219,0.08);
   border: 1px solid rgba(26,86,219,0.18); border-radius: 8px;
@@ -316,13 +349,21 @@ async function handleConfirm() {
   box-shadow: 0 0 0 3px rgba(26,86,219,0.18);
 }
 .sheet-footer {
-  border-top: 1px solid rgba(255,255,255,0.06);
+  border-top: 1px solid rgba(26,86,219,0.14);
   padding: 12px 16px 14px;
-  background: linear-gradient(180deg, rgba(13,24,40,0.96), rgba(7,11,20,0.98));
+  background: linear-gradient(180deg, rgba(8,14,24,0.96), rgba(6,9,15,0.98));
 }
-.refund-total-row { display: flex; justify-content: space-between; margin-bottom: 10px; }
-.refund-total-label { font-size: 14px; color: #637285; }
-.refund-total-value { font-size: 16px; font-weight: 700; color: #E8EDF5; }
+.refund-total-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(26,86,219,0.20);
+  background: rgba(26,86,219,0.08);
+}
+.refund-total-label { font-size: 13px; color: #9CB3D0; font-weight: 700; }
+.refund-total-value { font-size: 15px; font-weight: 800; color: #E8EDF5; }
 .method-label { font-size: 12px; color: #637285; margin-bottom: 6px; }
 .method-buttons {
   display: grid;
@@ -331,14 +372,19 @@ async function handleConfirm() {
   margin-bottom: 12px;
 }
 .method-btn {
-  min-height: 36px;
-  padding: 7px 6px;
-  border-radius: 8px;
+  min-height: 38px;
+  padding: 8px 8px;
+  border-radius: 10px;
   font-size: 12px;
+  font-weight: 700;
   cursor: pointer;
-  background: rgba(26,86,219,0.10); border: 1px solid rgba(26,86,219,0.18); color: #637285;
-  transition: background 0.15s, color 0.15s; font-family: inherit;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(26,86,219,0.20);
+  color: #AFC0D8;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  font-family: inherit;
 }
+.method-btn:hover { border-color: rgba(26,86,219,0.40); color: #E8EDF5; }
 .method-btn--active { background: #1A56DB; color: white; border-color: #1A56DB; }
 .method-btn:disabled { opacity: 0.3; cursor: default; }
 
@@ -352,13 +398,20 @@ async function handleConfirm() {
   width: 100%;
   min-height: 44px;
   border-radius: 10px;
-  border: 1px solid rgba(255,255,255,0.18);
-  background: transparent;
-  color: #E8EDF5;
-  font-size: 14px;
-  font-weight: 600;
+  border: 1px solid rgba(26,86,219,0.24);
+  background: rgba(255,255,255,0.04);
+  color: #C8D5E8;
+  font-size: 13px;
+  font-weight: 700;
   cursor: pointer;
   font-family: inherit;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.btn-cancel:hover {
+  border-color: rgba(26,86,219,0.42);
+  background: rgba(26,86,219,0.12);
+  color: #E8EDF5;
 }
 
 .btn-confirm {
@@ -371,8 +424,9 @@ async function handleConfirm() {
 .btn-confirm:disabled { opacity: 0.4; cursor: default; }
 .btn-print {
   width: 100%; min-height: 44px; padding: 10px 13px; border-radius: 10px;
-  background: transparent; border: 1px solid rgba(26,86,219,0.4);
-  color: #60A5FA; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(26,86,219,0.36);
+  color: #60A5FA; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit;
 }
 .post-confirm { display: flex; flex-direction: column; gap: 8px; }
 

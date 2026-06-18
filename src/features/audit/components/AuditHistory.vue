@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import { useAuditLog }   from '@/features/audit/composables/useAuditLog'
 import { useSessionStore } from '@/store/session.store'
 import { eventLabel, formatAuditTime } from '@/features/audit/audit.format'
@@ -11,6 +11,7 @@ const session   = useSessionStore()
 const { loadEntityHistory } = useAuditLog()
 const history   = ref<AuditLog[]>([])
 const isOwner   = () => session.activeStaff?.role === 'owner'
+const hasScrollableHistory = computed(() => history.value.length > 5)
 
 async function load() {
   if (!isOwner()) return
@@ -25,7 +26,7 @@ watch(() => [props.entityType, props.entityId], load)
   <section v-if="isOwner() && history.length > 0" class="history-card" dir="rtl">
     <p class="section-label">السجل</p>
 
-    <div class="history-list">
+    <div class="history-list" :class="{ 'history-list--scrollable': hasScrollableHistory }">
       <div v-for="e in history" :key="e.id" class="history-row">
         <span class="history-label">{{ eventLabel(e) }}</span>
         <span class="history-meta">{{ e.staffName }} · {{ formatAuditTime(e.createdAt) }}</span>
@@ -61,6 +62,27 @@ watch(() => [props.entityType, props.entityId], load)
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.history-list--scrollable {
+  max-height: 21rem;
+  overflow-y: auto;
+  padding-inline-end: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(26,86,219,0.45) transparent;
+}
+
+.history-list--scrollable::-webkit-scrollbar {
+  width: 6px;
+}
+
+.history-list--scrollable::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.history-list--scrollable::-webkit-scrollbar-thumb {
+  background: rgba(26,86,219,0.40);
+  border-radius: 999px;
 }
 
 .history-row {

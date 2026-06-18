@@ -52,11 +52,11 @@ export function useProductActivity() {
   const totalQty = computed(() => entries.value.reduce((s, e) => s + e.quantity, 0))
   const totalRevenueUsd = computed(() => entries.value.reduce((s, e) => s + e.lineTotalUsd, 0))
 
-  // Distinct prices the product actually sold at, with quantity per price.
+  // Distinct prices the product sold at, with number of sale occurrences per price.
   const byPrice = computed(() => {
     const map = new Map<number, number>()
     for (const e of entries.value) {
-      map.set(e.unitPriceUsd, (map.get(e.unitPriceUsd) ?? 0) + e.quantity)
+      map.set(e.unitPriceUsd, (map.get(e.unitPriceUsd) ?? 0) + 1)
     }
     return [...map.entries()]
       .map(([price, qty]) => ({ price, qty }))

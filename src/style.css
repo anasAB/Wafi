@@ -240,6 +240,109 @@ select:focus-visible {
   .animate-bounce { animation: none !important; }
 }
 
+/* ─── Global PrimeVue Select Overlay (portaled) ───────────── */
+/* Portaled overlays (data-p="portal-body") are mounted outside component trees,
+   so scoped styles can miss them. Keep one global visual style for all select
+   menus to match method-filter-menu. */
+.p-select-overlay.p-component[data-pc-section="overlay"],
+.p-select-popover,
+.p-dropdown-panel {
+  padding: 6px !important;
+  margin-top: 6px !important;
+  background: linear-gradient(180deg, rgba(13,24,40,0.97), rgba(7,11,20,0.97)) !important;
+  border: 1px solid rgba(26,86,219,0.30) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.45), 0 4px 18px rgba(26,86,219,0.16) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+}
+
+.p-select-overlay .p-select-list-container,
+.p-select-popover .p-select-list-container,
+.p-dropdown-panel .p-dropdown-items-wrapper {
+  max-height: 220px !important;
+  background: transparent !important;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(96,165,250,0.55) rgba(255,255,255,0.06);
+}
+
+.p-select-overlay .p-select-list,
+.p-select-popover .p-select-list,
+.p-dropdown-panel .p-dropdown-items {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.p-select-overlay .p-select-list-container::-webkit-scrollbar,
+.p-dropdown-panel .p-dropdown-items-wrapper::-webkit-scrollbar {
+  width: 10px;
+}
+
+.p-select-overlay .p-select-list-container::-webkit-scrollbar-track,
+.p-dropdown-panel .p-dropdown-items-wrapper::-webkit-scrollbar-track {
+  background: rgba(255,255,255,0.06);
+  border-radius: 999px;
+}
+
+.p-select-overlay .p-select-list-container::-webkit-scrollbar-thumb,
+.p-dropdown-panel .p-dropdown-items-wrapper::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(96,165,250,0.75), rgba(26,86,219,0.75));
+  border-radius: 999px;
+  border: 2px solid rgba(7,11,20,0.8);
+}
+
+.p-select-overlay .p-select-list-container::-webkit-scrollbar-thumb:hover,
+.p-dropdown-panel .p-dropdown-items-wrapper::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(147,197,253,0.9), rgba(59,130,246,0.9));
+}
+
+.p-select-overlay .p-select-option,
+.p-select-popover .p-select-option,
+.p-dropdown-panel .p-dropdown-item {
+  color: #E8EDF5 !important;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  min-height: 34px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'Tajawal', system-ui, sans-serif;
+}
+
+.p-select-overlay .p-select-option-label,
+.p-dropdown-panel .p-dropdown-item-label {
+  width: 100%;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.p-select-overlay .p-select-option:hover,
+.p-select-overlay .p-select-option.p-focus,
+.p-dropdown-panel .p-dropdown-item:hover,
+.p-dropdown-panel .p-dropdown-item.p-focus {
+  background: rgba(26,86,219,0.16) !important;
+  border-color: rgba(26,86,219,0.24) !important;
+  color: #E8EDF5 !important;
+}
+
+.p-select-overlay .p-select-option.p-select-option-selected,
+.p-select-overlay .p-select-option.p-highlight,
+.p-select-overlay .p-select-option[aria-selected="true"],
+.p-dropdown-panel .p-dropdown-item.p-highlight,
+.p-dropdown-panel .p-dropdown-item[aria-selected="true"] {
+  background: linear-gradient(135deg, rgba(26,86,219,0.28), rgba(18,72,179,0.20)) !important;
+  color: #FFFFFF !important;
+}
+
 /* ─── Global Search + Filter Controls (canonical) ─────────── */
 /* Keeps all search fields and dropdown filters visually identical across pages,
    even when components define local scoped styles. */

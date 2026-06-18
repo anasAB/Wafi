@@ -35,6 +35,14 @@ export function eventLabel(entry: AuditLog): string {
     case 'staff.created':             return `أضاف موظف: ${m.name} (${m.role})`
     case 'staff.deactivated':         return `عطّل حساب: ${m.name}`
     case 'staff.permissions_changed': return `عدّل صلاحيات: ${m.name}`
+    case 'supplier.created':          return `أضاف مورد: ${m.name}`
+    case 'supplier.updated':          return `عدّل مورد: ${m.name}`
+    case 'receiving.created': {
+      const supplierName = (m.supplierName as string) ?? 'مورد غير معروف'
+      const totalUsd = (m.totalUsd as number) ?? 0
+      const lineCount = (m.lineCount as number) ?? 0
+      return `سجّل استلام بضاعة من ${supplierName}: $${totalUsd.toFixed(2)} (${lineCount} أصناف)`
+    }
     default:                          return entry.event
   }
 }

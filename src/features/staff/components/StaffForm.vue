@@ -135,14 +135,19 @@ async function saveStaff(pin: string) {
 
         <div v-if="role === 'cashier' && !forceRole" class="perms-card">
           <p class="perms-title">الصلاحيات</p>
-          <label v-for="[key, label] in PERM_LABELS" :key="key" class="perm-row">
+          <p class="perms-sub">حدّد ما يمكن لهذا الموظف الوصول إليه</p>
+          <label
+            v-for="[key, label] in PERM_LABELS"
+            :key="key"
+            class="perm-row"
+            :class="{ 'perm-row--on': (perms as any)[key] }"
+          >
             <span class="perm-label">{{ label }}</span>
-            <div class="checkbox-wrap" :class="{ 'checkbox-checked': (perms as any)[key] }">
-              <input type="checkbox" v-model="(perms as any)[key]" class="sr-only" />
-              <svg v-if="(perms as any)[key]" width="11" height="11" fill="none" stroke="white" stroke-width="3" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-              </svg>
-            </div>
+            <input
+              v-model="(perms as any)[key]"
+              type="checkbox"
+              class="perm-check"
+            />
           </label>
         </div>
 
@@ -280,21 +285,28 @@ async function saveStaff(pin: string) {
 .role-idle:hover { color: #C8D5E8; background: rgba(255,255,255,0.05); }
 
 .perms-card {
-  background: linear-gradient(135deg, rgba(26,86,219,0.07), rgba(255,255,255,0.02));
-  border: 1px solid rgba(26,86,219,0.16);
-  border-radius: 10px;
-  padding: 12px 14px;
+  background: linear-gradient(135deg, rgba(26,86,219,0.10), rgba(255,255,255,0.03));
+  border: 1px solid rgba(26,86,219,0.24);
+  border-radius: 12px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0;
 }
 
 .perms-title {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
-  color: #3D4F6B;
+  color: #8EA3BF;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+  margin: 0;
+}
+
+.perms-sub {
+  margin: 0.22rem 0 0.65rem;
+  font-size: 0.74rem;
+  color: #637285;
 }
 
 .perm-row {
@@ -302,26 +314,62 @@ async function saveStaff(pin: string) {
   align-items: center;
   justify-content: space-between;
   cursor: pointer;
+  border-top: 1px solid rgba(26,86,219,0.14);
+  padding: 0.62rem 0.1rem;
+  transition: background 0.15s;
 }
 
-.perm-label { font-size: 13px; color: #C8D5E8; }
+.perm-row:hover {
+  background: rgba(26,86,219,0.06);
+}
 
-.checkbox-wrap {
-  width: 20px;
-  height: 20px;
-  border-radius: 5px;
-  border: 1.5px solid rgba(255,255,255,0.18);
-  background: rgba(255,255,255,0.05);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.15s, border-color 0.15s;
+.perm-row--on .perm-label {
+  color: #E8EDF5;
+}
+
+.perm-label {
+  font-size: 13px;
+  color: #C8D5E8;
+  font-weight: 600;
+}
+
+.perm-check {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
+  cursor: pointer;
+  border-radius: 5px;
+  border: 1px solid rgba(96,165,250,0.45);
+  background: rgba(255,255,255,0.04);
+  display: grid;
+  place-items: center;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
 }
 
-.checkbox-checked {
-  background: linear-gradient(135deg, #1A56DB, #1248B3);
-  border-color: #1A56DB;
+.perm-check::after {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: linear-gradient(135deg, #60A5FA, #1A56DB);
+  transform: scale(0);
+  transition: transform 0.12s ease;
+}
+
+.perm-check:checked {
+  border-color: rgba(96,165,250,0.9);
+  background: rgba(26,86,219,0.20);
+}
+
+.perm-check:checked::after {
+  transform: scale(1);
+}
+
+.perm-check:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.24);
 }
 
 .sr-only {

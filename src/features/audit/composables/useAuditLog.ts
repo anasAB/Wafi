@@ -63,7 +63,7 @@ export function useAuditLog() {
     const device = useDeviceStore()
     const params: unknown[] = [device.shopId, options.startDate, options.endDate]
     let sql = `SELECT * FROM audit_log
-               WHERE shop_id = ? AND created_at >= ? AND created_at <= ?`
+           WHERE shop_id = ? AND date(created_at) >= ? AND date(created_at) <= ?`
     if (options.staffId) { sql += ' AND staff_id = ?'; params.push(options.staffId) }
     if (options.event)   { sql += ' AND event = ?';    params.push(options.event) }
     sql += ' ORDER BY created_at DESC LIMIT 200'
@@ -78,7 +78,7 @@ export function useAuditLog() {
     const rows = await db.getAll<AuditRow>(
       `SELECT * FROM audit_log
        WHERE entity_type = ? AND entity_id = ?
-       ORDER BY created_at DESC LIMIT 10`,
+       ORDER BY created_at DESC LIMIT 50`,
       [entityType, entityId],
     )
     return rows.map(rowToAuditLog)

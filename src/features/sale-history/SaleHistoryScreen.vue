@@ -752,7 +752,7 @@ async function handleReprint(saleId: string) {
   overflow: hidden;
   background: linear-gradient(135deg, rgba(26, 86, 219, 0.11), rgba(255, 255, 255, 0.04));
   border: 1px solid rgba(26, 86, 219, 0.28);
-  box-shadow: 0 4px 20px rgba(26, 86, 219, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  box-shadow: 0 4px 20px rgba(26, 86, 219, 0.10);
 }
 
 @media (min-width: 1024px) { .desktop-table-wrap { display: block; } }
@@ -764,6 +764,24 @@ async function handleReprint(saleId: string) {
 .sale-datatable :deep(.p-datatable-table),
 .sale-datatable :deep(.p-datatable-thead > tr > th),
 .sale-datatable :deep(.p-datatable-tbody > tr) {
+  background: transparent;
+}
+
+.sale-datatable:deep(.p-datatable),
+.sale-datatable :deep(.p-datatable),
+.sale-datatable :deep(.p-datatable-table-container) {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.sale-datatable:deep(.p-datatable-header),
+.sale-datatable:deep(.p-datatable-footer),
+.sale-datatable :deep(.p-datatable-header),
+.sale-datatable :deep(.p-datatable-footer),
+.sale-datatable :deep(.p-datatable-wrapper) {
+  border: none;
+  box-shadow: none;
   background: transparent;
 }
 
@@ -785,7 +803,7 @@ async function handleReprint(saleId: string) {
 .sale-datatable :deep(.p-datatable-tbody > tr > td) {
   padding: 14px 16px;
   vertical-align: middle;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(26, 86, 219, 0.12);
 }
 
 .sale-datatable :deep(.p-datatable-tbody > tr:hover > td) {
@@ -804,6 +822,11 @@ async function handleReprint(saleId: string) {
   background: transparent;
   border-top: 1px solid rgba(26, 86, 219, 0.14);
   color: #637285;
+}
+
+.sale-datatable :deep(.p-datatable-paginator-bottom),
+.sale-datatable :deep(nav.p-datatable-paginator-bottom) {
+  border-bottom: none !important;
 }
 .sale-datatable :deep(.p-paginator .p-paginator-page),
 .sale-datatable :deep(.p-paginator .p-paginator-first),
@@ -839,11 +862,229 @@ async function handleReprint(saleId: string) {
   background: linear-gradient(135deg, rgba(26,86,219,0.12), rgba(255,255,255,0.04));
   border: 1px solid rgba(26,86,219,0.22);
   box-shadow: 0 2px 12px rgba(26,86,219,0.08), inset 0 1px 0 rgba(255,255,255,0.07);
-  border-radius: 0.5rem;
+  border-radius: 0.75rem;
+  height: 2.25rem;
+  overflow: hidden;
 }
 
 .sale-datatable :deep(.p-paginator .p-paginator-rpp-dropdown .p-select-label) {
   color: #E8EDF5;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  text-align: right;
+  padding-block: 0;
+  padding-inline: 10px;
+}
+
+.sale-datatable :deep(.p-paginator .p-paginator-rpp-dropdown .p-select-dropdown) {
+  color: #637285;
+  border-inline-start: 1px solid rgba(26,86,219,0.22);
+  min-width: 2rem;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sale-datatable :deep(.p-paginator .p-paginator-rpp-dropdown:hover .p-select-dropdown) {
+  border-inline-start-color: rgba(26,86,219,0.40);
+}
+
+.sale-datatable :deep(.p-paginator .p-paginator-rpp-dropdown.p-focus) {
+  border-color: rgba(26,86,219,0.70);
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.18);
+}
+
+.sale-datatable :deep(.p-paginator .p-paginator-rpp-dropdown.p-inputwrapper-focus),
+.sale-datatable :deep(.p-paginator .p-paginator-rpp-dropdown.p-overlay-open),
+.sale-datatable :deep(.p-paginator .p-paginator-rpp-dropdown[aria-expanded="true"]) {
+  border-color: rgba(26,86,219,0.70);
+  background: linear-gradient(135deg, rgba(26,86,219,0.18), rgba(255,255,255,0.06));
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.18);
+}
+
+/* PrimeVue Select panel is portaled, so overlay styles need top-level deep selectors. */
+:deep(.p-select-overlay) {
+  padding: 6px;
+  margin-top: 6px;
+  background: linear-gradient(180deg, rgba(13,24,40,0.97), rgba(7,11,20,0.97));
+  border: 1px solid rgba(26,86,219,0.30);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.45), 0 4px 18px rgba(26,86,219,0.16);
+  backdrop-filter: blur(20px) saturate(180%);
+}
+
+:deep(.p-select-popover),
+:deep(.p-dropdown-panel) {
+  padding: 6px !important;
+  margin-top: 6px !important;
+  background: linear-gradient(180deg, rgba(13,24,40,0.97), rgba(7,11,20,0.97)) !important;
+  border: 1px solid rgba(26,86,219,0.30) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.45), 0 4px 18px rgba(26,86,219,0.16) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+}
+
+:deep(.p-select-list-container) {
+  max-height: 220px;
+  background: transparent;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(96,165,250,0.55) rgba(255,255,255,0.06);
+}
+
+:deep(.p-dropdown-items-wrapper),
+:deep(.p-select-popover .p-select-list-container),
+:deep(.p-dropdown-panel .p-dropdown-items-wrapper) {
+  max-height: 220px !important;
+  background: transparent !important;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(96,165,250,0.55) rgba(255,255,255,0.06);
+}
+
+:deep(.p-select-list) {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+:deep(.p-dropdown-items),
+:deep(.p-select-popover .p-select-list),
+:deep(.p-dropdown-panel .p-dropdown-items) {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+:deep(.p-select-list-container::-webkit-scrollbar) {
+  width: 10px;
+}
+
+:deep(.p-dropdown-items-wrapper::-webkit-scrollbar) {
+  width: 10px;
+}
+
+:deep(.p-select-list-container::-webkit-scrollbar-track) {
+  background: rgba(255,255,255,0.06);
+  border-radius: 999px;
+}
+
+:deep(.p-dropdown-items-wrapper::-webkit-scrollbar-track) {
+  background: rgba(255,255,255,0.06);
+  border-radius: 999px;
+}
+
+:deep(.p-select-list-container::-webkit-scrollbar-thumb) {
+  background: linear-gradient(180deg, rgba(96,165,250,0.75), rgba(26,86,219,0.75));
+  border-radius: 999px;
+  border: 2px solid rgba(7,11,20,0.8);
+}
+
+:deep(.p-dropdown-items-wrapper::-webkit-scrollbar-thumb) {
+  background: linear-gradient(180deg, rgba(96,165,250,0.75), rgba(26,86,219,0.75));
+  border-radius: 999px;
+  border: 2px solid rgba(7,11,20,0.8);
+}
+
+:deep(.p-select-list-container::-webkit-scrollbar-thumb:hover) {
+  background: linear-gradient(180deg, rgba(147,197,253,0.9), rgba(59,130,246,0.9));
+}
+
+:deep(.p-dropdown-items-wrapper::-webkit-scrollbar-thumb:hover) {
+  background: linear-gradient(180deg, rgba(147,197,253,0.9), rgba(59,130,246,0.9));
+}
+
+:deep(.p-select-option) {
+  color: #E8EDF5;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  min-height: 34px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'Tajawal', system-ui, sans-serif;
+}
+
+:deep(.p-dropdown-item),
+:deep(.p-select-popover .p-select-option),
+:deep(.p-dropdown-panel .p-dropdown-item) {
+  color: #E8EDF5 !important;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  min-height: 34px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'Tajawal', system-ui, sans-serif;
+}
+
+:deep(.p-select-option-label) {
+  width: 100%;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+:deep(.p-dropdown-item-label) {
+  width: 100%;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+:deep(.p-select-option:hover) {
+  background: rgba(26,86,219,0.16);
+  border-color: rgba(26,86,219,0.24);
+}
+
+:deep(.p-dropdown-item:hover),
+:deep(.p-dropdown-item.p-focus) {
+  background: rgba(26,86,219,0.16) !important;
+  border-color: rgba(26,86,219,0.24) !important;
+  color: #E8EDF5 !important;
+}
+
+:deep(.p-select-option.p-select-option-selected),
+:deep(.p-select-option.p-highlight),
+:deep(.p-select-option[aria-selected="true"]) {
+  background: linear-gradient(135deg, rgba(26,86,219,0.28), rgba(18,72,179,0.20)) !important;
+  color: #FFFFFF !important;
+}
+
+:deep(.p-dropdown-item.p-highlight),
+:deep(.p-dropdown-item[aria-selected="true"]) {
+  background: linear-gradient(135deg, rgba(26,86,219,0.28), rgba(18,72,179,0.20)) !important;
+  color: #FFFFFF !important;
+}
+
+:deep(.p-select-option.p-focus),
+:deep(.p-select-option:focus-visible) {
+  background: rgba(26,86,219,0.16) !important;
+  color: #E8EDF5 !important;
+}
+
+:deep(.p-select-option.p-select-option-selected.p-focus),
+:deep(.p-select-option.p-highlight.p-focus),
+:deep(.p-select-option[aria-selected="true"].p-focus) {
+  background: linear-gradient(135deg, rgba(26,86,219,0.28), rgba(18,72,179,0.20)) !important;
+  color: #FFFFFF !important;
 }
 
 .td-muted {

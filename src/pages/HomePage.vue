@@ -286,7 +286,15 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
 
       <!-- KPI strip -->
       <div class="kpi-strip">
-        <div class="kpi-card" @click="router.push(`/history?period=${period}`)">
+        <div
+          class="kpi-card kpi-card--invoices"
+          role="button"
+          tabindex="0"
+          aria-label="فتح الفواتير"
+          @click="router.push(`/history?period=${period}`)"
+          @keydown.enter="router.push(`/history?period=${period}`)"
+          @keydown.space.prevent="router.push(`/history?period=${period}`)"
+        >
           <div class="kc-icon">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
@@ -310,7 +318,7 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
           <div class="kc-accent-bar"></div>
           <div class="kc-sub">هامش {{ profitMarginPct }}%</div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card" @click="router.push(`/history?period=${period}`)">
           <div class="kc-icon">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
@@ -454,22 +462,6 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
                 </div>
               </div>
 
-              <!-- $0 in the drawer is not "healthy" — only show green when there's
-                   actually cash; otherwise stay neutral/amber (BUG-008 new list). -->
-              <button
-                class="signal-row"
-                :class="drawer.cashUsd.value > 0 ? 'sig-green' : 'sig-yellow'"
-                @click="showCashDrawer = true"
-              >
-                <span class="sig-dot" :class="drawer.cashUsd.value > 0 ? 'dot-green' : 'dot-yellow'"></span>
-                <div class="sig-body">
-                  <div class="sig-main">النقد في الصندوق</div>
-                  <div class="sig-sub" dir="ltr">${{ drawer.cashUsd.value.toFixed(2) }}</div>
-                </div>
-                <svg class="sig-arr" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <path d="M9 18l6-6-6-6"/>
-                </svg>
-              </button>
             </div>
           </div>
 
@@ -689,6 +681,32 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
 /* All four KPI cards now share one surface/border for consistency (BUG-006 of
    the new list). Semantic color stays on the profit *value* (.positive/.negative),
    not the card, so the cards read as one uniform set. */
+
+.kpi-card--invoices {
+  border-color: rgba(96,165,250,0.45);
+  box-shadow: 0 6px 26px rgba(26,86,219,0.2), inset 0 1px 0 rgba(255,255,255,0.09);
+}
+
+.kpi-card--invoices:hover {
+  transform: translateY(-1px);
+  border-color: rgba(147,197,253,0.75);
+  box-shadow: 0 10px 30px rgba(59,130,246,0.28), inset 0 1px 0 rgba(255,255,255,0.1);
+}
+
+.kpi-card--invoices:focus-visible {
+  outline: none;
+  border-color: rgba(147,197,253,0.95);
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.26), 0 10px 30px rgba(59,130,246,0.3);
+}
+
+.kpi-card--invoices .kc-icon {
+  color: #93C5FD;
+}
+
+.kpi-card--invoices .kc-accent-bar {
+  width: 72%;
+  background: linear-gradient(90deg, #60A5FA, rgba(96,165,250,0));
+}
 
 .kc-icon { margin-bottom: 8px; color: #637285; }
 .kc-label { font-size: 11px; color: #637285; margin-bottom: 5px; }

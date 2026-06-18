@@ -93,30 +93,36 @@ function handleSaved() {
         <div class="product-nav" aria-label="التنقل بين المنتجات">
           <button
             type="button"
-            class="product-nav-btn"
+            class="product-nav-btn product-nav-btn--prev"
             :disabled="!prevProductId"
             aria-label="المنتج السابق"
             @click="goPrevProduct"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
-            </svg>
-            السابق
+            <span class="product-nav-icon" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+              </svg>
+            </span>
+            <span class="product-nav-text">السابق</span>
           </button>
 
-          <p class="product-nav-label">{{ product?.nameAr }}</p>
+          <div class="product-nav-label-wrap">
+            <p class="product-nav-label">{{ product?.nameAr }}</p>
+          </div>
 
           <button
             type="button"
-            class="product-nav-btn"
+            class="product-nav-btn product-nav-btn--next"
             :disabled="!nextProductId"
             aria-label="المنتج التالي"
             @click="goNextProduct"
           >
-            التالي
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
+            <span class="product-nav-text">التالي</span>
+            <span class="product-nav-icon" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </span>
           </button>
         </div>
 
@@ -154,13 +160,13 @@ function handleSaved() {
           @saved="handleSaved"
           @cancel="router.push('/products')"
         />
+      <div id="product-edit-save-bar-anchor" />
       </template>
       <AuditHistory
         v-if="product"
         entity-type="product"
         :entity-id="route.params.id as string"
       />
-      <div id="product-edit-save-bar-anchor" />
     </main>
     <AppToast v-if="toast" :message="toast.message" :type="toast.type" @dismiss="toast = null" />
 
@@ -281,17 +287,29 @@ function handleSaved() {
 }
 
 .product-nav {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(5.75rem, auto) 1fr minmax(5.75rem, auto);
   align-items: center;
   gap: 0.5rem;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.875rem;
+  padding: 0.5rem;
+  border-radius: 0.9rem;
+  border: 1px solid rgba(26,86,219,0.22);
+  background: linear-gradient(140deg, rgba(10,18,34,0.9), rgba(17,28,46,0.78));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 8px 24px rgba(4,10,20,0.34);
+}
+
+.product-nav-label-wrap {
+  min-width: 0;
+  padding: 0.6rem 0.625rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(96,165,250,0.2);
+  background: linear-gradient(135deg, rgba(26,86,219,0.14), rgba(255,255,255,0.03));
 }
 
 .product-nav-label {
-  flex: 1;
-  min-width: 0;
   margin: 0;
-  padding: 0 0.625rem;
+  min-width: 0;
   font-size: 0.875rem;
   font-weight: 700;
   color: #E8EDF5;
@@ -302,13 +320,14 @@ function handleSaved() {
 }
 
 .product-nav-btn {
-  height: 2.25rem;
-  min-width: 5.5rem;
-  padding: 0 0.625rem;
+  height: 2.4rem;
+  min-width: 5.75rem;
+  width: 100%;
+  padding: 0 0.7rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.35rem;
+  gap: 0.42rem;
   border-radius: 0.75rem;
   font-size: 0.8125rem;
   font-weight: 700;
@@ -321,14 +340,59 @@ function handleSaved() {
   transition: border-color 0.12s, background 0.12s, opacity 0.12s;
 }
 
+.product-nav-icon {
+  width: 1.2rem;
+  height: 1.2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  color: #93C5FD;
+  background: rgba(96,165,250,0.15);
+  border: 1px solid rgba(96,165,250,0.28);
+}
+
+.product-nav-text {
+  line-height: 1;
+}
+
 .product-nav-btn:hover:not(:disabled) {
   border-color: rgba(26,86,219,0.45);
   background: linear-gradient(135deg, rgba(26,86,219,0.18), rgba(255,255,255,0.06));
 }
 
+.product-nav-btn:focus-visible {
+  outline: none;
+  border-color: rgba(96,165,250,0.7);
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.24), inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
 .product-nav-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .product-nav {
+    grid-template-columns: minmax(5.25rem, auto) 1fr minmax(5.25rem, auto);
+    gap: 0.4rem;
+    padding: 0.45rem;
+  }
+
+  .product-nav-label-wrap {
+    padding: 0.5rem;
+  }
+
+  .product-nav-label {
+    font-size: 0.8125rem;
+  }
+
+  .product-nav-btn {
+    min-width: 5.25rem;
+    height: 2.25rem;
+    padding: 0 0.5rem;
+    gap: 0.3rem;
+  }
 }
 
 .activity-empty {

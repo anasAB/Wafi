@@ -42,21 +42,23 @@ function toggleRestock() {
     </div>
 
     <template v-if="line.selected">
-      <div class="rli-qty">
-        <button type="button" class="rli-qty-btn" :disabled="line.qtyToReturn <= 1" @click="setQty(-1)">−</button>
-        <span class="rli-qty-val">{{ line.qtyToReturn }}</span>
-        <button type="button" class="rli-qty-btn" :disabled="line.qtyToReturn >= maxQty" @click="setQty(1)">+</button>
-      </div>
-      <div class="rli-restock">
-        <span class="rli-restock-label">مخزون</span>
-        <button
-          type="button"
-          class="rli-toggle"
-          :class="{ 'rli-toggle--on': line.restock }"
-          @click="toggleRestock"
-        >
-          <span class="rli-toggle-dot" />
-        </button>
+      <div class="rli-controls">
+        <div class="rli-qty">
+          <button type="button" class="rli-qty-btn" :disabled="line.qtyToReturn <= 1" @click="setQty(-1)">−</button>
+          <span class="rli-qty-val">{{ line.qtyToReturn }}</span>
+          <button type="button" class="rli-qty-btn" :disabled="line.qtyToReturn >= maxQty" @click="setQty(1)">+</button>
+        </div>
+        <div class="rli-restock">
+          <span class="rli-restock-label">مخزون</span>
+          <button
+            type="button"
+            class="rli-toggle"
+            :class="{ 'rli-toggle--on': line.restock }"
+            @click="toggleRestock"
+          >
+            <span class="rli-toggle-dot" />
+          </button>
+        </div>
       </div>
     </template>
   </div>
@@ -127,6 +129,12 @@ function toggleRestock() {
 .rli-name { font-size: 14px; font-weight: 600; color: #E8EDF5; }
 .rli-sub  { font-size: 12px; color: #637285; margin-top: 2px; }
 .rli-returned { color: #F59E0B; }
+.rli-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
 .rli-qty { display: flex; align-items: center; gap: 6px; }
 .rli-qty-btn {
   width: 28px; height: 28px; border-radius: 6px;
@@ -138,8 +146,8 @@ function toggleRestock() {
 }
 .rli-qty-btn:disabled { opacity: 0.35; cursor: default; }
 .rli-qty-val { color: #E8EDF5; font-size: 15px; font-weight: 700; min-width: 20px; text-align: center; }
-.rli-restock { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-.rli-restock-label { font-size: 10px; color: #637285; }
+.rli-restock { display: flex; align-items: center; gap: 6px; }
+.rli-restock-label { font-size: 11px; color: #9CB3D0; font-weight: 700; }
 .rli-toggle {
   width: 40px;
   height: 22px;
@@ -171,10 +179,14 @@ function toggleRestock() {
     align-items: start;
   }
 
-  .rli-qty,
-  .rli-restock {
+  .rli-controls {
     grid-column: 2;
     justify-self: end;
+    margin-top: 6px;
+  }
+
+  .rli-restock-label {
+    font-size: 10px;
   }
 }
 </style>

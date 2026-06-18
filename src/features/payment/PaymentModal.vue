@@ -269,7 +269,7 @@ async function confirmAsHigherPrice() {
       </div>
 
       <!-- ── Amount entry (cash) ── -->
-      <div v-else-if="state === 'amount-entry'" class="state-pad">
+      <div v-else-if="state === 'amount-entry'" class="state-pad state-pad--amount">
         <div class="modal-top-bar">
           <button type="button" class="modal-back-btn" @click="handleBack">رجوع</button>
           <button type="button" class="modal-cancel-btn" @click="handleCancel">إلغاء</button>
@@ -306,13 +306,15 @@ async function confirmAsHigherPrice() {
 
         <p v-if="amountStr && !canConfirmSingle && !canAddLeg" class="modal-error">المبلغ غير كافٍ</p>
 
-        <NumericKeypad
-          :confirm-disabled="!canConfirmSingle"
-          :hide-confirm="showChangeDue && pendingPayments.length === 0"
-          @digit="handleDigit"
-          @delete="handleDelete"
-          @confirm="handleConfirm"
-        />
+        <div class="keypad-wrap">
+          <NumericKeypad
+            :confirm-disabled="!canConfirmSingle"
+            :hide-confirm="showChangeDue && pendingPayments.length === 0"
+            @digit="handleDigit"
+            @delete="handleDelete"
+            @confirm="handleConfirm"
+          />
+        </div>
 
         <!-- Overpaid: was it change, or a higher sale price? Don't let the surplus vanish. -->
         <div v-if="showChangeDue && pendingPayments.length === 0" class="overpay-choice">
@@ -491,6 +493,10 @@ async function confirmAsHigherPrice() {
   padding: 20px 20px 28px;
 }
 
+.state-pad--amount {
+  padding-bottom: 18px;
+}
+
 .state-center {
   display: flex;
   flex-direction: column;
@@ -505,6 +511,10 @@ async function confirmAsHigherPrice() {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
+}
+
+.state-pad--amount .modal-top-bar {
+  margin-bottom: 14px;
 }
 
 .modal-cancel-btn {
@@ -545,6 +555,10 @@ async function confirmAsHigherPrice() {
   color: #637285;
   text-align: center;
   margin: 0 0 10px;
+}
+
+.state-pad--amount .modal-heading {
+  margin-bottom: 8px;
 }
 
 /* ── Total block ───────────────────────────────── */
@@ -862,6 +876,26 @@ async function confirmAsHigherPrice() {
   letter-spacing: 0.02em;
 }
 
+.keypad-wrap {
+  margin-top: 2px;
+}
+
+.keypad-wrap :deep(div.grid) {
+  padding: 10px 6px 8px;
+  gap: 0.4rem;
+}
+
+.keypad-wrap :deep(div.grid > button) {
+  height: 2.9rem;
+  border-radius: 0.72rem;
+  font-size: 1.05rem;
+}
+
+.keypad-wrap :deep(div.grid > button[aria-label='تأكيد']) {
+  height: 2.55rem;
+  font-size: 0.95rem;
+}
+
 .change-due-row {
   font-size: 14px;
   font-weight: 700;
@@ -885,7 +919,7 @@ async function confirmAsHigherPrice() {
 }
 
 .overpay-btn {
-  height: 48px;
+  height: 44px;
   border-radius: 14px;
   font-size: 14px;
   font-weight: 800;
@@ -963,5 +997,39 @@ async function confirmAsHigherPrice() {
   font-size: 13px;
   color: #EF4444;
   margin-top: 8px;
+}
+
+@media (max-width: 430px) {
+  .state-pad--amount {
+    padding: 14px 14px 12px;
+  }
+
+  .amount-ref-box {
+    padding: 8px 12px;
+    margin-bottom: 6px;
+  }
+
+  .amount-input-box {
+    padding: 11px 12px;
+  }
+
+  .amount-input-value {
+    font-size: 30px;
+  }
+
+  .split-add-btn {
+    height: 40px;
+    margin-top: 6px;
+  }
+
+  .overpay-choice {
+    gap: 6px;
+    padding-top: 10px;
+  }
+
+  .overpay-btn {
+    height: 42px;
+    font-size: 13px;
+  }
 }
 </style>

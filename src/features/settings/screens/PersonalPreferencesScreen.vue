@@ -48,6 +48,17 @@ const textSizes = computed(() => [
       <p class="intro-sub">التغييرات تُطبّق مباشرة على التطبيق</p>
     </div>
 
+    <div class="summary-row">
+      <div class="summary-chip">
+        <span class="summary-label">اللغة الحالية</span>
+        <span class="summary-value">{{ settings.language === 'ar' ? 'العربية' : 'English' }}</span>
+      </div>
+      <div class="summary-chip">
+        <span class="summary-label">حجم النص</span>
+        <span class="summary-value summary-value--blue">{{ textSizes.find((s) => s.value === settings.textSize)?.short }}</span>
+      </div>
+    </div>
+
     <!-- Preferences group -->
     <p class="section-label">{{ t('personal.preferencesSection') }}</p>
     <div class="settings-card">
@@ -55,19 +66,21 @@ const textSizes = computed(() => [
       <!-- Luxury theme -->
       <div class="settings-row settings-row--inner">
         <p class="row-title row-title--spaced">{{ t('personal.luxuryTheme') }}</p>
-        <ThemePickerScreen />
+        <div class="theme-picker-wrap">
+          <ThemePickerScreen />
+        </div>
       </div>
 
       <!-- Language -->
       <div class="settings-row settings-row--inner">
         <p class="row-title row-title--spaced">{{ t('personal.language') }}</p>
-        <div class="tab-bar">
+        <div class="option-grid option-grid--two">
           <button
             v-for="lang in languages"
             :key="lang.value"
             type="button"
-            class="tab-btn"
-            :class="{ 'tab-btn--active': settings.language === lang.value }"
+            class="option-btn"
+            :class="{ 'option-btn--active': settings.language === lang.value }"
             @click="settings.language = lang.value"
           >
             {{ lang.label }}
@@ -78,13 +91,13 @@ const textSizes = computed(() => [
       <!-- Theme -->
       <div class="settings-row settings-row--inner">
         <p class="row-title row-title--spaced">{{ t('personal.theme') }}</p>
-        <div class="tab-bar">
+        <div class="option-grid option-grid--three">
           <button
             v-for="thm in themes"
             :key="thm.value"
             type="button"
-            class="tab-btn"
-            :class="{ 'tab-btn--active': settings.theme === thm.value }"
+            class="option-btn"
+            :class="{ 'option-btn--active': settings.theme === thm.value }"
             @click="settings.theme = thm.value"
           >
             {{ thm.label }}
@@ -95,13 +108,13 @@ const textSizes = computed(() => [
       <!-- Text size -->
       <div class="settings-row settings-row--last settings-row--inner">
         <p class="row-title row-title--spaced">{{ t('personal.textSize') }}</p>
-        <div class="tab-bar">
+        <div class="option-grid option-grid--four">
           <button
             v-for="s in textSizes"
             :key="s.value"
             type="button"
-            class="tab-btn"
-            :class="{ 'tab-btn--active': settings.textSize === s.value }"
+            class="option-btn"
+            :class="{ 'option-btn--active': settings.textSize === s.value }"
             @click="settings.textSize = s.value"
           >
             <span class="sm:hidden">{{ s.short }}</span>
@@ -168,6 +181,38 @@ const textSizes = computed(() => [
   color: #637285;
 }
 
+.summary-row {
+  margin-bottom: 0.85rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.summary-chip {
+  border-radius: 0.8rem;
+  border: 1px solid rgba(26,86,219,0.20);
+  background: rgba(26,86,219,0.08);
+  padding: 0.55rem 0.65rem;
+}
+
+.summary-label {
+  display: block;
+  color: #637285;
+  font-size: 0.72rem;
+}
+
+.summary-value {
+  display: block;
+  margin-top: 0.2rem;
+  color: #E8EDF5;
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.summary-value--blue {
+  color: #60A5FA;
+}
+
 /* ─── Section label ───────────────────────────────────────── */
 .section-label {
   font-size: 11px;
@@ -228,49 +273,83 @@ button.settings-row:hover:not(:disabled) {
 }
 
 .row-title--spaced {
-  margin-bottom: 0.625rem;
+  margin-bottom: 0.7rem;
 }
 
-/* ─── Tab bar ─────────────────────────────────────────────── */
-.tab-bar {
-  display: flex;
-  gap: 0.125rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(26, 86, 219, 0.18);
-  border-radius: 0.75rem;
-  padding: 3px;
+/* ─── Option buttons ─────────────────────────────────────── */
+.option-grid {
+  display: grid;
+  gap: 0.4rem;
 }
 
-.tab-btn {
-  flex: 1;
-  min-height: 34px;
-  padding: 0.45rem 0.5rem;
-  border-radius: 8px;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: #637285;
-  background: transparent;
-  border: none;
+.option-grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.option-grid--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.option-grid--four {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (min-width: 640px) {
+  .option-grid--four {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.option-btn {
+  min-height: 36px;
+  padding: 0.42rem 0.55rem;
+  border-radius: 0.6rem;
+  font-size: 0.79rem;
+  font-weight: 700;
+  color: #AFC0D8;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(26,86,219,0.2);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, font-weight 0.1s, box-shadow 0.15s;
+  transition: border-color 0.15s, background 0.15s, color 0.15s, box-shadow 0.15s;
   font-family: 'Tajawal', system-ui, sans-serif;
 }
 
-.tab-btn:hover {
-  color: #C8D5E8;
+.option-btn:hover {
+  color: #E8EDF5;
+  border-color: rgba(26,86,219,0.4);
+  background: rgba(26,86,219,0.12);
 }
 
-.tab-btn--active {
+.option-btn--active {
   background: linear-gradient(135deg, #1A56DB, #1248B3);
+  border-color: transparent;
   color: white;
-  font-weight: 700;
   box-shadow: 0 4px 12px rgba(26, 86, 219, 0.30);
+}
+
+.theme-picker-wrap :deep(button[data-testid="theme-swatch"]) {
+  background: rgba(255,255,255,0.04) !important;
+  border-color: rgba(26,86,219,0.2) !important;
+  box-shadow: 0 2px 12px rgba(26,86,219,0.08), inset 0 1px 0 rgba(255,255,255,0.07);
+  border-radius: 0.7rem !important;
+}
+
+.theme-picker-wrap :deep(button[data-testid="theme-swatch"][aria-pressed="true"]) {
+  border-color: rgba(96,165,250,0.65) !important;
+  box-shadow: 0 0 0 2px rgba(26,86,219,0.22), 0 4px 16px rgba(26,86,219,0.2);
+}
+
+.theme-picker-wrap :deep(button[data-testid="theme-swatch"] span:last-child) {
+  font-family: 'Tajawal', system-ui, sans-serif !important;
+  font-size: 0.72rem !important;
+  font-weight: 700;
+  color: #DCE7F7;
 }
 
 /* ─── Sign out row ────────────────────────────────────────── */
 .signout-row {
   cursor: not-allowed;
-  opacity: 0.7;
+  opacity: 0.85;
   border-bottom: none;
   min-height: 52px;
 }

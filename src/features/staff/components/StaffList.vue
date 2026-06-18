@@ -1,39 +1,69 @@
 <script setup lang="ts">
-import { ref, onMounted }  from 'vue'
-import { useRouter }       from 'vue-router'
-import AppHeader           from '@/components/ui/AppHeader.vue'
-import { useStaff }        from '../composables/useStaff'
-import StaffForm           from './StaffForm.vue'
-import type { Staff }      from '../staff.types'
+import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import AppHeader from '@/components/ui/AppHeader.vue'
+import BaseModal from '@/components/ui/BaseModal.vue'
+import AppDialog from '@/components/ui/AppDialog.vue'
+import { useStaff } from '../composables/useStaff'
+import StaffForm from './StaffForm.vue'
+import type { Staff } from '../staff.types'
 
 const router = useRouter()
 
 const { staff, loadStaff, deactivateStaff } = useStaff()
-const showForm   = ref(false)
-const editStaff  = ref<Staff | undefined>()
+const showForm = ref(false)
+const editStaff = ref<Staff | undefined>()
+const deactivateTarget = ref<Staff | null>(null)
+
+const activeStaffCount = computed(() => staff.value.length)
 
 onMounted(() => loadStaff())
 
-function startEdit(s: Staff) { editStaff.value = s; showForm.value = true }
-function startAdd()          { editStaff.value = undefined; showForm.value = true }
-
-async function deactivate(s: Staff) {
-  if (!confirm(`هل تريد إلغاء تفعيل ${s.name}؟`)) return
-  await deactivateStaff(s.id)
+function startEdit(s: Staff) {
+  editStaff.value = s
+  showForm.value = true
 }
 
-function onFormDone() { showForm.value = false; loadStaff() }
+function startAdd() {
+  editStaff.value = undefined
+  showForm.value = true
+}
+
+function requestDeactivate(s: Staff) {
+  deactivateTarget.value = s
+}
+
+async function confirmDeactivate() {
+  if (!deactivateTarget.value) return
+  await deactivateStaff(deactivateTarget.value.id)
+  deactivateTarget.value = null
+  await loadStaff()
+}
+
+async function onFormDone() {
+  showForm.value = false
+  await loadStaff()
+}
 </script>
 
 <template>
-  <div class="page-root" dir="rtl">
-    <AppHeader title="الموظفون" :show-back="true" @back="router.back()" />
+  <div class="lg:hidden">
+    <AppHeader title="الموظفون" :show-back="true" :show-settings="false" @back="router.back()" />
+  </div>
 
-    <main class="staff-main">
-    <!-- Toolbar -->
-    <div class="staff-toolbar">
-      <p class="staff-subtitle">إدارة فريق العمل والصلاحيات</p>
-      <button @click="startAdd" class="btn-primary">
+  <div class="page-body" dir="rtl">
+    <div class="intro-card">
+      <p class="intro-title">إدارة الموظفين</p>
+      <p class="intro-sub">إضافة الفريق وتحديث الصلاحيات والرقم السري</p>
+    </div>
+
+    <div class="summary-row">
+      <span class="summary-label">إجمالي الموظفين</span>
+      <span class="summary-value">{{ activeStaffCount }}</span>
+    </div>
+
+    <div class="actions-row">
+      <button type="button" class="btn-primary" @click="startAdd">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
         </svg>
@@ -41,34 +71,34 @@ function onFormDone() { showForm.value = false; loadStaff() }
       </button>
     </div>
 
-    <!-- Staff list -->
-    <div class="staff-list">
-      <div v-for="s in staff" :key="s.id" class="staff-card">
-        <!-- Avatar + info -->
+    <p class="section-label">الفريق</p>
+    <div class="settings-card" v-if="staff.length">
+      <div v-for="(s, idx) in staff" :key="s.id" class="staff-row" :class="{ 'staff-row--last': idx === staff.length - 1 }">
         <div class="staff-identity">
           <div class="staff-avatar">{{ s.name.charAt(0) }}</div>
-          <div>
+          <div class="staff-main">
             <p class="staff-name">{{ s.name }}</p>
             <span :class="['role-badge', s.role === 'owner' ? 'role-owner' : 'role-cashier']">
               {{ s.role === 'owner' ? 'مالك' : 'كاشير' }}
             </span>
           </div>
         </div>
-        <!-- Actions -->
+
         <div class="staff-actions" v-if="s.role !== 'owner'">
-          <button @click="startEdit(s)" class="btn-edit">
+          <button type="button" class="btn-edit" @click="startEdit(s)">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
             </svg>
             تعديل
           </button>
-          <button @click="deactivate(s)" class="btn-danger">
+          <button type="button" class="btn-danger" @click="requestDeactivate(s)">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M22 10.5h-6m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM4 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 0110.374 21c-2.331 0-4.512-.645-6.374-1.766z" />
             </svg>
             إلغاء
           </button>
         </div>
+
         <div v-else class="owner-badge">
           <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
             <path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0l-.003-.001z" />
@@ -76,140 +106,193 @@ function onFormDone() { showForm.value = false; loadStaff() }
           مالك
         </div>
       </div>
-
-      <!-- Empty state -->
-      <div v-if="staff.length === 0" class="empty-state">
-        <div class="empty-icon">
-          <svg width="28" height="28" fill="none" stroke="#3D4F6B" stroke-width="1.5" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
-          </svg>
-        </div>
-        <p class="empty-text">لا يوجد موظفون بعد</p>
-        <p class="empty-sub">أضف أول موظف لمنحه صلاحيات الوصول</p>
-      </div>
     </div>
-    </main>
 
-    <!-- Form modal -->
-    <Teleport to="body">
-      <div v-if="showForm" class="modal-overlay" @click.self="showForm = false">
-        <div class="modal-panel">
-          <div class="modal-header">
-            <h2 class="modal-title">{{ editStaff ? 'تعديل الموظف' : 'موظف جديد' }}</h2>
-            <button @click="showForm = false" class="close-btn">
-              <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-          <StaffForm :edit-staff="editStaff" @done="onFormDone" />
-        </div>
+    <div v-else class="empty-card">
+      <div class="empty-icon-wrap">
+        <svg width="28" height="28" fill="none" stroke="#3D4F6B" stroke-width="1.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+        </svg>
       </div>
-    </Teleport>
+      <p class="empty-title">لا يوجد موظفون بعد</p>
+      <p class="empty-sub">أضف أول موظف لمنحه صلاحيات الوصول</p>
+      <button type="button" class="btn-primary" @click="startAdd">إضافة موظف</button>
+    </div>
   </div>
+
+  <BaseModal v-if="showForm" :title="editStaff ? 'تعديل الموظف' : 'موظف جديد'" @close="showForm = false">
+    <StaffForm :edit-staff="editStaff" @done="onFormDone" />
+  </BaseModal>
+
+  <AppDialog
+    v-if="deactivateTarget"
+    title="إلغاء تفعيل الموظف"
+    :message="`هل تريد إلغاء تفعيل ${deactivateTarget.name}؟`"
+    confirm-label="إلغاء التفعيل"
+    cancel-label="رجوع"
+    danger
+    @confirm="confirmDeactivate"
+    @cancel="deactivateTarget = null"
+  />
 </template>
 
 <style scoped>
-.page-root {
-  display: flex;
-  flex-direction: column;
-  min-height: 100dvh;
-  background: #06090F;
+.page-body {
+  padding: 16px;
+  max-width: 560px;
+  margin: 0 auto;
+  width: 100%;
+  padding-bottom: 80px;
   font-family: 'Tajawal', system-ui, sans-serif;
 }
 
-.staff-main {
-  flex: 1;
-  padding: 20px 16px 80px;
-  max-width: 600px;
-  margin: 0 auto;
-  width: 100%;
+@media (min-width: 1024px) {
+  .page-body {
+    padding: 20px;
+    max-width: none;
+  }
 }
 
-.staff-toolbar {
+.intro-card {
+  margin-bottom: 0.875rem;
+  padding: 0.875rem 1rem;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, rgba(26, 86, 219, 0.11), rgba(255, 255, 255, 0.04));
+  border: 1px solid rgba(26, 86, 219, 0.28);
+  box-shadow: 0 4px 20px rgba(26, 86, 219, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.intro-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #E8EDF5;
+}
+
+.intro-sub {
+  margin: 0.2rem 0 0;
+  font-size: 0.78rem;
+  color: #637285;
+}
+
+.summary-row {
+  margin-bottom: 0.7rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 20px;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(26,86,219,0.2);
+  background: rgba(26,86,219,0.09);
+  padding: 0.55rem 0.75rem;
 }
 
-.staff-subtitle {
-  font-size: 12px;
+.summary-label {
   color: #637285;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.summary-value {
+  color: #E8EDF5;
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.actions-row {
+  margin-bottom: 0.7rem;
+  display: flex;
+  justify-content: flex-start;
 }
 
 .btn-primary {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.4rem;
   height: 40px;
-  padding-inline: 16px;
-  border-radius: 10px;
-  font-size: 13px;
-  font-weight: 700;
-  color: white;
   background: linear-gradient(135deg, #1A56DB, #1248B3);
-  box-shadow: 0 4px 14px rgba(26,86,219,0.40);
+  color: #fff;
   border: none;
+  padding-inline: 0.9rem;
+  border-radius: 0.625rem;
+  font-weight: 700;
+  font-size: 0.8125rem;
   cursor: pointer;
-  white-space: nowrap;
-  flex-shrink: 0;
+  box-shadow: 0 4px 16px rgba(26,86,219,0.35);
+  font-family: inherit;
 }
 
-.staff-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.section-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #3D4F6B;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 8px 4px;
+  margin-bottom: 6px;
 }
 
-.staff-card {
+.settings-card {
+  background: linear-gradient(135deg, rgba(26, 86, 219, 0.11), rgba(255, 255, 255, 0.04));
+  border: 1px solid rgba(26, 86, 219, 0.28);
+  border-radius: 1rem;
+  box-shadow: 0 4px 20px rgba(26, 86, 219, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+.staff-row {
+  padding: 0.8rem 0.95rem;
+  border-bottom: 1px solid rgba(26, 86, 219, 0.14);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
-  background: linear-gradient(135deg, rgba(26,86,219,0.11), rgba(255,255,255,0.04));
-  border: 1px solid rgba(26,86,219,0.28);
-  border-radius: 14px;
-  box-shadow: 0 4px 16px rgba(26,86,219,0.08), inset 0 1px 0 rgba(255,255,255,0.07);
+  gap: 0.7rem;
+}
+
+.staff-row--last {
+  border-bottom: none;
 }
 
 .staff-identity {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.staff-main {
   min-width: 0;
 }
 
 .staff-avatar {
-  width: 40px;
-  height: 40px;
+  width: 38px;
+  height: 38px;
   border-radius: 10px;
   background: linear-gradient(135deg, rgba(26,86,219,0.25), rgba(26,86,219,0.12));
   border: 1px solid rgba(26,86,219,0.35);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: 0.95rem;
   font-weight: 800;
   color: #60A5FA;
   flex-shrink: 0;
 }
 
 .staff-name {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 0.875rem;
+  font-weight: 700;
   color: #E8EDF5;
-  margin-bottom: 4px;
+  margin: 0 0 0.2rem;
 }
 
 .role-badge {
-  display: inline-block;
-  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.67rem;
   font-weight: 700;
-  padding: 2px 10px;
-  border-radius: 20px;
+  padding: 0.18rem 0.5rem;
+  border-radius: 999px;
 }
 
 .role-owner {
@@ -226,44 +309,39 @@ function onFormDone() { showForm.value = false; loadStaff() }
 
 .staff-actions {
   display: flex;
-  gap: 8px;
+  gap: 0.4rem;
   flex-shrink: 0;
 }
 
-.btn-edit {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 34px;
-  padding-inline: 12px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #C8D5E8;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.12);
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.btn-edit:hover {
-  background: rgba(255,255,255,0.10);
-}
-
+.btn-edit,
 .btn-danger {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 34px;
-  padding-inline: 12px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 600;
+  gap: 0.25rem;
+  height: 32px;
+  padding-inline: 0.55rem;
+  border-radius: 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid;
+  font-family: inherit;
+}
+
+.btn-edit {
+  color: #C8D5E8;
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.12);
+}
+
+.btn-edit:hover {
+  background: rgba(255,255,255,0.1);
+}
+
+.btn-danger {
   color: #EF4444;
   background: rgba(239,68,68,0.08);
-  border: 1px solid rgba(239,68,68,0.25);
-  cursor: pointer;
-  transition: background 0.15s;
+  border-color: rgba(239,68,68,0.25);
 }
 
 .btn-danger:hover {
@@ -274,19 +352,21 @@ function onFormDone() { showForm.value = false; loadStaff() }
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: 0.72rem;
   font-weight: 700;
   color: #F59E0B;
   flex-shrink: 0;
 }
 
-/* Empty state */
-.empty-state {
+.empty-card {
+  border-radius: 1rem;
+  border: 1px solid rgba(26,86,219,0.2);
+  background: rgba(26,86,219,0.08);
+  padding: 2rem 1rem;
   text-align: center;
-  padding: 40px 20px;
 }
 
-.empty-icon {
+.empty-icon-wrap {
   width: 56px;
   height: 56px;
   border-radius: 14px;
@@ -295,76 +375,36 @@ function onFormDone() { showForm.value = false; loadStaff() }
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 auto 16px;
+  margin: 0 auto 14px;
 }
 
-.empty-text {
-  font-size: 15px;
-  font-weight: 600;
-  color: #637285;
-  margin-bottom: 4px;
-}
-
-.empty-sub {
-  font-size: 12px;
-  color: #3D4F6B;
-}
-
-/* Modal */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.75);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 50;
-  padding: 16px;
-}
-
-.modal-panel {
-  width: 100%;
-  max-width: 340px;
-  backdrop-filter: blur(20px) saturate(180%);
-  background: linear-gradient(135deg, rgba(26,86,219,0.16), rgba(26,86,219,0.06));
-  border: 1px solid rgba(26,86,219,0.45);
-  border-radius: 20px;
-  box-shadow: 0 8px 48px rgba(26,86,219,0.22), inset 0 1px 0 rgba(255,255,255,0.09);
-  padding: 20px;
-}
-
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 20px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid rgba(26,86,219,0.18);
-}
-
-.modal-title {
-  font-size: 16px;
+.empty-title {
+  margin: 0;
+  font-size: 0.92rem;
   font-weight: 700;
   color: #E8EDF5;
 }
 
-.close-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.10);
+.empty-sub {
+  margin: 0.35rem 0 1rem;
+  font-size: 0.78rem;
   color: #637285;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
 }
 
-.close-btn:hover {
-  background: rgba(255,255,255,0.10);
-  color: #E8EDF5;
+@media (max-width: 639px) {
+  .staff-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .staff-actions {
+    width: 100%;
+  }
+
+  .btn-edit,
+  .btn-danger {
+    flex: 1;
+    justify-content: center;
+  }
 }
 </style>

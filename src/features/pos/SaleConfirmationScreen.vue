@@ -294,16 +294,29 @@ async function handlePrint() {
 
 .btn-ghost {
   width: 100%;
-  height: 40px;
+  height: 42px;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 700;
   font-family: 'Tajawal', system-ui, sans-serif;
-  color: #637285;
-  background: transparent;
-  border: none;
+  color: #C8D5E8;
+  background: linear-gradient(135deg, rgba(26,86,219,0.10), rgba(255,255,255,0.03));
+  border: 1px solid rgba(26,86,219,0.30);
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(26,86,219,0.10), inset 0 1px 0 rgba(255,255,255,0.06);
   cursor: pointer;
-  transition: color 0.15s;
+  transition: border-color 0.15s, background 0.15s, color 0.15s, box-shadow 0.15s;
 }
 
-.btn-ghost:hover { color: #C8D5E8; }
+.btn-ghost:hover {
+  color: #E8EDF5;
+  border-color: rgba(26,86,219,0.46);
+  background: linear-gradient(135deg, rgba(26,86,219,0.18), rgba(255,255,255,0.05));
+  box-shadow: 0 4px 16px rgba(26,86,219,0.18), inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+.btn-ghost:focus-visible {
+  outline: none;
+  border-color: rgba(96,165,250,0.75);
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.22), 0 4px 16px rgba(26,86,219,0.18);
+}
 </style>
