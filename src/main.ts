@@ -4,16 +4,10 @@ import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
 import PrimeVue from 'primevue/config'
 import Aura from '@primeuix/themes/aura'
 import { i18n } from './i18n'
-import { registerSW } from 'virtual:pwa-register'
 import './style.css'
 import 'primeicons/primeicons.css'
 import App    from './App.vue'
 import router from './router'
-
-// Register the service worker so the app is installable ("add to home screen")
-// and boots offline. `immediate` registers on load; `autoUpdate` (vite.config)
-// swaps in new builds without a prompt.
-registerSW({ immediate: true })
 
 const pinia = createPinia()
 pinia.use(piniaPluginPersistedstate)

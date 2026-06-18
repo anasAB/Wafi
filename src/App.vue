@@ -7,12 +7,18 @@ import { i18n } from '@/i18n'
 import type { Theme } from '@/features/settings'
 import AppSidebar   from '@/components/layout/AppSidebar.vue'
 import AppBottomNav from '@/components/layout/AppBottomNav.vue'
+import AppToast from '@/components/ui/AppToast.vue'
+import { usePwaLifecycle } from '@/composables/usePwaLifecycle'
 import { useShiftStore } from '@/features/shifts/shift.store'
 import { useShift }      from '@/features/shifts/composables/useShift'
 import { useStaff }      from '@/features/staff/composables/useStaff'
 import LockScreen        from '@/features/shifts/components/LockScreen.vue'
 import StaffPinPrompt    from '@/features/staff/components/StaffPinPrompt.vue'
 import { useSessionStore } from '@/store/session.store'
+
+// Destructure only what Phase 1 uses (tsconfig has noUnusedLocals: true).
+// Task 6 expands this to add needRefresh/applyUpdate/dismissNeedRefresh.
+const { offlineReady, dismissOfflineReady } = usePwaLifecycle()
 
 const route    = useRoute()
 const router   = useRouter()
@@ -78,6 +84,13 @@ watch(
 </script>
 
 <template>
+  <AppToast
+    v-if="offlineReady"
+    type="success"
+    message="التطبيق جاهز للعمل بدون إنترنت"
+    @dismiss="dismissOfflineReady"
+  />
+
   <!-- Branded loading splash (BUG-001) -->
   <div
     v-if="!appReady"
