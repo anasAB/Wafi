@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
 import { featureFlags } from '@/config/featureFlags'
+import InstallPrompt from '@/components/ui/InstallPrompt.vue'
 
 const stats = [
   { value: '10s',    label: 'وقت البيع' },
@@ -96,6 +97,7 @@ const trust = [
             <RouterLink to="/home" class="lp-btn-primary">ابدأ الآن / Start Now</RouterLink>
             <button type="button" class="lp-btn-ghost">شاهد العرض / Watch Demo</button>
           </div>
+          <InstallPrompt />
         </div>
 
         <!-- Floating metric cards -->
