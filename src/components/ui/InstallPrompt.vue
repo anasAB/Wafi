@@ -2,16 +2,16 @@
 import { ref } from 'vue'
 import { useInstallPrompt } from '@/composables/useInstallPrompt'
 
-const { canInstall, isIosSafari, promptInstall } = useInstallPrompt()
+const { canInstall, isInstalled, isIosSafari, promptInstall } = useInstallPrompt()
 const dismissed = ref(false)
 
 async function onInstall() {
-  await promptInstall()
+  if (await promptInstall() === 'accepted') dismissed.value = true
 }
 </script>
 
 <template>
-  <div v-if="!dismissed && (canInstall || isIosSafari)" class="install-prompt" dir="rtl">
+  <div v-if="!dismissed && !isInstalled && (canInstall || isIosSafari)" class="install-prompt" dir="rtl">
     <button
       v-if="canInstall"
       type="button"
