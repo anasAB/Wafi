@@ -22,7 +22,9 @@ function mountForm(props = {}) {
   pinia.use(piniaPluginPersistedstate)
   return mount(ExpenseForm, {
     props,
-    global: { plugins: [pinia, router] },
+    // ExpenseForm renders inside BaseModal, which teleports its slot to <body>.
+    // Stub teleport so the form stays in the wrapper tree and find() can reach it.
+    global: { plugins: [pinia, router], stubs: { teleport: true } },
   })
 }
 

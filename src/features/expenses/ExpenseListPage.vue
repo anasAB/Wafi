@@ -66,7 +66,6 @@ const displayedExpenses = computed(() => {
       [
         e.category,
         e.notes,
-        e.paymentMethod,
         e.amountUsd,
       ]
         .map((v) => String(v ?? '').toLowerCase())

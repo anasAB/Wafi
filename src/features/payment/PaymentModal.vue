@@ -211,7 +211,7 @@ async function confirmAsHigherPrice() {
           type="button"
           class="confirm-btn confirm-btn-green"
           data-testid="confirm-split-btn"
-          @click="handleConfirm"
+          @click="handleConfirm()"
         >تأكيد البيع</button>
 
         <!-- Method tiles -->
@@ -261,7 +261,7 @@ async function confirmAsHigherPrice() {
             type="button"
             data-testid="confirm-credit-btn"
             class="confirm-btn confirm-btn-amber"
-            @click="handleConfirm"
+            @click="handleConfirm()"
           >تأكيد البيع الآجل</button>
         </template>
 
@@ -323,7 +323,7 @@ async function confirmAsHigherPrice() {
             type="button"
             class="overpay-btn overpay-btn-change"
             data-testid="confirm-change-btn"
-            @click="handleConfirm"
+            @click="handleConfirm()"
           >باقي للزبون ({{ method === 'cash_syp' ? `${changeDue?.toLocaleString()} ل.س` : `$${changeDue?.toFixed(2)}` }})</button>
           <button
             type="button"
@@ -364,7 +364,7 @@ async function confirmAsHigherPrice() {
           <p class="card-info-hint">سيتم تسجيل الدفع بالبطاقة</p>
         </div>
 
-        <button type="button" class="confirm-btn confirm-btn-blue" @click="handleConfirm">تأكيد</button>
+        <button type="button" class="confirm-btn confirm-btn-blue" @click="handleConfirm()">تأكيد</button>
 
         <button
           type="button"
@@ -410,7 +410,7 @@ async function confirmAsHigherPrice() {
           class="confirm-btn confirm-btn-amber"
           data-testid="confirm-credit-btn"
           :disabled="!selectedCustomer"
-          @click="handleConfirm"
+          @click="handleConfirm()"
         >تأكيد البيع الآجل</button>
       </div>
 

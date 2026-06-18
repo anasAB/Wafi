@@ -76,6 +76,41 @@ html[data-text-size="large"]   { font-size: 18px; }
 html[data-text-size="xlarge"]  { font-size: 20px; }
 html.dark { color-scheme: dark; }
 
+/* ─── Global Scrollbar Theme ─────────────────────────── */
+/* Keep page and nested scroll areas aligned with the blue-glass visual system. */
+:root {
+  --scrollbar-track: rgba(255, 255, 255, 0.06);
+  --scrollbar-thumb-from: rgba(96, 165, 250, 0.78);
+  --scrollbar-thumb-to: rgba(26, 86, 219, 0.78);
+  --scrollbar-thumb-from-hover: rgba(147, 197, 253, 0.92);
+  --scrollbar-thumb-to-hover: rgba(59, 130, 246, 0.92);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(96, 165, 250, 0.62) var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--scrollbar-thumb-from), var(--scrollbar-thumb-to));
+  border-radius: 999px;
+  border: 2px solid rgba(7, 11, 20, 0.84);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, var(--scrollbar-thumb-from-hover), var(--scrollbar-thumb-to-hover));
+}
+
 /* ─── Form Control Base (app-wide consistency) ─────────── */
 /* BUG-016 / BUG-021: never render native number spinners. Every numeric
    field in the app is driven by +/- controls or currency toggles, and the

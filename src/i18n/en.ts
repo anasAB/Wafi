@@ -1,4 +1,24 @@
 export default {
+  // App chrome: sidebar, bottom nav, and shared header. Shared across both
+  // navigation surfaces so a label is defined once (DRY).
+  nav: {
+    menu:       'Menu',
+    dashboard:  'Dashboard',
+    home:       'Home',
+    pos:        'Point of Sale',
+    posShort:   'POS',
+    sales:      'Sales',
+    products:   'Products',
+    expenses:   'Expenses',
+    customers:  'Customers',
+    suppliers:  'Suppliers',
+    receivings: 'Receiving',
+    shifts:     'Shifts',
+    reports:    'Reports',
+    settings:   'Settings',
+    more:       'More',
+    closeShift: 'Close shift',
+  },
   settings: {
     title:           'Settings',
     personal:        'Personal',

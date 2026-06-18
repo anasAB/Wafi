@@ -1,31 +1,35 @@
 <script setup lang="ts">
 import { ref, computed }   from 'vue'
 import { useRoute, RouterLink } from 'vue-router'
+import { useI18n }         from 'vue-i18n'
 import { useShiftStore }   from '@/features/shifts/shift.store'
 import ZReportScreen       from '@/features/shifts/components/ZReportScreen.vue'
 
 const route = useRoute()
+const { t } = useI18n()
 const shiftStore  = useShiftStore()
 const showZReport = ref(false)
 
 interface NavItem {
   key:        string
-  label:      string
+  labelKey:   string
   href:       string | null
   permission: string | null
 }
 
+// Labels are i18n keys (resolved in the template) so the nav re-renders on a
+// language switch without rebuilding this list.
 const allNavItems: NavItem[] = [
-  { key: 'home',        label: 'الرئيسية',    href: '/',               permission: null },
-  { key: 'pos',         label: 'نقطة البيع',  href: '/pos',            permission: null },
-  { key: 'history',     label: 'المبيعات',    href: '/history',        permission: null },
-  { key: 'products',    label: 'المنتجات',    href: '/products',       permission: 'can_manage_products' },
-  { key: 'expenses',    label: 'المصاريف',    href: '/expenses',       permission: 'can_view_expenses' },
-  { key: 'customers',   label: 'العملاء',     href: '/customers',      permission: 'can_manage_customers' },
-  { key: 'suppliers',   label: 'الموردون',    href: '/suppliers',      permission: 'can_manage_products' },
-  { key: 'receivings',  label: 'الاستلام',    href: '/receivings',     permission: 'can_manage_products' },
-  { key: 'shifts',      label: 'الورديات',    href: '/shifts/history', permission: null },
-  { key: 'reports',     label: 'التقارير',    href: null,              permission: 'can_view_reports' },
+  { key: 'home',        labelKey: 'nav.home',       href: '/',               permission: null },
+  { key: 'pos',         labelKey: 'nav.pos',        href: '/pos',            permission: null },
+  { key: 'history',     labelKey: 'nav.sales',      href: '/history',        permission: null },
+  { key: 'products',    labelKey: 'nav.products',   href: '/products',       permission: 'can_manage_products' },
+  { key: 'expenses',    labelKey: 'nav.expenses',   href: '/expenses',       permission: 'can_view_expenses' },
+  { key: 'customers',   labelKey: 'nav.customers',  href: '/customers',      permission: 'can_manage_customers' },
+  { key: 'suppliers',   labelKey: 'nav.suppliers',  href: '/suppliers',      permission: 'can_manage_products' },
+  { key: 'receivings',  labelKey: 'nav.receivings', href: '/receivings',     permission: 'can_manage_products' },
+  { key: 'shifts',      labelKey: 'nav.shifts',     href: '/shifts/history', permission: null },
+  { key: 'reports',     labelKey: 'nav.reports',    href: null,              permission: 'can_view_reports' },
 ]
 
 const navItems = computed(() => {
@@ -56,14 +60,14 @@ function isActive(href: string | null): boolean {
       </div>
       <div class="brand-text">
         <span class="brand-name">{{ shiftStore.activeStaff?.name || 'وافي' }}</span>
-        <span class="brand-sub">لوحة التحكم</span>
+        <span class="brand-sub">{{ t('nav.dashboard') }}</span>
       </div>
       <div class="brand-badge">POS</div>
     </RouterLink>
 
     <!-- Main nav -->
     <nav class="nav-section">
-      <p class="nav-label-header">القائمة</p>
+      <p class="nav-label-header">{{ t('nav.menu') }}</p>
 
       <component
         v-for="item in navItems"
@@ -118,7 +122,7 @@ function isActive(href: string | null): boolean {
           </svg>
         </span>
 
-        <span class="nav-text">{{ item.label }}</span>
+        <span class="nav-text">{{ t(item.labelKey) }}</span>
 
         <span v-if="isActive(item.href)" class="active-dot" />
       </component>
@@ -136,7 +140,7 @@ function isActive(href: string | null): boolean {
             <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
         </span>
-        <span class="nav-text">الإعدادات</span>
+        <span class="nav-text">{{ t('nav.settings') }}</span>
       </RouterLink>
 
       <button class="close-shift-btn" @click="showZReport = true">
@@ -145,7 +149,7 @@ function isActive(href: string | null): boolean {
             <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
           </svg>
         </span>
-        <span class="nav-text nav-text-warn">إغلاق الوردية</span>
+        <span class="nav-text nav-text-warn">{{ t('nav.closeShift') }}</span>
       </button>
     </div>
 

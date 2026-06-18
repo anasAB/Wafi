@@ -1,4 +1,24 @@
 export default {
+  // App chrome: sidebar, bottom nav, and shared header. Shared across both
+  // navigation surfaces so a label is defined once (DRY).
+  nav: {
+    menu:       'القائمة',
+    dashboard:  'لوحة التحكم',
+    home:       'الرئيسية',
+    pos:        'نقطة البيع',
+    posShort:   'POS',
+    sales:      'المبيعات',
+    products:   'المنتجات',
+    expenses:   'المصاريف',
+    customers:  'العملاء',
+    suppliers:  'الموردون',
+    receivings: 'الاستلام',
+    shifts:     'الورديات',
+    reports:    'التقارير',
+    settings:   'الإعدادات',
+    more:       'المزيد',
+    closeShift: 'إغلاق الوردية',
+  },
   settings: {
     title:           'الإعدادات',
     personal:        'شخصي',

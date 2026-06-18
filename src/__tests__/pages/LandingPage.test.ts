@@ -64,4 +64,17 @@ describe('LandingPage', () => {
     const wrapper = mount(LandingPage, { global: { plugins: [router, makePinia()] } })
     expect(wrapper.find('.lp-footer').exists()).toBe(true)
   })
+
+  it('does not advertise the unbuilt Electronics Pro pack while its flag is off', async () => {
+    // Flag defaults to false (no VITE_FF_ELECTRONICS_PRO in the test env), so
+    // none of the IMEI/repair/warranty copy should reach the DOM.
+    const router = makeRouter()
+    await router.push('/')
+    const wrapper = mount(LandingPage, { global: { plugins: [router, makePinia()] } })
+
+    expect(wrapper.text()).not.toContain('إلكترونيات برو')
+    expect(wrapper.text()).not.toContain('تتبع IMEI')
+    // The packs that are actually built still render.
+    expect(wrapper.text()).toContain('باقة الموظفين')
+  })
 })

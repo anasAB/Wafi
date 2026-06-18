@@ -45,8 +45,23 @@ const toast              = ref<{ message: string; type: 'success' | 'error' } | 
 const isOnline     = ref(db.currentStatus?.connected ?? false)
 const lastSyncedAt = ref<string | null>(localStorage.getItem('wafi_last_synced'))
 let syncTimer: ReturnType<typeof setInterval> | null = null
+let chartRefreshTimer: ReturnType<typeof setInterval> | null = null
 
 const openCreditCount = ref(0)
+
+async function refreshSalesChart() {
+  try {
+    await chart.load()
+  } catch {
+    // Keep the page stable if refresh fails; next tick/focus will retry.
+  }
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === 'visible') {
+    void refreshSalesChart()
+  }
+}
 
 onMounted(async () => {
   try {
@@ -56,11 +71,19 @@ onMounted(async () => {
       metrics.load(period.value),
       sellers.load(period.value),
       drawer.load(),
-      chart.load(),
+      refreshSalesChart(),
       history.loadHistory(),
       loadOpenCreditCount(),
     ])
   } catch { /* errors shown via toast */ }
+
+  // Keep the 7-day chart fresh while the dashboard stays mounted.
+  chartRefreshTimer = setInterval(() => {
+    if (!document.hidden) {
+      void refreshSalesChart()
+    }
+  }, 30_000)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
 
   syncTimer = setInterval(() => {
     const nowConnected = db.currentStatus?.connected ?? false
@@ -80,7 +103,11 @@ onMounted(async () => {
   }
 })
 
-onUnmounted(() => { if (syncTimer) clearInterval(syncTimer) })
+onUnmounted(() => {
+  if (syncTimer) clearInterval(syncTimer)
+  if (chartRefreshTimer) clearInterval(chartRefreshTimer)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+})
 
 watch(period, async (p) => {
   await Promise.all([metrics.load(p), sellers.load(p)])
@@ -303,7 +330,7 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
           <div class="kc-label">المال الداخل</div>
           <div class="kc-value" dir="ltr">${{ metrics.revenueUsd.value.toLocaleString() }}</div>
           <div class="kc-accent-bar"></div>
-          <div class="kc-sub" v-if="revenueSyp">{{ revenueSyp.toLocaleString('ar-SY') }} ل.س</div>
+          <div class="kc-sub" v-if="revenueSyp" dir="ltr">{{ revenueSyp.toLocaleString() }} ل.س</div>
         </div>
         <div class="kpi-card" @click="showProfitSheet = true">
           <div class="kc-icon">
@@ -325,7 +352,7 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
             </svg>
           </div>
           <div class="kc-label">الفواتير</div>
-          <div class="kc-value">{{ metrics.invoiceCount.value.toLocaleString('ar-SY') }}</div>
+          <div class="kc-value" dir="ltr">{{ metrics.invoiceCount.value.toLocaleString() }}</div>
           <div class="kc-accent-bar"></div>
           <div class="kc-sub" v-if="avgPerInvoice">متوسط ${{ avgPerInvoice }}</div>
         </div>
@@ -338,7 +365,7 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
           <div class="kc-label">النقد في الصندوق</div>
           <div class="kc-value" dir="ltr">${{ drawer.cashUsd.value.toLocaleString() }}</div>
           <div class="kc-accent-bar"></div>
-          <div class="kc-sub" v-if="drawer.cashSyp.value">{{ drawer.cashSyp.value.toLocaleString('ar-SY') }} ل.س</div>
+          <div class="kc-sub" v-if="drawer.cashSyp.value" dir="ltr">{{ drawer.cashSyp.value.toLocaleString() }} ل.س</div>
         </div>
       </div>
 
@@ -476,7 +503,7 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
               <div v-for="sale in recentActivity" :key="sale.id" class="activity-item">
                 <div class="ai-amount" dir="ltr">
                   {{ sale.paymentMethod === 'cash_syp'
-                    ? (sale.totalSyp ?? 0).toLocaleString('ar-SY') + ' ل.س'
+                    ? (sale.totalSyp ?? 0).toLocaleString() + ' ل.س'
                     : '$' + sale.totalUsd.toFixed(2) }}
                 </div>
                 <div class="ai-meta">{{ timeAgo(sale.createdAt) }}</div>

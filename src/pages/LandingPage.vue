@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
+import { featureFlags } from '@/config/featureFlags'
 
 const stats = [
   { value: '10s',    label: 'وقت البيع' },
@@ -47,12 +48,23 @@ const steps = [
   { num: '٣', title: 'ابدأ البيع',    body: 'اضغط "بيع جديد". يعمل على الإنترنت — وبدونه.' },
 ]
 
-const packs = [
-  { name: 'باقة الموظفين',  price: '+$5', period: '/شهر', features: ['ورديات الصندوق', 'حتى ٥ مستخدمين', 'تقرير Z', 'صلاحيات مخصصة'], amber: false },
-  { name: 'باقة الزبائن',   price: '+$5', period: '/شهر', features: ['دفتر الآجل', 'تسجيل دفعة', 'كشف حساب واتساب'], amber: false },
-  { name: 'باقة التقارير',  price: '+$5', period: '/شهر', features: ['تقارير متقدمة', 'ملخص واتساب اليومي', 'تصدير Excel'], amber: false },
-  { name: 'إلكترونيات برو', price: '+$8', period: '/شهر', features: ['تتبع IMEI', 'تذاكر الإصلاح', 'ربحية الإصلاح'], amber: true },
+// Packs that are fully built and safe to advertise today.
+const availablePacks = [
+  { name: 'باقة الموظفين', price: '+$5', period: '/شهر', features: ['ورديات الصندوق', 'حتى ٥ مستخدمين', 'تقرير Z', 'صلاحيات مخصصة'], amber: false },
+  { name: 'باقة الزبائن',  price: '+$5', period: '/شهر', features: ['دفتر الآجل', 'تسجيل دفعة', 'كشف حساب واتساب'], amber: false },
+  { name: 'باقة التقارير', price: '+$5', period: '/شهر', features: ['تقارير متقدمة', 'ملخص واتساب اليومي', 'تصدير Excel'], amber: false },
 ]
+
+// Electronics Pro is not built yet — gate it so we never advertise IMEI/repair/
+// warranty with no code behind it. The `electronicsPro` flag flips on in the
+// same change that ships the feature. (See @/config/featureFlags.)
+const electronicsProPack = {
+  name: 'إلكترونيات برو', price: '+$8', period: '/شهر', features: ['تتبع IMEI', 'تذاكر الإصلاح', 'ربحية الإصلاح'], amber: true,
+}
+
+const packs = featureFlags.electronicsPro
+  ? [...availablePacks, electronicsProPack]
+  : availablePacks
 
 const trust = [
   { icon: '🖨️', text: 'Epson · Star · طابعات صينية 80mm' },

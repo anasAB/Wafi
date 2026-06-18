@@ -3,6 +3,7 @@ import SyncIndicator      from '@/features/sync/SyncIndicator.vue'
 import ExchangeRateWidget from '@/features/exchange-rate/ExchangeRateWidget.vue'
 import ExchangeRateEditor from '@/features/exchange-rate/ExchangeRateEditor.vue'
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 withDefaults(defineProps<{
   title:             string
@@ -15,6 +16,7 @@ withDefaults(defineProps<{
 
 const emit = defineEmits<{ (e: 'back'): void }>()
 const editorOpen = ref(false)
+const { t } = useI18n()
 </script>
 
 <template>
@@ -33,7 +35,7 @@ const editorOpen = ref(false)
           type="button"
           data-testid="back-button"
           class="icon-btn"
-          aria-label="رجوع"
+          :aria-label="t('common.back')"
           @click="emit('back')"
         >
           <!-- Always LEFT-pointing chevron — universally understood as "back" -->

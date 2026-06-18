@@ -248,7 +248,7 @@ async function handleSave(addAnother = false) {
                 show-icon
                 icon-display="input"
                 append-to="self"
-                :min-date="isoToDate(recurringStartDate)"
+                :min-date="isoToDate(recurringStartDate) ?? undefined"
                 class="expense-date-picker"
                 :input-class="['form-input date-input prime-date-input', errors['recurringEndDate'] ? 'input-error' : '']"
               />

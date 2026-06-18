@@ -1,15 +1,19 @@
 <script setup lang="ts">
 import { useRoute, RouterLink } from 'vue-router'
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 const route = useRoute()
+const { t }  = useI18n()
 
+// Labels are i18n keys (resolved in the template) and reuse the shared `nav`
+// namespace, so the bar relabels on a language switch with no rebuild.
 const allTabs = [
-  { key: 'home',      label: 'الرئيسية', to: '/'           },
-  { key: 'sell',      label: 'POS',       to: '/pos'         },
-  { key: 'products',  label: 'المنتجات',  to: '/products'    },
-  { key: 'customers', label: 'العملاء',   to: '/customers'   },
-  { key: 'manage',    label: 'المزيد',    to: '/back-office' },
+  { key: 'home',      labelKey: 'nav.home',      to: '/'           },
+  { key: 'sell',      labelKey: 'nav.posShort',  to: '/pos'         },
+  { key: 'products',  labelKey: 'nav.products',  to: '/products'    },
+  { key: 'customers', labelKey: 'nav.customers', to: '/customers'   },
+  { key: 'manage',    labelKey: 'nav.more',      to: '/back-office' },
 ]
 
 const tabs = computed(() => allTabs)
@@ -89,7 +93,7 @@ function isActive(key: string): boolean {
           color: isActive(tab.key) ? '#60A5FA' : '#3D4F6B',
           fontWeight: isActive(tab.key) ? '700' : '500',
         }"
-      >{{ tab.label }}</span>
+      >{{ t(tab.labelKey) }}</span>
     </RouterLink>
   </nav>
 </template>
