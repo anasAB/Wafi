@@ -10,12 +10,16 @@ stable
 as $$
 declare
   claims jsonb;
+  v_user_id uuid := nullif(event->>'user_id', '')::uuid;
   v_shop_id uuid;
 begin
-  select id into v_shop_id
-  from public.shops
-  where owner_user_id = (event->>'user_id')::uuid
-  limit 1;
+  -- Defensive: a missing user_id must not break token minting for everyone.
+  if v_user_id is not null then
+    select id into v_shop_id
+    from public.shops
+    where owner_user_id = v_user_id
+    limit 1;
+  end if;
 
   claims := event->'claims';
   if v_shop_id is not null then
