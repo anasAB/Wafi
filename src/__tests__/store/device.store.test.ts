@@ -16,15 +16,22 @@ function tokenWith(payload: object): string {
   return `h.${b64}.s`
 }
 
-describe('useDeviceStore', () => {
-  beforeEach(() => setActivePinia(createPinia()))
+// Whatever the test env provides — the store falls back to exactly this when no
+// claim is present (null when VITE_STUB_SHOP_ID is unset).
+const FALLBACK = (import.meta.env.VITE_STUB_SHOP_ID as string | undefined) ?? null
 
-  it('starts with null shopId before auth', async () => {
-    const { useDeviceStore } = await import('@/store/device.store')
-    expect(useDeviceStore().shopId).toBeNull()
+describe('useDeviceStore', () => {
+  beforeEach(() => {
+    session.access_token = ''
+    setActivePinia(createPinia())
   })
 
-  it('reads shopId from the session token on refreshShopId()', async () => {
+  it('uses the configured fallback shop when the token has no claim', async () => {
+    const { useDeviceStore } = await import('@/store/device.store')
+    expect(useDeviceStore().shopId).toBe(FALLBACK)
+  })
+
+  it('prefers the JWT shop_id claim over the fallback', async () => {
     session.access_token = tokenWith({ shop_id: 'shop-xyz' })
     const { useDeviceStore } = await import('@/store/device.store')
     const store = useDeviceStore()
