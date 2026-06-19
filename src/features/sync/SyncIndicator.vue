@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useSync } from './useSync'
 import SyncBadge from '@/components/ui/SyncBadge.vue'
+import ConnectionPill from '@/components/ui/ConnectionPill.vue'
 
 const { status, pendingCount, lastSyncedAt, isStale, errorMessage, syncNow } = useSync()
 
@@ -34,7 +35,9 @@ async function handleSyncNow() {
     class="sync-trigger"
     @click="panelOpen = !panelOpen"
   >
-    <SyncBadge :status="status" :pending-count="pendingCount" />
+    <!-- Always-visible indicator reflects TRUE network state (honest in
+         local-only mode). The sync-only SyncBadge stays in the panel below. -->
+    <ConnectionPill />
     <p v-if="isStale" role="alert" class="sync-trigger-note sync-trigger-note--warn">لم تتم المزامنة منذ 24 ساعة</p>
     <p v-if="errorMessage" role="alert" class="sync-trigger-note sync-trigger-note--error">{{ errorMessage }}</p>
   </button>
