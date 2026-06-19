@@ -165,8 +165,6 @@ async function submit() {
 </template>
 
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap');
-
 .auth {
   display: flex;
   min-height: 100svh;

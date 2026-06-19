@@ -13,7 +13,11 @@ vi.mock('virtual:pwa-register', () => ({
 
 import { usePwaLifecycle } from '@/composables/usePwaLifecycle'
 
-beforeEach(() => { updateSpy.mockClear() })
+beforeEach(() => {
+  updateSpy.mockClear()
+  captured.onOfflineReady = undefined
+  captured.onNeedRefresh = undefined
+})
 
 describe('usePwaLifecycle', () => {
   it('flips offlineReady when the SW reports offline-ready', () => {

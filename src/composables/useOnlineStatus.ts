@@ -8,7 +8,9 @@ import { ref, onMounted, onUnmounted } from 'vue'
 export function useOnlineStatus() {
   const isOnline = ref(typeof navigator !== 'undefined' ? navigator.onLine : true)
 
-  function update() { isOnline.value = navigator.onLine }
+  function update() {
+    if (typeof navigator !== 'undefined') isOnline.value = navigator.onLine
+  }
 
   onMounted(() => {
     if (typeof window === 'undefined') return
