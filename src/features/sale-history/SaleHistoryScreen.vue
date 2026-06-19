@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import AppToast from '@/components/ui/AppToast.vue'
 import PeriodToggle from '@/features/dashboard/components/PeriodToggle.vue'
+import { db } from '@/data/powersync/db'
 import { useSaleHistory } from './useSaleHistory'
 import { usePeriodToggle } from '@/features/dashboard/composables/usePeriodToggle'
 import { getDateRange } from '@/features/dashboard/composables/periodUtils'
@@ -22,10 +23,15 @@ const toast      = ref<string | null>(null)
 const toastType  = ref<'info' | 'error'>('info')
 const methodMenuOpen = ref(false)
 const methodMenuRef  = ref<HTMLElement | null>(null)
+let unbindSyncListener: (() => void) | undefined
 const returnSaleId     = ref<string | null>(null)
 const returnSaleNumber = ref('')
 const detailSaleId     = ref<string | null>(null)
 const detailSaleNumber = ref('')
+
+async function refreshHistoryForCurrentPeriod() {
+  await loadHistory(getDateRange(period.value))
+}
 
 function openReturn(sale: SaleRecord) {
   returnSaleId.value     = sale.id
@@ -38,7 +44,8 @@ function openReturnDetail(sale: SaleRecord) {
 }
 
 function onReturnConfirmed() {
-  loadHistory(getDateRange(period.value))
+  returnSaleId.value = null
+  refreshHistoryForCurrentPeriod()
 }
 
 // If ?period= is in the URL, use that period; otherwise use the current singleton value
@@ -101,16 +108,26 @@ const periodTotal = computed(() =>
 
 onMounted(async () => {
   document.addEventListener('click', onDocumentClick)
+  unbindSyncListener = db.registerListener?.({
+    statusChanged: async (status) => {
+      const flow = status.dataFlowStatus
+      if (!status.connected) return
+      if (flow?.downloading || flow?.uploading) return
+      if (loading.value) return
+      await refreshHistoryForCurrentPeriod()
+    },
+  })
   if (route.query.period) {
     // Sync singleton to URL param (handles direct navigation)
     const p = route.query.period as string
     if (p === 'today' || p === 'week' || p === 'month') setPeriod(p)
   }
-  await loadHistory(getDateRange(period.value))
+  await refreshHistoryForCurrentPeriod()
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocumentClick)
+  unbindSyncListener?.()
 })
 
 // Reload from the DB whenever the selected period changes.

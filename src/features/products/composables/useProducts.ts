@@ -38,6 +38,22 @@ export function useProducts() {
       currentStock: number; lowStockThreshold: number; isActive: boolean
     }
   ) {
+    const normalizedBarcode = (data.barcode ?? '').trim()
+    if (normalizedBarcode) {
+      const duplicate = await db.getOptional<{ id: string }>(
+        `SELECT id FROM products
+         WHERE shop_id = ?
+           AND barcode = ?
+           AND (deleted = 0 OR deleted IS NULL)
+           AND (? IS NULL OR id <> ?)
+         LIMIT 1`,
+        [data.shopId, normalizedBarcode, data.id ?? null, data.id ?? null]
+      )
+      if (duplicate?.id) {
+        throw new Error('الباركود مستخدم مسبقاً لمنتج آخر. غيّر الباركود ثم أعد المحاولة.')
+      }
+    }
+
     const now = new Date().toISOString()
     if (data.id) {
       const old = await db.getOptional<{ price_usd: number }>(
@@ -47,7 +63,7 @@ export function useProducts() {
         `UPDATE products SET name_ar=?, name_en=?, barcode=?, category=?,
          price_usd=?, cost_price_usd=?, current_stock=?, low_stock_threshold=?,
          photo_url=?, is_active=?, updated_at=?, sync_status='pending' WHERE id=?`,
-        [data.nameAr, data.nameEn ?? null, data.barcode ?? null, data.category ?? null,
+        [data.nameAr, data.nameEn ?? null, normalizedBarcode || null, data.category ?? null,
          data.salePriceUsd, data.costPriceUsd, data.currentStock, data.lowStockThreshold,
          data.photoUrl ?? null, data.isActive ? 1 : 0, now, data.id]
       )
@@ -65,7 +81,7 @@ export function useProducts() {
           current_stock, low_stock_threshold, photo_url, is_active, deleted,
           sync_status, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'pending', ?, ?)`,
-        [id, data.shopId, data.nameAr, data.nameEn ?? null, data.barcode ?? null,
+        [id, data.shopId, data.nameAr, data.nameEn ?? null, normalizedBarcode || null,
          data.category ?? null, data.salePriceUsd, data.costPriceUsd,
          data.currentStock, data.lowStockThreshold, data.photoUrl ?? null,
          data.isActive ? 1 : 0, now, now]

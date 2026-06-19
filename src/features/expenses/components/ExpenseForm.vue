@@ -466,6 +466,24 @@ async function handleSave(addAnother = false) {
   width: 100%;
 }
 
+.expense-date-picker :deep(.p-inputtext),
+.expense-date-picker :deep(input.p-datepicker-input) {
+  background: rgba(255, 255, 255, 0.07) !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  color: #E8EDF5 !important;
+}
+
+.expense-date-picker :deep(.p-inputtext:enabled:hover),
+.expense-date-picker :deep(input.p-datepicker-input:enabled:hover) {
+  border-color: rgba(26, 86, 219, 0.45) !important;
+}
+
+.expense-date-picker :deep(.p-inputtext:enabled:focus),
+.expense-date-picker :deep(input.p-datepicker-input:enabled:focus) {
+  border-color: rgba(26, 86, 219, 0.8) !important;
+  box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.25), 0 0 12px rgba(26, 86, 219, 0.15) !important;
+}
+
 .expense-date-picker :deep(.p-datepicker-input) {
   height: 40px !important;
   min-height: 40px !important;
@@ -520,6 +538,13 @@ async function handleSave(addAnother = false) {
   color: #E8EDF5;
 }
 
+.expense-date-picker :deep(.p-datepicker-calendar-container),
+.expense-date-picker :deep(.p-datepicker-calendar),
+.expense-date-picker :deep(.p-datepicker-month-view),
+.expense-date-picker :deep(.p-datepicker-year-view) {
+  background: transparent !important;
+}
+
 .expense-date-picker :deep(.p-datepicker-header) {
   background: transparent;
   border-bottom: 1px solid rgba(26,86,219,0.20);
@@ -530,6 +555,12 @@ async function handleSave(addAnother = false) {
 .expense-date-picker :deep(.p-datepicker-prev),
 .expense-date-picker :deep(.p-datepicker-next) {
   color: #C8D5E8;
+}
+
+.expense-date-picker :deep(.p-datepicker-title button:hover),
+.expense-date-picker :deep(.p-datepicker-prev:hover),
+.expense-date-picker :deep(.p-datepicker-next:hover) {
+  background: rgba(26, 86, 219, 0.16) !important;
 }
 
 .expense-date-picker :deep(.p-datepicker-day),
@@ -545,6 +576,16 @@ async function handleSave(addAnother = false) {
 .expense-date-picker :deep(.p-datepicker-day-selected) {
   background: linear-gradient(135deg, #1A56DB, #1248B3);
   color: #FFFFFF;
+}
+
+.expense-date-picker :deep(.p-datepicker-select-month),
+.expense-date-picker :deep(.p-datepicker-select-year),
+.expense-date-picker :deep(.p-select),
+.expense-date-picker :deep(.p-select-label),
+.expense-date-picker :deep(.p-select-dropdown) {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(26, 86, 219, 0.28) !important;
+  color: #E8EDF5 !important;
 }
 
 .amount-input {

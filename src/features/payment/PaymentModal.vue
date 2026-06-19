@@ -518,35 +518,47 @@ async function confirmAsHigherPrice() {
 }
 
 .modal-cancel-btn {
-  font-size: 14px;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-size: 13px;
   font-weight: 700;
   font-family: 'Tajawal', system-ui, sans-serif;
-  color: #EF4444;
-  background: none;
-  border: none;
+  color: #FCA5A5;
+  background: rgba(127, 29, 29, 0.22);
+  border: 1px solid rgba(239, 68, 68, 0.35);
   cursor: pointer;
-  padding: 0;
-  transition: opacity 0.15s;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 
-.modal-cancel-btn:hover { opacity: 0.75; }
+.modal-cancel-btn:hover {
+  color: #FECACA;
+  background: rgba(153, 27, 27, 0.30);
+  border-color: rgba(248, 113, 113, 0.48);
+}
 
 .modal-back-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 14px;
-  font-weight: 600;
+  justify-content: center;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
   font-family: 'Tajawal', system-ui, sans-serif;
-  color: #60A5FA;
-  background: none;
-  border: none;
+  color: #CFE0FF;
+  background: rgba(26, 86, 219, 0.20);
+  border: 1px solid rgba(59, 130, 246, 0.42);
   cursor: pointer;
-  padding: 0;
-  transition: opacity 0.15s;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 
-.modal-back-btn:hover { opacity: 0.75; }
+.modal-back-btn:hover {
+  color: #E3ECFF;
+  background: rgba(26, 86, 219, 0.30);
+  border-color: rgba(96, 165, 250, 0.58);
+}
 
 /* ── Heading ───────────────────────────────────── */
 .modal-heading {
@@ -938,12 +950,16 @@ async function confirmAsHigherPrice() {
 }
 
 .overpay-btn-price {
-  color: #60A5FA;
-  background: rgba(26,86,219,0.12);
-  border: 1px solid rgba(26,86,219,0.35);
+  color: #CFE0FF;
+  background: rgba(26, 86, 219, 0.22);
+  border: 1px solid rgba(96, 165, 250, 0.45);
 }
 
-.overpay-btn-price:hover { background: rgba(26,86,219,0.20); }
+.overpay-btn-price:hover {
+  color: #E3ECFF;
+  background: rgba(26, 86, 219, 0.34);
+  border-color: rgba(147, 197, 253, 0.65);
+}
 
 /* ── Card info box ─────────────────────────────── */
 .card-info-box {
