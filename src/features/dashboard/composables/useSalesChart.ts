@@ -13,6 +13,12 @@ function toDateStr(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
+function dayLabelFromDateStr(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const date = new Date(y, (m ?? 1) - 1, d ?? 1)
+  return AR_DAYS[date.getDay()]
+}
+
 const AR_DAYS = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
 
 export function useSalesChart() {
@@ -34,20 +40,20 @@ export function useSalesChart() {
       const end   = days[days.length - 1]
 
       const salesRows = await db.getAll<{ day: string; total: number }>(
-        `SELECT DATE(created_at, 'localtime') as day,
+        `SELECT DATE(created_at) as day,
                 COALESCE(SUM(total_usd), 0) as total
          FROM sales
-         WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?
+         WHERE shop_id = ? AND DATE(created_at) BETWEEN ? AND ?
          GROUP BY day`,
         [device.shopId, start, end]
       )
 
       const cogsRows = await db.getAll<{ day: string; cogs: number }>(
-        `SELECT DATE(s.created_at, 'localtime') as day,
+        `SELECT DATE(s.created_at) as day,
                 COALESCE(SUM(sli.quantity * COALESCE(sli.unit_cost_usd, 0)), 0) as cogs
          FROM sale_line_items sli
          JOIN sales s ON sli.sale_id = s.id
-         WHERE s.shop_id = ? AND DATE(s.created_at, 'localtime') BETWEEN ? AND ?
+         WHERE s.shop_id = ? AND DATE(s.created_at) BETWEEN ? AND ?
          GROUP BY day`,
         [device.shopId, start, end]
       )
@@ -56,10 +62,7 @@ export function useSalesChart() {
       const cogsMap  = new Map(cogsRows.map(r => [r.day, r.cogs]))
 
       data.value = {
-        labels: days.map(d => {
-          const date = new Date(d + 'T00:00:00')
-          return AR_DAYS[date.getDay()]
-        }),
+        labels: days.map(dayLabelFromDateStr),
         sales:  days.map(d => salesMap.get(d) ?? 0),
         profit: days.map(d => {
           const rev  = salesMap.get(d) ?? 0

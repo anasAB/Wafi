@@ -192,6 +192,29 @@ function timeAgo(iso: string): string {
   return `منذ ${h} ساعة`
 }
 
+function formatUsdCompact(value: number): string {
+  const sign = value < 0 ? '-' : ''
+  const abs = Math.abs(value)
+
+  if (abs >= 1_000_000) {
+    const unit = abs >= 10_000_000 ? 0 : 1
+    return `${sign}$${(abs / 1_000_000).toFixed(unit)}M`
+  }
+
+  if (abs >= 1_000) {
+    const unit = abs >= 10_000 ? 0 : 1
+    return `${sign}$${(abs / 1_000).toFixed(unit)}K`
+  }
+
+  return `${sign}$${Math.round(abs).toLocaleString('en-US')}`
+}
+
+function formatUsdDetailed(value: number): string {
+  const sign = value < 0 ? '-' : ''
+  const abs = Math.abs(value)
+  return `${sign}$${abs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
 const chartSeries = computed(() => [
   { name: 'المبيعات', data: chart.data.value.sales  },
   { name: 'الربح',    data: chart.data.value.profit },
@@ -225,12 +248,12 @@ const chartOptions = computed(() => ({
   yaxis: {
     labels: {
       style: { colors: ['#637285'] },
-      formatter: (v: number) => `$${Math.round(v)}`,
+      formatter: formatUsdCompact,
     },
   },
   tooltip: {
     theme: 'dark' as const,
-    y: { formatter: (v: number) => `$${v.toFixed(2)}` },
+    y: { formatter: formatUsdDetailed },
   },
   legend: { show: false },
   dataLabels: { enabled: false },
@@ -393,13 +416,17 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
             <div class="card-hdr">
               <div style="display:flex; align-items:center; gap:6px;">
                 <span class="activity-live-dot"></span>
-                <span class="card-title">المبيعات والربح — آخر ٧ أيام</span>
+                <span class="card-title">المبيعات والربح — آخر ٧ أيام (USD)</span>
               </div>
               <div class="chart-legend">
-                <span class="legend-dot legend-dot-sales"></span>
-                <span class="legend-label">المبيعات</span>
-                <span class="legend-dot legend-dot-profit"></span>
-                <span class="legend-label">الربح</span>
+                <span class="legend-item">
+                  <span class="legend-dot legend-dot-sales"></span>
+                  <span class="legend-label">المبيعات</span>
+                </span>
+                <span class="legend-item">
+                  <span class="legend-dot legend-dot-profit"></span>
+                  <span class="legend-label">الربح</span>
+                </span>
               </div>
             </div>
             <VueApexCharts type="area" :height="150" :series="chartSeries" :options="chartOptions" />
@@ -812,11 +839,12 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
 }
 
 /* ─── CHART LEGEND ───────────────────────────────────── */
-.chart-legend { display: flex; align-items: center; gap: 8px; }
-.legend-dot        { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.chart-legend { display: flex; align-items: center; gap: 12px; }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.legend-dot        { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
 .legend-dot-sales  { background: #1A56DB; }
 .legend-dot-profit { background: #22C55E; }
-.legend-label { font-size: 10px; color: #637285; }
+.legend-label { font-size: 12px; font-weight: 700; color: #A8B8CC; }
 
 /* ─── BEST SELLERS ───────────────────────────────────── */
 .empty-state { font-size: 12px; color: #3D4F6B; text-align: center; padding: 12px 0; }
