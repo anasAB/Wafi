@@ -148,9 +148,6 @@ async function handleDelete() {
                   <p class="invoice-amount">{{ inv.remainingUsd.toFixed(2) }}$</p>
                   <p class="item-muted">من ${{ inv.totalUsd.toFixed(2) }}</p>
                 </div>
-                <svg class="invoice-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-                </svg>
               </button>
             </div>
           </div>
@@ -412,12 +409,10 @@ async function handleDelete() {
 .section { margin-bottom: 1.5rem; }
 
 .section-label {
-  font-size: 0.6875rem;
-  font-weight: 600;
-  color: #637285;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-bottom: 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #9FB0C7;
+  margin-bottom: 0.6rem;
   padding-inline-start: 0.25rem;
 }
 
@@ -434,16 +429,15 @@ async function handleDelete() {
   padding: 0.75rem;
   border-radius: 0.75rem;
   background: linear-gradient(135deg, rgba(26,86,219,0.11), rgba(255,255,255,0.04));
-  border: 1px solid rgba(245,158,11,0.28);
-  box-shadow: 0 4px 20px rgba(26,86,219,0.06);
+  border: none;
+  box-shadow: 0 4px 16px rgba(6, 10, 20, 0.28);
   cursor: pointer;
   font-family: inherit;
-  transition: border-color 0.12s, background 0.12s, transform 0.1s;
+  transition: background 0.12s, transform 0.1s;
 }
 
 .invoice-card:hover {
-  border-color: rgba(245,158,11,0.50);
-  background: linear-gradient(135deg, rgba(26,86,219,0.16), rgba(255,255,255,0.06));
+  background: linear-gradient(135deg, rgba(26,86,219,0.20), rgba(255,255,255,0.07));
 }
 
 .invoice-card:active { transform: scale(0.99); }
@@ -451,13 +445,6 @@ async function handleDelete() {
 .invoice-card-info { min-width: 0; }
 
 .invoice-card-amount { text-align: left; flex-shrink: 0; }
-
-.invoice-chevron {
-  width: 1rem;
-  height: 1rem;
-  color: #637285;
-  flex-shrink: 0;
-}
 
 .invoice-number {
   font-size: 0.875rem;

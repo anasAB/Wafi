@@ -230,7 +230,7 @@ watch(
 <template>
   <div class="page-root" dir="rtl">
     <div class="lg:hidden">
-      <AppHeader title="سجل النشاط" :show-back="true" :show-settings="false" @back="router.push('/settings')" />
+      <AppHeader title="سجل النشاط" :show-back="true" @back="router.push('/settings')" />
     </div>
 
     <div class="page-body">

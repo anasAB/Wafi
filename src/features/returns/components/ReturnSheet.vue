@@ -47,10 +47,8 @@ async function handleConfirm() {
   loading.value = true
   try {
     await confirm()
-    confirmed.value = true
-    toastType.value = 'info'
-    toast.value     = 'تم تسجيل المرتجع'
     emit('confirmed')
+    emit('close')
   } catch (e) {
     toastType.value = 'error'
     toast.value     = e instanceof Error ? e.message : 'حدث خطأ'

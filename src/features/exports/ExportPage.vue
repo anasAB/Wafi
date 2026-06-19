@@ -234,6 +234,28 @@ async function onExport() {
   padding: 7px 10px; border-radius: 8px; font-size: 13px;
   background: rgba(255,255,255,0.05); border: 1px solid rgba(26,86,219,0.25);
   color: #E8EDF5; font-family: 'Tajawal', system-ui, sans-serif;
+  color-scheme: dark;
+  appearance: none;
+  -webkit-appearance: none;
+  min-height: 38px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.date-input:hover {
+  border-color: rgba(26,86,219,0.45);
+  background: rgba(255,255,255,0.07);
+}
+
+.date-input:focus {
+  border-color: rgba(26,86,219,0.75);
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.16);
+}
+
+.date-input::-webkit-calendar-picker-indicator {
+  filter: invert(84%) sepia(8%) saturate(392%) hue-rotate(179deg) brightness(89%) contrast(90%);
+  opacity: 0.95;
+  cursor: pointer;
 }
 .format-row { display: flex; gap: 10px; }
 .format-btn {

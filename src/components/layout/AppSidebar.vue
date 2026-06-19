@@ -41,6 +41,15 @@ const navItems = computed(() => {
   )
 })
 
+// Same gating as the main nav, applied to the Settings entry (which lives in the
+// bottom section). Shown to owners and to staff with can_manage_settings.
+const canManageSettings = computed(() => {
+  const perms   = shiftStore.permissions
+  const isOwner = shiftStore.activeStaff?.role === 'owner'
+  if (!perms || isOwner) return true
+  return Boolean(perms.can_manage_settings)
+})
+
 function isActive(href: string | null): boolean {
   if (!href) return false
   if (href === '/') return route.path === '/'
@@ -131,6 +140,7 @@ function isActive(href: string | null): boolean {
     <!-- Bottom actions -->
     <div class="sidebar-bottom">
       <RouterLink
+        v-if="canManageSettings"
         to="/settings"
         :class="['nav-item', route.path.startsWith('/settings') ? 'nav-item-active' : 'nav-item-idle']"
       >

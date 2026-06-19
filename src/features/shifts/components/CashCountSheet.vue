@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import BaseModal from '@/components/ui/BaseModal.vue'
 
+const props = defineProps<{ errorMessage?: string }>()
 const emit      = defineEmits<{ confirm: [usd: number, syp: number]; cancel: [] }>()
 const usdAmount = ref('')
 const sypAmount = ref('')
@@ -15,6 +16,8 @@ function confirm() {
   <BaseModal title="عدّ الصندوق" @close="emit('cancel')">
     <div class="sheet-body" dir="rtl">
       <p class="sheet-subtitle">كم موجود في الصندوق الآن قبل الإغلاق؟</p>
+
+      <p v-if="props.errorMessage" class="sheet-error">{{ props.errorMessage }}</p>
 
       <div class="inputs-wrap">
         <div class="cash-input-card">
@@ -66,6 +69,17 @@ function confirm() {
   font-size: 0.875rem;
   color: #637285;
   margin: 0 0 1rem;
+}
+
+.sheet-error {
+  margin: 0 0 0.75rem;
+  text-align: center;
+  font-size: 0.8125rem;
+  color: #FCA5A5;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: rgba(127, 29, 29, 0.22);
+  border-radius: 0.75rem;
+  padding: 0.5rem 0.625rem;
 }
 
 .inputs-wrap {

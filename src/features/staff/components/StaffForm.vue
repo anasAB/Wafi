@@ -173,7 +173,10 @@ async function saveStaff(pin: string) {
 
     <!-- Step 2 & 3: PIN entry -->
     <template v-else>
-      <p class="pin-step-label">{{ stepLabel }}</p>
+      <div class="pin-step-card">
+        <p class="pin-step-label">{{ stepLabel }}</p>
+        <p class="pin-step-sub">لحماية الحساب، أدخل الرقم السري ثم أكده</p>
+      </div>
       <p v-if="pinError" class="pin-error">{{ pinError }}</p>
       <PinPad ref="pinPadRef" @complete="onPin" />
 
@@ -417,8 +420,42 @@ async function saveStaff(pin: string) {
 /* PIN step */
 .pin-step-label {
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
   color: #E8EDF5;
+  text-align: center;
+}
+
+.pin-step-card {
+  width: 100%;
+  border-radius: 10px;
+  padding: 10px 12px 9px;
+  background: linear-gradient(135deg, rgba(26,86,219,0.14), rgba(255,255,255,0.03));
+  border: 1px solid rgba(26,86,219,0.28);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.pin-brand-mini {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(145deg, #60A5FA, #1A56DB);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 900;
+  box-shadow: 0 4px 12px rgba(26,86,219,0.34);
+}
+
+.pin-step-sub {
+  margin: 0;
+  font-size: 11px;
+  color: #93A3B8;
   text-align: center;
 }
 

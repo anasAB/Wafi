@@ -63,7 +63,6 @@ onMounted(load)
     <AppHeader
       title="أسباب الإرجاع"
       :show-back="true"
-      :show-settings="false"
       @back="router.back()"
     />
   </div>

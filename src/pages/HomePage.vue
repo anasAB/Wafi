@@ -9,6 +9,7 @@ import ExpenseForm from '@/features/expenses/components/ExpenseForm.vue'
 import ProfitSheet from '@/features/dashboard/components/ProfitSheet.vue'
 import CashDrawerSheet from '@/features/dashboard/components/CashDrawerSheet.vue'
 import ExchangeRateEditor from '@/features/exchange-rate/ExchangeRateEditor.vue'
+import ConnectionPill from '@/components/ui/ConnectionPill.vue'
 
 import { useExchangeRate }     from '@/features/exchange-rate'
 import { useSaleDraft }        from '@/composables/useSaleDraft'
@@ -283,6 +284,7 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
       </div>
       <!-- Header actions -->
       <div class="hp-header-actions">
+        <ConnectionPill />
         <button class="rate-pill" @click="showRateEditor = true">
           <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/>

@@ -18,6 +18,7 @@ const device     = useDeviceStore()
 const step       = ref<'cash-count' | 'report'>('cash-count')
 const shift      = ref<CashierShift | null>(null)
 const metrics    = ref<ZReportMetrics | null>(null)
+const cashCountError = ref('')
 const closingUsd = ref(0)
 const closingSyp = ref(0)
 const closing    = ref(false)
@@ -25,7 +26,14 @@ const closing    = ref(false)
 onMounted(async () => { shift.value = await loadActiveShift() })
 
 async function onCashCounted(usd: number, syp: number) {
-  if (!shift.value) return
+  if (!shift.value) {
+    shift.value = await loadActiveShift()
+  }
+  if (!shift.value) {
+    cashCountError.value = 'لا توجد وردية مفتوحة لهذا الجهاز. افتح وردية أولاً ثم أعد المحاولة.'
+    return
+  }
+  cashCountError.value = ''
   closingUsd.value = usd
   closingSyp.value = syp
   metrics.value = await compute(shift.value, usd, syp)
@@ -44,7 +52,7 @@ async function handleClose(withPrint: boolean) {
         metrics.value
       )
     }
-    await closeShift(closingUsd.value, closingSyp.value)
+    await closeShift(closingUsd.value, closingSyp.value, shift.value.id)
   } finally {
     closing.value = false
   }
@@ -55,7 +63,12 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
 </script>
 
 <template>
-  <CashCountSheet v-if="step === 'cash-count'" @confirm="onCashCounted" @cancel="emit('close')" />
+  <CashCountSheet
+    v-if="step === 'cash-count'"
+    :error-message="cashCountError"
+    @confirm="onCashCounted"
+    @cancel="emit('close')"
+  />
 
   <div v-else-if="step === 'report' && metrics" class="zreport-overlay" dir="rtl">
 
