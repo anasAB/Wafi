@@ -8,9 +8,12 @@ import './style.css'
 import 'primeicons/primeicons.css'
 import App    from './App.vue'
 import router from './router'
+import { bootstrapDevAuth } from './data/supabase/devAuth'
 
 const pinia = createPinia()
 pinia.use(piniaPluginPersistedstate)
+
+void bootstrapDevAuth()
 
 createApp(App)
   .use(pinia)
