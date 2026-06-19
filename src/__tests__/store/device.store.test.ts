@@ -17,8 +17,8 @@ function tokenWith(payload: object): string {
 }
 
 // Whatever the test env provides — the store falls back to exactly this when no
-// claim is present (null when VITE_STUB_SHOP_ID is unset).
-const FALLBACK = (import.meta.env.VITE_STUB_SHOP_ID as string | undefined) ?? null
+// claim is present ('' when VITE_STUB_SHOP_ID is unset).
+const FALLBACK = (import.meta.env.VITE_STUB_SHOP_ID as string | undefined) ?? ''
 
 describe('useDeviceStore', () => {
   beforeEach(() => {
