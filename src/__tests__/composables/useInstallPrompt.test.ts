@@ -42,4 +42,18 @@ describe('useInstallPrompt', () => {
     const api = useInstallPrompt()
     expect(await api.promptInstall()).toBe('unavailable')
   })
+
+  it('concurrent double-call: prompt() invoked exactly once, second call returns "unavailable"', async () => {
+    const useInstallPrompt = await freshComposable()
+    const evt = fireBeforeInstallPrompt()
+    const api = useInstallPrompt()
+    expect(api.canInstall.value).toBe(true)
+
+    // Fire both calls without awaiting the first
+    const [result1, result2] = await Promise.all([api.promptInstall(), api.promptInstall()])
+
+    expect(evt.prompt).toHaveBeenCalledTimes(1)
+    expect(result1).toBe('accepted')
+    expect(result2).toBe('unavailable')
+  })
 })

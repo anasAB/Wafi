@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
 
-const props = defineProps<{ message: string; type?: 'info' | 'error' | 'success'; actionLabel?: string }>()
+const props = withDefaults(
+  defineProps<{ message: string; type?: 'info' | 'error' | 'success'; actionLabel?: string; autoDismiss?: boolean }>(),
+  { autoDismiss: true }
+)
 const emit  = defineEmits<{ (e: 'dismiss'): void; (e: 'action'): void }>()
 
 let timer: ReturnType<typeof setTimeout>
 onMounted(() => {
-  timer = setTimeout(() => emit('dismiss'), 4000)
+  if (props.autoDismiss) {
+    timer = setTimeout(() => emit('dismiss'), 4000)
+  }
 })
 onUnmounted(() => clearTimeout(timer))
 </script>

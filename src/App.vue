@@ -93,6 +93,7 @@ watch(
     type="info"
     message="تحديث متاح"
     action-label="تحديث"
+    :auto-dismiss="false"
     @action="applyUpdate"
     @dismiss="dismissNeedRefresh"
   />

@@ -41,9 +41,9 @@ export function useInstallPrompt() {
   async function promptInstall(): Promise<'accepted' | 'dismissed' | 'unavailable'> {
     const evt = deferredPrompt.value
     if (!evt) return 'unavailable'
+    deferredPrompt.value = null
     await evt.prompt()
     const { outcome } = await evt.userChoice
-    deferredPrompt.value = null
     return outcome
   }
 
