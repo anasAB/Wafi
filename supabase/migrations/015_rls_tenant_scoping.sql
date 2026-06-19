@@ -7,21 +7,18 @@
 -- claim (see migration 014 / plan Task 2 gate). Applying without the claim
 -- present denies all access and locks the account out of its own data.
 
--- Reads shop_id from a top-level claim (access token hook) OR app_metadata
--- (set directly on the user — no hook needed). Supporting both keeps either
--- delivery path working.
+-- Resolves the caller's shop from the shops.owner_user_id -> auth.uid() mapping.
+-- No JWT claim required (auth.uid() is always present), matching the sync-stream
+-- scoping. SECURITY DEFINER so it can read shops regardless of the caller's
+-- grants/RLS; search_path pinned to public to keep it injection-safe.
 create or replace function public.auth_shop_id()
 returns uuid
 language sql
 stable
+security definer
+set search_path = public
 as $$
-  select nullif(
-    coalesce(
-      auth.jwt() ->> 'shop_id',
-      auth.jwt() -> 'app_metadata' ->> 'shop_id'
-    ),
-    ''
-  )::uuid
+  select id from public.shops where owner_user_id = auth.uid() limit 1
 $$;
 
 -- NOTE: these policies bind anon/authenticated. The table owner and any
