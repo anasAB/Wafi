@@ -120,8 +120,21 @@ function fmtDate(iso: string | null | undefined): string {
 
 <style scoped>
 .page-root { display: flex; flex-direction: column; min-height: 100dvh; background: #06090F; font-family: 'Tajawal', system-ui, sans-serif; }
+
+@media (min-width: 1024px) {
+  .page-root { height: 100dvh; overflow: hidden; }
+}
+
 .page-main { flex: 1; padding: 1rem 1rem 6rem; width: 100%; }
-@media (min-width: 1024px) { .page-main { padding: 1.25rem 1.5rem 6rem; } }
+@media (min-width: 1024px) {
+  .page-main {
+    padding: 1.25rem 1.5rem 6rem;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+}
 
 .toolbar { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.25rem; }
 .search-wrap { position: relative; flex: 1; max-width: 28rem; }
@@ -148,6 +161,14 @@ function fmtDate(iso: string | null | undefined): string {
   border-radius: 1rem; overflow: hidden;
   background: linear-gradient(135deg, rgba(26,86,219,0.11), rgba(255,255,255,0.04));
   border: 1px solid rgba(26,86,219,0.28); box-shadow: 0 4px 20px rgba(26,86,219,0.10), inset 0 1px 0 rgba(255,255,255,0.07);
+}
+
+@media (min-width: 1024px) {
+  .table-wrap {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
 }
 .data-table { width: 100%; border-collapse: collapse; }
 .table-head-row { background: rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.05); }

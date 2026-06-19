@@ -115,6 +115,7 @@ async function confirmDelete() {
       </div>
 
       <ProductList
+        class="product-list-block"
         :products="products"
         :filter-low-stock="filterLowStock"
         @edit="id => router.push(`/products/${id}/edit`)"
@@ -165,6 +166,13 @@ async function confirmDelete() {
   font-family: 'Tajawal', system-ui, sans-serif;
 }
 
+@media (min-width: 1024px) {
+  .page-root {
+    height: 100dvh;
+    overflow: hidden;
+  }
+}
+
 .page-main {
   flex: 1;
   padding: 1rem 1rem 80px;
@@ -174,6 +182,21 @@ async function confirmDelete() {
 @media (min-width: 1024px) {
   .page-main {
     padding: 1.25rem 1.5rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+}
+
+.product-list-block {
+  min-height: 0;
+}
+
+@media (min-width: 1024px) {
+  .product-list-block {
+    flex: 1;
+    overflow: hidden;
   }
 }
 

@@ -450,6 +450,13 @@ watch(
   font-family: 'Tajawal', system-ui, sans-serif;
 }
 
+@media (min-width: 1024px) {
+  .page-root {
+    height: 100dvh;
+    overflow: hidden;
+  }
+}
+
 .page-body {
   padding: 16px;
   max-width: 980px;
@@ -462,6 +469,10 @@ watch(
   .page-body {
     padding: 20px;
     max-width: none;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
   }
 }
 
@@ -732,6 +743,15 @@ watch(
   min-height: 12rem;
 }
 
+@media (min-width: 1024px) {
+  .main {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+}
+
 .skeleton-list {
   display: flex;
   flex-direction: column;
@@ -788,6 +808,14 @@ watch(
   background: linear-gradient(135deg, rgba(26,86,219,0.11), rgba(255,255,255,0.04));
   border: 1px solid rgba(26,86,219,0.28);
   box-shadow: 0 4px 20px rgba(26,86,219,0.10), inset 0 1px 0 rgba(255,255,255,0.07);
+}
+
+@media (min-width: 1024px) {
+  .table-wrap {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
 }
 
 .audit-table {

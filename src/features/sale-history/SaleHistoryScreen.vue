@@ -396,6 +396,13 @@ async function handleReprint(saleId: string) {
   font-family: 'Tajawal', system-ui, sans-serif;
 }
 
+@media (min-width: 1024px) {
+  .page-root {
+    height: 100dvh;
+    overflow: hidden;
+  }
+}
+
 .filter-bar {
   padding: 12px 16px 0;
   width: 100%;
@@ -670,6 +677,10 @@ async function handleReprint(saleId: string) {
   .page-main {
     padding: 20px 24px;
     max-width: none;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
   }
 }
 
@@ -755,7 +766,14 @@ async function handleReprint(saleId: string) {
   box-shadow: 0 4px 20px rgba(26, 86, 219, 0.10);
 }
 
-@media (min-width: 1024px) { .desktop-table-wrap { display: block; } }
+@media (min-width: 1024px) {
+  .desktop-table-wrap {
+    display: block;
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+}
 
 /* ─── PrimeVue DataTable theming ──────────────────────────── */
 /* Scoped styles are unlayered, so they reliably win over PrimeVue's

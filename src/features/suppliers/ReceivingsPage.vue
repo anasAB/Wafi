@@ -212,6 +212,17 @@ async function onSaved() {
   background: linear-gradient(135deg, rgba(26,86,219,0.11), rgba(255,255,255,0.04));
   border: 1px solid rgba(26,86,219,0.28); box-shadow: 0 4px 20px rgba(26,86,219,0.10), inset 0 1px 0 rgba(255,255,255,0.07);
 }
+
+@media (min-width: 1024px) {
+  /* Match the sibling Back Office list pages: fixed-height shell, only the
+     table scrolls (sticky header/toolbar) — instead of a magic max-height. */
+  .page { height: 100dvh; overflow: hidden; }
+  .table-wrap {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+}
 .data-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .col-supplier { width: 25%; }
 .col-date { width: 22%; }

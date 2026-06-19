@@ -431,6 +431,9 @@ function handleAdjustStock(id: string) {
 
 <style scoped>
 .list-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   font-family: 'Tajawal', system-ui, sans-serif;
 }
 
@@ -674,7 +677,12 @@ function handleAdjustStock(id: string) {
 }
 
 @media (min-width: 1024px) {
-  .table-wrap { display: block; }
+  .table-wrap {
+    display: block;
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
 }
 
 .data-table {

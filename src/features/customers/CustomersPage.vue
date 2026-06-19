@@ -166,7 +166,7 @@ async function handleSaved() {
       class="fab"
       @click="showAddForm = true"
     >
-      <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+      <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
       </svg>
       إضافة زبون
@@ -208,6 +208,13 @@ async function handleSaved() {
   font-family: 'Tajawal', system-ui, sans-serif;
 }
 
+@media (min-width: 1024px) {
+  .page-root {
+    height: 100dvh;
+    overflow: hidden;
+  }
+}
+
 .page-main {
   flex: 1;
   padding: 1rem 1rem 6rem;
@@ -215,7 +222,13 @@ async function handleSaved() {
 }
 
 @media (min-width: 1024px) {
-  .page-main { padding: 1.25rem 1.5rem 6rem; }
+  .page-main {
+    padding: 1.25rem 1.5rem 6rem;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
 }
 
 /* ── Toolbar ────────────────────────────────────────────── */
@@ -359,7 +372,14 @@ async function handleSaved() {
   box-shadow: 0 4px 20px rgba(26,86,219,0.10), inset 0 1px 0 rgba(255,255,255,0.07);
 }
 
-@media (min-width: 1024px) { .desktop-table-wrap { display: block; } }
+@media (min-width: 1024px) {
+  .desktop-table-wrap {
+    display: block;
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+}
 
 .customers-table { width: 100%; border-collapse: collapse; }
 

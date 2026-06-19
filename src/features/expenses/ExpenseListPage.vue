@@ -417,6 +417,13 @@ function handleExpenseSaved() {
   color: #E8EDF5;
 }
 
+@media (min-width: 1024px) {
+  .page-root {
+    height: 100dvh;
+    overflow: hidden;
+  }
+}
+
 /* ── Toolbar ───────────────────────────────────────── */
 .toolbar-row {
   display: flex;
@@ -633,7 +640,13 @@ function handleExpenseSaved() {
   width: 100%;
 }
 @media (min-width: 1024px) {
-  .main-content { padding: 0.75rem 1.5rem 2.5rem; }
+  .main-content {
+    padding: 0.75rem 1.5rem 2.5rem;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
 }
 
 /* ── Summary row ───────────────────────────────────── */
@@ -798,6 +811,14 @@ function handleExpenseSaved() {
   background: linear-gradient(135deg, rgba(26,86,219,0.11), rgba(255,255,255,0.04));
   border: 1px solid rgba(26,86,219,0.28);
   box-shadow: 0 4px 20px rgba(26,86,219,0.10), inset 0 1px 0 rgba(255,255,255,0.07);
+}
+
+@media (min-width: 1024px) {
+  .table-wrap {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
 }
 .expense-table {
   width: 100%;
