@@ -7,11 +7,22 @@
 -- claim (see migration 014 / plan Task 2 gate). Applying without the claim
 -- present denies all access and locks the account out of its own data.
 
+-- Reads shop_id from a top-level claim (access token hook) OR app_metadata
+-- (set directly on the user — no hook needed). Supporting both keeps either
+-- delivery path working.
 create or replace function public.auth_shop_id()
 returns uuid
 language sql
 stable
-as $$ select nullif(auth.jwt() ->> 'shop_id', '')::uuid $$;
+as $$
+  select nullif(
+    coalesce(
+      auth.jwt() ->> 'shop_id',
+      auth.jwt() -> 'app_metadata' ->> 'shop_id'
+    ),
+    ''
+  )::uuid
+$$;
 
 -- NOTE: these policies bind anon/authenticated. The table owner and any
 -- BYPASSRLS role (e.g. the SQL Editor running as `postgres`) are NOT subject to

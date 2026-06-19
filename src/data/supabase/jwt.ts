@@ -15,9 +15,27 @@ export function decodeJwtPayload(token: string): Record<string, unknown> | null 
   }
 }
 
-/** Extract the shop_id claim, or null when absent/blank/unparsable. */
+function asNonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+/**
+ * Extract the shop_id claim, or null when absent/blank/unparsable.
+ * Prefers a top-level `shop_id` claim (custom access token hook) and falls back
+ * to `app_metadata.shop_id` (set directly on the user — no hook required, always
+ * present in the Supabase JWT). Supporting both keeps either delivery path working.
+ */
 export function shopIdFromToken(token: string | null | undefined): string | null {
   if (!token) return null
-  const shopId = decodeJwtPayload(token)?.shop_id
-  return typeof shopId === 'string' && shopId.length > 0 ? shopId : null
+  const payload = decodeJwtPayload(token)
+  if (!payload) return null
+
+  const direct = asNonEmptyString(payload.shop_id)
+  if (direct) return direct
+
+  const appMeta = payload.app_metadata
+  if (appMeta && typeof appMeta === 'object') {
+    return asNonEmptyString((appMeta as Record<string, unknown>).shop_id)
+  }
+  return null
 }

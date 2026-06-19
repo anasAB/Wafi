@@ -1,0 +1,31 @@
+# Wafi PowerSync rules
+# Deploy this file to your PowerSync service.
+# Expects JWT to include a shop_id claim.
+
+bucket_definitions:
+  shop_data:
+    parameters: |
+      SELECT coalesce(
+        request.jwt() ->> 'shop_id',
+        request.jwt() -> 'app_metadata' ->> 'shop_id'
+      ) AS shop_id
+    data:
+      - SELECT * FROM products WHERE shop_id = bucket.shop_id
+      - SELECT * FROM stock_adjustments WHERE shop_id = bucket.shop_id
+      - SELECT * FROM sales WHERE shop_id = bucket.shop_id
+      - SELECT * FROM sale_line_items WHERE shop_id = bucket.shop_id
+      - SELECT * FROM exchange_rates WHERE shop_id = bucket.shop_id
+      - SELECT * FROM expenses WHERE shop_id = bucket.shop_id
+      - SELECT * FROM customers WHERE shop_id = bucket.shop_id
+      - SELECT * FROM customer_payments WHERE shop_id = bucket.shop_id
+      - SELECT * FROM receipt_settings WHERE shop_id = bucket.shop_id
+      - SELECT * FROM sale_payments WHERE shop_id = bucket.shop_id
+      - SELECT * FROM staff WHERE shop_id = bucket.shop_id
+      - SELECT * FROM cashier_shifts WHERE shop_id = bucket.shop_id
+      - SELECT * FROM returns WHERE shop_id = bucket.shop_id
+      - SELECT * FROM return_line_items WHERE shop_id = bucket.shop_id
+      - SELECT * FROM return_reasons WHERE shop_id = bucket.shop_id
+      - SELECT * FROM audit_log WHERE shop_id = bucket.shop_id
+      - SELECT * FROM suppliers WHERE shop_id = bucket.shop_id
+      - SELECT * FROM stock_receivings WHERE shop_id = bucket.shop_id
+      - SELECT * FROM stock_receiving_line_items WHERE shop_id = bucket.shop_id

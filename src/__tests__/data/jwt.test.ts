@@ -17,11 +17,17 @@ describe('decodeJwtPayload', () => {
 })
 
 describe('shopIdFromToken', () => {
-  it('returns the shop_id claim', () => {
+  it('returns the top-level shop_id claim', () => {
     expect(shopIdFromToken(tokenWith({ shop_id: 'shop-123' }))).toBe('shop-123')
   })
-  it('returns null when claim is missing', () => {
-    expect(shopIdFromToken(tokenWith({ sub: 'u1' }))).toBeNull()
+  it('falls back to app_metadata.shop_id when no top-level claim', () => {
+    expect(shopIdFromToken(tokenWith({ app_metadata: { shop_id: 'shop-meta' } }))).toBe('shop-meta')
+  })
+  it('prefers the top-level claim over app_metadata', () => {
+    expect(shopIdFromToken(tokenWith({ shop_id: 'top', app_metadata: { shop_id: 'meta' } }))).toBe('top')
+  })
+  it('returns null when claim is missing in both places', () => {
+    expect(shopIdFromToken(tokenWith({ sub: 'u1', app_metadata: { role: 'x' } }))).toBeNull()
   })
   it('returns null for null/empty token', () => {
     expect(shopIdFromToken(null)).toBeNull()
