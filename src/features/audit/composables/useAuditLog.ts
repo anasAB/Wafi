@@ -172,6 +172,15 @@ export function useAuditLog() {
   ) => _log('receiving.created', 'receiving', receivingId,
             { supplierName, totalUsd, lineCount })
 
+  // Switching the active operator is an accountability event (no shift change).
+  // Entity is the staff switched TO; meta carries both sides for the log sentence.
+  const logOperatorSwitched = (
+    fromStaffId: string | null, fromName: string | null,
+    toStaffId: string, toName: string,
+  ) => _log('operator.switched', 'staff', toStaffId,
+            { from_staff_id: fromStaffId, from_name: fromName,
+              to_staff_id: toStaffId, to_name: toName })
+
   return {
     entries,
     loadLog,
@@ -201,5 +210,6 @@ export function useAuditLog() {
     logSupplierCreated,
     logSupplierUpdated,
     logReceivingCreated,
+    logOperatorSwitched,
   }
 }

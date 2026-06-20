@@ -4,9 +4,11 @@ import { setActivePinia, createPinia } from 'pinia'
 vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
 
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
+import { eventLabel } from '@/features/audit/audit.format'
 import { useSessionStore } from '@/store/session.store'
 import { db } from '@/data/powersync/db'
 import type { Staff } from '@/features/staff/staff.types'
+import type { AuditLog } from '@/features/audit/audit.types'
 
 const mockStaff: Staff = {
   id: 'staff-1', shopId: 'shop-1', name: 'أحمد', pinHash: 'abc',
@@ -116,5 +118,33 @@ describe('useAuditLog — supplier & receiving helpers', () => {
       expect.stringContaining('INSERT INTO audit_log'),
       expect.arrayContaining(['receiving.created', 'receiving', 'rcv-1']),
     )
+  })
+
+  it('logOperatorSwitched writes an operator.switched row carrying both operators', async () => {
+    const { logOperatorSwitched } = useAuditLog()
+    await logOperatorSwitched('s1', 'سامي', 's2', 'أحمد')
+    expect(db.execute).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO audit_log'),
+      expect.arrayContaining(['operator.switched', 'staff', 's2']),
+    )
+    const metaArg = vi.mocked(db.execute).mock.calls[0]![1]!
+      .find((v: unknown) => typeof v === 'string' && v.includes('to_staff_id')) as string
+    const meta = JSON.parse(metaArg)
+    expect(meta).toMatchObject({
+      from_staff_id: 's1', from_name: 'سامي', to_staff_id: 's2', to_name: 'أحمد',
+    })
+  })
+})
+
+describe('eventLabel — operator.switched', () => {
+  it('renders an Arabic sentence naming both operators', () => {
+    const entry = {
+      event: 'operator.switched',
+      meta: { from_staff_id: 's1', from_name: 'سامي', to_staff_id: 's2', to_name: 'أحمد' },
+    } as unknown as AuditLog
+    const label = eventLabel(entry)
+    expect(label).toContain('تبديل المستخدم')
+    expect(label).toContain('سامي')
+    expect(label).toContain('أحمد')
   })
 })
