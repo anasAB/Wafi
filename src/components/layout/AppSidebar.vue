@@ -4,6 +4,7 @@ import { useRoute, RouterLink } from 'vue-router'
 import { useI18n }         from 'vue-i18n'
 import { useSessionStore } from '@/store/session.store'
 import ZReportScreen       from '@/features/shifts/components/ZReportScreen.vue'
+import OperatorSwitchAction from '@/features/staff/components/OperatorSwitchAction.vue'
 
 const route = useRoute()
 const { t } = useI18n()
@@ -152,6 +153,9 @@ function isActive(href: string | null): boolean {
         </span>
         <span class="nav-text">{{ t('nav.settings') }}</span>
       </RouterLink>
+
+      <!-- Switch the active operator without closing the shift. -->
+      <OperatorSwitchAction variant="sidebar" />
 
       <button class="close-shift-btn" @click="showZReport = true">
         <span class="nav-icon-wrap nav-icon-warn">

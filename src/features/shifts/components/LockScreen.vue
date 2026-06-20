@@ -3,11 +3,19 @@ import { ref, onMounted }  from 'vue'
 import { useStaff }        from '@/features/staff/composables/useStaff'
 import { verifyPin }       from '@/features/staff/composables/usePinAuth'
 import { useShift }        from '@/features/shifts/composables/useShift'
+import { useOperatorSwitch } from '@/features/staff/composables/useOperatorSwitch'
 import PinPad              from '@/features/staff/components/PinPad.vue'
 import type { Staff }      from '@/features/staff/staff.types'
 
+// `login` (default): the app gate — pick staff, PIN, then open a shift with a
+// cash count. `switch`: re-auth as another operator inside an open shift — no
+// cash count, no shift change (see switch-operator design).
+const props = withDefaults(defineProps<{ mode?: 'login' | 'switch' }>(), { mode: 'login' })
+const emit  = defineEmits<{ done: []; cancel: [] }>()
+
 const { staff, loadStaff } = useStaff()
 const { openShift }        = useShift()
+const { switchTo }         = useOperatorSwitch()
 
 type Step = 'pick-staff' | 'enter-pin' | 'opening-cash'
 
@@ -28,6 +36,13 @@ async function onPinComplete(pin: string) {
   if (!selectedStaff.value) return
   const ok = await verifyPin(pin, selectedStaff.value.pinHash)
   if (!ok) { pinPadRef.value?.shake(); return }
+  // Switch mode: correct PIN changes the active operator and leaves the open
+  // shift untouched. Login mode: proceed to the opening-cash count.
+  if (props.mode === 'switch') {
+    await switchTo(selectedStaff.value)
+    emit('done')
+    return
+  }
   step.value = 'opening-cash'
 }
 
@@ -52,8 +67,8 @@ function back() {
 <template>
   <div class="lock-root" dir="rtl">
     <div class="lock-card">
-      <!-- Brand -->
-      <h1 class="brand">وافي</h1>
+      <!-- Brand (login) / action title (switch) -->
+      <h1 class="brand">{{ mode === 'switch' ? 'تبديل المستخدم' : 'وافي' }}</h1>
 
       <!-- Step 1: pick staff -->
       <template v-if="step === 'pick-staff'">
@@ -70,6 +85,11 @@ function back() {
             <span class="staff-role">{{ s.role === 'owner' ? 'مالك' : 'كاشير' }}</span>
           </button>
         </div>
+        <!-- Switch can be abandoned; the previous operator stays active. The
+             login gate has no cancel (the app is locked until a shift opens). -->
+        <button v-if="mode === 'switch'" type="button" class="back-btn" @click="emit('cancel')">
+          إلغاء
+        </button>
       </template>
 
       <!-- Step 2: enter PIN -->

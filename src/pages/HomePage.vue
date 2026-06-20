@@ -10,6 +10,7 @@ import ProfitSheet from '@/features/dashboard/components/ProfitSheet.vue'
 import CashDrawerSheet from '@/features/dashboard/components/CashDrawerSheet.vue'
 import ExchangeRateEditor from '@/features/exchange-rate/ExchangeRateEditor.vue'
 import ConnectionPill from '@/components/ui/ConnectionPill.vue'
+import OperatorSwitchAction from '@/features/staff/components/OperatorSwitchAction.vue'
 
 import { useExchangeRate }     from '@/features/exchange-rate'
 import { useSaleDraft }        from '@/composables/useSaleDraft'
@@ -292,6 +293,7 @@ const ACTIVITY_HEADING: Record<string, string> = { today: 'اليوم', week: '�
       </div>
       <!-- Header actions -->
       <div class="hp-header-actions">
+        <OperatorSwitchAction variant="compact" />
         <ConnectionPill />
         <button class="rate-pill" @click="showRateEditor = true">
           <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
