@@ -189,6 +189,23 @@ describe('usePayment', () => {
     expect(auditCall[0]).toContain('INSERT INTO audit_log')
   })
 
+  it('attributes the sale to the active operator (staff_id) at confirm', async () => {
+    const { useSessionStore } = await import('@/store/session.store')
+    useSessionStore().setActiveStaff({ id: 'op-7', name: 'سامي', role: 'cashier', permissions: {} } as any)
+    const tx = setupTx({ cost_price_usd: 0, current_stock: 10 })
+
+    const { selectMethod, confirm } = usePayment()
+    selectMethod('card')
+    await confirm()
+
+    const salesInsert = tx.mock.calls.find(c =>
+      (c[0] as string).includes('INSERT INTO sales') && (c[0] as string).includes('staff_id')
+    )
+    expect(salesInsert).toBeDefined()
+    // staff_id is the final column/param of the sales INSERT.
+    expect(salesInsert![1][salesInsert![1].length - 1]).toBe('op-7')
+  })
+
   it('confirm writes customer_id and is_credit=1 for credit sales', async () => {
     const tx = setupTx({ cost_price_usd: 5, current_stock: 10 })
 
