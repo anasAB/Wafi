@@ -38,6 +38,8 @@ export function useProducts() {
       currentStock: number; lowStockThreshold: number; isActive: boolean
     }
   ) {
+    // Stock floors at zero — never persist a negative on-hand count.
+    const currentStock = Math.max(0, data.currentStock)
     const normalizedBarcode = (data.barcode ?? '').trim()
     if (normalizedBarcode) {
       const duplicate = await db.getOptional<{ id: string }>(
@@ -64,7 +66,7 @@ export function useProducts() {
          price_usd=?, cost_price_usd=?, current_stock=?, low_stock_threshold=?,
          photo_url=?, is_active=?, updated_at=?, sync_status='pending' WHERE id=?`,
         [data.nameAr, data.nameEn ?? null, normalizedBarcode || null, data.category ?? null,
-         data.salePriceUsd, data.costPriceUsd, data.currentStock, data.lowStockThreshold,
+         data.salePriceUsd, data.costPriceUsd, currentStock, data.lowStockThreshold,
          data.photoUrl ?? null, data.isActive ? 1 : 0, now, data.id]
       )
       await load()
@@ -83,7 +85,7 @@ export function useProducts() {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'pending', ?, ?)`,
         [id, data.shopId, data.nameAr, data.nameEn ?? null, normalizedBarcode || null,
          data.category ?? null, data.salePriceUsd, data.costPriceUsd,
-         data.currentStock, data.lowStockThreshold, data.photoUrl ?? null,
+         currentStock, data.lowStockThreshold, data.photoUrl ?? null,
          data.isActive ? 1 : 0, now, now]
       )
       await load()
@@ -113,6 +115,10 @@ export function useProducts() {
     const device = useDeviceStore()
     let oldValue = 0
 
+    // Stock can never go below zero. Clamp here (the write path) so a fat-fingered
+    // or pasted negative on the form can't corrupt the dashboard / low-stock query.
+    const clampedValue = Math.max(0, newValue)
+
     await db.writeTransaction(async (tx) => {
       const stockResult = await tx.execute(
         'SELECT current_stock FROM products WHERE id = ?', [productId]
@@ -120,12 +126,12 @@ export function useProducts() {
       oldValue = (stockResult as any).rows._array[0]?.current_stock ?? 0
       await tx.execute(
         `UPDATE products SET current_stock = ?, updated_at = ?, sync_status = 'pending' WHERE id = ?`,
-        [newValue, now, productId]
+        [clampedValue, now, productId]
       )
       await tx.execute(
         `INSERT INTO stock_adjustments (id, shop_id, product_id, old_value, new_value, reason, notes, created_at, device_id)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [uuidv4(), device.shopId, productId, oldValue, newValue, reason, notes ?? null, now, device.deviceId]
+        [uuidv4(), device.shopId, productId, oldValue, clampedValue, reason, notes ?? null, now, device.deviceId]
       )
     })
 
@@ -133,7 +139,7 @@ export function useProducts() {
       `SELECT name_ar FROM products WHERE id = ?`, [productId]
     )
     await load()
-    await logStockAdjusted(productId, nameRow?.name_ar ?? productId, oldValue, newValue)
+    await logStockAdjusted(productId, nameRow?.name_ar ?? productId, oldValue, clampedValue)
   }
 
   return { products, lowStockProducts, load, getById, save, softDelete, adjustStock }

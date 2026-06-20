@@ -1,7 +1,14 @@
 # Sub-project 1 — Tenant Isolation Backbone (Design)
 
+> ⚠️ **SUPERSEDED — the JWT-claim / access-token-hook design below was NOT shipped.**
+> The implementation scopes on the `shops.owner_user_id → auth.uid()` mapping
+> everywhere (RLS via `auth_shop_id()`, sync rules via `owner_user_id`, and the
+> client reads `shopId` from the synced `shops` row). There is no `shop_id` claim,
+> no `custom_access_token_hook`, and migration `014` was removed. Read this only
+> for historical context. See `powersync.yaml` and migration `015` for the truth.
+
 > Date: 2026-06-19
-> Status: Approved (design); pending spec review → implementation plan
+> Status: SUPERSEDED (replaced by the no-claim owner_user_id mapping)
 > Part of the "real auth" epic. Build order: **1 (this) → 2 (signup + provisioning) → 3 (device registration)**.
 
 ## Problem

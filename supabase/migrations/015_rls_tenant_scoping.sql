@@ -1,11 +1,14 @@
 -- Wafi POS — Replace permissive RLS (USING true) with per-shop scoping.
--- Reads the shop_id claim injected by the access-token hook (migration 014).
+-- Scopes every row via public.auth_shop_id() — the shops.owner_user_id → auth.uid()
+-- mapping (defined below). NO JWT claim and NO access-token hook are required:
+-- auth.uid() (the token's `sub`) is always present. This matches the PowerSync
+-- sync rules, which scope by the same owner_user_id mapping.
 -- Covers every synced table, including products/staff/audit_log (previously
 -- USING true from 005/006/008). Idempotent: drops old policies, recreates scoped.
 --
--- PRECONDITION: apply ONLY after verifying the access token carries a shop_id
--- claim (see migration 014 / plan Task 2 gate). Applying without the claim
--- present denies all access and locks the account out of its own data.
+-- PRECONDITION: each account must own exactly one shops row
+-- (shops.owner_user_id = auth.users.id; see migration 013). An account with no
+-- such row resolves auth_shop_id() to NULL and sees none of its own data.
 
 -- Resolves the caller's shop from the shops.owner_user_id -> auth.uid() mapping.
 -- No JWT claim required (auth.uid() is always present), matching the sync-stream
@@ -53,9 +56,14 @@ begin
       -- Cast the (uuid) claim to text only for audit_log so the `=` operator
       -- exists; the bare `shop_id` column on the left keeps each table's
       -- shop_id index usable.
+      --
+      -- Wrap the call in a scalar subquery — `(select public.auth_shop_id())` —
+      -- so Postgres evaluates the STABLE function ONCE per statement (an InitPlan)
+      -- instead of re-running the shops lookup for every scanned row. This is the
+      -- documented Supabase RLS performance pattern and matters as tables grow.
       claim := case when t = 'audit_log'
-                    then 'public.auth_shop_id()::text'
-                    else 'public.auth_shop_id()' end;
+                    then '(select public.auth_shop_id())::text'
+                    else '(select public.auth_shop_id())' end;
 
       execute format(
         'create policy %I on public.%I for select to anon, authenticated using (shop_id = %s)',

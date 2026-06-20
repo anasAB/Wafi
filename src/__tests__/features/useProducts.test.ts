@@ -102,6 +102,22 @@ describe('useProducts', () => {
     expect(calls.some((sql: string) => sql.includes('INSERT INTO stock_adjustments'))).toBe(true)
   })
 
+  it('adjustStock clamps a negative new value to 0', async () => {
+    vi.mocked(db.getAll).mockResolvedValue([])
+    const txExecute = vi.fn()
+      .mockResolvedValueOnce({ rows: { _array: [{ current_stock: 3 }] } }) // SELECT
+      .mockResolvedValue({})
+    vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => { await fn({ execute: txExecute }) })
+
+    const { adjustStock } = useProducts()
+    await adjustStock('p1', -5, 'stocktake')
+
+    const updateCall = txExecute.mock.calls.find(([sql]: [string]) => sql.includes('UPDATE products'))
+    expect(updateCall[1][0]).toBe(0)  // clamped newValue, not -5
+    const adjCall = txExecute.mock.calls.find(([sql]: [string]) => sql.includes('INSERT INTO stock_adjustments'))
+    expect(adjCall[1][4]).toBe(0)     // new_value recorded as 0
+  })
+
   it('getById returns product by id after load', async () => {
     vi.mocked(db.getAll).mockResolvedValueOnce([mockRow({ id: 'p1' })])
     const { getById, load } = useProducts()

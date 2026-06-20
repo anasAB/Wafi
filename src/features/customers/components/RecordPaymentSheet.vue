@@ -2,8 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import { useExchangeRate } from '@/features/exchange-rate'
 import { useCustomerBalance } from '@/features/customers/composables/useCustomerBalance'
-<<<<<<< Updated upstream
-import type { OpenInvoice, PaymentAllocation } from '@/features/customers/customer.types'
+import type { OpenInvoice, PaymentAllocation, PaymentMethod } from '@/features/customers/customer.types'
 import BaseModal from '@/components/ui/BaseModal.vue'
 
 const props = defineProps<{
@@ -129,6 +128,21 @@ function formatDate(iso: string): string {
           >SYP</button>
         </div>
       </div>
+
+      <!-- Payment method -->
+      <p class="section-label">طريقة الدفع</p>
+      <div class="method-wrap">
+        <button
+          v-for="opt in methodOptions"
+          :key="opt.value"
+          type="button"
+          :data-testid="`method-${opt.value}`"
+          class="method-btn"
+          :class="{ 'method-btn--active': method === opt.value }"
+          @click="method = opt.value"
+        >{{ opt.label }}</button>
+      </div>
+      <p v-if="method !== 'cash'" class="method-note">لن تُحتسب ضمن نقد الصندوق</p>
 
       <!-- Invoice list -->
       <p class="section-label">الفواتير المفتوحة</p>

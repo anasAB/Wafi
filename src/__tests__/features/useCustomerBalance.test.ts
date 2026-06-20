@@ -121,6 +121,19 @@ describe('useCustomerBalance', () => {
     ])).rejects.toThrow()
   })
 
+  it('rejects a batch that exceeds the customer outstanding balance (offline-safe)', async () => {
+    // Even when the per-sale remaining row has not synced locally (null), the
+    // batch must be bounded by the customer's total outstanding balance.
+    vi.mocked(db.getOptional).mockImplementation(async (sql: string) => {
+      if (sql.includes('AS balance_usd')) return { balance_usd: 50 } as any
+      return null  // per-sale remaining unavailable (offline)
+    })
+    const { recordPayment } = useCustomerBalance('c1')
+    await expect(recordPayment([
+      { saleId: 's1', amountUsd: 100, currency: 'USD', amountRaw: 100, method: 'cash' },
+    ])).rejects.toThrow()
+  })
+
   it('recordPayment calls load after saving to refresh state', async () => {
     vi.mocked(db.getOptional).mockResolvedValue({ balance_usd: 0 } as any)
     vi.mocked(db.getAll).mockResolvedValue([])

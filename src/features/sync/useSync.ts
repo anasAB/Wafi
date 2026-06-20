@@ -1,11 +1,13 @@
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useSyncStore } from '@/store/sync.store'
+import { useDeviceStore } from '@/store/device.store'
 import { db } from '@/data/powersync/db'
 import { SupabaseConnector } from '@/data/powersync/connector'
 import { supabase } from '@/data/supabase/client'
 
 export function useSync() {
-  const syncStore = useSyncStore()
+  const syncStore  = useSyncStore()
+  const deviceStore = useDeviceStore()
 
   function waitForConnected(timeoutMs = 8000): Promise<boolean> {
     if (db.currentStatus?.connected) return Promise.resolve(true)
@@ -54,6 +56,10 @@ export function useSync() {
 
         if (status.connected) {
           syncStore.setStatus('online')
+          // Once connected, the owner's `shops` row is (or soon will be) synced
+          // locally — resolve shopId from it. This is what makes the app's
+          // shop_id available without a JWT claim/access-token hook.
+          void deviceStore.refreshShopId()
           // setLastSynced also clears the error banner — only do so once uploads
           // are actually flowing again.
           if (uploadError) syncStore.setError(`فشل رفع التغييرات إلى الخادم: ${uploadError.message}`)

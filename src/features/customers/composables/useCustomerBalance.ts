@@ -15,6 +15,28 @@ type PaymentRow = {
   currency: string; method: string | null; paid_at: string; created_at: string
 }
 
+// Customer's outstanding balance (USD): credit-sale totals, less payments, less
+// returned goods. Shared by load() and recordPayment()'s offline-safe guard so
+// the two can never drift. Params: [customerId, shopId] repeated three times.
+const BALANCE_USD_SQL = `SELECT
+        (SELECT COALESCE(SUM(total_usd), 0)  FROM sales            WHERE customer_id = ? AND is_credit = 1 AND shop_id = ?)
+        -
+        (SELECT COALESCE(SUM(amount_usd), 0) FROM customer_payments WHERE customer_id = ?                   AND shop_id = ?)
+        -
+        -- Returned goods reduce what the customer owes, regardless of refund method.
+        (SELECT COALESCE(SUM(r.refund_amount_usd), 0) FROM returns r
+           JOIN sales s ON s.id = r.original_sale_id
+          WHERE s.customer_id = ? AND s.is_credit = 1 AND r.shop_id = ?)
+        AS balance_usd`
+
+async function fetchOutstandingBalanceUsd(customerId: string, shopId: string): Promise<number> {
+  const row = await db.getOptional<{ balance_usd: number }>(
+    BALANCE_USD_SQL,
+    [customerId, shopId, customerId, shopId, customerId, shopId]
+  )
+  return row?.balance_usd ?? 0
+}
+
 export function useCustomerBalance(customerId: string) {
   const balanceUsd   = ref(0)
   const openInvoices = ref<OpenInvoice[]>([])
@@ -25,20 +47,7 @@ export function useCustomerBalance(customerId: string) {
     const device = useDeviceStore()
     const shopId = device.shopId
 
-    const balRow = await db.getOptional<{ balance_usd: number }>(
-      `SELECT
-        (SELECT COALESCE(SUM(total_usd), 0)  FROM sales            WHERE customer_id = ? AND is_credit = 1 AND shop_id = ?)
-        -
-        (SELECT COALESCE(SUM(amount_usd), 0) FROM customer_payments WHERE customer_id = ?                   AND shop_id = ?)
-        -
-        -- Returned goods reduce what the customer owes, regardless of refund method.
-        (SELECT COALESCE(SUM(r.refund_amount_usd), 0) FROM returns r
-           JOIN sales s ON s.id = r.original_sale_id
-          WHERE s.customer_id = ? AND s.is_credit = 1 AND r.shop_id = ?)
-        AS balance_usd`,
-      [customerId, shopId, customerId, shopId, customerId, shopId]
-    )
-    balanceUsd.value = balRow?.balance_usd ?? 0
+    balanceUsd.value = await fetchOutstandingBalanceUsd(customerId, shopId)
 
     const invoiceRows = await db.getAll<InvoiceRow>(
       `SELECT s.id, s.display_sale_number, s.created_at, s.total_usd,
@@ -100,7 +109,10 @@ export function useCustomerBalance(customerId: string) {
     // cumulative amount allocated per sale within THIS batch, so two allocations to the
     // same invoice can't each pass the guard individually and together overpay.
     const committedBySale = new Map<string, number>()
+    let batchTotalUsd = 0
+    let perSaleUnavailable = false  // a sale row wasn't visible locally (offline)
     for (const alloc of allocations) {
+      batchTotalUsd += alloc.amountUsd
       const remRow = await db.getOptional<{ remaining_usd: number }>(
         `SELECT s.total_usd
            - COALESCE(SUM(cp.amount_usd), 0)
@@ -112,14 +124,25 @@ export function useCustomerBalance(customerId: string) {
          GROUP BY s.id`,
         [alloc.saleId]
       )
-      // If the sale row is not found locally (null) or remaining_usd is not present on the row,
-      // skip the guard — this handles offline / newly synced rows not yet visible.
-      if (remRow === null || remRow.remaining_usd === undefined) continue
+      // The sale row isn't visible locally (offline / newly synced): its per-sale
+      // remaining can't be verified, so defer to the customer-balance guard below.
+      if (remRow === null) { perSaleUnavailable = true; continue }
+      if (remRow.remaining_usd === undefined) continue
       const already = committedBySale.get(alloc.saleId) ?? 0
       if (already + alloc.amountUsd > remRow.remaining_usd + 0.001) {
         throw new Error(`المبلغ المدخل يتجاوز المبلغ المتبقي للفاتورة`)
       }
       committedBySale.set(alloc.saleId, already + alloc.amountUsd)
+    }
+
+    // Offline-safe bound: when any per-sale remaining couldn't be verified, the
+    // batch still must not exceed the customer's total outstanding balance — so a
+    // payment can never overpay just because the invoice rows haven't synced yet.
+    if (perSaleUnavailable) {
+      const outstanding = await fetchOutstandingBalanceUsd(customerId, device.shopId)
+      if (batchTotalUsd > outstanding + 0.001) {
+        throw new Error(`المبلغ المدخل يتجاوز رصيد العميل المستحق`)
+      }
     }
 
     // One transaction: either all allocations land or none do.

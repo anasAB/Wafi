@@ -13,8 +13,19 @@ function isInvalidCredentials(message: string): boolean {
 }
 
 export async function bootstrapDevAuth(): Promise<void> {
-  if (import.meta.env.PROD) return
   if (!envFlag('VITE_DEV_AUTO_SIGNIN')) return
+
+  if (import.meta.env.PROD) {
+    // Single-device provisioning path (customer #0's dedicated device): a
+    // production build may auto-sign-in ONLY when VITE_DEV_AUTO_SIGNIN is set,
+    // which embeds the account credentials in the build. Acceptable for one
+    // trusted, dedicated device; NEVER enable it for a public multi-tenant build
+    // (a real login route replaces this once self-serve signup exists).
+    console.warn(
+      '[Auth] Production auto sign-in is ON (VITE_DEV_AUTO_SIGNIN). ' +
+      'Account credentials are embedded in this build — single-device use only.',
+    )
+  }
 
   const email = (import.meta.env.VITE_DEV_SUPABASE_EMAIL as string | undefined)?.trim()
   const password = (import.meta.env.VITE_DEV_SUPABASE_PASSWORD as string | undefined)?.trim()

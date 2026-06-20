@@ -1,5 +1,18 @@
 # Tenant Isolation Backbone Implementation Plan
 
+> ⚠️ **SUPERSEDED — DO NOT IMPLEMENT THE JWT-CLAIM DESIGN BELOW.**
+> The shipped architecture does **not** use a `shop_id` JWT claim or a Custom
+> Access Token Hook. Both server and client scope on the
+> `shops.owner_user_id → auth.uid()` mapping instead:
+> - **RLS** (migration `015`) uses `public.auth_shop_id()` (owner mapping); no claim.
+> - **Sync rules** (`powersync.yaml`) filter by `owner_user_id = auth.user_id()`; no claim.
+> - **Client** (`device.store.ts`) reads `shopId` from the locally-synced `shops`
+>   row; no JWT decoding (`jwt.ts` was removed).
+> - Migration `014` (the access-token hook) was **deleted** — do not recreate it,
+>   and skip the "enable the hook" dashboard step (Task 2 below).
+>
+> The task-by-task content below is kept only for historical context.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Scope every synced table to the signed-in shop via a `shop_id` JWT claim, replacing the wide-open RLS policies and the hardcoded client `shop_id` stub.

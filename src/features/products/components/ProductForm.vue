@@ -219,7 +219,7 @@ onMounted(() => {
 
       <div class="field">
         <label class="field-label">الكمية الحالية <span class="required">*</span></label>
-        <input v-model="stock" data-testid="current-stock" type="number" step="1"
+        <input v-model="stock" data-testid="current-stock" type="number" step="1" min="0"
           class="form-input"
           :class="{ 'input-error': errors['current-stock'] }"
           placeholder="0"

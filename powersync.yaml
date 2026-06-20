@@ -9,6 +9,24 @@
 # claim on the server side. One Supabase account == one shop (Sub-project 1).
 #
 # Docs: https://docs.powersync.com/sync/streams/overview
+#
+# ⚠️ VERIFY ON DEPLOY: the `WHERE shop_id IN (SELECT … )` correlated-subquery
+# shape below must be accepted by the Sync Streams validator. Edition 3 is more
+# permissive than classic sync rules (which rejected subqueries in data queries),
+# but confirm it saves without error in the dashboard. If it is REJECTED, switch
+# to the parameter-query form — resolve the shop once as a subscription parameter,
+# then filter every table by it:
+#
+#   streams:
+#     shop_data:
+#       auto_subscribe: true
+#       parameters: SELECT id AS shop_id FROM public.shops WHERE owner_user_id = auth.user_id()
+#       queries:
+#         - SELECT * FROM public.shops    WHERE id      = subscription.parameter('shop_id')
+#         - SELECT * FROM public.products WHERE shop_id = subscription.parameter('shop_id')
+#         # …one line per tenant table, all keyed on subscription.parameter('shop_id')
+#
+# The parameter form is also cheaper (one shop lookup vs. a subquery per table).
 config:
   edition: 3
 

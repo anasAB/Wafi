@@ -234,7 +234,14 @@ export function usePayment() {
           const row          = (res as any).rows?._array?.[0]
           const unitCostUsd  = row?.cost_price_usd ?? 0
           const currentStock = row?.current_stock ?? 0
-          const newStock     = currentStock - line.quantity
+          // Clamp at 0: a sale must never drive on-hand stock negative (e.g. when
+          // the cart was built against stale stock, or an offline oversell).
+          const newStock     = Math.max(0, currentStock - line.quantity)
+          // When clamping drops fewer units than were sold, the count was stale.
+          // Mark the oversold quantity on the adjustment so reconciliation can see
+          // the gap between the line quantity and the recorded stock movement.
+          const oversoldBy   = line.quantity - (currentStock - newStock)
+          const adjustNote   = oversoldBy > 0 ? `oversold:${oversoldBy}` : null
 
           await tx.execute(
             `INSERT INTO sale_line_items (id, sale_id, shop_id, product_id, quantity, unit_price_usd, unit_cost_usd, line_total_usd)
@@ -248,8 +255,8 @@ export function usePayment() {
           )
           await tx.execute(
             `INSERT INTO stock_adjustments (id, shop_id, product_id, old_value, new_value, reason, notes, created_at, device_id)
-             VALUES (?, ?, ?, ?, ?, 'sale', null, ?, ?)`,
-            [uuidv4(), deviceStore.shopId, line.productId, currentStock, newStock, now, deviceStore.deviceId]
+             VALUES (?, ?, ?, ?, ?, 'sale', ?, ?, ?)`,
+            [uuidv4(), deviceStore.shopId, line.productId, currentStock, newStock, adjustNote, now, deviceStore.deviceId]
           )
         }
       })

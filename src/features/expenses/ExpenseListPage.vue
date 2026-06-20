@@ -5,7 +5,6 @@ import AppHeader from '@/components/ui/AppHeader.vue'
 import AppToast from '@/components/ui/AppToast.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import PeriodToggle from '@/features/dashboard/components/PeriodToggle.vue'
-import AppDatePicker from '@/components/ui/AppDatePicker.vue'
 import ExpenseForm from './components/ExpenseForm.vue'
 import { useExpenses } from './composables/useExpenses'
 import { usePeriodToggle } from '@/features/dashboard/composables/usePeriodToggle'
@@ -219,19 +218,6 @@ function handleExpenseSaved() {
     <div class="toolbar-row">
       <div class="period-controls">
         <PeriodToggle class="filter-period" />
-        <div v-if="period === 'month'" class="month-picker-inline-wrap">
-          <AppDatePicker
-            id="expenses-month-picker"
-            v-model="monthPickerModel"
-            view="month"
-            date-format="MM yy"
-            show-icon
-            icon-display="input"
-            append-to="self"
-            class="month-picker-datepicker"
-            :input-class="'month-picker-input'"
-          />
-        </div>
       </div>
       <!-- Desktop: add expense button -->
       <button

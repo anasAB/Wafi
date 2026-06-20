@@ -117,6 +117,48 @@ describe('usePayment', () => {
     expect(insertCall?.[1]).toContain(9)  // new_value
   })
 
+  it('confirm clamps stock at 0 when a sale would oversell', async () => {
+    const store = useSaleStore()
+    store.clear()
+    store.addLine({ productId: 'p1', nameAr: 'منتج', quantity: 5, unitPriceUsd: 10, lineTotalUsd: 50, availableStock: 99 })
+    store.setLockedRate(14500)
+    const tx = setupTx({ cost_price_usd: 0, current_stock: 3 })  // only 3 on hand, selling 5
+
+    const { selectMethod, confirm } = usePayment()
+    selectMethod('card')
+    await confirm()
+
+    const updateCall = tx.mock.calls.find(c => (c[0] as string).includes('UPDATE products') && (c[0] as string).includes('current_stock'))
+    expect(updateCall?.[1][0]).toBe(0)  // clamped, not -2
+  })
+
+  it('confirm records the oversold quantity in the stock adjustment notes', async () => {
+    const store = useSaleStore()
+    store.clear()
+    store.addLine({ productId: 'p1', nameAr: 'منتج', quantity: 5, unitPriceUsd: 10, lineTotalUsd: 50, availableStock: 99 })
+    store.setLockedRate(14500)
+    const tx = setupTx({ cost_price_usd: 0, current_stock: 3 })  // sold 5, only 3 on hand → oversold by 2
+
+    const { selectMethod, confirm } = usePayment()
+    selectMethod('card')
+    await confirm()
+
+    // stock_adjustments params: [id, shop_id, product_id, old_value, new_value, notes, created_at, device_id]
+    const insertCall = tx.mock.calls.find(c => (c[0] as string).includes('INSERT INTO stock_adjustments'))
+    expect(insertCall?.[1][5]).toBe('oversold:2')
+  })
+
+  it('confirm leaves adjustment notes null for a normal (non-oversell) sale', async () => {
+    const tx = setupTx({ cost_price_usd: 0, current_stock: 10 })  // sold 1, 10 on hand → no oversell
+
+    const { selectMethod, confirm } = usePayment()
+    selectMethod('card')
+    await confirm()
+
+    const insertCall = tx.mock.calls.find(c => (c[0] as string).includes('INSERT INTO stock_adjustments'))
+    expect(insertCall?.[1][5]).toBeNull()
+  })
+
   it('confirm writes unit_cost_usd to sale_line_items from product cost', async () => {
     const tx = setupTx({ cost_price_usd: 7, current_stock: 10 })
 
