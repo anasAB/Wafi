@@ -2,6 +2,7 @@
 import { onMounted, computed } from 'vue'
 import { useInvoiceDetail } from '@/features/customers/composables/useInvoiceDetail'
 import type { OpenInvoice } from '@/features/customers/customer.types'
+import BaseModal from '@/components/ui/BaseModal.vue'
 
 const props = defineProps<{ invoice: OpenInvoice }>()
 const emit  = defineEmits<{ (e: 'close'): void }>()
@@ -20,24 +21,15 @@ function formatDate(iso: string): string {
 </script>
 
 <template>
-  <Teleport to="body">
-    <div class="modal-overlay" @click.self="emit('close')">
-      <div class="sheet-container" dir="rtl" data-testid="invoice-detail-sheet">
-        <!-- Handle -->
-        <div class="sheet-handle"></div>
-
-        <!-- Header -->
-        <div class="sheet-header">
-          <div>
-            <h2 class="sheet-title">{{ invoice.displayNumber }}</h2>
-            <p class="sheet-subtitle">{{ formatDate(invoice.saleDate) }}</p>
-          </div>
-          <button type="button" class="close-btn" @click="emit('close')">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
+  <BaseModal
+    title="تفاصيل الفاتورة"
+    @close="emit('close')"
+  >
+    <div class="sheet-body" dir="rtl" data-testid="invoice-detail-sheet">
+      <div class="invoice-meta">
+        <h3 class="sheet-title">{{ invoice.displayNumber }}</h3>
+        <p class="sheet-subtitle">{{ formatDate(invoice.saleDate) }}</p>
+      </div>
 
         <!-- Line items -->
         <p class="section-label">المنتجات</p>
@@ -79,93 +71,40 @@ function formatDate(iso: string): string {
             </div>
           </div>
         </template>
-      </div>
     </div>
-  </Teleport>
+  </BaseModal>
 </template>
 
 <style scoped>
-/* ── Overlay ─────────────────────────────────────────────── */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
+.sheet-body {
   display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  background: rgba(0,0,0,0.75);
-  backdrop-filter: blur(4px);
+  flex-direction: column;
+  gap: 0;
   font-family: 'Tajawal', system-ui, sans-serif;
 }
 
-/* ── Sheet ───────────────────────────────────────────────── */
-.sheet-container {
-  width: 100%;
-  max-width: 32rem;
-  max-height: 85dvh;
-  overflow-y: auto;
-  border-radius: 1.25rem 1.25rem 0 0;
-  padding: 0 1.25rem 1.5rem;
-  backdrop-filter: blur(20px) saturate(180%);
-  background: linear-gradient(135deg, rgba(26,86,219,0.16), rgba(26,86,219,0.06));
-  border: 1px solid rgba(26,86,219,0.45);
-  box-shadow: 0 8px 48px rgba(26,86,219,0.22), inset 0 1px 0 rgba(255,255,255,0.09);
-}
-
-/* ── Handle ──────────────────────────────────────────────── */
-.sheet-handle {
-  width: 2.25rem;
-  height: 0.25rem;
-  background: rgba(255,255,255,0.20);
-  border-radius: 9999px;
-  margin: 0.75rem auto 1rem;
-}
-
-/* ── Header ──────────────────────────────────────────────── */
-.sheet-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 1.25rem;
+.invoice-meta {
+  margin-bottom: 0.95rem;
 }
 
 .sheet-title {
-  font-size: 1rem;
-  font-weight: 700;
+  font-size: 0.95rem;
+  font-weight: 800;
   color: #E8EDF5;
   margin: 0;
 }
 
 .sheet-subtitle {
-  font-size: 0.875rem;
-  color: #637285;
+  font-size: 0.78rem;
+  color: #9FB0C7;
   margin-top: 0.125rem;
 }
 
-.close-btn {
-  width: 2rem;
-  height: 2rem;
-  border-radius: 0.625rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #637285;
-  background: rgba(255,255,255,0.06);
-  border: none;
-  cursor: pointer;
-  transition: background 0.12s;
-  flex-shrink: 0;
-}
-
-.close-btn:hover { background: rgba(255,255,255,0.10); }
-
 /* ── Section label ───────────────────────────────────────── */
 .section-label {
-  font-size: 0.6875rem;
-  font-weight: 600;
-  color: #637285;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #9FB0C7;
   margin: 0 0 0.5rem;
   padding-inline-start: 0.125rem;
 }
@@ -191,8 +130,8 @@ function formatDate(iso: string): string {
   gap: 0.75rem;
   padding: 0.625rem 0.75rem;
   border-radius: 0.75rem;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(135deg, rgba(26,86,219,0.10), rgba(255,255,255,0.03));
+  border: 1px solid rgba(26,86,219,0.20);
 }
 
 .line-info { min-width: 0; flex: 1; }
@@ -227,7 +166,7 @@ function formatDate(iso: string): string {
   flex-direction: column;
   gap: 0.375rem;
   padding: 0.875rem 0;
-  border-top: 1px solid rgba(26,86,219,0.14);
+  border-top: 1px solid rgba(26,86,219,0.18);
   margin-bottom: 1.25rem;
 }
 

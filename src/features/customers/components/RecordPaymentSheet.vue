@@ -4,10 +4,7 @@ import { useExchangeRate } from '@/features/exchange-rate'
 import { useCustomerBalance } from '@/features/customers/composables/useCustomerBalance'
 <<<<<<< Updated upstream
 import type { OpenInvoice, PaymentAllocation } from '@/features/customers/customer.types'
-=======
-import type { OpenInvoice, PaymentAllocation, PaymentMethod } from '@/features/customers/customer.types'
 import BaseModal from '@/components/ui/BaseModal.vue'
->>>>>>> Stashed changes
 
 const props = defineProps<{
   customerId:   string
@@ -106,29 +103,17 @@ function formatDate(iso: string): string {
 </script>
 
 <template>
-  <Teleport to="body">
-    <div
-      class="modal-overlay"
-      @click.self="emit('cancel')"
-    >
-      <div class="sheet-container" dir="rtl">
-        <!-- Handle -->
-        <div class="sheet-handle"></div>
+  <BaseModal
+    title="تسجيل دفعة"
+    @close="emit('cancel')"
+  >
+    <div class="sheet-body" dir="rtl">
+      <p class="sheet-subtitle">{{ customerName }}</p>
+      <p class="sheet-hint">اختر الفواتير وحدد المبلغ لكل فاتورة</p>
 
-        <!-- Header -->
-        <div class="sheet-header">
-          <div>
-            <h2 class="sheet-title">تسجيل دفعة</h2>
-            <p class="sheet-subtitle">{{ customerName }}</p>
-          </div>
-          <button type="button" class="close-btn" @click="emit('cancel')">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        <!-- Currency toggle -->
+      <!-- Currency toggle -->
+      <p class="section-label">عملة الدفع</p>
+      <div class="currency-wrap">
         <div class="currency-toggle">
           <button
             type="button"
@@ -143,29 +128,11 @@ function formatDate(iso: string): string {
             @click="currency = 'SYP'"
           >SYP</button>
         </div>
-
-<<<<<<< Updated upstream
-        <!-- Invoice list -->
-=======
-      <!-- Payment method -->
-      <p class="section-label">طريقة الدفع</p>
-      <div class="method-wrap">
-        <button
-          v-for="opt in methodOptions"
-          :key="opt.value"
-          type="button"
-          :data-testid="`method-${opt.value}`"
-          class="method-btn"
-          :class="{ 'method-btn--active': method === opt.value }"
-          @click="method = opt.value"
-        >{{ opt.label }}</button>
       </div>
-      <p v-if="method !== 'cash'" class="method-note">لن تُحتسب ضمن نقد الصندوق</p>
 
       <!-- Invoice list -->
       <p class="section-label">الفواتير المفتوحة</p>
       <div class="invoice-list-wrap">
->>>>>>> Stashed changes
         <div class="invoice-list">
           <div
             v-for="inv in openInvoices"
@@ -215,6 +182,7 @@ function formatDate(iso: string): string {
             </div>
           </div>
         </div>
+      </div>
 
         <!-- Total row -->
         <div class="total-row">
@@ -223,105 +191,63 @@ function formatDate(iso: string): string {
         </div>
 
         <!-- Action buttons -->
-        <div class="actions">
-          <button
-            type="button"
-            data-testid="confirm-btn"
-            :disabled="!hasSelection || saving"
-            class="btn-confirm"
-            @click="handleConfirm"
-          >{{ saving ? '...' : 'تأكيد الدفعة' }}</button>
+      <div class="actions">
+        <button
+          type="button"
+          data-testid="confirm-btn"
+          :disabled="!hasSelection || saving"
+          class="btn-confirm"
+          @click="handleConfirm"
+        >{{ saving ? '...' : 'تأكيد الدفعة' }}</button>
 
-          <button
-            type="button"
-            data-testid="cancel-btn"
-            class="btn-ghost"
-            @click="emit('cancel')"
-          >إلغاء</button>
-        </div>
+        <button
+          type="button"
+          data-testid="cancel-btn"
+          class="btn-ghost"
+          @click="emit('cancel')"
+        >إلغاء</button>
       </div>
     </div>
-  </Teleport>
+  </BaseModal>
 </template>
 
 <style scoped>
-/* ── Overlay ─────────────────────────────────────────────── */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
+/* ── Body ─────────────────────────────────────────────── */
+.sheet-body {
   display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  background: rgba(0,0,0,0.75);
-  backdrop-filter: blur(4px);
+  flex-direction: column;
   font-family: 'Tajawal', system-ui, sans-serif;
 }
 
-/* ── Sheet ───────────────────────────────────────────────── */
-.sheet-container {
-  width: 100%;
-  max-width: 32rem;
-  border-radius: 1.25rem 1.25rem 0 0;
-  padding: 0 1.25rem 1.5rem;
-  backdrop-filter: blur(20px) saturate(180%);
-  background: linear-gradient(135deg, rgba(26,86,219,0.16), rgba(26,86,219,0.06));
-  border: 1px solid rgba(26,86,219,0.45);
-  box-shadow: 0 8px 48px rgba(26,86,219,0.22), inset 0 1px 0 rgba(255,255,255,0.09);
-}
-
-/* ── Handle ──────────────────────────────────────────────── */
-.sheet-handle {
-  width: 2.25rem;
-  height: 0.25rem;
-  background: rgba(255,255,255,0.20);
-  border-radius: 9999px;
-  margin: 0.75rem auto 1rem;
-}
-
-/* ── Header ──────────────────────────────────────────────── */
-.sheet-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 1rem;
-}
-
-.sheet-title {
-  font-size: 1rem;
-  font-weight: 700;
-  color: #E8EDF5;
+.sheet-subtitle {
+  font-size: 0.78rem;
+  color: #9FB0C7;
   margin: 0;
 }
 
-.sheet-subtitle {
-  font-size: 0.875rem;
-  color: #637285;
-  margin-top: 0.125rem;
+.sheet-hint {
+  margin: 0.2rem 0 0.85rem;
+  font-size: 0.72rem;
+  color: #6F829E;
 }
 
-.close-btn {
-  width: 2rem;
-  height: 2rem;
-  border-radius: 0.625rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #637285;
-  background: rgba(255,255,255,0.06);
-  border: none;
-  cursor: pointer;
-  transition: background 0.12s;
-  flex-shrink: 0;
+.section-label {
+  margin: 0 0 0.45rem;
+  padding-inline-start: 0.15rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #9FB0C7;
 }
-
-.close-btn:hover { background: rgba(255,255,255,0.10); }
 
 /* ── Currency toggle ─────────────────────────────────────── */
+.currency-wrap {
+  margin-bottom: 0.9rem;
+}
+
 .currency-toggle {
   display: flex;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.10);
+  background: linear-gradient(135deg, rgba(26,86,219,0.10), rgba(255,255,255,0.03));
+  border: 1px solid rgba(26,86,219,0.22);
   border-radius: 0.75rem;
   padding: 0.25rem;
   gap: 0.25rem;
@@ -336,7 +262,7 @@ function formatDate(iso: string): string {
   border-radius: 0.5rem;
   border: none;
   cursor: pointer;
-  color: #637285;
+  color: #93A3B8;
   background: transparent;
   transition: background 0.15s, color 0.15s, box-shadow 0.15s;
   font-family: inherit;
@@ -387,11 +313,18 @@ function formatDate(iso: string): string {
 }
 
 /* ── Invoice list ────────────────────────────────────────── */
+.invoice-list-wrap {
+  margin-bottom: 0.95rem;
+  border-radius: 0.85rem;
+  padding: 0.45rem;
+  background: linear-gradient(135deg, rgba(26,86,219,0.10), rgba(255,255,255,0.03));
+  border: 1px solid rgba(26,86,219,0.22);
+}
+
 .invoice-list {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
+  gap: 0.45rem;
   max-height: 13rem;
   overflow-y: auto;
 }
@@ -402,15 +335,15 @@ function formatDate(iso: string): string {
   gap: 0.75rem;
   padding: 0.75rem;
   border-radius: 0.75rem;
-  border: 1px solid rgba(255,255,255,0.10);
-  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(26,86,219,0.20);
+  background: rgba(8, 14, 27, 0.72);
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
 }
 
 .invoice-row--selected {
-  border-color: rgba(26,86,219,0.55);
-  background: rgba(26,86,219,0.10);
+  border-color: rgba(96,165,250,0.58);
+  background: linear-gradient(135deg, rgba(26,86,219,0.24), rgba(26,86,219,0.12));
 }
 
 /* ── Checkbox ────────────────────────────────────────────── */
@@ -418,7 +351,7 @@ function formatDate(iso: string): string {
   width: 1.25rem;
   height: 1.25rem;
   border-radius: 0.375rem;
-  border: 2px solid rgba(255,255,255,0.25);
+  border: 2px solid rgba(147,163,184,0.45);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -475,8 +408,8 @@ function formatDate(iso: string): string {
   text-align: center;
   font-size: 0.875rem;
   font-weight: 600;
-  background: rgba(255,255,255,0.07);
-  border: 1px solid rgba(26,86,219,0.45);
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(96,165,250,0.42);
   border-radius: 0.5rem;
   padding: 0.25rem 0.5rem;
   color: #E8EDF5;
@@ -496,7 +429,7 @@ function formatDate(iso: string): string {
   justify-content: space-between;
   align-items: center;
   padding: 0.75rem 0;
-  border-top: 1px solid rgba(26,86,219,0.14);
+  border-top: 1px solid rgba(26,86,219,0.20);
   margin-bottom: 1rem;
 }
 

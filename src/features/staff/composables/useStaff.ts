@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
+import { supabase } from '@/data/supabase/client'
 import { hashPin } from './usePinAuth'
 import type { Staff, NewStaff, StaffPermissions } from '../staff.types'
 import { OWNER_PERMISSIONS } from '../staff.types'
@@ -53,13 +54,63 @@ export function useStaff() {
 
   async function createStaff(data: NewStaff): Promise<Staff> {
     const device = useDeviceStore()
-    const id = crypto.randomUUID()
     const pinHash = await hashPin(data.pin)
     const now = new Date().toISOString()
     const permsJson =
       data.role === 'owner'
         ? JSON.stringify(OWNER_PERMISSIONS)
         : JSON.stringify(data.permissions)
+
+    // Keep one active owner per shop: if owner already exists, update it instead
+    // of inserting a second row that would violate uq_staff_one_active_owner_per_shop.
+    if (data.role === 'owner') {
+      const existingOwner = await db.getOptional<{ id: string }>(
+        `SELECT id FROM staff WHERE shop_id = ? AND role = 'owner' AND is_active = 1 LIMIT 1`,
+        [device.shopId]
+      )
+      if (existingOwner?.id) {
+        await db.execute(
+          `UPDATE staff SET name = ?, pin_hash = ?, permissions = ?, is_active = 1 WHERE id = ?`,
+          [data.name, pinHash, permsJson, existingOwner.id]
+        )
+        await loadStaff()
+        const updated = staff.value.find((s) => s.id === existingOwner.id)
+        if (!updated) throw new Error(`Owner ${existingOwner.id} not found after update`)
+        await logStaffPermissionsChanged(updated.id, updated.name)
+        return updated
+      }
+
+      // If cloud already has an active owner but local cache is stale, reuse
+      // that same row ID locally. This avoids uploading a second active owner
+      // that would violate uq_staff_one_active_owner_per_shop.
+      const { data: remoteOwner, error: remoteOwnerError } = await supabase
+        .from('staff')
+        .select('id')
+        .eq('shop_id', device.shopId)
+        .eq('role', 'owner')
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle()
+
+      if (!remoteOwnerError && remoteOwner?.id) {
+        await db.execute(
+          `INSERT OR IGNORE INTO staff (id, shop_id, name, pin_hash, role, permissions, is_active, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
+          [remoteOwner.id, device.shopId, data.name, pinHash, 'owner', permsJson, now]
+        )
+        await db.execute(
+          `UPDATE staff SET name = ?, pin_hash = ?, permissions = ?, is_active = 1 WHERE id = ?`,
+          [data.name, pinHash, permsJson, remoteOwner.id]
+        )
+        await loadStaff()
+        const updated = staff.value.find((s) => s.id === remoteOwner.id)
+        if (!updated) throw new Error(`Owner ${remoteOwner.id} not found after sync-safe update`)
+        await logStaffPermissionsChanged(updated.id, updated.name)
+        return updated
+      }
+    }
+
+    const id = crypto.randomUUID()
 
     await db.execute(
       `INSERT INTO staff (id, shop_id, name, pin_hash, role, permissions, is_active, created_at)

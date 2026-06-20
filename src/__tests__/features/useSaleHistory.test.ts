@@ -43,9 +43,12 @@ describe('useSaleHistory', () => {
       ] } } as any) // sales
       .mockResolvedValueOnce({ rows: { _array: [] } } as any) // ps_crud (pending)
       .mockResolvedValueOnce({ rows: { _array: [
-        { sale_id: 's1', fully_returned: 1 }, // all items returned
-        { sale_id: 's2', fully_returned: 0 }, // partial return
-      ] } } as any) // returns
+        { sale_id: 's1' },
+        { sale_id: 's2' },
+      ] } } as any) // returned sales
+      .mockResolvedValueOnce({ rows: { _array: [
+        { sale_id: 's1' }, // all items returned
+      ] } } as any) // fully returned sales
 
     const { sales, loadHistory } = useSaleHistory()
     await loadHistory()

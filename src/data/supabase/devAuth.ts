@@ -7,6 +7,11 @@ function envFlag(name: string): boolean {
   return raw === '1' || raw === 'true' || raw === 'yes'
 }
 
+function isInvalidCredentials(message: string): boolean {
+  const m = message.toLowerCase()
+  return m.includes('invalid login credentials') || m.includes('invalid credentials')
+}
+
 export async function bootstrapDevAuth(): Promise<void> {
   if (import.meta.env.PROD) return
   if (!envFlag('VITE_DEV_AUTO_SIGNIN')) return
@@ -27,8 +32,25 @@ export async function bootstrapDevAuth(): Promise<void> {
   if (!existing.data.session) {
     const signedIn = await supabase.auth.signInWithPassword({ email, password })
     if (signedIn.error) {
-      console.warn('[DevAuth] Auto sign-in failed:', signedIn.error.message)
-      return
+      const autoSignup = envFlag('VITE_DEV_AUTO_SIGNUP')
+
+      if (autoSignup && isInvalidCredentials(signedIn.error.message)) {
+        const signedUp = await supabase.auth.signUp({ email, password })
+        if (signedUp.error) {
+          // Supabase may return "User already registered" here. In that case the
+          // most likely issue is wrong password for an existing account.
+          console.warn('[DevAuth] Auto signup failed:', signedUp.error.message)
+          return
+        }
+
+        if (!signedUp.data.session) {
+          console.warn('[DevAuth] Signup succeeded but no session returned. Check email confirmation settings in Supabase Auth.')
+          return
+        }
+      } else {
+        console.warn('[DevAuth] Auto sign-in failed:', signedIn.error.message)
+        return
+      }
     }
   }
 

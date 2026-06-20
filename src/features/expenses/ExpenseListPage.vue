@@ -9,7 +9,7 @@ import AppDatePicker from '@/components/ui/AppDatePicker.vue'
 import ExpenseForm from './components/ExpenseForm.vue'
 import { useExpenses } from './composables/useExpenses'
 import { usePeriodToggle } from '@/features/dashboard/composables/usePeriodToggle'
-import { getDateRange } from '@/features/dashboard/composables/periodUtils'
+import { getDateRange, getMonthRange } from '@/features/dashboard/composables/periodUtils'
 import type { Expense } from './expense.types'
 
 const router = useRouter()
@@ -17,14 +17,17 @@ const route = useRoute()
 const { expenses, load, deleteExpense } = useExpenses()
 const { period, setPeriod } = usePeriodToggle()
 
-<<<<<<< Updated upstream
-=======
 // Month browsing (only meaningful in the 'month' period): 0 = current month,
 // -1 = previous, +1 = next. Lets the owner reach recurring costs stored in other
 // months, not just the current one.
 const monthOffset    = ref(0)
 
->>>>>>> Stashed changes
+const monthLabel = computed(() => {
+  const now = new Date()
+  const d = new Date(now.getFullYear(), now.getMonth() + monthOffset.value, 1)
+  return new Intl.DateTimeFormat('ar-SY', { month: 'long', year: 'numeric' }).format(d)
+})
+
 const editingExpense = ref<Expense | null>(null)
 const showAddForm    = ref(false)
 const deleteTarget   = ref<string | null>(null)
@@ -135,47 +138,31 @@ function onDocumentClick(event: MouseEvent) {
 async function reload() {
   loading.value = true
   try {
-    const { start, end } = getDateRange(period.value)
-    await load(start, end)
+    // In 'month' mode, browse the offset month (full calendar month); today/week
+    // are always the current period, so reset the offset there.
+    let range: { start: string; end: string }
+    if (period.value === 'month') {
+      range = getMonthRange(monthOffset.value)
+    } else {
+      monthOffset.value = 0
+      range = getDateRange(period.value)
+    }
+    await load(range.start, range.end)
   } finally {
     loading.value = false
   }
 }
 
-<<<<<<< Updated upstream
-=======
-function onMonthPicked(value: string) {
-  if (!value) return
-  const [yearText, monthText] = value.split('-')
-  const year = Number(yearText)
-  const month = Number(monthText)
-  if (!Number.isFinite(year) || !Number.isFinite(month)) return
-
-  const now = new Date()
-  const currentYear = now.getFullYear()
-  const currentMonth = now.getMonth() + 1
-  monthOffset.value = (year - currentYear) * 12 + (month - currentMonth)
-
-  if (period.value === 'month') {
-    reload()
-  }
+function prevMonth() {
+  monthOffset.value -= 1
+  reload()
 }
 
-const monthPickerModel = computed<Date | null>({
-  get: () => {
-    const now = new Date()
-    const d = new Date(now.getFullYear(), now.getMonth() + monthOffset.value, 1)
-    return Number.isNaN(d.getTime()) ? null : d
-  },
-  set: (value) => {
-    if (!value) return
-    const year = value.getFullYear()
-    const month = value.getMonth() + 1
-    onMonthPicked(`${year}-${String(month).padStart(2, '0')}`)
-  },
-})
+function nextMonth() {
+  monthOffset.value += 1
+  reload()
+}
 
->>>>>>> Stashed changes
 onMounted(async () => {
   document.addEventListener('click', onDocumentClick)
   const p = route.query.period as string | undefined
@@ -259,6 +246,13 @@ function handleExpenseSaved() {
       </button>
     </div>
 
+    <!-- Month navigation: only in month view, so recurring costs in other months are reachable -->
+    <div v-if="period === 'month'" class="month-nav">
+      <button type="button" class="month-nav-btn" aria-label="الشهر السابق" @click="prevMonth">‹</button>
+      <span class="month-nav-label">{{ monthLabel }}</span>
+      <button type="button" class="month-nav-btn" aria-label="الشهر التالي" @click="nextMonth">›</button>
+    </div>
+
     <div class="filters-row">
       <div class="search-wrap">
         <svg xmlns="http://www.w3.org/2000/svg" class="search-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
@@ -317,20 +311,20 @@ function handleExpenseSaved() {
     </div>
 
     <main class="main-content">
-
-      <!-- Summary row -->
-      <div v-if="displayedExpenses.length > 0" class="summary-row">
-        <span class="summary-count">{{ displayedExpenses.length }} عملية</span>
-        <span class="summary-total">${{ periodTotal.toFixed(2) }} إجمالي</span>
+      <!-- Loading (same behavior as /history) -->
+      <div v-if="loading" class="loading-wrap">
+        <div class="spinner" />
       </div>
 
-      <!-- Loading skeleton -->
-      <div v-if="loading" class="skeleton-list">
-        <div v-for="i in 4" :key="i" class="skeleton-item"></div>
-      </div>
+      <template v-else>
+        <!-- Summary row -->
+        <div v-if="displayedExpenses.length > 0" class="summary-row">
+          <span class="summary-count">{{ displayedExpenses.length }} عملية</span>
+          <span class="summary-total">${{ periodTotal.toFixed(2) }} إجمالي</span>
+        </div>
 
-      <!-- Empty state -->
-      <div v-else-if="displayedExpenses.length === 0" class="empty-state">
+        <!-- Empty state -->
+        <div v-if="displayedExpenses.length === 0" class="empty-state">
         <div class="empty-icon-wrap">
           <svg class="empty-icon" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z" />
@@ -346,9 +340,9 @@ function handleExpenseSaved() {
           </svg>
           إضافة مصروف
         </button>
-      </div>
+        </div>
 
-      <template v-else>
+        <template v-else>
         <!-- Mobile: card list -->
         <div class="card-list sm-only">
           <div
@@ -417,6 +411,7 @@ function handleExpenseSaved() {
             </tbody>
           </table>
         </div>
+        </template>
       </template>
 
     </main>
@@ -491,195 +486,44 @@ function handleExpenseSaved() {
   padding: 1rem 1rem 0.5rem;
 }
 
-<<<<<<< Updated upstream
-=======
-.period-controls {
+.month-nav {
   display: flex;
   align-items: center;
-  gap: 0.625rem;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.25rem 1rem 0.5rem;
 }
 
-.month-picker-inline-wrap {
-  min-width: 9.5rem;
-  position: relative;
-}
-
-.month-picker-input {
-  width: 100%;
-  height: 40px;
-  min-height: 40px;
-  border-radius: 0.75rem;
-  border: 1px solid rgba(255,255,255,0.18);
-  background: rgba(255,255,255,0.07);
-  color: #E8EDF5;
-  padding-inline-start: 0.875rem;
-  padding-inline-end: 2.75rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-  font-family: 'Tajawal', system-ui, sans-serif;
-  box-sizing: border-box;
-  outline: none;
-  box-shadow: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-
-.month-picker-input:focus {
-  border-color: rgba(26,86,219,0.8);
-  box-shadow: 0 0 0 3px rgba(26,86,219,0.25), 0 0 12px rgba(26,86,219,0.15);
-}
-
-.month-picker-datepicker {
-  width: 100%;
-}
-
-.month-picker-datepicker.p-datepicker,
-.month-picker-datepicker.p-component,
-.month-picker-datepicker.p-inputwrapper {
-  width: 100%;
-  display: block;
-}
-
-.month-picker-datepicker :deep(.p-inputtext),
-.month-picker-datepicker :deep(.p-datepicker-input) {
-  width: 100% !important;
-  height: 40px !important;
-  min-height: 40px !important;
-  border-radius: 0.75rem !important;
-  border: 1px solid rgba(255,255,255,0.18) !important;
-  background: rgba(255,255,255,0.07) !important;
-  color: #E8EDF5 !important;
-  padding-inline-start: 0.875rem !important;
-  padding-inline-end: 2.75rem !important;
-  font-size: 0.875rem !important;
-  font-weight: 600 !important;
-  font-family: 'Tajawal', system-ui, sans-serif !important;
-  box-sizing: border-box;
-  outline: none;
-  box-shadow: none !important;
-}
-
-.month-picker-datepicker :deep(.p-inputtext::placeholder),
-.month-picker-datepicker :deep(.p-datepicker-input::placeholder) {
-  color: #3D4F6B;
-  opacity: 1;
-}
-
-.month-picker-datepicker :deep(.p-inputtext:enabled:hover),
-.month-picker-datepicker :deep(.p-datepicker-input:enabled:hover) {
-  border-color: rgba(26,86,219,0.45) !important;
-}
-
-.month-picker-datepicker :deep(.p-inputtext:enabled:focus),
-.month-picker-datepicker :deep(.p-datepicker-input:enabled:focus) {
-  border-color: rgba(26,86,219,0.8) !important;
-  box-shadow: 0 0 0 3px rgba(26,86,219,0.25), 0 0 12px rgba(26,86,219,0.15) !important;
-}
-
-.month-picker-datepicker :deep(.p-datepicker-input-icon-container) {
-  position: absolute;
-  inset-inline-end: 0.75rem;
-  inset-block: 0;
-  margin: auto;
-  width: 1rem;
-  height: 1rem;
+.month-nav-btn {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.625rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #637285;
-  padding: 0;
-  background: transparent;
-  border: none;
-  pointer-events: none;
-}
-
-.month-picker-datepicker :deep(.p-datepicker-panel) {
-  margin-top: 6px;
-  border-radius: 12px;
-  border: 1px solid rgba(26,86,219,0.30);
-  background: linear-gradient(180deg, rgba(13,24,40,0.97), rgba(7,11,20,0.97));
-  box-shadow: 0 10px 30px rgba(0,0,0,0.45), 0 4px 18px rgba(26,86,219,0.16);
-  backdrop-filter: blur(20px) saturate(180%);
-  color: #E8EDF5;
-}
-
-.month-picker-datepicker :deep(.p-datepicker-calendar-container),
-.month-picker-datepicker :deep(.p-datepicker-calendar),
-.month-picker-datepicker :deep(.p-datepicker-month-view),
-.month-picker-datepicker :deep(.p-datepicker-year-view) {
-  background: transparent !important;
-}
-
-.month-picker-datepicker :deep(.p-datepicker-header) {
-  border-bottom: 1px solid rgba(26,86,219,0.20);
-  background: transparent;
-  color: #E8EDF5;
-}
-
-.month-picker-datepicker :deep(.p-datepicker-title),
-.month-picker-datepicker :deep(.p-datepicker-select-month),
-.month-picker-datepicker :deep(.p-datepicker-select-year) {
-  color: #E8EDF5;
-}
-
-.month-picker-datepicker :deep(.p-datepicker-select-month),
-.month-picker-datepicker :deep(.p-datepicker-select-year) {
-  background: transparent !important;
-  border: none !important;
-  border-radius: 0;
-}
-
-.month-picker-datepicker :deep(.p-datepicker-select-month:hover),
-.month-picker-datepicker :deep(.p-datepicker-select-year:hover) {
-  background: transparent !important;
-  border: none !important;
-}
-
-.month-picker-datepicker :deep(.p-datepicker-title button),
-.month-picker-datepicker :deep(.p-datepicker-prev),
-.month-picker-datepicker :deep(.p-datepicker-next) {
+  font-size: 1.25rem;
+  line-height: 1;
   color: #C8D5E8;
+  background: linear-gradient(135deg, rgba(26,86,219,0.12), rgba(255,255,255,0.04));
+  border: 1px solid rgba(26,86,219,0.22);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
 
-.month-picker-datepicker :deep(.p-datepicker-title .p-datepicker-select-month),
-.month-picker-datepicker :deep(.p-datepicker-title .p-datepicker-select-year) {
-  background: transparent !important;
-  border: none !important;
-  border-radius: 0;
+.month-nav-btn:hover {
+  border-color: rgba(26,86,219,0.45);
+  background: linear-gradient(135deg, rgba(26,86,219,0.20), rgba(255,255,255,0.06));
+  color: #E8EDF5;
 }
 
-.month-picker-datepicker :deep(.p-monthpicker-month) {
-  color: #C8D5E8;
-  border-radius: 0.5rem;
+.month-nav-label {
+  min-width: 8rem;
+  text-align: center;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #9FB0C7;
 }
 
-.month-picker-datepicker :deep(.p-monthpicker-month:hover) {
-  background: rgba(26,86,219,0.16);
-}
-
-.month-picker-datepicker :deep(.p-monthpicker-month.p-highlight) {
-  background: linear-gradient(135deg, #1A56DB, #1248B3) !important;
-  color: #FFFFFF !important;
-  border: 1px solid rgba(26,86,219,0.55) !important;
-}
-
-.month-picker-datepicker :deep(.p-datepicker-prev),
-.month-picker-datepicker :deep(.p-datepicker-next) {
-  color: #9AB0CE;
-}
-
-.month-picker-datepicker :deep(.p-datepicker-prev:hover),
-.month-picker-datepicker :deep(.p-datepicker-next:hover) {
-  background: rgba(26,86,219,0.16) !important;
-}
-
-.month-picker-datepicker :deep(.p-datepicker-title .p-datepicker-select-month:hover),
-.month-picker-datepicker :deep(.p-datepicker-title .p-datepicker-select-year:hover) {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-}
-
->>>>>>> Stashed changes
 .filters-row {
   display: flex;
   align-items: center;
@@ -914,21 +758,26 @@ function handleExpenseSaved() {
   color: #EF4444;
 }
 
-/* ── Skeleton ──────────────────────────────────────── */
-.skeleton-list {
+/* ── Loading ───────────────────────────────────────── */
+.loading-wrap {
+  flex: 1;
+  min-height: 14rem;
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+  align-items: center;
+  justify-content: center;
 }
-.skeleton-item {
-  height: 4rem;
-  border-radius: 0.75rem;
-  background: rgba(255, 255, 255, 0.05);
-  animation: pulse 1.4s ease-in-out infinite;
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border-radius: 9999px;
+  border: 2px solid rgba(26,86,219,0.28);
+  border-top-color: #1A56DB;
+  animation: spin 0.8s linear infinite;
 }
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 /* ── Empty state ───────────────────────────────────── */

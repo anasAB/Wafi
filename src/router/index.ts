@@ -1,6 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useShiftStore } from '@/features/shifts/shift.store'
+import { isRouteAllowed } from './permissions'
+import type { StaffPermissions } from '@/features/staff/staff.types'
 
-export default createRouter({
+const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/',                  component: () => import('@/pages/HomePage.vue') },
@@ -8,18 +11,20 @@ export default createRouter({
     { path: '/pos/confirmation',  component: () => import('@/features/pos/SaleConfirmationScreen.vue') },
     { path: '/history',           component: () => import('@/pages/SaleHistoryPage.vue') },
     { path: '/back-office',       component: () => import('@/features/products/BackOfficePage.vue') },
-    { path: '/products',          component: () => import('@/features/products/ProductsPage.vue') },
-    { path: '/products/add',      component: () => import('@/features/products/AddProductPage.vue') },
-    { path: '/products/:id/edit', component: () => import('@/features/products/EditProductPage.vue') },
-    { path: '/expenses',          component: () => import('@/features/expenses/ExpenseListPage.vue') },
-    { path: '/customers',         component: () => import('@/features/customers/CustomersPage.vue') },
-    { path: '/customers/:id',     component: () => import('@/features/customers/CustomerDetailPage.vue') },
-    { path: '/suppliers',         component: () => import('@/features/suppliers/SuppliersPage.vue') },
-    { path: '/suppliers/:id',     component: () => import('@/features/suppliers/SupplierDetailPage.vue') },
-    { path: '/receivings',        component: () => import('@/features/suppliers/ReceivingsPage.vue') },
+    { path: '/products',          component: () => import('@/features/products/ProductsPage.vue'),     meta: { permission: 'can_manage_products' } },
+    { path: '/products/add',      component: () => import('@/features/products/AddProductPage.vue'),   meta: { permission: 'can_manage_products' } },
+    { path: '/products/:id/edit', component: () => import('@/features/products/EditProductPage.vue'),  meta: { permission: 'can_manage_products' } },
+    { path: '/expenses',          component: () => import('@/features/expenses/ExpenseListPage.vue'),  meta: { permission: 'can_view_expenses' } },
+    { path: '/customers',         component: () => import('@/features/customers/CustomersPage.vue'),       meta: { permission: 'can_manage_customers' } },
+    { path: '/customers/:id',     component: () => import('@/features/customers/CustomerDetailPage.vue'),  meta: { permission: 'can_manage_customers' } },
+    { path: '/suppliers',         component: () => import('@/features/suppliers/SuppliersPage.vue'),       meta: { permission: 'can_manage_products' } },
+    { path: '/suppliers/:id',     component: () => import('@/features/suppliers/SupplierDetailPage.vue'),  meta: { permission: 'can_manage_products' } },
+    { path: '/receivings',        component: () => import('@/features/suppliers/ReceivingsPage.vue'),      meta: { permission: 'can_manage_products' } },
     {
+      // Parent meta is merged into child route meta, so all settings screens inherit this guard.
       path: '/settings',
       component: () => import('@/pages/SettingsPage.vue'),
+      meta: { permission: 'can_manage_settings' },
       children: [
         { path: 'personal',       component: () => import('@/features/settings/screens/PersonalPreferencesScreen.vue') },
         { path: 'receipt',        component: () => import('@/features/receipt/ReceiptSettingsScreen.vue') },
@@ -35,3 +40,14 @@ export default createRouter({
   ],
   scrollBehavior: () => ({ top: 0 }),
 })
+
+// Enforce staff permissions on navigation. to.meta merges all matched records'
+// meta, so settings children inherit the parent's permission. Unauthorized
+// staff are sent home rather than reaching a screen the sidebar hides.
+router.beforeEach((to) => {
+  const required = to.meta.permission as keyof StaffPermissions | undefined
+  const staff = useShiftStore().activeStaff
+  return isRouteAllowed(required, staff) ? true : '/'
+})
+
+export default router

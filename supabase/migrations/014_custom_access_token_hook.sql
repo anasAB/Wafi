@@ -38,6 +38,7 @@ grant select on table public.shops to supabase_auth_admin;
 
 -- Never callable by client roles.
 revoke execute on function public.custom_access_token_hook(jsonb) from authenticated, anon, public;
+<<<<<<< HEAD
 
 
 const { supabase } = await import('/src/data/supabase/client.ts')
@@ -45,3 +46,5 @@ const { data, error } = await supabase.auth.refreshSession()
 console.log('refresh error:', error?.message ?? 'none')
 const p = JSON.parse(atob(data.session.access_token.split('.')[1]))
 console.log('sub:', p.sub, '| shop_id:', p.shop_id)
+=======
+>>>>>>> 3ff516043a2ce84079a600fe3e822f3a14a84c3d

@@ -40,8 +40,12 @@ export function useShift() {
     return shiftId
   }
 
-  async function closeShift(closingCashUsd: number, closingCashSyp: number): Promise<void> {
-    const shiftId = shiftStore.activeShiftId
+  async function closeShift(
+    closingCashUsd: number,
+    closingCashSyp: number,
+    shiftIdOverride?: string,
+  ): Promise<void> {
+    const shiftId = shiftStore.activeShiftId ?? shiftIdOverride
     if (!shiftId) throw new Error('No open shift to close')
     const now = new Date().toISOString()
     await db.execute(
@@ -56,7 +60,17 @@ export function useShift() {
 
   async function loadActiveShift(): Promise<CashierShift | null> {
     const shiftId = shiftStore.activeShiftId
-    if (!shiftId) return null
+    if (!shiftId) {
+      // Recovery path: after refresh/restart, store state can be empty while an
+      // open shift still exists in local DB for this device.
+      const row = await db.getOptional<any>(
+        `SELECT * FROM cashier_shifts
+         WHERE shop_id = ? AND device_id = ? AND status = 'open'
+         ORDER BY opened_at DESC LIMIT 1`,
+        [device.shopId, device.deviceId]
+      )
+      return row ? rowToShift(row) : null
+    }
     const row = await db.getOptional<any>(
       `SELECT * FROM cashier_shifts WHERE id = ?`,
       [shiftId]

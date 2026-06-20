@@ -36,7 +36,6 @@ const textSizes = computed(() => [
     <AppHeader
       :title="t('settings.personal')"
       :show-back="true"
-      :show-settings="false"
       @back="router.back()"
     />
   </div>
