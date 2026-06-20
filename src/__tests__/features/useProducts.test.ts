@@ -112,10 +112,10 @@ describe('useProducts', () => {
     const { adjustStock } = useProducts()
     await adjustStock('p1', -5, 'stocktake')
 
-    const updateCall = txExecute.mock.calls.find(([sql]: [string]) => sql.includes('UPDATE products'))
-    expect(updateCall[1][0]).toBe(0)  // clamped newValue, not -5
-    const adjCall = txExecute.mock.calls.find(([sql]: [string]) => sql.includes('INSERT INTO stock_adjustments'))
-    expect(adjCall[1][4]).toBe(0)     // new_value recorded as 0
+    const updateCall = txExecute.mock.calls.find(c => (c[0] as string).includes('UPDATE products'))
+    expect(updateCall?.[1][0]).toBe(0)  // clamped newValue, not -5
+    const adjCall = txExecute.mock.calls.find(c => (c[0] as string).includes('INSERT INTO stock_adjustments'))
+    expect(adjCall?.[1][4]).toBe(0)     // new_value recorded as 0
   })
 
   it('getById returns product by id after load', async () => {

@@ -27,7 +27,11 @@ describe('isRouteAllowed', () => {
     expect(isRouteAllowed('can_manage_settings', staff('cashier', { ...DEFAULT_CASHIER_PERMISSIONS, can_manage_settings: true }))).toBe(true)
   })
 
-  it('allows when no staff is logged in (app-level gating handles it)', () => {
-    expect(isRouteAllowed('can_manage_settings', null)).toBe(true)
+  it('denies a permission-gated route when no operator is logged in (fail closed)', () => {
+    expect(isRouteAllowed('can_manage_settings', null)).toBe(false)
+  })
+
+  it('still allows a public (no-permission) route when no operator is logged in', () => {
+    expect(isRouteAllowed(undefined, null)).toBe(true)
   })
 })

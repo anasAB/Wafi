@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { useShiftStore } from '@/features/shifts/shift.store'
+import { useSessionStore } from '@/store/session.store'
 import { isRouteAllowed } from './permissions'
 import type { StaffPermissions } from '@/features/staff/staff.types'
 
@@ -46,7 +46,9 @@ const router = createRouter({
 // staff are sent home rather than reaching a screen the sidebar hides.
 router.beforeEach((to) => {
   const required = to.meta.permission as keyof StaffPermissions | undefined
-  const staff = useShiftStore().activeStaff
+  // Active operator lives in the session store (WAFI-011) — the same store a
+  // "switch operator" updates, so guards re-scope on switch.
+  const staff = useSessionStore().activeStaff
   return isRouteAllowed(required, staff) ? true : '/'
 })
 
