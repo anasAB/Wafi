@@ -12,7 +12,7 @@ type InvoiceRow = {
 
 type PaymentRow = {
   id: string; customer_id: string; sale_id: string; amount_usd: number
-  currency: string; paid_at: string; created_at: string
+  currency: string; method: string | null; paid_at: string; created_at: string
 }
 
 export function useCustomerBalance(customerId: string) {
@@ -76,7 +76,7 @@ export function useCustomerBalance(customerId: string) {
     openInvoices.value = invoicesWithSummary
 
     const paymentRows = await db.getAll<PaymentRow>(
-      `SELECT id, customer_id, sale_id, amount_usd, currency, paid_at, created_at
+      `SELECT id, customer_id, sale_id, amount_usd, currency, method, paid_at, created_at
        FROM customer_payments WHERE customer_id = ? AND shop_id = ? ORDER BY created_at DESC`,
       [customerId, shopId]
     )
@@ -86,6 +86,7 @@ export function useCustomerBalance(customerId: string) {
       saleId:     r.sale_id,
       amountUsd:  r.amount_usd,
       currency:   r.currency as 'USD' | 'SYP',
+      method:     (r.method as CustomerPayment['method']) ?? null,
       paidAt:     r.paid_at,
       createdAt:  r.created_at,
     }))
@@ -126,12 +127,12 @@ export function useCustomerBalance(customerId: string) {
       for (const alloc of allocations) {
         await tx.execute(
           `INSERT INTO customer_payments
-             (id, shop_id, customer_id, sale_id, amount_usd, currency, amount_raw,
+             (id, shop_id, customer_id, sale_id, amount_usd, currency, amount_raw, method,
               exchange_rate_at_payment, notes, paid_at, created_at, sync_status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, null, ?, ?, 'pending')`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?, ?, 'pending')`,
           [
             uuidv4(), device.shopId, customerId, alloc.saleId,
-            alloc.amountUsd, alloc.currency, alloc.amountRaw,
+            alloc.amountUsd, alloc.currency, alloc.amountRaw, alloc.method,
             alloc.exchangeRateAtPayment ?? null,
             now.slice(0, 10), now,
           ]

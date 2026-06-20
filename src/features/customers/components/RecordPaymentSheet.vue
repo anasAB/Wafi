@@ -2,7 +2,12 @@
 import { ref, computed, watch } from 'vue'
 import { useExchangeRate } from '@/features/exchange-rate'
 import { useCustomerBalance } from '@/features/customers/composables/useCustomerBalance'
+<<<<<<< Updated upstream
 import type { OpenInvoice, PaymentAllocation } from '@/features/customers/customer.types'
+=======
+import type { OpenInvoice, PaymentAllocation, PaymentMethod } from '@/features/customers/customer.types'
+import BaseModal from '@/components/ui/BaseModal.vue'
+>>>>>>> Stashed changes
 
 const props = defineProps<{
   customerId:   string
@@ -16,8 +21,17 @@ const { currentRate }   = useExchangeRate()
 const { recordPayment } = useCustomerBalance(props.customerId)
 
 const currency    = ref<'USD' | 'SYP'>('USD')
+const method      = ref<PaymentMethod>('cash')
 // Use array instead of Set for Vue 3 reactivity
 const selectedIds = ref<string[]>([])
+
+// Only cash collections enter the drawer; the rest are tracked for the ledger.
+const methodOptions: { value: PaymentMethod; label: string }[] = [
+  { value: 'cash',     label: 'نقداً' },
+  { value: 'transfer', label: 'حوالة بنكية' },
+  { value: 'usdt',     label: 'USDT' },
+  { value: 'hawala',   label: 'حوالة' },
+]
 
 // Invoice remaining expressed in the currently selected currency.
 function remainingIn(inv: OpenInvoice): number {
@@ -75,6 +89,7 @@ async function handleConfirm() {
         amountUsd,
         currency:              currency.value,
         amountRaw:             raw,
+        method:                method.value,
         exchangeRateAtPayment: currentRate.value ?? undefined,
       })
     }
@@ -129,7 +144,28 @@ function formatDate(iso: string): string {
           >SYP</button>
         </div>
 
+<<<<<<< Updated upstream
         <!-- Invoice list -->
+=======
+      <!-- Payment method -->
+      <p class="section-label">طريقة الدفع</p>
+      <div class="method-wrap">
+        <button
+          v-for="opt in methodOptions"
+          :key="opt.value"
+          type="button"
+          :data-testid="`method-${opt.value}`"
+          class="method-btn"
+          :class="{ 'method-btn--active': method === opt.value }"
+          @click="method = opt.value"
+        >{{ opt.label }}</button>
+      </div>
+      <p v-if="method !== 'cash'" class="method-note">لن تُحتسب ضمن نقد الصندوق</p>
+
+      <!-- Invoice list -->
+      <p class="section-label">الفواتير المفتوحة</p>
+      <div class="invoice-list-wrap">
+>>>>>>> Stashed changes
         <div class="invoice-list">
           <div
             v-for="inv in openInvoices"
@@ -310,6 +346,44 @@ function formatDate(iso: string): string {
   background: linear-gradient(135deg, #1A56DB, #1248B3);
   color: #fff;
   box-shadow: 0 2px 8px rgba(26,86,219,0.40);
+}
+
+/* ── Payment method ──────────────────────────────────────── */
+.method-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  background: linear-gradient(135deg, rgba(26,86,219,0.10), rgba(255,255,255,0.03));
+  border: 1px solid rgba(26,86,219,0.22);
+  border-radius: 0.75rem;
+  padding: 0.25rem;
+  width: fit-content;
+  margin-bottom: 0.5rem;
+}
+
+.method-btn {
+  padding: 0.375rem 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 0.5rem;
+  border: none;
+  cursor: pointer;
+  color: #93A3B8;
+  background: transparent;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+  font-family: inherit;
+}
+
+.method-btn--active {
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(26,86,219,0.40);
+}
+
+.method-note {
+  margin: 0 0 0.9rem;
+  font-size: 0.68rem;
+  color: #F59E0B;
 }
 
 /* ── Invoice list ────────────────────────────────────────── */

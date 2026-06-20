@@ -83,6 +83,26 @@ describe('computeCashReconciliation', () => {
     expect(r.varianceSyp).toBe(0)
   })
 
+  it('cash credit-payments increase the expected cash in each currency', () => {
+    // A customer paying down credit in cash physically enters the drawer, so it
+    // must raise expected cash. Non-cash credit payments (wire/USDT) are excluded
+    // by the caller, so only cash amounts reach here.
+    const r = computeCashReconciliation({
+      openingCashUsd:        50,
+      cashUsdSales:          100,
+      cashExpensesUsd:       0,
+      closingCashUsd:        180,        // 50 + 100 + 30 credit cash
+      cashSypSalesRaw:       0,
+      closingCashSyp:        200_000,    // 0 + 200,000 credit cash
+      cashCreditPaymentsUsd: 30,
+      cashCreditPaymentsSyp: 200_000,
+    })
+    expect(r.expectedUsd).toBe(180)
+    expect(r.varianceUsd).toBe(0)
+    expect(r.expectedSyp).toBe(200_000)
+    expect(r.varianceSyp).toBe(0)
+  })
+
   it('cash refunds reduce the expected cash in each currency', () => {
     const r = computeCashReconciliation({
       openingCashUsd:  50,

@@ -89,6 +89,42 @@ describe('useReturnSheet — load()', () => {
   })
 })
 
+describe('useReturnSheet — over-refund guard', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  it('excludes fully-returned lines from the sheet', async () => {
+    mockSale()
+    mockLineItems()  // p1 qty 2, p2 qty 1
+    mockPriorReturns([{ product_id: 'p2', already_returned: 1 }])  // p2 fully returned
+    const { load, lines } = useReturnSheet(SALE_ID)
+    await load()
+    expect(lines.value.map(l => l.productId)).toEqual(['p1'])
+  })
+
+  it('confirm() throws if a selected line returns more than remaining', async () => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    // sale, line items (p1 qty 2), prior returns (p1 already 1 → remaining 1)
+    vi.mocked(db.execute).mockResolvedValueOnce({
+      rows: { _array: [{ id: SALE_ID, display_sale_number: '#001', customer_id: null }] },
+    } as any)
+    vi.mocked(db.getAll)
+      .mockResolvedValueOnce([{ product_id: 'p1', product_name: 'iPhone', quantity: 2, unit_price_usd: 500 }] as any)
+      .mockResolvedValueOnce([{ product_id: 'p1', already_returned: 1 }] as any)
+    vi.mocked(db.execute).mockResolvedValue({ rows: { _array: [{ rate: 12500 }] } } as any)
+    const sheet = useReturnSheet(SALE_ID)
+    await sheet.load()
+    sheet.lines.value[0].selected = true
+    sheet.lines.value[0].qtyToReturn = 2  // remaining is only 1
+    sheet.lines.value[0].restock = false  // isolate the guard from the restock stock-read path
+    sheet.refundMethod.value = 'cash_usd'
+    await expect(sheet.confirm()).rejects.toThrow(/return more|remaining|exceed/i)
+  })
+})
+
 describe('useReturnSheet — computed state', () => {
   beforeEach(() => {
     setActivePinia(createPinia())

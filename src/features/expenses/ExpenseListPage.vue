@@ -5,6 +5,7 @@ import AppHeader from '@/components/ui/AppHeader.vue'
 import AppToast from '@/components/ui/AppToast.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import PeriodToggle from '@/features/dashboard/components/PeriodToggle.vue'
+import AppDatePicker from '@/components/ui/AppDatePicker.vue'
 import ExpenseForm from './components/ExpenseForm.vue'
 import { useExpenses } from './composables/useExpenses'
 import { usePeriodToggle } from '@/features/dashboard/composables/usePeriodToggle'
@@ -16,6 +17,14 @@ const route = useRoute()
 const { expenses, load, deleteExpense } = useExpenses()
 const { period, setPeriod } = usePeriodToggle()
 
+<<<<<<< Updated upstream
+=======
+// Month browsing (only meaningful in the 'month' period): 0 = current month,
+// -1 = previous, +1 = next. Lets the owner reach recurring costs stored in other
+// months, not just the current one.
+const monthOffset    = ref(0)
+
+>>>>>>> Stashed changes
 const editingExpense = ref<Expense | null>(null)
 const showAddForm    = ref(false)
 const deleteTarget   = ref<string | null>(null)
@@ -133,6 +142,40 @@ async function reload() {
   }
 }
 
+<<<<<<< Updated upstream
+=======
+function onMonthPicked(value: string) {
+  if (!value) return
+  const [yearText, monthText] = value.split('-')
+  const year = Number(yearText)
+  const month = Number(monthText)
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return
+
+  const now = new Date()
+  const currentYear = now.getFullYear()
+  const currentMonth = now.getMonth() + 1
+  monthOffset.value = (year - currentYear) * 12 + (month - currentMonth)
+
+  if (period.value === 'month') {
+    reload()
+  }
+}
+
+const monthPickerModel = computed<Date | null>({
+  get: () => {
+    const now = new Date()
+    const d = new Date(now.getFullYear(), now.getMonth() + monthOffset.value, 1)
+    return Number.isNaN(d.getTime()) ? null : d
+  },
+  set: (value) => {
+    if (!value) return
+    const year = value.getFullYear()
+    const month = value.getMonth() + 1
+    onMonthPicked(`${year}-${String(month).padStart(2, '0')}`)
+  },
+})
+
+>>>>>>> Stashed changes
 onMounted(async () => {
   document.addEventListener('click', onDocumentClick)
   const p = route.query.period as string | undefined
@@ -187,7 +230,22 @@ function handleExpenseSaved() {
 
     <!-- Period toggle + desktop add button -->
     <div class="toolbar-row">
-      <PeriodToggle class="filter-period" />
+      <div class="period-controls">
+        <PeriodToggle class="filter-period" />
+        <div v-if="period === 'month'" class="month-picker-inline-wrap">
+          <AppDatePicker
+            id="expenses-month-picker"
+            v-model="monthPickerModel"
+            view="month"
+            date-format="MM yy"
+            show-icon
+            icon-display="input"
+            append-to="self"
+            class="month-picker-datepicker"
+            :input-class="'month-picker-input'"
+          />
+        </div>
+      </div>
       <!-- Desktop: add expense button -->
       <button
         type="button"
@@ -433,6 +491,195 @@ function handleExpenseSaved() {
   padding: 1rem 1rem 0.5rem;
 }
 
+<<<<<<< Updated upstream
+=======
+.period-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.month-picker-inline-wrap {
+  min-width: 9.5rem;
+  position: relative;
+}
+
+.month-picker-input {
+  width: 100%;
+  height: 40px;
+  min-height: 40px;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.07);
+  color: #E8EDF5;
+  padding-inline-start: 0.875rem;
+  padding-inline-end: 2.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  box-sizing: border-box;
+  outline: none;
+  box-shadow: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.month-picker-input:focus {
+  border-color: rgba(26,86,219,0.8);
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.25), 0 0 12px rgba(26,86,219,0.15);
+}
+
+.month-picker-datepicker {
+  width: 100%;
+}
+
+.month-picker-datepicker.p-datepicker,
+.month-picker-datepicker.p-component,
+.month-picker-datepicker.p-inputwrapper {
+  width: 100%;
+  display: block;
+}
+
+.month-picker-datepicker :deep(.p-inputtext),
+.month-picker-datepicker :deep(.p-datepicker-input) {
+  width: 100% !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  border-radius: 0.75rem !important;
+  border: 1px solid rgba(255,255,255,0.18) !important;
+  background: rgba(255,255,255,0.07) !important;
+  color: #E8EDF5 !important;
+  padding-inline-start: 0.875rem !important;
+  padding-inline-end: 2.75rem !important;
+  font-size: 0.875rem !important;
+  font-weight: 600 !important;
+  font-family: 'Tajawal', system-ui, sans-serif !important;
+  box-sizing: border-box;
+  outline: none;
+  box-shadow: none !important;
+}
+
+.month-picker-datepicker :deep(.p-inputtext::placeholder),
+.month-picker-datepicker :deep(.p-datepicker-input::placeholder) {
+  color: #3D4F6B;
+  opacity: 1;
+}
+
+.month-picker-datepicker :deep(.p-inputtext:enabled:hover),
+.month-picker-datepicker :deep(.p-datepicker-input:enabled:hover) {
+  border-color: rgba(26,86,219,0.45) !important;
+}
+
+.month-picker-datepicker :deep(.p-inputtext:enabled:focus),
+.month-picker-datepicker :deep(.p-datepicker-input:enabled:focus) {
+  border-color: rgba(26,86,219,0.8) !important;
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.25), 0 0 12px rgba(26,86,219,0.15) !important;
+}
+
+.month-picker-datepicker :deep(.p-datepicker-input-icon-container) {
+  position: absolute;
+  inset-inline-end: 0.75rem;
+  inset-block: 0;
+  margin: auto;
+  width: 1rem;
+  height: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #637285;
+  padding: 0;
+  background: transparent;
+  border: none;
+  pointer-events: none;
+}
+
+.month-picker-datepicker :deep(.p-datepicker-panel) {
+  margin-top: 6px;
+  border-radius: 12px;
+  border: 1px solid rgba(26,86,219,0.30);
+  background: linear-gradient(180deg, rgba(13,24,40,0.97), rgba(7,11,20,0.97));
+  box-shadow: 0 10px 30px rgba(0,0,0,0.45), 0 4px 18px rgba(26,86,219,0.16);
+  backdrop-filter: blur(20px) saturate(180%);
+  color: #E8EDF5;
+}
+
+.month-picker-datepicker :deep(.p-datepicker-calendar-container),
+.month-picker-datepicker :deep(.p-datepicker-calendar),
+.month-picker-datepicker :deep(.p-datepicker-month-view),
+.month-picker-datepicker :deep(.p-datepicker-year-view) {
+  background: transparent !important;
+}
+
+.month-picker-datepicker :deep(.p-datepicker-header) {
+  border-bottom: 1px solid rgba(26,86,219,0.20);
+  background: transparent;
+  color: #E8EDF5;
+}
+
+.month-picker-datepicker :deep(.p-datepicker-title),
+.month-picker-datepicker :deep(.p-datepicker-select-month),
+.month-picker-datepicker :deep(.p-datepicker-select-year) {
+  color: #E8EDF5;
+}
+
+.month-picker-datepicker :deep(.p-datepicker-select-month),
+.month-picker-datepicker :deep(.p-datepicker-select-year) {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0;
+}
+
+.month-picker-datepicker :deep(.p-datepicker-select-month:hover),
+.month-picker-datepicker :deep(.p-datepicker-select-year:hover) {
+  background: transparent !important;
+  border: none !important;
+}
+
+.month-picker-datepicker :deep(.p-datepicker-title button),
+.month-picker-datepicker :deep(.p-datepicker-prev),
+.month-picker-datepicker :deep(.p-datepicker-next) {
+  color: #C8D5E8;
+}
+
+.month-picker-datepicker :deep(.p-datepicker-title .p-datepicker-select-month),
+.month-picker-datepicker :deep(.p-datepicker-title .p-datepicker-select-year) {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0;
+}
+
+.month-picker-datepicker :deep(.p-monthpicker-month) {
+  color: #C8D5E8;
+  border-radius: 0.5rem;
+}
+
+.month-picker-datepicker :deep(.p-monthpicker-month:hover) {
+  background: rgba(26,86,219,0.16);
+}
+
+.month-picker-datepicker :deep(.p-monthpicker-month.p-highlight) {
+  background: linear-gradient(135deg, #1A56DB, #1248B3) !important;
+  color: #FFFFFF !important;
+  border: 1px solid rgba(26,86,219,0.55) !important;
+}
+
+.month-picker-datepicker :deep(.p-datepicker-prev),
+.month-picker-datepicker :deep(.p-datepicker-next) {
+  color: #9AB0CE;
+}
+
+.month-picker-datepicker :deep(.p-datepicker-prev:hover),
+.month-picker-datepicker :deep(.p-datepicker-next:hover) {
+  background: rgba(26,86,219,0.16) !important;
+}
+
+.month-picker-datepicker :deep(.p-datepicker-title .p-datepicker-select-month:hover),
+.month-picker-datepicker :deep(.p-datepicker-title .p-datepicker-select-year:hover) {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+>>>>>>> Stashed changes
 .filters-row {
   display: flex;
   align-items: center;

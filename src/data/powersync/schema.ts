@@ -98,6 +98,7 @@ const customer_payments = new Table({
   amount_usd:               column.real,
   currency:                 column.text,
   amount_raw:               column.real,
+  method:                   column.text,   // 'cash' | 'transfer' | 'usdt' | 'hawala' — only cash hits the drawer
   exchange_rate_at_payment: column.real,
   notes:                    column.text,
   paid_at:                  column.text,

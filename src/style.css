@@ -378,6 +378,34 @@ select:focus-visible {
   color: #FFFFFF !important;
 }
 
+/* PrimeVue datepicker selected states: prevent default green highlight and keep
+   selection colors consistent with the app's blue brand palette. */
+.p-datepicker .p-datepicker-month.p-datepicker-month-selected,
+.p-datepicker .p-datepicker-year.p-datepicker-year-selected,
+.p-datepicker .p-monthpicker-month.p-highlight,
+.p-datepicker .p-yearpicker-year.p-highlight {
+  background: linear-gradient(135deg, rgba(26,86,219,0.28), rgba(18,72,179,0.20)) !important;
+  color: #FFFFFF !important;
+  border: 1px solid rgba(26,86,219,0.55) !important;
+}
+
+/* Datepicker "today" cell: remove default gray and keep on-brand blue tint. */
+.p-datepicker .p-datepicker-day[data-p="today"],
+.p-datepicker .p-datepicker-today > .p-datepicker-day {
+  background: rgba(26,86,219,0.16) !important;
+  color: #BFDBFE !important;
+  border: 1px solid rgba(26,86,219,0.45) !important;
+  border-radius: 8px;
+}
+
+.p-datepicker .p-datepicker-day[data-p="today"][aria-selected="true"],
+.p-datepicker .p-datepicker-day.p-datepicker-day-selected[data-p="today"],
+.p-datepicker .p-datepicker-today > .p-datepicker-day[aria-selected="true"] {
+  background: linear-gradient(135deg, #1A56DB, #1248B3) !important;
+  color: #FFFFFF !important;
+  border: 1px solid rgba(26,86,219,0.55) !important;
+}
+
 /* ─── Global Search + Filter Controls (canonical) ─────────── */
 /* Keeps all search fields and dropdown filters visually identical across pages,
    even when components define local scoped styles. */

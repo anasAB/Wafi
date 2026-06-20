@@ -19,14 +19,33 @@ describe('useCashDrawer', () => {
     expect(cashSyp.value).toBe(0)
   })
 
-  it('load queries cash payments, cash expenses, and cash refunds in parallel', async () => {
+  it('load queries cash payments, expenses, refunds, and credit collections in parallel', async () => {
     const { load } = useCashDrawer()
     await load()
-    expect(db.getAll).toHaveBeenCalledTimes(3)
+    expect(db.getAll).toHaveBeenCalledTimes(4)
     const calls = vi.mocked(db.getAll).mock.calls.map(c => c[0] as string)
     expect(calls.some(sql => sql.includes('sale_payments') && sql.includes('cash_usd'))).toBe(true)
     expect(calls.some(sql => sql.includes('expenses') && sql.includes('paid_in_cash'))).toBe(true)
     expect(calls.some(sql => sql.includes('returns') && sql.includes('refund_method'))).toBe(true)
+    expect(calls.some(sql => sql.includes('customer_payments') && sql.includes("method = 'cash'"))).toBe(true)
+  })
+
+  it('adds cash credit collections to the drawer as an inflow', async () => {
+    // calls in order: sale_payments, expenses, returns, customer_payments
+    vi.mocked(db.getAll)
+      .mockResolvedValueOnce([])  // payments
+      .mockResolvedValueOnce([])  // expenses
+      .mockResolvedValueOnce([])  // refunds
+      .mockResolvedValueOnce([
+        { currency: 'USD', amount_usd: 40, amount_raw: 40, created_at: '2025-01-01T13:00:00Z' },
+        { currency: 'SYP', amount_usd: 0,  amount_raw: 250_000, created_at: '2025-01-01T13:30:00Z' },
+      ])
+    const { cashUsd, cashSyp, movements, load } = useCashDrawer()
+    await load()
+    expect(cashUsd.value).toBe(40)
+    expect(cashSyp.value).toBe(250_000)
+    const creditMoves = movements.value.filter(m => m.type === 'credit_payment')
+    expect(creditMoves).toHaveLength(2)
   })
 
   it('calculates cashUsd as cash_usd legs minus USD expenses minus USD refunds', async () => {

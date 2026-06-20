@@ -5,7 +5,7 @@ import { useExpenses } from '@/features/expenses/composables/useExpenses'
 import ExpenseCategoryChips from './ExpenseCategoryChips.vue'
 import AuditHistory from '@/features/audit/components/AuditHistory.vue'
 import BaseModal from '@/components/ui/BaseModal.vue'
-import DatePicker from 'primevue/datepicker'
+import AppDatePicker from '@/components/ui/AppDatePicker.vue'
 import type { NewExpense, Expense } from '@/features/expenses/expense.types'
 
 const props = defineProps<{ initialExpense?: Expense }>()
@@ -198,7 +198,7 @@ async function handleSave(addAnother = false) {
         <!-- Date (single expense only). Recurring uses start/end date range. -->
         <div v-if="!isRecurringMonthly" class="field-group">
           <label class="field-label">تاريخ المصروف</label>
-          <DatePicker
+          <AppDatePicker
             v-model="expenseDateModel"
             input-id="expense-date"
             data-testid="expense-date"
@@ -226,7 +226,7 @@ async function handleSave(addAnother = false) {
           <div v-if="isRecurringMonthly" class="recurring-dates-row">
             <div class="recurring-date-field">
               <label class="field-label">من تاريخ</label>
-              <DatePicker
+              <AppDatePicker
                 v-model="recurringStartDateModel"
                 date-format="yy-mm-dd"
                 placeholder="اختر تاريخ البداية"
@@ -241,7 +241,7 @@ async function handleSave(addAnother = false) {
 
             <div class="recurring-date-field">
               <label class="field-label">إلى تاريخ</label>
-              <DatePicker
+              <AppDatePicker
                 v-model="recurringEndDateModel"
                 date-format="yy-mm-dd"
                 placeholder="اختر تاريخ النهاية"
@@ -532,6 +532,29 @@ async function handleSave(addAnother = false) {
   color: #C8D5E8;
 }
 
+<<<<<<< Updated upstream
+=======
+.expense-date-picker :deep(.p-datepicker-title button:hover),
+.expense-date-picker :deep(.p-datepicker-prev:hover),
+.expense-date-picker :deep(.p-datepicker-next:hover) {
+  background: rgba(26, 86, 219, 0.16) !important;
+}
+
+.expense-date-picker :deep(.p-datepicker-title .p-datepicker-select-month),
+.expense-date-picker :deep(.p-datepicker-title .p-datepicker-select-year) {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0;
+}
+
+.expense-date-picker :deep(.p-datepicker-title .p-datepicker-select-month:hover),
+.expense-date-picker :deep(.p-datepicker-title .p-datepicker-select-year:hover) {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+>>>>>>> Stashed changes
 .expense-date-picker :deep(.p-datepicker-day),
 .expense-date-picker :deep(.p-datepicker-month),
 .expense-date-picker :deep(.p-datepicker-year) {
@@ -547,6 +570,38 @@ async function handleSave(addAnother = false) {
   color: #FFFFFF;
 }
 
+<<<<<<< Updated upstream
+=======
+.expense-date-picker :deep(.p-select),
+.expense-date-picker :deep(.p-select-label),
+.expense-date-picker :deep(.p-select-dropdown) {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(26, 86, 219, 0.28) !important;
+  color: #E8EDF5 !important;
+}
+
+.expense-date-picker :deep(.p-datepicker-select-month) {
+  background: transparent !important;
+  border: none !important;
+  color: #E8EDF5 !important;
+}
+
+.expense-date-picker :deep(.p-datepicker-select-year) {
+  background: transparent !important;
+  border: none !important;
+  color: #E8EDF5 !important;
+}
+
+.expense-date-picker :deep(.p-datepicker-month.p-datepicker-month-selected),
+.expense-date-picker :deep(.p-datepicker-year.p-datepicker-year-selected),
+.expense-date-picker :deep(.p-monthpicker-month.p-highlight),
+.expense-date-picker :deep(.p-yearpicker-year.p-highlight) {
+  background: linear-gradient(135deg, #1A56DB, #1248B3) !important;
+  color: #FFFFFF !important;
+  border: 1px solid rgba(26,86,219,0.55) !important;
+}
+
+>>>>>>> Stashed changes
 .amount-input {
   font-size: 1.25rem;
   font-weight: 700;

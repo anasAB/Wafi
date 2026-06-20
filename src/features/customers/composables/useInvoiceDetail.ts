@@ -11,7 +11,7 @@ type LineRow = {
 
 type PaymentRow = {
   id: string; customer_id: string; sale_id: string; amount_usd: number
-  currency: string; paid_at: string; created_at: string
+  currency: string; method: string | null; paid_at: string; created_at: string
 }
 
 /**
@@ -42,7 +42,7 @@ export function useInvoiceDetail() {
       }))
 
       const payRows = await db.getAll<PaymentRow>(
-        `SELECT id, customer_id, sale_id, amount_usd, currency, paid_at, created_at
+        `SELECT id, customer_id, sale_id, amount_usd, currency, method, paid_at, created_at
          FROM customer_payments WHERE sale_id = ? ORDER BY created_at ASC`,
         [saleId]
       )
@@ -52,6 +52,7 @@ export function useInvoiceDetail() {
         saleId:     r.sale_id,
         amountUsd:  r.amount_usd,
         currency:   r.currency as 'USD' | 'SYP',
+        method:     (r.method as CustomerPayment['method']) ?? null,
         paidAt:     r.paid_at,
         createdAt:  r.created_at,
       }))

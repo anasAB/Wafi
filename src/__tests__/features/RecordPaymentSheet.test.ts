@@ -84,4 +84,25 @@ describe('RecordPaymentSheet', () => {
     await w.find('[data-testid="cancel-btn"]').trigger('click')
     expect(w.emitted('cancel')).toBeTruthy()
   })
+
+  it('offers a payment-method selector defaulting to cash', () => {
+    const w = mountSheet()
+    const cashBtn = w.find('[data-testid="method-cash"]')
+    expect(cashBtn.exists()).toBe(true)
+    expect(w.find('[data-testid="method-transfer"]').exists()).toBe(true)
+    expect(cashBtn.classes()).toContain('method-btn--active')
+  })
+
+  it('records the selected method on the payment', async () => {
+    const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [] } })
+    vi.mocked(db.writeTransaction).mockImplementation(async (fn: any) => { await fn({ execute: txExecute }) })
+    const w = mountSheet()
+    await w.find('[data-testid="method-transfer"]').trigger('click')
+    await w.find('[data-testid="checkbox-s1"]').trigger('click')
+    await w.find('[data-testid="confirm-btn"]').trigger('click')
+    await new Promise(r => setTimeout(r, 20))
+    const insert = txExecute.mock.calls.find(([sql]) => sql.includes('INSERT INTO customer_payments'))
+    expect(insert).toBeDefined()
+    expect(insert![1]).toContain('transfer')
+  })
 })

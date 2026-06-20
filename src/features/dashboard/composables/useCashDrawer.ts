@@ -1,9 +1,11 @@
 import { ref } from 'vue'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
+import { getDateRange } from './periodUtils'
+import type { Period } from './periodUtils'
 
 export interface CashMovement {
-  type:      'sale' | 'expense' | 'refund'
+  type:      'sale' | 'expense' | 'refund' | 'credit_payment'
   label:     string
   usd:       number
   syp:       number
@@ -15,6 +17,8 @@ export interface CashMovement {
 type PaymentRow = { method: string; amount_usd: number; amount_raw: number; created_at: string }
 type ExpenseRow = { amount_usd: number; amount: number; currency: string; category: string; created_at: string }
 type RefundRow  = { refund_method: string; refund_amount_usd: number; refund_amount_syp: number; created_at: string }
+// Only cash credit collections (method='cash') enter the drawer; currency picks the bucket.
+type CreditPaymentRow = { currency: string; amount_usd: number; amount_raw: number; created_at: string }
 
 export function useCashDrawer() {
   const cashUsd   = ref(0)
@@ -30,28 +34,61 @@ export function useCashDrawer() {
     return dayStart.toISOString()
   }
 
-  async function load() {
+  async function load(period: Period = 'today') {
     const device = useDeviceStore()
-    const dayStart = getDayStart()
 
-    const [paymentRows, expenseRows, refundRows] = await Promise.all([
+    const wherePayments =
+      period === 'today'
+        ? `WHERE shop_id = ? AND method IN ('cash_usd', 'cash_syp') AND created_at >= ?`
+        : `WHERE shop_id = ? AND method IN ('cash_usd', 'cash_syp') AND DATE(created_at, 'localtime') BETWEEN ? AND ?`
+
+    const whereExpenses =
+      period === 'today'
+        ? `WHERE shop_id = ? AND paid_in_cash = 1 AND created_at >= ?`
+        : `WHERE shop_id = ? AND paid_in_cash = 1 AND DATE(created_at, 'localtime') BETWEEN ? AND ?`
+
+    const whereRefunds =
+      period === 'today'
+        ? `WHERE shop_id = ? AND refund_method IN ('cash_usd', 'cash_syp') AND created_at >= ?`
+        : `WHERE shop_id = ? AND refund_method IN ('cash_usd', 'cash_syp') AND DATE(created_at, 'localtime') BETWEEN ? AND ?`
+
+    const whereCreditPayments =
+      period === 'today'
+        ? `WHERE shop_id = ? AND method = 'cash' AND created_at >= ?`
+        : `WHERE shop_id = ? AND method = 'cash' AND DATE(created_at, 'localtime') BETWEEN ? AND ?`
+
+    const params =
+      period === 'today'
+        ? [device.shopId, getDayStart()]
+        : (() => {
+            const { start, end } = getDateRange(period)
+            return [device.shopId, start, end]
+          })()
+
+    const [paymentRows, expenseRows, refundRows, creditPaymentRows] = await Promise.all([
       db.getAll<PaymentRow>(
         `SELECT method, amount_usd, amount_raw, created_at FROM sale_payments
-         WHERE shop_id = ? AND method IN ('cash_usd', 'cash_syp') AND created_at >= ?
+         ${wherePayments}
          ORDER BY created_at DESC`,
-        [device.shopId, dayStart]
+        params
       ),
       db.getAll<ExpenseRow>(
         `SELECT amount_usd, amount, currency, category, created_at FROM expenses
-         WHERE shop_id = ? AND paid_in_cash = 1 AND created_at >= ?
+         ${whereExpenses}
          ORDER BY created_at DESC`,
-        [device.shopId, dayStart]
+        params
       ),
       db.getAll<RefundRow>(
         `SELECT refund_method, refund_amount_usd, refund_amount_syp, created_at FROM returns
-         WHERE shop_id = ? AND refund_method IN ('cash_usd', 'cash_syp') AND created_at >= ?
+         ${whereRefunds}
          ORDER BY created_at DESC`,
-        [device.shopId, dayStart]
+        params
+      ),
+      db.getAll<CreditPaymentRow>(
+        `SELECT currency, amount_usd, amount_raw, created_at FROM customer_payments
+         ${whereCreditPayments}
+         ORDER BY created_at DESC`,
+        params
       ),
     ])
 
@@ -69,6 +106,10 @@ export function useCashDrawer() {
     for (const r of refundRows) {
       if (r.refund_method === 'cash_usd') totalUsd -= r.refund_amount_usd
       if (r.refund_method === 'cash_syp') totalSyp -= r.refund_amount_syp
+    }
+    for (const c of creditPaymentRows) {
+      if (c.currency === 'USD') totalUsd += c.amount_usd
+      if (c.currency === 'SYP') totalSyp += c.amount_raw
     }
     cashUsd.value = totalUsd
     cashSyp.value = totalSyp
@@ -95,7 +136,14 @@ export function useCashDrawer() {
       syp:       r.refund_method === 'cash_syp' ? -r.refund_amount_syp : 0,
       createdAt: r.created_at,
     }))
-    movements.value = [...saleMoves, ...expenseMoves, ...refundMoves]
+    const creditMoves: CashMovement[] = creditPaymentRows.map(c => ({
+      type:      'credit_payment' as const,
+      label:     'تحصيل دين',
+      usd:       c.currency === 'USD' ? c.amount_usd : 0,
+      syp:       c.currency === 'SYP' ? c.amount_raw : 0,
+      createdAt: c.created_at,
+    }))
+    movements.value = [...saleMoves, ...expenseMoves, ...refundMoves, ...creditMoves]
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   }
 

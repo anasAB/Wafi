@@ -86,8 +86,8 @@ describe('useCustomerBalance', () => {
 
     const { recordPayment } = useCustomerBalance('c1')
     await recordPayment([
-      { saleId: 's1', amountUsd: 100, currency: 'USD', amountRaw: 100 },
-      { saleId: 's2', amountUsd: 80,  currency: 'USD', amountRaw: 80  },
+      { saleId: 's1', amountUsd: 100, currency: 'USD', amountRaw: 100, method: 'cash' },
+      { saleId: 's2', amountUsd: 80,  currency: 'USD', amountRaw: 80,  method: 'cash' },
     ])
     expect(txExecute).toHaveBeenCalledTimes(2)
     expect(txExecute).toHaveBeenCalledWith(
@@ -96,13 +96,28 @@ describe('useCustomerBalance', () => {
     )
   })
 
+  it('recordPayment persists the payment method', async () => {
+    vi.mocked(db.getOptional).mockResolvedValue({ balance_usd: 0 } as any)
+    vi.mocked(db.getAll).mockResolvedValue([])
+    const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [] } })
+    vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => { await fn({ execute: txExecute }) })
+
+    const { recordPayment } = useCustomerBalance('c1')
+    await recordPayment([
+      { saleId: 's1', amountUsd: 100, currency: 'USD', amountRaw: 100, method: 'transfer' },
+    ])
+    const [sql, params] = txExecute.mock.calls[0]
+    expect(sql).toContain('method')
+    expect(params).toContain('transfer')
+  })
+
   it('recordPayment rejects allocations that exceed an invoice remaining (cumulative within a batch)', async () => {
     // Same invoice twice; each is 60, remaining is 100 → together 120 > 100 must throw.
     vi.mocked(db.getOptional).mockResolvedValue({ remaining_usd: 100 } as any)
     const { recordPayment } = useCustomerBalance('c1')
     await expect(recordPayment([
-      { saleId: 's1', amountUsd: 60, currency: 'USD', amountRaw: 60 },
-      { saleId: 's1', amountUsd: 60, currency: 'USD', amountRaw: 60 },
+      { saleId: 's1', amountUsd: 60, currency: 'USD', amountRaw: 60, method: 'cash' },
+      { saleId: 's1', amountUsd: 60, currency: 'USD', amountRaw: 60, method: 'cash' },
     ])).rejects.toThrow()
   })
 
@@ -110,7 +125,7 @@ describe('useCustomerBalance', () => {
     vi.mocked(db.getOptional).mockResolvedValue({ balance_usd: 0 } as any)
     vi.mocked(db.getAll).mockResolvedValue([])
     const { recordPayment } = useCustomerBalance('c1')
-    await recordPayment([{ saleId: 's1', amountUsd: 50, currency: 'USD', amountRaw: 50 }])
+    await recordPayment([{ saleId: 's1', amountUsd: 50, currency: 'USD', amountRaw: 50, method: 'cash' }])
     // getOptional called during the final load() after save
     expect(db.getOptional).toHaveBeenCalled()
   })

@@ -76,16 +76,24 @@ export function useReturnSheet(saleId: string) {
     )
     const returnedMap = new Map(returnedRows.map(r => [r.product_id, r.already_returned]))
 
-    lines.value = lineRows.map(row => ({
-      productId:          row.product_id,
-      productName:        row.product_name,
-      originalQty:        row.quantity,
-      alreadyReturnedQty: returnedMap.get(row.product_id) ?? 0,
-      unitPriceUsd:       row.unit_price_usd,
-      selected:           false,
-      qtyToReturn:        1,
-      restock:            true,
-    }))
+    lines.value = lineRows
+      // Drop lines that have already been fully returned — they have nothing
+      // left to refund, and showing them lets the owner refund the same unit twice.
+      .filter(row => row.quantity - (returnedMap.get(row.product_id) ?? 0) > 0)
+      .map(row => {
+        const alreadyReturnedQty = returnedMap.get(row.product_id) ?? 0
+        const remaining          = row.quantity - alreadyReturnedQty
+        return {
+          productId:          row.product_id,
+          productName:        row.product_name,
+          originalQty:        row.quantity,
+          alreadyReturnedQty,
+          unitPriceUsd:       row.unit_price_usd,
+          selected:           false,
+          qtyToReturn:        Math.min(1, remaining),
+          restock:            true,
+        }
+      })
   }
 
   async function confirm(): Promise<void> {
@@ -104,6 +112,19 @@ export function useReturnSheet(saleId: string) {
     const exchangeRate: number = (rateResult as any).rows._array[0]?.rate ?? 1
 
     const selectedLines = lines.value.filter(l => l.selected)
+
+    // Data-layer guard: never refund/restock more than what is still returnable.
+    // The UI clamps too, but the write path must not depend on the UI being correct.
+    for (const line of selectedLines) {
+      const remaining = line.originalQty - line.alreadyReturnedQty
+      if (line.qtyToReturn < 1 || line.qtyToReturn > remaining) {
+        throw new Error(
+          `Cannot return more than remaining for ${line.productName}: ` +
+          `requested ${line.qtyToReturn}, remaining ${remaining}`,
+        )
+      }
+    }
+
     const refundAmountUsd = selectedLines.reduce((sum, l) => sum + l.qtyToReturn * l.unitPriceUsd, 0)
     const refundAmountSyp = Math.round(refundAmountUsd * exchangeRate)
 

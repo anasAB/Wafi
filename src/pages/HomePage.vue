@@ -15,6 +15,7 @@ import { useExchangeRate }     from '@/features/exchange-rate'
 import { useSaleDraft }        from '@/composables/useSaleDraft'
 import { useLowStockAlerts }   from '@/features/products/composables/useLowStockAlerts'
 import { usePeriodToggle }     from '@/features/dashboard/composables/usePeriodToggle'
+import { getDateRange }        from '@/features/dashboard/composables/periodUtils'
 import { useDashboardMetrics } from '@/features/dashboard/composables/useDashboardMetrics'
 import { useBestSellers }      from '@/features/dashboard/composables/useBestSellers'
 import { useCashDrawer }       from '@/features/dashboard/composables/useCashDrawer'
@@ -52,7 +53,7 @@ const openCreditCount = ref(0)
 
 async function refreshSalesChart() {
   try {
-    await chart.load()
+    await chart.load(period.value)
   } catch {
     // Keep the page stable if refresh fails; next tick/focus will retry.
   }
@@ -71,14 +72,14 @@ onMounted(async () => {
     await Promise.all([
       metrics.load(period.value),
       sellers.load(period.value),
-      drawer.load(),
+      drawer.load(period.value),
       refreshSalesChart(),
-      history.loadHistory(),
+      history.loadHistory(getDateRange(period.value)),
       loadOpenCreditCount(),
     ])
   } catch { /* errors shown via toast */ }
 
-  // Keep the 7-day chart fresh while the dashboard stays mounted.
+  // Keep the selected-period chart fresh while the dashboard stays mounted.
   chartRefreshTimer = setInterval(() => {
     if (!document.hidden) {
       void refreshSalesChart()
@@ -111,7 +112,13 @@ onUnmounted(() => {
 })
 
 watch(period, async (p) => {
-  await Promise.all([metrics.load(p), sellers.load(p)])
+  await Promise.all([
+    metrics.load(p),
+    sellers.load(p),
+    chart.load(p),
+    drawer.load(p),
+    history.loadHistory(getDateRange(p)),
+  ])
 })
 
 async function loadOpenCreditCount() {
@@ -143,7 +150,7 @@ async function handleDiscardDraft() {
 async function handleExpenseSaved() {
   showExpenseForm.value = false
   toast.value = { message: 'تم حفظ المصروف', type: 'success' }
-  await metrics.load(period.value)
+  await Promise.all([metrics.load(period.value), drawer.load(period.value)])
 }
 
 const canStartSale = computed(() => currentRate.value !== null)
@@ -262,6 +269,7 @@ const chartOptions = computed(() => ({
 
 const PERIOD_LABEL: Record<string, string> = { today: 'اليوم', week: 'الأسبوع', month: 'الشهر' }
 const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'هذا الأسبوع', month: 'هذا الشهر' }
+const ACTIVITY_HEADING: Record<string, string> = { today: 'اليوم', week: 'هذا الأسبوع', month: 'هذا الشهر' }
 </script>
 
 <template>
@@ -418,7 +426,7 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
             <div class="card-hdr">
               <div style="display:flex; align-items:center; gap:6px;">
                 <span class="activity-live-dot"></span>
-                <span class="card-title">المبيعات والربح — آخر ٧ أيام (USD)</span>
+                <span class="card-title">المبيعات والربح — {{ PERIOD_HEADING[period] }} (USD)</span>
               </div>
               <div class="chart-legend">
                 <span class="legend-item">
@@ -527,7 +535,7 @@ const PERIOD_HEADING: Record<string, string> = { today: 'اليوم', week: 'ه�
               <span class="activity-live-dot"></span>
               <span class="card-title">النشاط المباشر</span>
             </div>
-            <div v-if="recentActivity.length === 0" class="empty-state">لا يوجد نشاط في آخر ٧ أيام</div>
+            <div v-if="recentActivity.length === 0" class="empty-state">لا يوجد نشاط في {{ ACTIVITY_HEADING[period] }}</div>
             <div v-else class="activity-list">
               <div v-for="sale in recentActivity" :key="sale.id" class="activity-item">
                 <div class="ai-amount" dir="ltr">

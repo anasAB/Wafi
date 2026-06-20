@@ -36,11 +36,15 @@ export interface InvoiceLineItem {
   lineTotalUsd: number
 }
 
+/** How a credit collection was settled. Only 'cash' enters the cash drawer. */
+export type PaymentMethod = 'cash' | 'transfer' | 'usdt' | 'hawala'
+
 export interface PaymentAllocation {
   saleId:                  string
   amountUsd:               number
   currency:                'USD' | 'SYP'
   amountRaw:               number
+  method:                  PaymentMethod
   exchangeRateAtPayment?:  number
 }
 
@@ -50,6 +54,7 @@ export interface CustomerPayment {
   saleId:     string
   amountUsd:  number
   currency:   'USD' | 'SYP'
+  method:     PaymentMethod | null
   paidAt:     string
   createdAt:  string
 }
