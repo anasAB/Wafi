@@ -13,8 +13,6 @@ import { useShiftStore } from '@/features/shifts/shift.store'
 import { useShift }      from '@/features/shifts/composables/useShift'
 import { useStaff }      from '@/features/staff/composables/useStaff'
 import LockScreen        from '@/features/shifts/components/LockScreen.vue'
-import StaffPinPrompt    from '@/features/staff/components/StaffPinPrompt.vue'
-import { useSessionStore } from '@/store/session.store'
 
 const { offlineReady, dismissOfflineReady, needRefresh, applyUpdate, dismissNeedRefresh } = usePwaLifecycle()
 
@@ -24,7 +22,6 @@ const settings = useSettingsStore()
 useThemePalette()
 
 const shiftStore   = useShiftStore()
-const sessionStore = useSessionStore()
 const { loadActiveShift } = useShift()
 const { hasAnyStaff }     = useStaff()
 const appReady  = ref(false)
@@ -121,11 +118,9 @@ watch(
   </div>
 
   <template v-else>
-    <!-- PIN prompt: staff exist but no active session -->
-    <StaffPinPrompt v-if="hasStaff && !sessionStore.activeStaff" />
-
-    <!-- Shift gate: session set but no shift open -->
-    <LockScreen v-else-if="hasStaff && !shiftStore.isShiftOpen" />
+    <!-- Single login gate: pick staff → PIN → opening cash opens the shift and
+         establishes the session identity (audit + permissions) in one step. -->
+    <LockScreen v-if="hasStaff && !shiftStore.isShiftOpen" />
 
     <!-- Normal app shell -->
     <div
