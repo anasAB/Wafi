@@ -159,9 +159,15 @@ function handlePaymentConfirmed(completedSale: CompletedSale) {
   // Sale is done (cart already cleared in usePayment) — skip the leave guard.
   confirmedLeave = true
   payOpen.value = false
+  // Pass the sale via history.state (fast path) AND its id in the query, so a
+  // reload on the confirmation screen can reload the sale by id (WAFI-030).
   // Vue Router's history `state` type requires an index signature; a structured
   // object is fine at runtime (it's serialized), so cast at this boundary.
-  router.push({ path: '/pos/confirmation', state: { sale: completedSale } as any })
+  router.push({
+    path: '/pos/confirmation',
+    query: { id: completedSale.saleId },
+    state: { sale: completedSale } as any,
+  })
 }
 </script>
 

@@ -1,19 +1,30 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { usePrinter } from '@/composables/usePrinter'
 import AppToast from '@/components/ui/AppToast.vue'
 import type { CompletedSale } from '@/features/payment/payment.types'
 import { useDeviceStore } from '@/store/device.store'
 import type { ReceiptData } from '@/composables/usePrinter'
 import { useReceiptSettings } from '@/features/receipt/composables/useReceiptSettings'
+import { loadCompletedSale } from './loadCompletedSale'
 
 const router  = useRouter()
+const route   = useRoute()
 const device  = useDeviceStore()
 const printer = usePrinter()
 const toast   = ref<{ message: string; type: 'success' | 'error' } | null>(null)
 
-const sale = (history.state as any)?.sale as CompletedSale | undefined
+// Fast path: the sale is handed over via history.state on navigation. On a reload
+// or app-kill that state is gone (WAFI-030), so fall back to loading the sale by
+// id from the route — the sale is persisted, so confirmation + reprint still work.
+const sale = ref<CompletedSale | null>((history.state as any)?.sale ?? null)
+
+onMounted(async () => {
+  if (sale.value) return
+  const id = route.query.id as string | undefined
+  if (id) sale.value = await loadCompletedSale(id)
+})
 
 const methodLabels: Record<string, string> = {
   cash_usd: 'نقداً دولار',
@@ -24,23 +35,24 @@ const methodLabels: Record<string, string> = {
 }
 
 async function handlePrint() {
-  if (!sale) return
+  if (!sale.value) return
+  const s = sale.value
   const { settings, load } = useReceiptSettings()
   await load()
 
   const receipt: ReceiptData = {
-    saleId:                 sale.saleId,
-    displaySaleNumber:      sale.displaySaleNumber,
+    saleId:                 s.saleId,
+    displaySaleNumber:      s.displaySaleNumber,
     shopName:               settings.value.shopName || device.shopId,
-    createdAt:              sale.createdAt,
-    lines:                  sale.lines,
-    totalUsd:               sale.totalUsd,
-    totalSyp:               sale.totalSyp,
-    exchangeRate:           sale.exchangeRateAtSale,
-    paymentMethod:          sale.paymentMethod,
-    amountReceived:         sale.amountReceived,
-    amountReceivedCurrency: sale.amountReceivedCurrency,
-    changeDue:              sale.changeDue,
+    createdAt:              s.createdAt,
+    lines:                  s.lines,
+    totalUsd:               s.totalUsd,
+    totalSyp:               s.totalSyp,
+    exchangeRate:           s.exchangeRateAtSale,
+    paymentMethod:          s.paymentMethod,
+    amountReceived:         s.amountReceived,
+    amountReceivedCurrency: s.amountReceivedCurrency,
+    changeDue:              s.changeDue,
     taxNumber:              settings.value.taxNumber  || undefined,
     headerText:             settings.value.headerText || undefined,
     footerText:             settings.value.footerText || undefined,
