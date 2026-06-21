@@ -13,6 +13,7 @@ import { useShiftStore } from '@/features/shifts/shift.store'
 import { useShift }      from '@/features/shifts/composables/useShift'
 import { useStaff }      from '@/features/staff/composables/useStaff'
 import LockScreen        from '@/features/shifts/components/LockScreen.vue'
+import { db }            from '@/data/powersync/db'
 
 const { offlineReady, dismissOfflineReady, needRefresh, applyUpdate, dismissNeedRefresh } = usePwaLifecycle()
 
@@ -49,6 +50,20 @@ watch(() => settings.theme, applyTheme, { immediate: true })
 function onSystemThemeChange() { applyTheme(settings.theme) }
 onMounted(async () => {
   mq.addEventListener('change', onSystemThemeChange)
+
+  // A freshly-provisioned device starts with an empty local DB: the owner's
+  // staff row arrives via the first sync. Decide "no owner → setup wizard" only
+  // AFTER that sync has had a chance to land, or we'd wrongly send a provisioned
+  // device into /setup-owner on its first launch. Bounded by a timeout so a bad
+  // token / slow network never hangs startup; skipped offline (local is then the
+  // source of truth) and resolves instantly on warm starts (sync already done).
+  if (import.meta.env.VITE_POWERSYNC_URL && navigator.onLine) {
+    await Promise.race([
+      db.waitForFirstSync(),
+      new Promise(resolve => setTimeout(resolve, 8000)),
+    ]).catch(() => { /* offline/error — fall back to local state */ })
+  }
+
   const staffExist = await hasAnyStaff()
   hasStaff.value = staffExist
   if (!staffExist) {
