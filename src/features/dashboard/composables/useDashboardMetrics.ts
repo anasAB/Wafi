@@ -43,12 +43,20 @@ export function useDashboardMetrics() {
         [device.shopId, start, end]
       ),
       // Restocked returns reverse COGS at the original sale's unit cost (un-restocked
-      // items stay in COGS — they are a loss, not recovered inventory).
+      // items stay in COGS — they are a loss, not recovered inventory). The cost is
+      // taken from a per-(sale, product) subquery, NOT a direct line-level join:
+      // if the same product sat on two of the original sale's lines, a row-level join
+      // would match both and double the reversed COGS (WAFI-005). Collapsing to one
+      // average unit cost per (sale, product) reverses each returned unit exactly once.
       db.getOptional<{ cogs: number }>(
-        `SELECT COALESCE(SUM(rli.qty_returned * COALESCE(sli.unit_cost_usd, 0)), 0) as cogs
+        `SELECT COALESCE(SUM(rli.qty_returned * COALESCE(c.unit_cost_usd, 0)), 0) as cogs
          FROM return_line_items rli
          JOIN returns r ON r.id = rli.return_id
-         JOIN sale_line_items sli ON sli.sale_id = r.original_sale_id AND sli.product_id = rli.product_id
+         LEFT JOIN (
+           SELECT sale_id, product_id, AVG(unit_cost_usd) as unit_cost_usd
+           FROM sale_line_items
+           GROUP BY sale_id, product_id
+         ) c ON c.sale_id = r.original_sale_id AND c.product_id = rli.product_id
          WHERE r.shop_id = ? AND rli.restock = 1 AND DATE(r.created_at, 'localtime') BETWEEN ? AND ?`,
         [device.shopId, start, end]
       ),
