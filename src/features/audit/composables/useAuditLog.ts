@@ -26,6 +26,34 @@ export function useAuditLog() {
   const device  = useDeviceStore()
   const session = useSessionStore()
 
+  /** Write one audit row. Throws on DB failure — callers decide whether to swallow. */
+  async function _write(
+    event: AuditEvent,
+    entityType: AuditEntityType,
+    entityId: string | null,
+    meta: Record<string, unknown>,
+  ): Promise<void> {
+    await db.execute(
+      `INSERT INTO audit_log
+         (id, shop_id, staff_id, staff_name, event, entity_type, entity_id, meta, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        crypto.randomUUID(),
+        device.shopId,
+        session.activeStaff?.id   ?? null,
+        session.activeStaff?.name ?? 'system',
+        event,
+        entityType,
+        entityId,
+        JSON.stringify(meta),
+        new Date().toISOString(),
+      ],
+    )
+  }
+
+  // Routine, high-frequency actions (sales, product/customer/expense edits):
+  // best-effort. A failed audit write must NEVER block the business action —
+  // offline-first, the sale matters more than its log line.
   async function _log(
     event: AuditEvent,
     entityType: AuditEntityType,
@@ -33,25 +61,22 @@ export function useAuditLog() {
     meta: Record<string, unknown>,
   ): Promise<void> {
     try {
-      await db.execute(
-        `INSERT INTO audit_log
-           (id, shop_id, staff_id, staff_name, event, entity_type, entity_id, meta, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          crypto.randomUUID(),
-          device.shopId,
-          session.activeStaff?.id   ?? null,
-          session.activeStaff?.name ?? 'system',
-          event,
-          entityType,
-          entityId,
-          JSON.stringify(meta),
-          new Date().toISOString(),
-        ],
-      )
+      await _write(event, entityType, entityId, meta)
     } catch (err) {
       console.warn('[useAuditLog] failed to write audit row:', err)
     }
+  }
+
+  // Security-sensitive actions (PIN changes, failed logins, lockouts): the log
+  // IS the accountability defense, so a failed write must surface rather than
+  // vanish. We re-throw so the UI can show it (WAFI-014).
+  async function _logSensitive(
+    event: AuditEvent,
+    entityType: AuditEntityType,
+    entityId: string | null,
+    meta: Record<string, unknown>,
+  ): Promise<void> {
+    await _write(event, entityType, entityId, meta)
   }
 
   async function loadLog(options: {
@@ -158,8 +183,21 @@ export function useAuditLog() {
   const logStaffDeactivated = (staffId: string, name: string) =>
     _log('staff.deactivated', 'staff', staffId, { name })
 
+  const logStaffUpdated = (staffId: string, name: string) =>
+    _log('staff.updated', 'staff', staffId, { name })
+
   const logStaffPermissionsChanged = (staffId: string, name: string) =>
     _log('staff.permissions_changed', 'staff', staffId, { name })
+
+  // Security events — surface write failures (see _logSensitive).
+  const logPinChanged = (staffId: string, name: string) =>
+    _logSensitive('staff.pin_changed', 'staff', staffId, { name })
+
+  const logLoginFailed = (staffId: string, name: string) =>
+    _logSensitive('auth.login_failed', 'staff', staffId, { name })
+
+  const logLockedOut = (staffId: string, name: string, minutes: number) =>
+    _logSensitive('auth.locked_out', 'staff', staffId, { name, minutes })
 
   const logSupplierCreated = (supplierId: string, name: string) =>
     _log('supplier.created', 'supplier', supplierId, { name })
@@ -205,8 +243,12 @@ export function useAuditLog() {
     logExchangeRateChanged,
     logReceiptSettingsUpdated,
     logStaffCreated,
+    logStaffUpdated,
     logStaffDeactivated,
     logStaffPermissionsChanged,
+    logPinChanged,
+    logLoginFailed,
+    logLockedOut,
     logSupplierCreated,
     logSupplierUpdated,
     logReceivingCreated,

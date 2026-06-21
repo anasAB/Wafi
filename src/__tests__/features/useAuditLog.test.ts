@@ -148,3 +148,55 @@ describe('eventLabel — operator.switched', () => {
     expect(label).toContain('أحمد')
   })
 })
+
+describe('eventLabel — security events (WAFI-014)', () => {
+  it('renders staff.pin_changed in Arabic naming the staff', () => {
+    const entry = { event: 'staff.pin_changed', meta: { name: 'أحمد' } } as unknown as AuditLog
+    expect(eventLabel(entry)).toContain('الرقم السري')
+    expect(eventLabel(entry)).toContain('أحمد')
+  })
+
+  it('renders auth.login_failed in Arabic naming the staff', () => {
+    const entry = { event: 'auth.login_failed', meta: { name: 'أحمد' } } as unknown as AuditLog
+    const label = eventLabel(entry)
+    expect(label).toContain('محاولة دخول فاشلة')
+    expect(label).toContain('أحمد')
+  })
+
+  it('renders auth.locked_out in Arabic naming the staff', () => {
+    const entry = { event: 'auth.locked_out', meta: { name: 'أحمد', minutes: 5 } } as unknown as AuditLog
+    expect(eventLabel(entry)).toContain('قفل')
+    expect(eventLabel(entry)).toContain('أحمد')
+  })
+})
+
+describe('useAuditLog — sensitive events surface write failures (WAFI-014)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    vi.mocked(db.execute).mockResolvedValue({ rows: { _array: [] } } as any)
+  })
+
+  it('logPinChanged writes a staff.pin_changed row', async () => {
+    const { logPinChanged } = useAuditLog()
+    await logPinChanged('staff-2', 'أحمد')
+    expect(db.execute).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO audit_log'),
+      expect.arrayContaining(['staff.pin_changed', 'staff', 'staff-2']),
+    )
+  })
+
+  it('a failed sensitive-action audit write rejects (does NOT silently resolve)', async () => {
+    vi.mocked(db.execute).mockRejectedValueOnce(new Error('DB error'))
+    const { logPinChanged } = useAuditLog()
+    await expect(logPinChanged('staff-2', 'أحمد')).rejects.toThrow()
+  })
+
+  it('logLoginFailed and logLockedOut also surface failures', async () => {
+    const { logLoginFailed, logLockedOut } = useAuditLog()
+    vi.mocked(db.execute).mockRejectedValueOnce(new Error('DB error'))
+    await expect(logLoginFailed('staff-2', 'أحمد')).rejects.toThrow()
+    vi.mocked(db.execute).mockRejectedValueOnce(new Error('DB error'))
+    await expect(logLockedOut('staff-2', 'أحمد', 5)).rejects.toThrow()
+  })
+})

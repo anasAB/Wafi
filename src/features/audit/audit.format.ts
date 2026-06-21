@@ -33,8 +33,15 @@ export function eventLabel(entry: AuditLog): string {
     case 'exchange_rate.changed':     return `غيّر سعر الصرف من ${m.old_rate} إلى ${m.new_rate}`
     case 'settings.receipt_updated':  return `عدّل إعدادات الفاتورة`
     case 'staff.created':             return `أضاف موظف: ${m.name} (${m.role})`
+    case 'staff.updated':             return `عدّل بيانات الموظف: ${m.name}`
     case 'staff.deactivated':         return `عطّل حساب: ${m.name}`
     case 'staff.permissions_changed': return `عدّل صلاحيات: ${m.name}`
+    case 'staff.pin_changed':         return `غيّر الرقم السري للموظف: ${m.name}`
+    case 'auth.login_failed':         return `محاولة دخول فاشلة: ${m.name}`
+    case 'auth.locked_out': {
+      const minutes = (m.minutes as number) ?? 0
+      return `قفل الحساب بعد محاولات فاشلة: ${m.name} (${minutes} دقيقة)`
+    }
     case 'supplier.created':          return `أضاف مورد: ${m.name}`
     case 'supplier.updated':          return `عدّل مورد: ${m.name}`
     case 'receiving.created': {

@@ -24,7 +24,7 @@ function rowToStaff(r: any): Staff {
 }
 
 export function useStaff() {
-  const { logStaffCreated, logStaffDeactivated, logStaffPermissionsChanged } = useAuditLog()
+  const { logStaffCreated, logStaffUpdated, logStaffDeactivated, logStaffPermissionsChanged, logPinChanged } = useAuditLog()
 
   const staff = ref<Staff[]>([])
   const loading = ref(false)
@@ -76,7 +76,9 @@ export function useStaff() {
         await loadStaff()
         const updated = staff.value.find((s) => s.id === existingOwner.id)
         if (!updated) throw new Error(`Owner ${existingOwner.id} not found after update`)
-        await logStaffPermissionsChanged(updated.id, updated.name)
+        // Re-provisioning an existing owner (name/PIN/permissions all rewritten)
+        // is an update, not specifically a permission change — label it honestly.
+        await logStaffUpdated(updated.id, updated.name)
         return updated
       }
 
@@ -105,7 +107,7 @@ export function useStaff() {
         await loadStaff()
         const updated = staff.value.find((s) => s.id === remoteOwner.id)
         if (!updated) throw new Error(`Owner ${remoteOwner.id} not found after sync-safe update`)
-        await logStaffPermissionsChanged(updated.id, updated.name)
+        await logStaffUpdated(updated.id, updated.name)
         return updated
       }
     }
@@ -129,6 +131,10 @@ export function useStaff() {
       await hashPin(newPin),
       staffId,
     ])
+    const nameRow = await db.getOptional<{ name: string }>(
+      `SELECT name FROM staff WHERE id = ?`, [staffId]
+    )
+    await logPinChanged(staffId, nameRow?.name ?? staffId)
   }
 
   /** Update a staff member's name, role and permissions (owner-only action). */
