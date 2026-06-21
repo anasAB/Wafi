@@ -73,6 +73,50 @@ describe('usePayment', () => {
     expect(store.lines).toHaveLength(0)
   })
 
+  it('confirm() is idempotent — a double-tap writes exactly one sale and burns one sequence number (WAFI-003)', async () => {
+    setupTx({ cost_price_usd: 0, current_stock: 10 })
+    const store = useSaleStore()
+    const seqBefore = store.deviceSequence
+
+    const { selectMethod, confirm } = usePayment()
+    selectMethod('card')
+
+    // Rapid double-tap / held Enter: fire two confirms in the same tick, before the
+    // first resolves. The second must be a no-op — not a duplicate sale + sequence burn.
+    const first  = confirm()
+    const second = confirm().catch(() => null)
+    await Promise.allSettled([first, second])
+
+    expect(db.writeTransaction).toHaveBeenCalledTimes(1)
+    expect(store.deviceSequence).toBe(seqBefore + 1)
+  })
+
+  it('does not advance the receipt sequence when the sale write fails (WAFI-004)', async () => {
+    const store = useSaleStore()
+    const seqBefore = store.deviceSequence
+    // The sale write blows up (e.g. disk/quota) — the sequence must NOT be burned,
+    // so the next (successful) sale reuses the expected number.
+    vi.mocked(db.writeTransaction).mockRejectedValueOnce(new Error('write failed'))
+
+    const { selectMethod, confirm } = usePayment()
+    selectMethod('card')
+    await expect(confirm()).rejects.toThrow()
+
+    expect(store.deviceSequence).toBe(seqBefore)
+  })
+
+  it('advances the receipt sequence exactly once on a successful sale (WAFI-004)', async () => {
+    setupTx({ cost_price_usd: 0, current_stock: 10 })
+    const store = useSaleStore()
+    const seqBefore = store.deviceSequence
+
+    const { selectMethod, confirm } = usePayment()
+    selectMethod('card')
+    await confirm()
+
+    expect(store.deviceSequence).toBe(seqBefore + 1)
+  })
+
   it('changeDue computed correctly for cash_usd overpay', () => {
     const { selectMethod, amountReceived, changeDue } = usePayment()
     selectMethod('cash_usd')

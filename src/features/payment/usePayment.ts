@@ -15,7 +15,7 @@ export function usePayment() {
   const deviceStore    = useDeviceStore()
   const shiftStore     = useShiftStore()
   const sessionStore   = useSessionStore()
-  const { nextNumber } = useSaleNumber()
+  const { formatNumber } = useSaleNumber()
   const { clearDraft } = useSaleDraft()
   const { logSaleCompleted } = useAuditLog()
 
@@ -144,13 +144,23 @@ export function usePayment() {
   }
 
   async function confirm(customerId?: string): Promise<CompletedSale> {
+    // Idempotency guard (WAFI-003): a confirm already in flight must not start a
+    // second sale. Without this, a rapid double-tap or a held Enter writes a
+    // duplicate sale row and burns a second receipt number. The catch path below
+    // resets state, so a retry after a genuine failure is still allowed.
+    if (state.value === 'confirming') throw new Error('Sale is already being confirmed')
     if (!method.value && pendingPayments.value.length === 0) throw new Error('No payment selected')
     state.value  = 'confirming'
     error.value  = null
 
     const saleId     = uuidv4()
     const now        = new Date().toISOString()
-    const displayNum = nextNumber()
+    // Claim this sale's sequence number but DON'T persist the advance yet (WAFI-004):
+    // formatNumber is pure (it reads the current sequence, adds 1), and the persisting
+    // incrementSequence() runs only after the write transaction succeeds. A failed
+    // write therefore leaves the sequence intact so the next sale reuses this number.
+    const saleSeq    = saleStore.deviceSequence + 1
+    const displayNum = formatNumber(deviceStore.deviceCode, saleStore.deviceSequence)
 
     // A credit (آجل) sale is unpaid — it must NOT record any tendered payment.
     const isCredit = method.value === 'credit' && pendingPayments.value.length === 0
@@ -206,7 +216,7 @@ export function usePayment() {
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             saleId, deviceStore.shopId, deviceStore.deviceId,
-            saleStore.deviceSequence, displayNum, now,
+            saleSeq, displayNum, now,
             totalUsd.value, totalSyp.value, saleStore.lockedExchangeRate,
             primaryMethod, totalReceived, 'USD', lastChange || null,
             customerId ?? null, isCredit ? 1 : 0, isSplit ? 1 : 0,
@@ -267,6 +277,8 @@ export function usePayment() {
         }
       })
 
+      // Write succeeded — only now commit the sequence advance (WAFI-004).
+      saleStore.incrementSequence()
       await clearDraft()
       saleStore.clear()
       pendingPayments.value = []
