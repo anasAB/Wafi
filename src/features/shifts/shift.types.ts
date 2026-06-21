@@ -11,6 +11,14 @@ export interface CashierShift {
   status:         'open' | 'closed'
 }
 
+/** One operator's sales within a single shift (operator switching). */
+export interface OperatorSales {
+  staffId:    string | null   // null for sales rung before per-operator attribution
+  name:       string | null   // staff name, null when unattributed
+  salesCount: number
+  totalUsd:   number
+}
+
 export interface ZReportMetrics {
   invoiceCount:    number
   totalRevenueUsd: number
@@ -34,4 +42,7 @@ export interface ZReportMetrics {
   varianceSyp:     number
   // duration
   durationMinutes: number
+  // per-operator sales breakdown within this one shift (cash variance above stays
+  // a single shift-level figure)
+  byOperator:      OperatorSales[]
 }

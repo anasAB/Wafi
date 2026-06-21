@@ -153,6 +153,21 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
 
       </div><!-- /z-grid-top -->
 
+      <!-- Sales by operator — per-operator breakdown within this one shift
+           (operators can swap mid-shift; cash variance below stays shift-level). -->
+      <div v-if="metrics.byOperator.length > 1" class="z-card">
+        <div class="z-card-header">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" /></svg>
+          المبيعات حسب المستخدم
+        </div>
+        <div class="z-rows">
+          <div v-for="op in metrics.byOperator" :key="op.staffId ?? 'unattributed'" class="z-row">
+            <span class="z-label">{{ op.name ?? 'غير محدد' }} <span class="z-op-count">({{ op.salesCount }} فاتورة)</span></span>
+            <span class="z-value">{{ fmt(op.totalUsd) }}</span>
+          </div>
+        </div>
+      </div>
+
       <!-- Cash reconciliation — full width below grid -->
       <div class="z-card z-card-recon">
         <div class="z-card-header">
@@ -466,6 +481,11 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
   font-size: 13px;
   font-weight: 700;
   color: #C8D5E8;
+}
+
+.z-op-count {
+  font-size: 11px;
+  color: #3D4F6B;
 }
 
 .z-value {

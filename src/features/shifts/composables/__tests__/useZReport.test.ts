@@ -77,6 +77,40 @@ describe('useZReport — shift/device scoping (multi-device)', () => {
     }
   })
 
+  it('groups the shift sales by operator into byOperator, leaving variance shift-level', async () => {
+    vi.mocked(db.getOptional).mockResolvedValue({ total: 0, count: 0 } as any)
+    vi.mocked(db.getAll).mockResolvedValue([
+      { staffId: 's1', name: 'سامي', salesCount: 3, totalUsd: 120 },
+      { staffId: 's2', name: 'أحمد', salesCount: 2, totalUsd: 80 },
+    ] as any)
+
+    const { compute } = useZReport()
+    // Closing = opening (100) since all mocked sales/cash totals are 0 → variance 0.
+    const m = await compute(shift, 100, 0)
+
+    expect(m.byOperator).toHaveLength(2)
+    expect(m.byOperator[0]).toMatchObject({ staffId: 's1', name: 'سامي', salesCount: 3, totalUsd: 120 })
+    expect(m.byOperator[1]).toMatchObject({ staffId: 's2', name: 'أحمد', salesCount: 2, totalUsd: 80 })
+    // The breakdown must not disturb the single shift-level cash variance.
+    expect(m.varianceUsd).toBe(0)
+  })
+
+  it('queries byOperator grouped by staff_id, scoped to device + time window', async () => {
+    vi.mocked(db.getOptional).mockResolvedValue({ total: 0, count: 0 } as any)
+    vi.mocked(db.getAll).mockResolvedValue([])
+
+    const { compute } = useZReport()
+    await compute(shift, 0, 0)
+
+    const call = vi.mocked(db.getAll).mock.calls.find(
+      c => /FROM sales\b/.test(sqlOf(c)) && /GROUP BY/.test(sqlOf(c)),
+    )
+    expect(call).toBeTruthy()
+    expect(sqlOf(call!)).toMatch(/staff_id/)
+    expect(sqlOf(call!)).toMatch(/device_id\s*=\s*\?/)
+    expect(paramsOf(call!)).toContain('device-A')
+  })
+
   it('adds cash credit-payments to expected cash in each currency', async () => {
     // Resolve: 0s for all the standard rows, then USD credit cash = 40, SYP = 100000.
     // Queries run via Promise.all in declaration order; credit-payment queries are last.
