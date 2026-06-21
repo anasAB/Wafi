@@ -65,6 +65,31 @@ function rowToExpense(r: ExpenseRow): Expense {
   }
 }
 
+// The SYP→USD rate in effect on a given calendar day, from the rate history, so
+// an expense is costed at the rate that applied on its date (WAFI-025) rather than
+// a single stale rate. Falls back to the earliest recorded rate for dates that
+// precede any rate entry; null if no rate was ever set.
+async function rateForDate(shopId: string, dateStr: string): Promise<number | null> {
+  const onOrBefore = await db.getOptional<{ rate: number }>(
+    `SELECT rate FROM exchange_rates WHERE shop_id = ? AND set_at <= ? ORDER BY set_at DESC LIMIT 1`,
+    [shopId, `${dateStr}T23:59:59.999Z`],
+  )
+  if (onOrBefore) return onOrBefore.rate
+  const earliest = await db.getOptional<{ rate: number }>(
+    `SELECT rate FROM exchange_rates WHERE shop_id = ? ORDER BY set_at ASC LIMIT 1`,
+    [shopId],
+  )
+  return earliest?.rate ?? null
+}
+
+// USD cost of an expense: SYP amounts are re-derived from the date's rate (rounded
+// to cents); USD amounts keep their entered value. Falls back to fallbackUsd when
+// no rate is available so the figure is never zeroed.
+function costUsd(amount: number, currency: string, fallbackUsd: number, rate: number | null): number {
+  if (currency !== 'SYP' || !rate || rate <= 0) return fallbackUsd
+  return Math.round((amount / rate) * 100) / 100
+}
+
 export function useExpenses() {
   const expenses = ref<Expense[]>([])
   // Store last date range so mutations can reload the same window
@@ -96,11 +121,15 @@ export function useExpenses() {
         data.isRecurringMonthly ? data.recurringStartDate : undefined,
         data.isRecurringMonthly ? data.recurringEndDate : undefined,
       )
+      // Cost SYP at the rate effective on THIS occurrence's date (WAFI-025) — a
+      // recurring expense spanning months must not book every month at one rate.
+      const rate = data.currency === 'SYP' ? await rateForDate(device.shopId, expenseDate) : null
+      const amountUsd = costUsd(data.amount, data.currency, data.amountUsd, rate)
       await db.execute(
         `INSERT INTO expenses (id, shop_id, amount, currency, amount_usd, category, expense_date,
           notes, photo_url, paid_in_cash, created_at, sync_status)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-        [id, device.shopId, data.amount, data.currency, data.amountUsd,
+        [id, device.shopId, data.amount, data.currency, amountUsd,
          data.category, expenseDate, storedNotes,
          data.photoUrl ?? null, data.paidInCash ? 1 : 0, now]
       )
@@ -152,13 +181,19 @@ export function useExpenses() {
     )
     const today  = fmt(now)
     const nowIso = now.toISOString()
+    const todayRate = await rateForDate(device.shopId, today)
     for (const r of rows) {
+      // Re-cost SYP at today's rate (WAFI-025) — copying last month's amount_usd
+      // verbatim drifts as the rate moves. And drop the recurring meta marker so a
+      // plain duplicate isn't silently treated as a recurring expense.
+      const amountUsd  = costUsd(r.amount, r.currency, r.amount_usd, todayRate)
+      const plainNotes = parseRecurringMeta(r.notes).cleanNotes ?? null
       await db.execute(
         `INSERT INTO expenses (id, shop_id, amount, currency, amount_usd, category, expense_date,
           notes, photo_url, paid_in_cash, created_at, sync_status)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-        [uuidv4(), device.shopId, r.amount, r.currency, r.amount_usd, r.category, today,
-         r.notes, r.photo_url, r.paid_in_cash, nowIso]
+        [uuidv4(), device.shopId, r.amount, r.currency, amountUsd, r.category, today,
+         plainNotes, r.photo_url, r.paid_in_cash, nowIso]
       )
     }
     if (lastStart) await load(lastStart, lastEnd)
