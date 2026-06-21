@@ -49,7 +49,7 @@ Goal: the brother opens Wafi, is already signed in, his real inventory is loaded
 **Build now, in order:**
 - **Tier 1 — Correctness & trust:** WAFI-002 ✅done · WAFI-003 ✅done · WAFI-004 · WAFI-005 · WAFI-006 · WAFI-007 · WAFI-008. Plan: `plans/2026-06-21-tier1-correctness.md`.
 - **Tier 2 — Accountability (has staff):** WAFI-009 (immutable audit) ✅done (client/DB trigger; server-side gating still in the Role-Enforcement epic) · WAFI-012 (PIN hardening) ✅done (salted hash + per-device offline lockout; server-coordinated lockout deferred to WAFI-010) · WAFI-014 (attribution/events) ✅done · WAFI-013 (Manager role) ✅done · switch-operator ✅done. Plan: `plans/2026-06-21-tier2-accountability.md`.
-- **Tier 3 — Usability polish:** WAFI-018 · WAFI-030 · WAFI-031 · WAFI-025 · WAFI-026/027 · WAFI-021/022 · WAFI-032.
+- **Tier 3 — Usability polish:** WAFI-018 · WAFI-030 · WAFI-031 · WAFI-025 · WAFI-026/027 · WAFI-021/022 · WAFI-032. Plan: `plans/2026-06-21-tier3-usability.md`.
 
 **Deferred (scaling, not the brother's benefit):** WAFI-001 full (run on the stub) · Auth self-serve epic · device registration WAFI-016 (only if a 2nd physical register) · Excel import wizard (white-glove load instead) · **WAFI-010 server-side role epic** (heavy, fights offline — the immutable audit log covers ~90% of the practical "see who's stealing" value for one trusted shop; revisit when scaling to pilots).
 
