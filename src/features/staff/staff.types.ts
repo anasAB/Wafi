@@ -29,6 +29,7 @@ export interface Staff {
   shopId:      string
   name:        string
   pinHash:     string
+  pinSalt:     string | null   // per-staff PIN salt; null = legacy unsalted hash
   role:        StaffRole
   permissions: StaffPermissions
   isActive:    boolean

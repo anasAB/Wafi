@@ -2,7 +2,7 @@ import { ref } from 'vue'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { supabase } from '@/data/supabase/client'
-import { hashPin } from './usePinAuth'
+import { hashPin, generateSalt } from './usePinAuth'
 import type { Staff, NewStaff, StaffPermissions } from '../staff.types'
 import { OWNER_PERMISSIONS } from '../staff.types'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
@@ -14,6 +14,7 @@ function rowToStaff(r: any): Staff {
     name: r.name,
     pinHash: r.pin_hash,
     role: r.role,
+    pinSalt: r.pin_salt ?? null,
     permissions:
       r.role === 'owner'
         ? OWNER_PERMISSIONS
@@ -54,7 +55,8 @@ export function useStaff() {
 
   async function createStaff(data: NewStaff): Promise<Staff> {
     const device = useDeviceStore()
-    const pinHash = await hashPin(data.pin)
+    const pinSalt = generateSalt()
+    const pinHash = await hashPin(data.pin, pinSalt)
     const now = new Date().toISOString()
     const permsJson =
       data.role === 'owner'
@@ -70,8 +72,8 @@ export function useStaff() {
       )
       if (existingOwner?.id) {
         await db.execute(
-          `UPDATE staff SET name = ?, pin_hash = ?, permissions = ?, is_active = 1 WHERE id = ?`,
-          [data.name, pinHash, permsJson, existingOwner.id]
+          `UPDATE staff SET name = ?, pin_hash = ?, pin_salt = ?, permissions = ?, is_active = 1 WHERE id = ?`,
+          [data.name, pinHash, pinSalt, permsJson, existingOwner.id]
         )
         await loadStaff()
         const updated = staff.value.find((s) => s.id === existingOwner.id)
@@ -96,13 +98,13 @@ export function useStaff() {
 
       if (!remoteOwnerError && remoteOwner?.id) {
         await db.execute(
-          `INSERT OR IGNORE INTO staff (id, shop_id, name, pin_hash, role, permissions, is_active, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
-          [remoteOwner.id, device.shopId, data.name, pinHash, 'owner', permsJson, now]
+          `INSERT OR IGNORE INTO staff (id, shop_id, name, pin_hash, pin_salt, role, permissions, is_active, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+          [remoteOwner.id, device.shopId, data.name, pinHash, pinSalt, 'owner', permsJson, now]
         )
         await db.execute(
-          `UPDATE staff SET name = ?, pin_hash = ?, permissions = ?, is_active = 1 WHERE id = ?`,
-          [data.name, pinHash, permsJson, remoteOwner.id]
+          `UPDATE staff SET name = ?, pin_hash = ?, pin_salt = ?, permissions = ?, is_active = 1 WHERE id = ?`,
+          [data.name, pinHash, pinSalt, permsJson, remoteOwner.id]
         )
         await loadStaff()
         const updated = staff.value.find((s) => s.id === remoteOwner.id)
@@ -115,9 +117,9 @@ export function useStaff() {
     const id = crypto.randomUUID()
 
     await db.execute(
-      `INSERT INTO staff (id, shop_id, name, pin_hash, role, permissions, is_active, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
-      [id, device.shopId, data.name, pinHash, data.role, permsJson, now]
+      `INSERT INTO staff (id, shop_id, name, pin_hash, pin_salt, role, permissions, is_active, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+      [id, device.shopId, data.name, pinHash, pinSalt, data.role, permsJson, now]
     )
     await loadStaff()
     const created = staff.value.find((s) => s.id === id)
@@ -127,8 +129,12 @@ export function useStaff() {
   }
 
   async function updateStaffPin(staffId: string, newPin: string): Promise<void> {
-    await db.execute(`UPDATE staff SET pin_hash = ? WHERE id = ?`, [
-      await hashPin(newPin),
+    // Mint a fresh salt on every PIN change — this also upgrades any legacy
+    // unsalted row to salted on its next PIN set (verify-until-reset).
+    const pinSalt = generateSalt()
+    await db.execute(`UPDATE staff SET pin_hash = ?, pin_salt = ? WHERE id = ?`, [
+      await hashPin(newPin, pinSalt),
+      pinSalt,
       staffId,
     ])
     const nameRow = await db.getOptional<{ name: string }>(

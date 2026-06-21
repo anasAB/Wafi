@@ -5,7 +5,7 @@ import { OWNER_PERMISSIONS, DEFAULT_CASHIER_PERMISSIONS } from '@/features/staff
 
 function staff(role: Staff['role'], perms = DEFAULT_CASHIER_PERMISSIONS): Staff {
   return {
-    id: 'x', shopId: 's', name: 'n', pinHash: 'h',
+    id: 'x', shopId: 's', name: 'n', pinHash: 'h', pinSalt: null,
     role, permissions: perms, isActive: true, createdAt: '2026-01-01',
   }
 }

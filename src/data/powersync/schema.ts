@@ -133,7 +133,8 @@ const staff = new Table({
   shop_id:     column.text,
   name:        column.text,
   pin_hash:    column.text,
-  role:        column.text,     // 'owner' | 'cashier'
+  pin_salt:    column.text,     // per-staff salt (hex); null = legacy unsalted hash
+  role:        column.text,     // 'owner' | 'cashier' | 'manager'
   permissions: column.text,     // JSON blob
   is_active:   column.integer,
   created_at:  column.text,

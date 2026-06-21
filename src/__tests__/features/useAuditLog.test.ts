@@ -11,7 +11,7 @@ import type { Staff } from '@/features/staff/staff.types'
 import type { AuditLog } from '@/features/audit/audit.types'
 
 const mockStaff: Staff = {
-  id: 'staff-1', shopId: 'shop-1', name: 'أحمد', pinHash: 'abc',
+  id: 'staff-1', shopId: 'shop-1', name: 'أحمد', pinHash: 'abc', pinSalt: null,
   role: 'cashier',
   permissions: {
     can_view_reports: false, can_manage_products: false,
