@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { blobToDataUrl } from '../blobToDataUrl'
 
 const emit = defineEmits<{
-  (e: 'change', blobUrl: string | null): void
+  (e: 'change', dataUrl: string | null): void
   (e: 'error', message: string): void
 }>()
 
 defineProps<{ modelValue?: string | null }>()
 
 const fileInput = ref<HTMLInputElement | null>(null)
-const MAX_BYTES = 200 * 1024
+// The compressed image is inlined as a base64 data URI and synced as text, so keep
+// the cap low (≈60 KB → ~80 KB base64) to stay light on cheap devices/slow links.
+const MAX_BYTES = 60 * 1024
 
 async function compressToWebP(file: File): Promise<Blob> {
   const img = new Image()
@@ -49,7 +52,9 @@ async function handleFile(file: File) {
       emit('error', 'تعذّر ضغط الصورة — حاول بصورة أخرى')
       return
     }
-    emit('change', URL.createObjectURL(blob))
+    // Inline as a data URI (WAFI-008) so the photo survives reload and syncs to
+    // other devices — a blob: URL would be dead outside this document.
+    emit('change', await blobToDataUrl(blob))
   } catch {
     emit('error', 'تعذّر ضغط الصورة — حاول بصورة أخرى')
   }
