@@ -95,21 +95,42 @@ export function useSaleHistory() {
 
   async function reprint(saleId: string): Promise<void> {
     const device = useDeviceStore()
-    const [saleRes, linesRes] = await Promise.all([
+    const [saleRes, linesRes, settingsRes, paymentsRes, fullyReturnedRes] = await Promise.all([
       db.execute(`SELECT * FROM sales WHERE id = ?`, [saleId]),
-      db.execute(`SELECT sli.*, p.name_ar FROM sale_line_items sli JOIN products p ON sli.product_id = p.id WHERE sli.sale_id = ?`, [saleId]),
+      // LEFT JOIN so a since-deleted product still reprints its line.
+      db.execute(`SELECT sli.*, p.name_ar FROM sale_line_items sli LEFT JOIN products p ON sli.product_id = p.id WHERE sli.sale_id = ?`, [saleId]),
+      // Real shop name/header/footer/tax — not the shop UUID.
+      db.execute(`SELECT * FROM receipt_settings WHERE shop_id = ? LIMIT 1`, [device.shopId]),
+      // Split-payment legs, so a reprint of a split sale shows the same breakdown.
+      db.execute(`SELECT method, amount_usd FROM sale_payments WHERE sale_id = ?`, [saleId]),
+      // Was every sold unit returned? Then mark the reprint as fully returned.
+      db.execute(
+        `SELECT r.original_sale_id AS sale_id
+         FROM returns r
+         JOIN return_line_items rli ON rli.return_id = r.id
+         WHERE r.original_sale_id = ?
+         GROUP BY r.original_sale_id
+         HAVING COALESCE(SUM(rli.qty_returned), 0) >= (
+           SELECT COALESCE(SUM(sli.quantity), 0) FROM sale_line_items sli WHERE sli.sale_id = ?
+         )`,
+        [saleId, saleId],
+      ).catch(() => ({ rows: { _array: [] } })),
     ])
     const sale  = ((saleRes as any).rows._array as any[])[0]
     const lines = (linesRes as any).rows._array as any[]
     if (!sale) throw new Error('Sale not found')
 
+    const settings        = ((settingsRes as any).rows._array as any[])[0]
+    const paymentRows     = (paymentsRes as any).rows._array as any[]
+    const isFullyReturned = ((fullyReturnedRes as any).rows._array as any[]).length > 0
+
     const receipt: ReceiptData = {
       saleId:            sale.id,
       displaySaleNumber: sale.display_sale_number,
-      shopName:          device.shopId,
+      shopName:          settings?.shop_name || device.shopId,
       createdAt:         sale.created_at,
       lines: lines.map((l: any) => ({
-        nameAr:       l.name_ar,
+        nameAr:       l.name_ar ?? '—',
         quantity:     l.quantity,
         unitPriceUsd: l.unit_price_usd,
         lineTotalUsd: l.line_total_usd,
@@ -120,7 +141,14 @@ export function useSaleHistory() {
       paymentMethod:  sale.payment_method,
       amountReceived: sale.amount_received,
       amountReceivedCurrency: sale.amount_received_currency,
-      changeDue:      sale.change_due,
+      changeDue:      sale.change_due ?? undefined,
+      taxNumber:      settings?.tax_number  || undefined,
+      headerText:     settings?.header_text || undefined,
+      footerText:     settings?.footer_text || undefined,
+      splitPayments:  (sale.is_split ?? 0) === 1
+        ? paymentRows.map((p: any) => ({ method: p.method, amountUsd: p.amount_usd }))
+        : undefined,
+      isFullyReturned,
     }
     await printer.print(receipt)
   }

@@ -23,6 +23,10 @@ export interface ReceiptData {
   taxNumber?:               string
   headerText?:              string
   footerText?:              string
+  /** Per-leg breakdown for a split sale, so a reprint matches the original. */
+  splitPayments?: Array<{ method: PaymentMethod; amountUsd: number }>
+  /** Marks a reprint of a fully-returned sale so it isn't mistaken for a live sale. */
+  isFullyReturned?:         boolean
 }
 
 export interface IPrinterDriver {

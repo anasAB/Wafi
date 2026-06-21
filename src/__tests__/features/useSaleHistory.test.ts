@@ -2,8 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
 vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
+const { printSpy } = vi.hoisted(() => ({ printSpy: vi.fn() }))
 vi.mock('@/composables/usePrinter', () => ({
-  usePrinter: () => ({ print: vi.fn(), error: { value: null } }),
+  usePrinter: () => ({ print: printSpy, error: { value: null } }),
 }))
 
 import { useSaleHistory } from '@/features/sale-history/useSaleHistory'
@@ -60,5 +61,37 @@ describe('useSaleHistory', () => {
     expect(byId['s2'].isFullyReturned).toBe(false)
     expect(byId['s3'].hasReturn).toBe(false)
     expect(byId['s3'].isFullyReturned).toBe(false)
+  })
+
+  it('reprint uses the real shop name + split breakdown and marks fully-returned (WAFI-031)', async () => {
+    vi.mocked(db.execute).mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM sales WHERE id')) return { rows: { _array: [{
+        id: 's1', display_sale_number: 'A-000009', total_usd: 50, total_syp: 725000,
+        exchange_rate_at_sale: 14500, payment_method: 'split', amount_received: 50,
+        amount_received_currency: 'USD', change_due: null, created_at: '2026-06-21T09:00:00Z', is_split: 1,
+      }] } } as any
+      if (sql.includes('FROM sale_line_items')) return { rows: { _array: [
+        { name_ar: 'سماعة', quantity: 1, unit_price_usd: 50, line_total_usd: 50 },
+      ] } } as any
+      if (sql.includes('FROM receipt_settings')) return { rows: { _array: [
+        { shop_name: 'محل أحمد', tax_number: '123', header_text: 'هدر', footer_text: 'فوتر' },
+      ] } } as any
+      if (sql.includes('FROM sale_payments')) return { rows: { _array: [
+        { method: 'cash_usd', amount_usd: 30 },
+        { method: 'card',     amount_usd: 20 },
+      ] } } as any
+      if (sql.includes('qty_returned')) return { rows: { _array: [{ sale_id: 's1' }] } } as any // fully returned
+      return { rows: { _array: [] } } as any
+    })
+
+    const { reprint } = useSaleHistory()
+    await reprint('s1')
+
+    const receipt = printSpy.mock.calls[0][0]
+    expect(receipt.shopName).toBe('محل أحمد')          // real name, not the shop UUID
+    expect(receipt.taxNumber).toBe('123')
+    expect(receipt.splitPayments).toHaveLength(2)
+    expect(receipt.splitPayments[1].method).toBe('card')
+    expect(receipt.isFullyReturned).toBe(true)
   })
 })
