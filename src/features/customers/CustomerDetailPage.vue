@@ -32,7 +32,12 @@ onMounted(async () => {
   customer.value = customers.value.find(c => c.id === customerId)
 })
 
-const isSettled = computed(() => balanceUsd.value <= 0.001)
+// Three states: the customer owes (positive), is square (~0), or has credit with
+// the shop (negative — e.g. a store-credit refund or an overpayment) (WAFI-026).
+const hasCredit = computed(() => balanceUsd.value < -0.001)
+const creditUsd = computed(() => Math.abs(balanceUsd.value))
+const isSettled = computed(() => Math.abs(balanceUsd.value) <= 0.001)
+const canPay    = computed(() => balanceUsd.value > 0.001)
 
 function formatDate(iso: string): string {
   return new Intl.DateTimeFormat('ar-SY', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(iso))
@@ -101,7 +106,11 @@ async function handleDelete() {
 
             <!-- Balance -->
             <div class="balance-section">
-              <p v-if="isSettled" class="balance-settled">مسوّى ✓</p>
+              <template v-if="hasCredit">
+                <p class="balance-amount balance-credit" dir="ltr">${{ creditUsd.toFixed(2) }}</p>
+                <p class="balance-label">رصيد للزبون لديك</p>
+              </template>
+              <p v-else-if="isSettled" class="balance-settled">مسوّى ✓</p>
               <template v-else>
                 <p class="balance-amount" dir="ltr">${{ balanceUsd.toFixed(2) }}</p>
                 <p class="balance-label">إجمالي المديونية</p>
@@ -113,7 +122,7 @@ async function handleDelete() {
               <button
                 type="button"
                 data-testid="record-payment-btn"
-                :disabled="isSettled"
+                :disabled="!canPay"
                 class="btn-primary btn-pay"
                 @click="showPayment = true"
               >تسجيل دفعة</button>
@@ -337,6 +346,9 @@ async function handleDelete() {
   font-weight: 700;
   color: #22C55E;
 }
+
+/* Customer credit (shop owes them) — a positive thing, shown green not red. */
+.balance-credit { color: #22C55E; }
 
 .balance-amount {
   font-size: 1.875rem;

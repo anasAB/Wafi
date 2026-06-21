@@ -50,6 +50,20 @@ describe('useCustomerBalance', () => {
     )
   })
 
+  it('balance credits the customer for store_credit refunds on cash sales (WAFI-026/027)', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce({ balance_usd: -25 } as any)
+    const { balanceUsd, load } = useCustomerBalance('c1')
+    await load()
+    // A store-credit refund on a cash sale must push the balance negative (shop owes
+    // the customer) — the signed figure the detail page renders as "customer credit".
+    expect(balanceUsd.value).toBe(-25)
+    const balanceSql = vi.mocked(db.getOptional).mock.calls
+      .map(c => c[0] as string)
+      .find(s => s.includes('AS balance_usd'))!
+    expect(balanceSql).toContain("'store_credit'")
+    expect(balanceSql).toMatch(/is_credit\s*=\s*0/)
+  })
+
   it('open invoice remaining subtracts returns for the sale', async () => {
     vi.mocked(db.getOptional).mockResolvedValueOnce({ balance_usd: 0 } as any)
     const { load } = useCustomerBalance('c1')

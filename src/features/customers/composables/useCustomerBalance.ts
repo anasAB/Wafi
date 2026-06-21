@@ -27,12 +27,19 @@ const BALANCE_USD_SQL = `SELECT
         (SELECT COALESCE(SUM(r.refund_amount_usd), 0) FROM returns r
            JOIN sales s ON s.id = r.original_sale_id
           WHERE s.customer_id = ? AND s.is_credit = 1 AND r.shop_id = ?)
+        -
+        -- A store-credit refund on a CASH sale isn't a debt reduction — it's a credit
+        -- the shop owes the customer. Subtract it too so the balance goes negative,
+        -- which the detail page renders as "customer credit" (WAFI-026/027).
+        (SELECT COALESCE(SUM(r.refund_amount_usd), 0) FROM returns r
+           JOIN sales s ON s.id = r.original_sale_id
+          WHERE s.customer_id = ? AND s.is_credit = 0 AND r.refund_method = 'store_credit' AND r.shop_id = ?)
         AS balance_usd`
 
 async function fetchOutstandingBalanceUsd(customerId: string, shopId: string): Promise<number> {
   const row = await db.getOptional<{ balance_usd: number }>(
     BALANCE_USD_SQL,
-    [customerId, shopId, customerId, shopId, customerId, shopId]
+    [customerId, shopId, customerId, shopId, customerId, shopId, customerId, shopId]
   )
   return row?.balance_usd ?? 0
 }
