@@ -5,6 +5,7 @@ import { useSaleDraft } from '@/composables/useSaleDraft'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { useShiftStore } from '@/features/shifts/shift.store'
+import { useSessionStore } from '@/store/session.store'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 import { v4 as uuidv4 } from 'uuid'
 import type { PaymentMethod, PaymentState, CompletedSale, SplitPaymentEntry } from './payment.types'
@@ -13,6 +14,7 @@ export function usePayment() {
   const saleStore      = useSaleStore()
   const deviceStore    = useDeviceStore()
   const shiftStore     = useShiftStore()
+  const sessionStore   = useSessionStore()
   const { nextNumber } = useSaleNumber()
   const { clearDraft } = useSaleDraft()
   const { logSaleCompleted } = useAuditLog()
@@ -200,8 +202,8 @@ export function usePayment() {
         await tx.execute(
           `INSERT INTO sales (id, shop_id, device_id, device_sequence, display_sale_number,
             created_at, total_usd, total_syp, exchange_rate_at_sale, payment_method,
-            amount_received, amount_received_currency, change_due, customer_id, is_credit, is_split, shift_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            amount_received, amount_received_currency, change_due, customer_id, is_credit, is_split, shift_id, staff_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             saleId, deviceStore.shopId, deviceStore.deviceId,
             saleStore.deviceSequence, displayNum, now,
@@ -209,6 +211,10 @@ export function usePayment() {
             primaryMethod, totalReceived, 'USD', lastChange || null,
             customerId ?? null, isCredit ? 1 : 0, isSplit ? 1 : 0,
             shiftStore.activeShiftId,
+            // Attribution rule: the operator active at confirmation owns the sale
+            // (the cart can change hands via switch-operator). shift_id stays the
+            // cash-period link.
+            sessionStore.activeStaff?.id ?? null,
           ]
         )
 

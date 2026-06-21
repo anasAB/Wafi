@@ -68,4 +68,16 @@ describe('useSessionStore', () => {
     expect(restored.activeStaff?.id).toBe('staff-1')
     expect(restored.activeStaff?.name).toBe('أحمد')
   })
+
+  // The session store is the single source of truth for the *active operator*
+  // (WAFI-011): route guards and nav read permissions from here, not shiftStore.
+  it('permissions is null with no active staff', () => {
+    expect(useSessionStore().permissions).toBeNull()
+  })
+
+  it('permissions reflects the active staff permissions', () => {
+    const store = useSessionStore()
+    store.setActiveStaff(mockStaff)
+    expect(store.permissions?.can_manage_products).toBe(false)
+  })
 })

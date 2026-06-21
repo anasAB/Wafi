@@ -1,0 +1,12 @@
+{
+  // Type-checks the test suite (excluded from the production build in tsconfig.app.json).
+  // Run via `npm run type-check:test`; the IDE also uses this for files under __tests__.
+  "extends": "@vue/tsconfig/tsconfig.dom.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true,
+    "types": ["vite/client", "node", "vitest/globals"],
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["src/**/__tests__/**/*.ts", "src/**/*.test.ts", "src/**/*.spec.ts", "src/**/*.d.ts"]
+}

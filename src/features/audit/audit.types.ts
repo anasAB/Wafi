@@ -24,6 +24,7 @@ export type AuditEvent =
   | 'supplier.created'
   | 'supplier.updated'
   | 'receiving.created'
+  | 'operator.switched'
 
 export type AuditEntityType =
   | 'sale' | 'return' | 'product' | 'expense'

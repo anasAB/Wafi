@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:ui": "vitest --ui",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "type-check:test": "vue-tsc -p tsconfig.vitest.json --noEmit"
   },
   "dependencies": {
     "@powersync/web": "^1.38.1",

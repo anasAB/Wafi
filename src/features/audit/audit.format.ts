@@ -43,6 +43,11 @@ export function eventLabel(entry: AuditLog): string {
       const lineCount = (m.lineCount as number) ?? 0
       return `سجّل استلام بضاعة من ${supplierName}: $${totalUsd.toFixed(2)} (${lineCount} أصناف)`
     }
+    case 'operator.switched': {
+      const from = (m.from_name as string) ?? 'النظام'
+      const to   = (m.to_name as string) ?? 'مستخدم غير معروف'
+      return `تبديل المستخدم: من ${from} إلى ${to}`
+    }
     default:                          return entry.event
   }
 }

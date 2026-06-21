@@ -1,6 +1,7 @@
 import { db }             from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { useShiftStore }  from '@/features/shifts/shift.store'
+import { useSessionStore } from '@/store/session.store'
 import type { Staff }     from '@/features/staff/staff.types'
 import type { CashierShift } from '../shift.types'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
@@ -25,6 +26,7 @@ export function useShift() {
 
   const device     = useDeviceStore()
   const shiftStore = useShiftStore()
+  const session    = useSessionStore()
 
   async function openShift(staff: Staff, openingCashUsd: number): Promise<string> {
     const shiftId = crypto.randomUUID()
@@ -35,6 +37,10 @@ export function useShift() {
        VALUES (?, ?, ?, ?, ?, ?, 'open')`,
       [shiftId, device.shopId, device.deviceId, staff.id, now, openingCashUsd]
     )
+    // Identity lives in one place: opening a shift establishes who is using this
+    // device. Set the session store BEFORE logging so the audit entry for the
+    // shift-open action is attributed to this staff, not 'system'.
+    session.setActiveStaff(staff)
     shiftStore.openShift(shiftId, staff)
     await logShiftOpened(shiftId)
     return shiftId
@@ -55,7 +61,10 @@ export function useShift() {
       [now, closingCashUsd, closingCashSyp, shiftId]
     )
     shiftStore.closeShift()
+    // Log the close while identity is still set, then clear it so the two
+    // identity stores fall back to null together (no stale session after logout).
     await logShiftClosed(shiftId)
+    session.clearSession()
   }
 
   async function loadActiveShift(): Promise<CashierShift | null> {

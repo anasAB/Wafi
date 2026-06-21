@@ -2,12 +2,13 @@
 import { ref, computed }   from 'vue'
 import { useRoute, RouterLink } from 'vue-router'
 import { useI18n }         from 'vue-i18n'
-import { useShiftStore }   from '@/features/shifts/shift.store'
+import { useSessionStore } from '@/store/session.store'
 import ZReportScreen       from '@/features/shifts/components/ZReportScreen.vue'
+import OperatorSwitchAction from '@/features/staff/components/OperatorSwitchAction.vue'
 
 const route = useRoute()
 const { t } = useI18n()
-const shiftStore  = useShiftStore()
+const session     = useSessionStore()
 const showZReport = ref(false)
 
 interface NavItem {
@@ -33,8 +34,8 @@ const allNavItems: NavItem[] = [
 ]
 
 const navItems = computed(() => {
-  const perms   = shiftStore.permissions
-  const isOwner = shiftStore.activeStaff?.role === 'owner'
+  const perms   = session.permissions
+  const isOwner = session.activeStaff?.role === 'owner'
   if (!perms || isOwner) return allNavItems.filter(i => i.href !== null)
   return allNavItems.filter(i =>
     i.href !== null && (!i.permission || (perms as any)[i.permission])
@@ -44,8 +45,8 @@ const navItems = computed(() => {
 // Same gating as the main nav, applied to the Settings entry (which lives in the
 // bottom section). Shown to owners and to staff with can_manage_settings.
 const canManageSettings = computed(() => {
-  const perms   = shiftStore.permissions
-  const isOwner = shiftStore.activeStaff?.role === 'owner'
+  const perms   = session.permissions
+  const isOwner = session.activeStaff?.role === 'owner'
   if (!perms || isOwner) return true
   return Boolean(perms.can_manage_settings)
 })
@@ -68,7 +69,7 @@ function isActive(href: string | null): boolean {
         </svg>
       </div>
       <div class="brand-text">
-        <span class="brand-name">{{ shiftStore.activeStaff?.name || 'وافي' }}</span>
+        <span class="brand-name">{{ session.activeStaff?.name || 'وافي' }}</span>
         <span class="brand-sub">{{ t('nav.dashboard') }}</span>
       </div>
       <div class="brand-badge">POS</div>
@@ -152,6 +153,9 @@ function isActive(href: string | null): boolean {
         </span>
         <span class="nav-text">{{ t('nav.settings') }}</span>
       </RouterLink>
+
+      <!-- Switch the active operator without closing the shift. -->
+      <OperatorSwitchAction variant="sidebar" />
 
       <button class="close-shift-btn" @click="showZReport = true">
         <span class="nav-icon-wrap nav-icon-warn">

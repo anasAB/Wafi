@@ -2,7 +2,7 @@ import { ref }               from 'vue'
 import { db }                from '@/data/powersync/db'
 import { useDeviceStore }    from '@/store/device.store'
 import { computeCashReconciliation } from './cashReconciliation'
-import type { CashierShift, ZReportMetrics } from '../shift.types'
+import type { CashierShift, ZReportMetrics, OperatorSales } from '../shift.types'
 
 export function useZReport() {
   const metrics = ref<ZReportMetrics | null>(null)
@@ -102,6 +102,21 @@ export function useZReport() {
           ),
         ])
 
+      // Per-operator breakdown: group this shift's sales by the operator who
+      // completed each (sales.staff_id). Same device + time-window scoping as the
+      // totals above so the per-operator sums reconcile to totalRevenueUsd. LEFT
+      // JOIN keeps sales whose operator is unattributed (null staff_id).
+      const operatorRows = await db.getAll<OperatorSales>(
+        `SELECT s.staff_id AS staffId, st.name AS name,
+                COUNT(*) AS salesCount, COALESCE(SUM(s.total_usd), 0) AS totalUsd
+         FROM sales s LEFT JOIN staff st ON st.id = s.staff_id
+         WHERE s.shop_id = ? AND s.device_id = ? AND s.created_at BETWEEN ? AND ?
+         GROUP BY s.staff_id, st.name
+         ORDER BY totalUsd DESC`,
+        [device.shopId, shift.deviceId, shift.openedAt, closedAt]
+      )
+      const byOperator: OperatorSales[] = operatorRows ?? []
+
       const cashUsdSales          = cashUsdRow?.total       ?? 0
       const cashSypSalesRaw       = cashSypRow?.total       ?? 0
       const cashExpensesUsd       = expUsdRow?.total        ?? 0
@@ -147,6 +162,7 @@ export function useZReport() {
         actualSyp:       closingCashSyp,
         varianceSyp:     recon.varianceSyp,
         durationMinutes: Math.floor(durationMs / 60_000),
+        byOperator,
       }
 
       metrics.value = result
