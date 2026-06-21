@@ -152,6 +152,7 @@ function closeCamera() {
 
 onUnmounted(() => {
   closeCamera()
+  scanner.destroy()   // detach the scanner's global keydown listener (WAFI-032)
   document.removeEventListener('click', onDocumentClick)
 })
 

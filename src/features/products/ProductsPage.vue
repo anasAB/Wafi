@@ -55,7 +55,9 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  scanner.offScan(handleBarcodeScan)
+  // Tear the scanner down fully (WAFI-032): offScan only drops the callback and
+  // leaves the global keydown listener attached, so it accumulates on remount.
+  scanner.destroy()
 })
 
 function handleBarcodeScan(code: string) {

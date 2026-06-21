@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useDeviceStore } from '@/store/device.store'
 import { useProducts } from '@/features/products/composables/useProducts'
 import { useStockAdjustment } from '@/features/products/composables/useStockAdjustment'
@@ -123,6 +123,12 @@ async function handleAdjConfirm() {
 onMounted(() => {
   products.load()
   scanner.onScan((code: string) => { barcode.value = code })
+})
+
+// Detach the scanner's global keydown listener on unmount (WAFI-032) — otherwise
+// it leaks and double-fires after the form is opened more than once.
+onUnmounted(() => {
+  scanner.destroy()
 })
 </script>
 

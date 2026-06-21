@@ -18,10 +18,13 @@ export function useBarcodeScan() {
   function handleKeyDown(e: KeyboardEvent) {
     const now = e.timeStamp
 
-    if (e.key === 'Enter') {
+    // Scanners terminate a scan with Enter OR Tab (WAFI-032) — accept both. Trim
+    // the committed code so a trailing terminator-adjacent space can't break lookups.
+    if (e.key === 'Enter' || e.key === 'Tab') {
       if (buffer.length >= 4 && inBurst) {
         e.preventDefault()
-        callbacks.forEach(cb => cb(buffer))
+        const code = buffer.trim()
+        callbacks.forEach(cb => cb(code))
       }
       buffer   = ''
       lastTime = 0

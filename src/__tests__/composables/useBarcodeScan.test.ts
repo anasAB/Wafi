@@ -111,3 +111,43 @@ describe('useBarcodeScan focus guard', () => {
     destroy()
   })
 })
+
+describe('useBarcodeScan lifecycle + terminators (WAFI-032)', () => {
+  function burst(keys: string[], terminator: string) {
+    keys.forEach((key, i) => {
+      const e = new KeyboardEvent('keydown', { key, cancelable: true })
+      Object.defineProperty(e, 'timeStamp', { value: i * 10 })
+      document.dispatchEvent(e)
+    })
+    const t = new KeyboardEvent('keydown', { key: terminator, cancelable: true })
+    Object.defineProperty(t, 'timeStamp', { value: keys.length * 10 })
+    document.dispatchEvent(t)
+  }
+
+  it('commits a burst terminated by Tab, not only Enter', () => {
+    const cb = vi.fn()
+    const { onScan, destroy } = useBarcodeScan()
+    onScan(cb)
+    burst(['1','2','3','4','5','6'], 'Tab')
+    expect(cb).toHaveBeenCalledWith('123456')
+    destroy()
+  })
+
+  it('trims surrounding whitespace from the committed barcode', () => {
+    const cb = vi.fn()
+    const { onScan, destroy } = useBarcodeScan()
+    onScan(cb)
+    burst(['1','2','3','4',' '], 'Enter')
+    expect(cb).toHaveBeenCalledWith('1234')
+    destroy()
+  })
+
+  it('destroy() detaches the keydown listener so a later scan does not fire (no leak)', () => {
+    const cb = vi.fn()
+    const { onScan, destroy } = useBarcodeScan()
+    onScan(cb)
+    destroy()
+    burst(['1','2','3','4','5','6'], 'Enter')
+    expect(cb).not.toHaveBeenCalled()
+  })
+})
