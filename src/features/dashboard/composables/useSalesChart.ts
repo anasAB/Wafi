@@ -67,15 +67,46 @@ export function useSalesChart() {
         [device.shopId, start, end]
       )
 
-      const salesMap = new Map(salesRows.map(r => [r.day, r.total]))
-      const cogsMap  = new Map(cogsRows.map(r => [r.day, r.cogs]))
+      // Net returns per day so the chart agrees with the dashboard cards (WAFI-006):
+      // refunds reduce that day's sales, and restocked items reverse that day's COGS.
+      const refundRows = await db.getAll<{ day: string; total: number }>(
+        `SELECT DATE(created_at, 'localtime') as day,
+                COALESCE(SUM(refund_amount_usd), 0) as total
+         FROM returns
+         WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?
+         GROUP BY day`,
+        [device.shopId, start, end]
+      )
+
+      // Same per-(sale, product) cost dedup as useDashboardMetrics (WAFI-005): a
+      // direct line-level join would double the reversal when a product was on two
+      // lines of the original sale.
+      const cogsReversalRows = await db.getAll<{ day: string; cogs: number }>(
+        `SELECT DATE(r.created_at, 'localtime') as day,
+                COALESCE(SUM(rli.qty_returned * COALESCE(c.unit_cost_usd, 0)), 0) as cogs
+         FROM return_line_items rli
+         JOIN returns r ON r.id = rli.return_id
+         LEFT JOIN (
+           SELECT sale_id, product_id, AVG(unit_cost_usd) as unit_cost_usd
+           FROM sale_line_items
+           GROUP BY sale_id, product_id
+         ) c ON c.sale_id = r.original_sale_id AND c.product_id = rli.product_id
+         WHERE r.shop_id = ? AND rli.restock = 1 AND DATE(r.created_at, 'localtime') BETWEEN ? AND ?
+         GROUP BY day`,
+        [device.shopId, start, end]
+      )
+
+      const salesMap        = new Map(salesRows.map(r => [r.day, r.total]))
+      const cogsMap         = new Map(cogsRows.map(r => [r.day, r.cogs]))
+      const refundMap       = new Map(refundRows.map(r => [r.day, r.total]))
+      const cogsReversalMap = new Map(cogsReversalRows.map(r => [r.day, r.cogs]))
 
       data.value = {
         labels: days.map(dayLabelFromDateStr),
-        sales:  days.map(d => salesMap.get(d) ?? 0),
+        sales:  days.map(d => (salesMap.get(d) ?? 0) - (refundMap.get(d) ?? 0)),
         profit: days.map(d => {
-          const rev  = salesMap.get(d) ?? 0
-          const cogs = cogsMap.get(d)  ?? 0
+          const rev  = (salesMap.get(d) ?? 0) - (refundMap.get(d) ?? 0)
+          const cogs = (cogsMap.get(d)  ?? 0) - (cogsReversalMap.get(d) ?? 0)
           // Do NOT clamp at 0 — a loss day must show as negative, not be hidden.
           return rev - cogs
         }),

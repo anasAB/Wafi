@@ -71,12 +71,18 @@ begin
       execute format(
         'create policy %I on public.%I for insert to anon, authenticated with check (shop_id = %s)',
         t || '_insert_all', t, claim);
-      execute format(
-        'create policy %I on public.%I for update to anon, authenticated using (shop_id = %s) with check (shop_id = %s)',
-        t || '_update_all', t, claim, claim);
-      execute format(
-        'create policy %I on public.%I for delete to anon, authenticated using (shop_id = %s)',
-        t || '_delete_all', t, claim);
+
+      -- audit_log is append-only (migration 018): never (re)create UPDATE/DELETE
+      -- policies for it. Every other table keeps the full scoped CRUD set. This
+      -- keeps 015 safe to re-run after 018 without reopening the audit hole.
+      if t <> 'audit_log' then
+        execute format(
+          'create policy %I on public.%I for update to anon, authenticated using (shop_id = %s) with check (shop_id = %s)',
+          t || '_update_all', t, claim, claim);
+        execute format(
+          'create policy %I on public.%I for delete to anon, authenticated using (shop_id = %s)',
+          t || '_delete_all', t, claim);
+      end if;
     end if;
   end loop;
 end $$;

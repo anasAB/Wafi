@@ -8,6 +8,7 @@ const mockStaff: Staff = {
   shopId:      'shop-1',
   name:        'محمد',
   pinHash:     'abc123',
+  pinSalt:     null,
   role:        'cashier',
   permissions: {
     can_view_reports:     false,

@@ -56,6 +56,14 @@ describe('useSaleStore', () => {
     expect(store.lockedExchangeRate).toBe(14500)
   })
 
+  it('exposes no re-pricing setter — the locked rate is immutable once set (WAFI-002)', () => {
+    const store = useSaleStore()
+    store.setLockedRate(14500)
+    // The dangerous updateLockedRate setter (which re-priced an open cart on a
+    // mid-sale rate edit) must not exist: a sale keeps the rate it locked at.
+    expect((store as unknown as Record<string, unknown>).updateLockedRate).toBeUndefined()
+  })
+
   it('clear resets lines and locked rate', () => {
     const store = useSaleStore()
     store.addLine({ productId: 'p1', nameAr: 'تست', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10, availableStock: 99 })

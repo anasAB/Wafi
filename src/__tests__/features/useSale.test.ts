@@ -85,4 +85,33 @@ describe('useSale', () => {
     const store = useSaleStore()
     expect(store.hasRateChangeNotice).toBe(true)
   })
+
+  it('a mid-cart rate change does not re-price the cart: locked rate and SYP total stay fixed (WAFI-002)', async () => {
+    vi.mocked(db.execute).mockResolvedValueOnce({
+      rows: { _array: [{ id: 'p1', name_ar: 'منتج', price_usd: 10, current_stock: 5 }] },
+    } as any)
+    const { addLine, totalSyp } = useSale(14500)
+    await addLine('p1')                 // locks 14500, total $10
+    const store = useSaleStore()
+    expect(totalSyp.value).toBe(145000)
+
+    useSale(20000).checkRateChanged()   // owner edits the rate to 20000 mid-cart
+    expect(store.lockedExchangeRate).toBe(14500)  // unchanged — sale keeps its rate
+    expect(totalSyp.value).toBe(145000)           // still priced at the locked rate
+  })
+
+  it('checkRateChanged clears the notice when the rate returns to the locked value (WAFI-002)', async () => {
+    vi.mocked(db.execute).mockResolvedValueOnce({
+      rows: { _array: [{ id: 'p1', name_ar: 'منتج', price_usd: 10, current_stock: 5 }] },
+    } as any)
+    const { addLine } = useSale(14500)
+    await addLine('p1')                 // locks 14500
+    const store = useSaleStore()
+
+    useSale(15000).checkRateChanged()
+    expect(store.hasRateChangeNotice).toBe(true)   // rate moved away → notice on
+
+    useSale(14500).checkRateChanged()
+    expect(store.hasRateChangeNotice).toBe(false)  // rate back to locked → notice off
+  })
 })

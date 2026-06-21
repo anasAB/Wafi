@@ -7,6 +7,7 @@ import AppDialog from '@/components/ui/AppDialog.vue'
 import { useStaff } from '../composables/useStaff'
 import StaffForm from './StaffForm.vue'
 import type { Staff } from '../staff.types'
+import { roleLabel } from '../staff.types'
 
 const router = useRouter()
 
@@ -79,7 +80,7 @@ async function onFormDone() {
           <div class="staff-main">
             <p class="staff-name">{{ s.name }}</p>
             <span :class="['role-badge', s.role === 'owner' ? 'role-owner' : 'role-cashier']">
-              {{ s.role === 'owner' ? 'مالك' : 'كاشير' }}
+              {{ roleLabel(s.role) }}
             </span>
           </div>
         </div>

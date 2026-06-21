@@ -25,45 +25,20 @@ export function useCashDrawer() {
   const cashSyp   = ref(0)
   const movements = ref<CashMovement[]>([])
 
-  function getDayStart(): string {
-    const now = new Date()
-    const dayStart = new Date(now)
-    dayStart.setHours(6, 0, 0, 0)
-    // If before 6 AM, use yesterday's 6 AM
-    if (now < dayStart) dayStart.setDate(dayStart.getDate() - 1)
-    return dayStart.toISOString()
-  }
-
   async function load(period: Period = 'today') {
     const device = useDeviceStore()
 
-    const wherePayments =
-      period === 'today'
-        ? `WHERE shop_id = ? AND method IN ('cash_usd', 'cash_syp') AND created_at >= ?`
-        : `WHERE shop_id = ? AND method IN ('cash_usd', 'cash_syp') AND DATE(created_at, 'localtime') BETWEEN ? AND ?`
+    // One business-day boundary everywhere: bucket by local-time calendar day, the
+    // same semantics useDashboardMetrics uses (WAFI-007). Previously 'today' used a
+    // raw UTC `created_at >= 6 AM` window, so a 2 AM local sale could land in a
+    // different day than the revenue card and the drawer couldn't reconcile.
+    const wherePayments       = `WHERE shop_id = ? AND method IN ('cash_usd', 'cash_syp') AND DATE(created_at, 'localtime') BETWEEN ? AND ?`
+    const whereExpenses       = `WHERE shop_id = ? AND paid_in_cash = 1 AND DATE(created_at, 'localtime') BETWEEN ? AND ?`
+    const whereRefunds        = `WHERE shop_id = ? AND refund_method IN ('cash_usd', 'cash_syp') AND DATE(created_at, 'localtime') BETWEEN ? AND ?`
+    const whereCreditPayments = `WHERE shop_id = ? AND method = 'cash' AND DATE(created_at, 'localtime') BETWEEN ? AND ?`
 
-    const whereExpenses =
-      period === 'today'
-        ? `WHERE shop_id = ? AND paid_in_cash = 1 AND created_at >= ?`
-        : `WHERE shop_id = ? AND paid_in_cash = 1 AND DATE(created_at, 'localtime') BETWEEN ? AND ?`
-
-    const whereRefunds =
-      period === 'today'
-        ? `WHERE shop_id = ? AND refund_method IN ('cash_usd', 'cash_syp') AND created_at >= ?`
-        : `WHERE shop_id = ? AND refund_method IN ('cash_usd', 'cash_syp') AND DATE(created_at, 'localtime') BETWEEN ? AND ?`
-
-    const whereCreditPayments =
-      period === 'today'
-        ? `WHERE shop_id = ? AND method = 'cash' AND created_at >= ?`
-        : `WHERE shop_id = ? AND method = 'cash' AND DATE(created_at, 'localtime') BETWEEN ? AND ?`
-
-    const params =
-      period === 'today'
-        ? [device.shopId, getDayStart()]
-        : (() => {
-            const { start, end } = getDateRange(period)
-            return [device.shopId, start, end]
-          })()
+    const { start, end } = getDateRange(period)
+    const params = [device.shopId, start, end]
 
     const [paymentRows, expenseRows, refundRows, creditPaymentRows] = await Promise.all([
       db.getAll<PaymentRow>(

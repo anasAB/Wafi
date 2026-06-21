@@ -30,6 +30,19 @@ describe('useCashDrawer', () => {
     expect(calls.some(sql => sql.includes('customer_payments') && sql.includes("method = 'cash'"))).toBe(true)
   })
 
+  it("buckets 'today' by local-time calendar day, matching the cards (WAFI-007)", async () => {
+    const { load } = useCashDrawer()
+    await load('today')
+    const calls = vi.mocked(db.getAll).mock.calls.map(c => c[0] as string)
+    // Every drawer query must use the SAME local-time day boundary as
+    // useDashboardMetrics — not a raw UTC `created_at >= ?` 6 AM window, which put
+    // a 2 AM local sale in a different day than the revenue card (WAFI-007).
+    for (const sql of calls) {
+      expect(sql).toContain("DATE(created_at, 'localtime')")
+    }
+    expect(calls.some(sql => /created_at\s*>=\s*\?/.test(sql))).toBe(false)
+  })
+
   it('adds cash credit collections to the drawer as an inflow', async () => {
     // calls in order: sale_payments, expenses, returns, customer_payments
     vi.mocked(db.getAll)

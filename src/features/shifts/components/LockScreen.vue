@@ -2,10 +2,13 @@
 import { ref, onMounted }  from 'vue'
 import { useStaff }        from '@/features/staff/composables/useStaff'
 import { verifyPin }       from '@/features/staff/composables/usePinAuth'
+import { usePinLockout }   from '@/features/staff/composables/usePinLockout'
 import { useShift }        from '@/features/shifts/composables/useShift'
 import { useOperatorSwitch } from '@/features/staff/composables/useOperatorSwitch'
+import { useAuditLog }     from '@/features/audit/composables/useAuditLog'
 import PinPad              from '@/features/staff/components/PinPad.vue'
 import type { Staff }      from '@/features/staff/staff.types'
+import { roleLabel }       from '@/features/staff/staff.types'
 
 // `login` (default): the app gate — pick staff, PIN, then open a shift with a
 // cash count. `switch`: re-auth as another operator inside an open shift — no
@@ -16,6 +19,8 @@ const emit  = defineEmits<{ done: []; cancel: [] }>()
 const { staff, loadStaff } = useStaff()
 const { openShift }        = useShift()
 const { switchTo }         = useOperatorSwitch()
+const lockout              = usePinLockout()
+const { logLoginFailed, logLockedOut } = useAuditLog()
 
 type Step = 'pick-staff' | 'enter-pin' | 'opening-cash'
 
@@ -24,22 +29,56 @@ const selectedStaff  = ref<Staff | null>(null)
 const openingCashUsd = ref('')
 const pinPadRef      = ref<InstanceType<typeof PinPad> | null>(null)
 const loading        = ref(false)
+const authError      = ref('')
 
 onMounted(() => loadStaff())
 
 function selectStaff(s: Staff) {
   selectedStaff.value = s
+  authError.value = lockout.isLockedOut(s.id)
+    ? 'الحساب مقفل مؤقتاً بسبب محاولات خاطئة. حاول لاحقاً.'
+    : ''
   step.value = 'enter-pin'
 }
 
 async function onPinComplete(pin: string) {
   if (!selectedStaff.value) return
-  const ok = await verifyPin(pin, selectedStaff.value.pinHash)
-  if (!ok) { pinPadRef.value?.shake(); return }
+  const s = selectedStaff.value
+
+  // Refuse PIN checks while locked out — the gate must hold offline.
+  if (lockout.isLockedOut(s.id)) {
+    authError.value = 'الحساب مقفل مؤقتاً بسبب محاولات خاطئة. حاول لاحقاً.'
+    pinPadRef.value?.shake()
+    return
+  }
+
+  const ok = await verifyPin(pin, s.pinHash, s.pinSalt)
+  if (!ok) {
+    pinPadRef.value?.shake()
+    const { locked, minutes } = lockout.recordFailure(s.id)
+    // Audit writes for security events surface failures (see useAuditLog); a
+    // broken local log must not crash the gate, so report it inline instead.
+    try {
+      await logLoginFailed(s.id, s.name)
+      if (locked) await logLockedOut(s.id, s.name, minutes)
+    } catch {
+      authError.value = 'تعذّر تسجيل المحاولة. تحقق من الجهاز.'
+      return
+    }
+    authError.value = locked
+      ? `تم قفل الحساب ${minutes} دقائق بعد محاولات خاطئة متكررة.`
+      : 'الرقم السري غير صحيح.'
+    return
+  }
+
+  // Correct PIN — clear the failure counter for this operator.
+  lockout.reset(s.id)
+  authError.value = ''
+
   // Switch mode: correct PIN changes the active operator and leaves the open
   // shift untouched. Login mode: proceed to the opening-cash count.
   if (props.mode === 'switch') {
-    await switchTo(selectedStaff.value)
+    await switchTo(s)
     emit('done')
     return
   }
@@ -61,6 +100,7 @@ function back() {
   // PIN re-entry), per the requested flow (#21).
   step.value = 'pick-staff'
   selectedStaff.value = null
+  authError.value = ''
 }
 </script>
 
@@ -82,7 +122,7 @@ function back() {
             @click="selectStaff(s)"
           >
             <span class="staff-name">{{ s.name }}</span>
-            <span class="staff-role">{{ s.role === 'owner' ? 'مالك' : 'كاشير' }}</span>
+            <span class="staff-role">{{ roleLabel(s.role) }}</span>
           </button>
         </div>
         <!-- Switch can be abandoned; the previous operator stays active. The
@@ -96,6 +136,7 @@ function back() {
       <template v-else-if="step === 'enter-pin'">
         <p class="prompt">مرحباً {{ selectedStaff?.name }}</p>
         <p class="sub">أدخل الرقم السري</p>
+        <p v-if="authError" class="auth-error">{{ authError }}</p>
         <PinPad ref="pinPadRef" @complete="onPinComplete" />
         <button type="button" class="back-btn" @click="back">رجوع</button>
       </template>
@@ -155,6 +196,12 @@ function back() {
   color: var(--color-gold-primary, #1A56DB);
   margin-bottom: 1.5rem;
   line-height: 1;
+}
+
+.auth-error {
+  font-size: 0.8125rem; color: #FCA5A5; text-align: center;
+  background: rgba(239, 68, 68, 0.10); border: 1px solid rgba(239, 68, 68, 0.28);
+  border-radius: 0.625rem; padding: 0.5rem 0.875rem; margin-bottom: 0.75rem; width: 100%;
 }
 
 .prompt { font-size: 1.125rem; font-weight: 700; color: #E8EDF5; margin-bottom: 0.25rem; text-align: center; }

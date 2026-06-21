@@ -2,10 +2,18 @@ import { ref } from 'vue'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { supabase } from '@/data/supabase/client'
-import { hashPin } from './usePinAuth'
-import type { Staff, NewStaff, StaffPermissions } from '../staff.types'
-import { OWNER_PERMISSIONS } from '../staff.types'
+import { hashPin, generateSalt } from './usePinAuth'
+import type { Staff, NewStaff, StaffPermissions, StaffRole } from '../staff.types'
+import { OWNER_PERMISSIONS, MANAGER_PERMISSIONS } from '../staff.types'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
+
+/** Owner and manager have fixed, role-derived permission sets; cashiers carry a
+ *  per-staff custom set. Single source of truth for both reads and writes. */
+function permissionsForRole(role: StaffRole, custom: StaffPermissions): StaffPermissions {
+  if (role === 'owner')   return OWNER_PERMISSIONS
+  if (role === 'manager') return MANAGER_PERMISSIONS
+  return custom
+}
 
 function rowToStaff(r: any): Staff {
   return {
@@ -14,17 +22,15 @@ function rowToStaff(r: any): Staff {
     name: r.name,
     pinHash: r.pin_hash,
     role: r.role,
-    permissions:
-      r.role === 'owner'
-        ? OWNER_PERMISSIONS
-        : JSON.parse(r.permissions ?? '{}'),
+    pinSalt: r.pin_salt ?? null,
+    permissions: permissionsForRole(r.role, JSON.parse(r.permissions ?? '{}')),
     isActive: r.is_active === 1,
     createdAt: r.created_at,
   }
 }
 
 export function useStaff() {
-  const { logStaffCreated, logStaffDeactivated, logStaffPermissionsChanged } = useAuditLog()
+  const { logStaffCreated, logStaffUpdated, logStaffDeactivated, logStaffPermissionsChanged, logPinChanged } = useAuditLog()
 
   const staff = ref<Staff[]>([])
   const loading = ref(false)
@@ -54,12 +60,10 @@ export function useStaff() {
 
   async function createStaff(data: NewStaff): Promise<Staff> {
     const device = useDeviceStore()
-    const pinHash = await hashPin(data.pin)
+    const pinSalt = generateSalt()
+    const pinHash = await hashPin(data.pin, pinSalt)
     const now = new Date().toISOString()
-    const permsJson =
-      data.role === 'owner'
-        ? JSON.stringify(OWNER_PERMISSIONS)
-        : JSON.stringify(data.permissions)
+    const permsJson = JSON.stringify(permissionsForRole(data.role, data.permissions))
 
     // Keep one active owner per shop: if owner already exists, update it instead
     // of inserting a second row that would violate uq_staff_one_active_owner_per_shop.
@@ -70,13 +74,15 @@ export function useStaff() {
       )
       if (existingOwner?.id) {
         await db.execute(
-          `UPDATE staff SET name = ?, pin_hash = ?, permissions = ?, is_active = 1 WHERE id = ?`,
-          [data.name, pinHash, permsJson, existingOwner.id]
+          `UPDATE staff SET name = ?, pin_hash = ?, pin_salt = ?, permissions = ?, is_active = 1 WHERE id = ?`,
+          [data.name, pinHash, pinSalt, permsJson, existingOwner.id]
         )
         await loadStaff()
         const updated = staff.value.find((s) => s.id === existingOwner.id)
         if (!updated) throw new Error(`Owner ${existingOwner.id} not found after update`)
-        await logStaffPermissionsChanged(updated.id, updated.name)
+        // Re-provisioning an existing owner (name/PIN/permissions all rewritten)
+        // is an update, not specifically a permission change — label it honestly.
+        await logStaffUpdated(updated.id, updated.name)
         return updated
       }
 
@@ -94,18 +100,18 @@ export function useStaff() {
 
       if (!remoteOwnerError && remoteOwner?.id) {
         await db.execute(
-          `INSERT OR IGNORE INTO staff (id, shop_id, name, pin_hash, role, permissions, is_active, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
-          [remoteOwner.id, device.shopId, data.name, pinHash, 'owner', permsJson, now]
+          `INSERT OR IGNORE INTO staff (id, shop_id, name, pin_hash, pin_salt, role, permissions, is_active, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+          [remoteOwner.id, device.shopId, data.name, pinHash, pinSalt, 'owner', permsJson, now]
         )
         await db.execute(
-          `UPDATE staff SET name = ?, pin_hash = ?, permissions = ?, is_active = 1 WHERE id = ?`,
-          [data.name, pinHash, permsJson, remoteOwner.id]
+          `UPDATE staff SET name = ?, pin_hash = ?, pin_salt = ?, permissions = ?, is_active = 1 WHERE id = ?`,
+          [data.name, pinHash, pinSalt, permsJson, remoteOwner.id]
         )
         await loadStaff()
         const updated = staff.value.find((s) => s.id === remoteOwner.id)
         if (!updated) throw new Error(`Owner ${remoteOwner.id} not found after sync-safe update`)
-        await logStaffPermissionsChanged(updated.id, updated.name)
+        await logStaffUpdated(updated.id, updated.name)
         return updated
       }
     }
@@ -113,9 +119,9 @@ export function useStaff() {
     const id = crypto.randomUUID()
 
     await db.execute(
-      `INSERT INTO staff (id, shop_id, name, pin_hash, role, permissions, is_active, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
-      [id, device.shopId, data.name, pinHash, data.role, permsJson, now]
+      `INSERT INTO staff (id, shop_id, name, pin_hash, pin_salt, role, permissions, is_active, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+      [id, device.shopId, data.name, pinHash, pinSalt, data.role, permsJson, now]
     )
     await loadStaff()
     const created = staff.value.find((s) => s.id === id)
@@ -125,10 +131,18 @@ export function useStaff() {
   }
 
   async function updateStaffPin(staffId: string, newPin: string): Promise<void> {
-    await db.execute(`UPDATE staff SET pin_hash = ? WHERE id = ?`, [
-      await hashPin(newPin),
+    // Mint a fresh salt on every PIN change — this also upgrades any legacy
+    // unsalted row to salted on its next PIN set (verify-until-reset).
+    const pinSalt = generateSalt()
+    await db.execute(`UPDATE staff SET pin_hash = ?, pin_salt = ? WHERE id = ?`, [
+      await hashPin(newPin, pinSalt),
+      pinSalt,
       staffId,
     ])
+    const nameRow = await db.getOptional<{ name: string }>(
+      `SELECT name FROM staff WHERE id = ?`, [staffId]
+    )
+    await logPinChanged(staffId, nameRow?.name ?? staffId)
   }
 
   /** Update a staff member's name, role and permissions (owner-only action). */
@@ -136,10 +150,7 @@ export function useStaff() {
     staffId: string,
     data: { name: string; role: Staff['role']; permissions: StaffPermissions }
   ): Promise<void> {
-    const permsJson =
-      data.role === 'owner'
-        ? JSON.stringify(OWNER_PERMISSIONS)
-        : JSON.stringify(data.permissions)
+    const permsJson = JSON.stringify(permissionsForRole(data.role, data.permissions))
     await db.execute(
       `UPDATE staff SET name = ?, role = ?, permissions = ? WHERE id = ?`,
       [data.name, data.role, permsJson, staffId]

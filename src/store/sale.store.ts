@@ -88,15 +88,13 @@ export const useSaleStore = defineStore('sale', () => {
     }
   }
 
+  // The rate is locked at the first cart line and is immutable for the rest of
+  // that sale (WAFI-002). There is deliberately no setter to overwrite it mid-cart:
+  // a mid-sale rate edit applies to the NEXT sale only, surfaced via the notice.
   function setLockedRate(rate: number) {
     if (lockedExchangeRate.value === null) {
       lockedExchangeRate.value = rate
     }
-  }
-
-  // Update the in-progress sale rate when the owner changes exchange rate mid-cart.
-  function updateLockedRate(rate: number) {
-    lockedExchangeRate.value = rate
   }
 
   function setRateChangeNotice(val: boolean) {
@@ -128,7 +126,6 @@ export const useSaleStore = defineStore('sale', () => {
     updateUnitPrice,
     scalePricesToTotal,
     setLockedRate,
-    updateLockedRate,
     setRateChangeNotice,
     incrementSequence,
     clear,

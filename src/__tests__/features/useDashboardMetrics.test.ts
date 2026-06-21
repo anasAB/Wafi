@@ -76,6 +76,23 @@ describe('useDashboardMetrics', () => {
     expect(profitUsd.value).toBe(200)  // 350 - 150 - 0
   })
 
+  it('reverses restocked COGS once per product even when it is on multiple sale lines (WAFI-005)', async () => {
+    vi.mocked(db.getOptional).mockResolvedValue({ total: 0, cogs: 0, count: 0 } as any)
+    const { load } = useDashboardMetrics()
+    await load('today')
+
+    const reversalSql = vi.mocked(db.getOptional).mock.calls
+      .map(c => c[0] as string)
+      .find(sql => sql.includes('qty_returned') && sql.includes('restock'))
+    expect(reversalSql).toBeDefined()
+    // Must collapse a product's original-sale lines to ONE unit cost per
+    // (sale, product) before multiplying by qty_returned...
+    expect(reversalSql).toContain('GROUP BY')
+    // ...and must NOT row-multiply via a direct line-level join (the WAFI-005 bug:
+    // a product on two sale lines doubled the reversed COGS).
+    expect(reversalSql).not.toMatch(/JOIN\s+sale_line_items\s+sli\s+ON\s+sli\.sale_id\s*=\s*r\.original_sale_id/i)
+  })
+
   it('missingCostCount reflects products with missing cost price', async () => {
     vi.mocked(db.getOptional)
       .mockResolvedValueOnce({ total: 0 } as any)
