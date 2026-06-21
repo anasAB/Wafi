@@ -61,11 +61,17 @@ export function useSale(currentRateParam: MaybeRef<number | null>) {
     })
   }
 
+  // React to an exchange-rate edit during an open sale. The rate locked at the
+  // first line never changes (WAFI-002) — the cart is not re-priced. Instead we
+  // raise a "applies to next sale only" notice while the live rate differs from
+  // the locked one, and clear it if the rate is set back to the locked value.
   function checkRateChanged() {
     const currentRate = toValue(currentRateParam)
-    if (saleStore.lines.length > 0 && currentRate !== saleStore.lockedExchangeRate) {
-      saleStore.setRateChangeNotice(true)
-    }
+    saleStore.setRateChangeNotice(
+      saleStore.lines.length > 0 &&
+      saleStore.lockedExchangeRate !== null &&
+      currentRate !== saleStore.lockedExchangeRate,
+    )
   }
 
   async function lookupByBarcode(barcode: string): Promise<string | null> {

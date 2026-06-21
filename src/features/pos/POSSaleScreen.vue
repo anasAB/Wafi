@@ -68,14 +68,11 @@ onMounted(async () => {
   document.addEventListener('click', onDocumentClick)
 })
 
-watch(currentRate, (newRate) => {
-  if (newRate === null) return
-  // Keep the active cart totals in sync with the currently selected rate.
-  if (saleStore.lines.length > 0 && saleStore.lockedExchangeRate !== newRate) {
-    saleStore.updateLockedRate(newRate)
-    saleStore.setRateChangeNotice(false)
-    scheduleSave()
-  }
+watch(currentRate, () => {
+  // A mid-sale rate edit must NOT re-price the open cart (WAFI-002): the rate
+  // locked at the first line holds for this sale. Surface the "next sale only"
+  // notice instead — the cart total and its locked rate stay put.
+  sale.checkRateChanged()
 })
 
 function handleCategoriesChange(categories: string[]) {
