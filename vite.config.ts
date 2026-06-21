@@ -66,8 +66,13 @@ export default defineConfig({
   ],
   server: {
     headers: {
+      // Cross-origin isolation so PowerSync's wa-sqlite can use SharedArrayBuffer/OPFS.
+      // `credentialless` (not `require-corp`) keeps isolation while still allowing
+      // cross-origin subresources without a CORP header — needed for Google Fonts
+      // and Supabase Storage images. Mirror these in vercel.json for production
+      // (server.headers only applies to `vite dev`, not the build).
       'Cross-Origin-Opener-Policy':   'same-origin',
-      'Cross-Origin-Embedder-Policy': 'require-corp',
+      'Cross-Origin-Embedder-Policy': 'credentialless',
     },
   },
   resolve: {

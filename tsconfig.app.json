@@ -15,5 +15,9 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue"],
+  // Tests are type-checked separately (tsconfig.vitest.json / `npm run type-check:test`)
+  // and run by vitest — they must NOT be part of the production build, so a test-only
+  // type error can never break `npm run build` (and therefore the Vercel deploy).
+  "exclude": ["src/**/__tests__/**", "src/**/*.test.ts", "src/**/*.spec.ts"]
 }
