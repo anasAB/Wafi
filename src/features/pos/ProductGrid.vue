@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { rowToProduct } from '@/features/products/product.utils'
+import { matchesArabicQuery } from '@/shared/text/arabic'
 import type { Product } from './pos.types'
 
 const props = defineProps<{ searchQuery: string; selectedCategory: string | null }>()
@@ -24,37 +25,33 @@ const categories = computed(() => {
   }
   return [...set].sort((a, b) => a.localeCompare(b, 'ar'))
 })
-const visibleProducts = computed(() =>
-  props.selectedCategory
+// Filter client-side (WAFI-018): SQL LIKE can't fold Arabic harakat / alef
+// variants. Fetch the shop's active products once, then fold + match the search
+// query and category in memory — fast enough for a single shop's catalog and the
+// only way diacritic-insensitive search works.
+const visibleProducts = computed(() => {
+  let list = props.selectedCategory
     ? products.value.filter(p => (p.category ?? '').trim() === props.selectedCategory)
     : products.value
-)
+  if (props.searchQuery.trim()) {
+    list = list.filter(p => matchesArabicQuery(
+      [p.nameAr, p.nameEn, p.barcode].join(' '),
+      props.searchQuery,
+    ))
+  }
+  return list
+})
 
 async function loadProducts() {
-  const q = props.searchQuery.trim()
-  const result = q
-    ? await db.execute(
-        `SELECT id, shop_id, name_ar, name_en, price_usd, cost_price_usd, barcode, category, photo_url, current_stock, low_stock_threshold, is_active, created_at, updated_at FROM products
-         WHERE shop_id = ? AND is_active = 1 AND (name_ar LIKE ? OR name_en LIKE ? OR barcode = ?)`,
-        [device.shopId, `%${q}%`, `%${q}%`, q]
-      )
-    : await db.execute(
-        `SELECT id, shop_id, name_ar, name_en, price_usd, cost_price_usd, barcode, category, photo_url, current_stock, low_stock_threshold, is_active, created_at, updated_at FROM products WHERE shop_id = ? AND is_active = 1`,
-        [device.shopId]
-      )
-
+  const result = await db.execute(
+    `SELECT id, shop_id, name_ar, name_en, price_usd, cost_price_usd, barcode, category, photo_url, current_stock, low_stock_threshold, is_active, created_at, updated_at FROM products WHERE shop_id = ? AND is_active = 1`,
+    [device.shopId]
+  )
   products.value = ((result as any).rows._array as any[]).map(rowToProduct)
 }
 
 onMounted(() => {
   loadProducts()
-})
-
-let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
-
-watch(() => props.searchQuery, () => {
-  if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
-  searchDebounceTimer = setTimeout(loadProducts, 250)
 })
 
 watch(categories, (next) => {

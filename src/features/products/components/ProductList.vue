@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import Paginator from 'primevue/paginator'
 import ProductAvatar from '@/components/ui/ProductAvatar.vue'
+import { matchesArabicQuery } from '@/shared/text/arabic'
 import type { Product } from '@/features/pos/pos.types'
 
 const props = defineProps<{
@@ -60,12 +61,13 @@ const displayed = computed(() => {
   }
 
   if (search.value.trim()) {
-    const q = search.value.trim().toLowerCase()
-    // Search across every product field, not just name/barcode.
-    list = list.filter(p => [
-      p.nameAr, p.nameEn, p.barcode, p.category,
-      p.costPriceUsd, p.salePriceUsd, p.currentStock,
-    ].map(v => String(v ?? '').toLowerCase()).join(' ').includes(q))
+    // Search across every product field, folded for Arabic (WAFI-018) so a query
+    // without harakat / with alef variants still matches.
+    list = list.filter(p => matchesArabicQuery(
+      [p.nameAr, p.nameEn, p.barcode, p.category,
+       p.costPriceUsd, p.salePriceUsd, p.currentStock].join(' '),
+      search.value,
+    ))
   }
 
   if (sortKey.value) {

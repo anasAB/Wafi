@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import BaseModal from '@/components/ui/BaseModal.vue'
 import { useProducts } from '@/features/products/composables/useProducts'
 import { useDeviceStore } from '@/store/device.store'
+import { matchesArabicQuery } from '@/shared/text/arabic'
 
 const props = withDefaults(defineProps<{
   selectedProductIds?: string[]
@@ -34,7 +35,8 @@ const selectedIdsSet = computed(() => new Set(props.selectedProductIds))
 const matches = computed(() =>
   products.value.filter((p) => {
     if (selectedIdsSet.value.has(p.id)) return false
-    return p.nameAr.includes(query.value) || (p.barcode ?? '').includes(query.value)
+    // Fold the name for Arabic search (WAFI-018); barcode stays an exact substring.
+    return matchesArabicQuery(p.nameAr, query.value) || (p.barcode ?? '').includes(query.value)
   }),
 )
 

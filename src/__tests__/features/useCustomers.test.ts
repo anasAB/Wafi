@@ -61,16 +61,19 @@ describe('useCustomers', () => {
     )
   })
 
-  it('search returns customers matching name query', async () => {
+  it('search filters by name in JS, diacritic-insensitive, with no SQL LIKE (WAFI-018)', async () => {
     vi.mocked(db.getAll).mockResolvedValueOnce([
-      { id: 'c1', shop_id: 's1', name: 'أبو خالد', phone: null, mobile: null, address: null, deleted: 0, created_at: '2025-01-01T00:00:00Z', sync_status: 'synced' },
+      { id: 'c1', shop_id: 's1', name: 'أبو خالِد', phone: null, mobile: null, address: null, deleted: 0, created_at: '2025-01-01T00:00:00Z', sync_status: 'synced' },
+      { id: 'c2', shop_id: 's1', name: 'سمير',       phone: null, mobile: null, address: null, deleted: 0, created_at: '2025-01-01T00:00:00Z', sync_status: 'synced' },
     ])
     const { search } = useCustomers()
-    const results = await search('خالد')
-    expect(db.getAll).toHaveBeenCalledWith(
+    const results = await search('خالد') // query without the kasra on خالِد
+    // No SQL LIKE — fetch the shop's customers, fold + filter in JS.
+    expect(db.getAll).not.toHaveBeenCalledWith(
       expect.stringContaining('LIKE'),
-      expect.arrayContaining(['%خالد%'])
+      expect.anything()
     )
     expect(results).toHaveLength(1)
+    expect(results[0].name).toBe('أبو خالِد')
   })
 })

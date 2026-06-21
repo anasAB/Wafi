@@ -4,6 +4,7 @@ import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import type { Supplier, SupplierWithStats, NewSupplier } from '../supplier.types'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
+import { matchesArabicQuery } from '@/shared/text/arabic'
 
 type SupplierStatsRow = {
   id: string; shop_id: string; name: string; phone: string | null
@@ -57,14 +58,16 @@ export function useSuppliers() {
 
   async function search(q: string): Promise<SupplierWithStats[]> {
     const device = useDeviceStore()
+    // Fold + filter in JS (WAFI-018) so the query matches regardless of harakat /
+    // alef-variant spelling; SQL LIKE can't fold Arabic.
     const rows = await db.getAll<SupplierStatsRow>(
       `SELECT *, 0 AS total_purchased_usd, NULL AS last_received_at
        FROM suppliers
-       WHERE shop_id = ? AND (deleted = 0 OR deleted IS NULL) AND name LIKE ?
+       WHERE shop_id = ? AND (deleted = 0 OR deleted IS NULL)
        ORDER BY name ASC`,
-      [device.shopId, `%${q}%`],
+      [device.shopId],
     )
-    return rows.map(rowToSupplier)
+    return rows.map(rowToSupplier).filter(s => matchesArabicQuery(s.name, q))
   }
 
   async function save(data: NewSupplier): Promise<string> {
