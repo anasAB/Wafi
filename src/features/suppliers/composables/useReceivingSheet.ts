@@ -96,8 +96,10 @@ export function useReceivingSheet() {
           [newStock, now, line.productId],
         )
 
-        // Update standing cost only if toggled. Past sale_line_items.unit_cost_usd untouched.
-        if (line.updateCost) {
+        // Update standing cost only if toggled AND the cost is real (WAFI-021): a
+        // zero/blank unit cost must never overwrite the product's standing cost — that
+        // silently wipes margin on every later sale. Past sale_line_items are untouched.
+        if (line.updateCost && line.unitCostUsd > 0) {
           await tx.execute(
             `UPDATE products SET cost_price_usd = ?, updated_at = ?, sync_status = 'pending' WHERE id = ?`,
             [line.unitCostUsd, now, line.productId],

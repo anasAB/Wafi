@@ -75,6 +75,7 @@ export function useProducts() {
       } else {
         await logProductUpdated(data.id, data.nameAr)
       }
+      return data.id
     } else {
       const id = uuidv4()
       await db.execute(
@@ -90,6 +91,7 @@ export function useProducts() {
       )
       await load()
       await logProductCreated(id, data.nameAr)
+      return id
     }
   }
 

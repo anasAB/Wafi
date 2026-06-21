@@ -120,6 +120,16 @@ describe('useReceivingSheet — confirm()', () => {
     expect(costUpd[1][0]).toBe(450)   // new cost
   })
 
+  it('does NOT zero standing cost when updateCost is on but the unit cost is 0 (WAFI-021)', async () => {
+    const txExecute = setupWriteTransaction()
+    const sheet = await ready()
+    sheet.lines.value[0].unitCostUsd = 0   // mis-keyed cost — must not wipe the product's standing cost
+    await sheet.confirm()
+    const costUpd = (txExecute.mock.calls as any[])
+      .find(([s]: [string]) => s.includes('UPDATE products SET cost_price_usd'))
+    expect(costUpd).toBeUndefined()
+  })
+
   it('does NOT update cost when updateCost is off', async () => {
     const txExecute = setupWriteTransaction()
     const sheet = await ready()

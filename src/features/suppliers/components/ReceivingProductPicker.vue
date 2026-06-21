@@ -52,21 +52,33 @@ function startAdd() {
   adding.value = true
 }
 
+const addError = ref<string | null>(null)
+
 async function confirmAdd() {
-  if (!newName.value.trim()) return
-  await save({
+  const name = newName.value.trim()
+  const sale = Number(newSale.value) || 0
+  const cost = Number(newCost.value) || 0
+  // Validate before creating (WAFI-022): a zero sale price / cost makes a product
+  // that can't be sold or costed and silently breaks margin reports.
+  if (!name) { addError.value = 'أدخل اسم المنتج'; return }
+  if (sale <= 0) { addError.value = 'أدخل سعر بيع أكبر من صفر'; return }
+  if (cost <= 0) { addError.value = 'أدخل سعر تكلفة أكبر من صفر'; return }
+  addError.value = null
+
+  // Match the created product by its id (WAFI-022), not a name substring — two
+  // products can share a name and the wrong one would be picked.
+  const id = await save({
     shopId: device.shopId,
-    nameAr: newName.value.trim(),
+    nameAr: name,
     barcode: newBarcode.value.trim() || undefined,
-    salePriceUsd: Number(newSale.value) || 0,
-    costPriceUsd: Number(newCost.value) || 0,
+    salePriceUsd: sale,
+    costPriceUsd: cost,
     currentStock: 0,
     lowStockThreshold: 0,
     isActive: true,
   })
   await load()
-  const created = products.value.find(p => p.nameAr === newName.value.trim())
-  if (created) pick(created)
+  pick({ id, nameAr: name, costPriceUsd: cost })
   adding.value = false
 }
 </script>
@@ -129,6 +141,8 @@ async function confirmAdd() {
             <input v-model.number="newCost" class="field-input" type="number" min="0" step="0.01" dir="ltr" />
           </label>
         </div>
+
+        <p v-if="addError" class="add-error">{{ addError }}</p>
       </div>
     </div>
 
@@ -156,6 +170,12 @@ async function confirmAdd() {
   flex-direction: column;
   gap: 0.75rem;
   font-family: 'Tajawal', system-ui, sans-serif;
+}
+
+.add-error {
+  font-size: 0.8125rem;
+  color: #EF4444;
+  margin: 0;
 }
 
 .results-list {
