@@ -38,7 +38,22 @@ Goal: the brother opens Wafi, is already signed in, his real inventory is loaded
 | Item | Artifact | Status |
 |---|---|---|
 | Full audit findings (52 tickets, WAFI-001…052) | `plans/2026-06-20-audit-findings-tickets.md` | Tiered P0–P3; 4 PO decisions locked |
-| Switch operator (no shift change) | spec `specs/2026-06-21-switch-operator-design.md` · plan `plans/2026-06-21-switch-operator.md` · ticket WAFI-053 | Speced + planned; carries WAFI-011 |
+| Switch operator (no shift change) | spec `specs/2026-06-21-switch-operator-design.md` · plan `plans/2026-06-21-switch-operator.md` · ticket WAFI-053 | ✅ DONE + verified (9/9 AC pass, 62/62 tests). Closed WAFI-011 too. |
+
+---
+
+## Post-pivot build order (decided 2026-06-21)
+
+**Strategy change:** real inventory loads *after* the trip (CEO provides the catalog on return). The trip is now a **demo + buy-in** moment (shown with sample data); the brother's real daily use begins post-trip. So we invest now in making the *single shop* correct, trustworthy, and complete — not in scaling features. The brother **has 1+ employees**, so the accountability cluster is day-one valuable to him.
+
+**Build now, in order:**
+- **Tier 1 — Correctness & trust:** WAFI-002 ✅done · WAFI-003 ✅done · WAFI-004 · WAFI-005 · WAFI-006 · WAFI-007 · WAFI-008. Plan: `plans/2026-06-21-tier1-correctness.md`.
+- **Tier 2 — Accountability (has staff):** WAFI-009 (immutable audit) ✅done (client/DB trigger; server-side gating still in the Role-Enforcement epic) · WAFI-012 (PIN hardening) ✅done (salted hash + per-device offline lockout; server-coordinated lockout deferred to WAFI-010) · WAFI-014 (attribution/events) ✅done · WAFI-013 (Manager role) ✅done · switch-operator ✅done. Plan: `plans/2026-06-21-tier2-accountability.md`.
+- **Tier 3 — Usability polish:** WAFI-018 · WAFI-030 · WAFI-031 · WAFI-025 · WAFI-026/027 · WAFI-021/022 · WAFI-032.
+
+**Deferred (scaling, not the brother's benefit):** WAFI-001 full (run on the stub) · Auth self-serve epic · device registration WAFI-016 (only if a 2nd physical register) · Excel import wizard (white-glove load instead) · **WAFI-010 server-side role epic** (heavy, fights offline — the immutable audit log covers ~90% of the practical "see who's stealing" value for one trusted shop; revisit when scaling to pilots).
+
+**Not blocked by inventory, still required:** verify the golden path (sign-in → sync → offline reload → isolation) with sample data.
 
 ---
 

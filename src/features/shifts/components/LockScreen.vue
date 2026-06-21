@@ -8,6 +8,7 @@ import { useOperatorSwitch } from '@/features/staff/composables/useOperatorSwitc
 import { useAuditLog }     from '@/features/audit/composables/useAuditLog'
 import PinPad              from '@/features/staff/components/PinPad.vue'
 import type { Staff }      from '@/features/staff/staff.types'
+import { roleLabel }       from '@/features/staff/staff.types'
 
 // `login` (default): the app gate — pick staff, PIN, then open a shift with a
 // cash count. `switch`: re-auth as another operator inside an open shift — no
@@ -121,7 +122,7 @@ function back() {
             @click="selectStaff(s)"
           >
             <span class="staff-name">{{ s.name }}</span>
-            <span class="staff-role">{{ s.role === 'owner' ? 'مالك' : 'كاشير' }}</span>
+            <span class="staff-role">{{ roleLabel(s.role) }}</span>
           </button>
         </div>
         <!-- Switch can be abandoned; the previous operator stays active. The

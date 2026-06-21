@@ -126,11 +126,19 @@ async function saveStaff(pin: string) {
               type="button"
             >كاشير</button>
             <button
+              @click="role = 'manager'"
+              :class="['role-btn', role === 'manager' ? 'role-active' : 'role-idle']"
+              type="button"
+            >مدير</button>
+            <button
               @click="role = 'owner'"
               :class="['role-btn', role === 'owner' ? 'role-active' : 'role-idle']"
               type="button"
             >مالك</button>
           </div>
+          <p v-if="role === 'manager'" class="role-hint">
+            يدير المنتجات والتقارير والزبائن والمصاريف — لا يدير الموظفين أو الإعدادات.
+          </p>
         </div>
 
         <div v-if="role === 'cashier' && !forceRole" class="perms-card">
@@ -286,6 +294,13 @@ async function saveStaff(pin: string) {
 }
 
 .role-idle:hover { color: #C8D5E8; background: rgba(255,255,255,0.05); }
+
+.role-hint {
+  font-size: 0.74rem;
+  color: #8EA3BF;
+  line-height: 1.5;
+  margin: 0.1rem 0.1rem 0;
+}
 
 .perms-card {
   background: linear-gradient(135deg, rgba(26,86,219,0.10), rgba(255,255,255,0.03));

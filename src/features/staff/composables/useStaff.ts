@@ -3,9 +3,17 @@ import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { supabase } from '@/data/supabase/client'
 import { hashPin, generateSalt } from './usePinAuth'
-import type { Staff, NewStaff, StaffPermissions } from '../staff.types'
-import { OWNER_PERMISSIONS } from '../staff.types'
+import type { Staff, NewStaff, StaffPermissions, StaffRole } from '../staff.types'
+import { OWNER_PERMISSIONS, MANAGER_PERMISSIONS } from '../staff.types'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
+
+/** Owner and manager have fixed, role-derived permission sets; cashiers carry a
+ *  per-staff custom set. Single source of truth for both reads and writes. */
+function permissionsForRole(role: StaffRole, custom: StaffPermissions): StaffPermissions {
+  if (role === 'owner')   return OWNER_PERMISSIONS
+  if (role === 'manager') return MANAGER_PERMISSIONS
+  return custom
+}
 
 function rowToStaff(r: any): Staff {
   return {
@@ -15,10 +23,7 @@ function rowToStaff(r: any): Staff {
     pinHash: r.pin_hash,
     role: r.role,
     pinSalt: r.pin_salt ?? null,
-    permissions:
-      r.role === 'owner'
-        ? OWNER_PERMISSIONS
-        : JSON.parse(r.permissions ?? '{}'),
+    permissions: permissionsForRole(r.role, JSON.parse(r.permissions ?? '{}')),
     isActive: r.is_active === 1,
     createdAt: r.created_at,
   }
@@ -58,10 +63,7 @@ export function useStaff() {
     const pinSalt = generateSalt()
     const pinHash = await hashPin(data.pin, pinSalt)
     const now = new Date().toISOString()
-    const permsJson =
-      data.role === 'owner'
-        ? JSON.stringify(OWNER_PERMISSIONS)
-        : JSON.stringify(data.permissions)
+    const permsJson = JSON.stringify(permissionsForRole(data.role, data.permissions))
 
     // Keep one active owner per shop: if owner already exists, update it instead
     // of inserting a second row that would violate uq_staff_one_active_owner_per_shop.
@@ -148,10 +150,7 @@ export function useStaff() {
     staffId: string,
     data: { name: string; role: Staff['role']; permissions: StaffPermissions }
   ): Promise<void> {
-    const permsJson =
-      data.role === 'owner'
-        ? JSON.stringify(OWNER_PERMISSIONS)
-        : JSON.stringify(data.permissions)
+    const permsJson = JSON.stringify(permissionsForRole(data.role, data.permissions))
     await db.execute(
       `UPDATE staff SET name = ?, role = ?, permissions = ? WHERE id = ?`,
       [data.name, data.role, permsJson, staffId]
