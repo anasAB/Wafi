@@ -47,15 +47,37 @@ Goal: the brother opens Wafi, is already signed in, his real inventory is loaded
 **Strategy change:** real inventory loads *after* the trip (CEO provides the catalog on return). The trip is now a **demo + buy-in** moment (shown with sample data); the brother's real daily use begins post-trip. So we invest now in making the *single shop* correct, trustworthy, and complete — not in scaling features. The brother **has 1+ employees**, so the accountability cluster is day-one valuable to him.
 
 **Build now, in order:**
-- **Tier 1 — Correctness & trust:** WAFI-002 ✅done · WAFI-003 ✅done · WAFI-004 · WAFI-005 · WAFI-006 · WAFI-007 · WAFI-008. Plan: `plans/2026-06-21-tier1-correctness.md`.
+- **Tier 1 — Correctness & trust:** ✅ **DONE + verified** (5/5, regression tests): WAFI-002 · 003 · 004 · 005 · 006 · 007 · 008. Plan: `plans/2026-06-21-tier1-correctness.md`.
 - **Tier 2 — Accountability (has staff):** WAFI-009 (immutable audit) ✅done (client/DB trigger; server-side gating still in the Role-Enforcement epic) · WAFI-012 (PIN hardening) ✅done (salted hash + per-device offline lockout; server-coordinated lockout deferred to WAFI-010) · WAFI-014 (attribution/events) ✅done · WAFI-013 (Manager role) ✅done · switch-operator ✅done. Plan: `plans/2026-06-21-tier2-accountability.md`.
-- **Tier 3 — Usability polish:** WAFI-018 · WAFI-030 · WAFI-031 · WAFI-025 · WAFI-026/027 · WAFI-021/022 · WAFI-032. Plan: `plans/2026-06-21-tier3-usability.md`.
+- **Tier 3 — Usability polish:** ✅ **6/7 done + verified** (WAFI-018 · 030 · 031 · 032 · 025 · 026/027 · 022). **Open: WAFI-021 void/reverse-receiving path** (zero-cost guard done; no undo for a mis-keyed receiving). Plan: `plans/2026-06-21-tier3-usability.md`.
 
 **Deferred (scaling, not the brother's benefit):** WAFI-001 full (run on the stub) · Auth self-serve epic · device registration WAFI-016 (only if a 2nd physical register) · Excel import wizard (white-glove load instead) · **WAFI-010 server-side role epic** (heavy, fights offline — the immutable audit log covers ~90% of the practical "see who's stealing" value for one trusted shop; revisit when scaling to pilots).
 
-**Not blocked by inventory, still required:** verify the golden path (sign-in → sync → offline reload → isolation) with sample data.
+**Not blocked by inventory, still required:** verify the golden path (sign-in → sync → offline reload → isolation) with sample data. Runbook: `plans/2026-06-21-golden-path-verification.md` (assigned to the free dev).
+
+**Consolidation → trip (features frozen):**
+- Integration & release-readiness (four streams hang together + builds/deploys/on-device): `plans/2026-06-21-integration-release-readiness.md` (next for the freeing dev).
+- Trip readiness go/no-go + demo runbook (the ship decision): `plans/2026-06-21-trip-readiness-go-no-go.md` (PO; fill the verdict on the day).
 
 ---
+
+## What's left (ground truth 2026-06-21)
+
+Post-pivot build is ~complete (Tier 1 ✅, Tier 2 ✅, Tier 3 6/7, switch-operator ✅). Remaining, in priority order:
+
+1. **Verification gates (in flight, before trip):** golden-path (`golden-path-verification.md`) + integration/release-readiness (`integration-release-readiness.md`). These decide trip readiness.
+2. **WAFI-015 — sync reliability (most important UNADDRESSED item).** A rejected ("poison") upload op currently stalls the *entire* queue indefinitely, and `pendingCount` is dead UI so a stuck queue is invisible. For an offline-heavy single shop this is a silent data-trust risk — elevate it. Not in any tier.
+3. **WAFI-021 — receiving void/reverse path** (closes Tier 3).
+4. **Small cleanups:** WAFI-019 (remove dead negative-stock UI + update Epic 2.4/2.7 spec) · WAFI-035 (rate integer-only) · WAFI-034 (receipt logo, a v1 requirement) · WAFI-033 (exports robustness) · WAFI-036/037 (migration hygiene + data-layer footguns).
+5. **Next epic (post-trip):** Real Auth & Self-Serve Onboarding + Device Registration → then Server-Side Role Enforcement.
+6. **Remaining P3 polish:** WAFI-038…052.
+
+## Candidate new value features (PO proposals, 2026-06-21)
+
+Competitor-benchmarked, NOT yet on the roadmap, high-value for Syrian retail. Proposed as v1.5 depth.
+
+- **Installment / layaway plans (التقسيط) with WhatsApp due-date reminders.** Structured payment plans (down payment + term + schedule), distinct from the informal credit ledger. *Benchmark:* MENA BNPL (Tabby/Tamara) + regional POS installment modules. *Value:* installments are a cultural staple for MENA electronics/appliances — the brother's exact vertical; reuses customers + payments + WhatsApp-as-portal; drives collection; the installment book is the shop's most critical record → enormous lock-in. Pack: Customer (or its own). Litmus: passes hard for an electronics shop.
+- **Guided stock-take / inventory reconciliation (الجرد) with shrinkage detection.** A guided physical count vs system stock → variance → apply adjustments. *Benchmark:* Loyverse "Inventory count", Square "Stock take", Vend/Lightspeed. *Value:* completes the "see who's stealing" thesis — the audit log catches transaction-side fraud; stock-take catches inventory-side shrinkage (the #1 silent loss in a staffed shop); keeps stock accurate → keeps dashboard profit accurate. Pack: Inventory/Staff. v1.5.
 
 ## Locked PO decisions (2026-06-20/21)
 
