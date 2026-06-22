@@ -53,11 +53,11 @@ Goal: the brother opens Wafi, is already signed in, his real inventory is loaded
 
 **Deferred (scaling, not the brother's benefit):** WAFI-001 full (run on the stub) · Auth self-serve epic · device registration WAFI-016 (only if a 2nd physical register) · Excel import wizard (white-glove load instead) · **WAFI-010 server-side role epic** (heavy, fights offline — the immutable audit log covers ~90% of the practical "see who's stealing" value for one trusted shop; revisit when scaling to pilots).
 
-**Not blocked by inventory, still required:** verify the golden path (sign-in → sync → offline reload → isolation) with sample data. Runbook: `plans/2026-06-21-golden-path-verification.md` (assigned to the free dev).
+**Golden path ✅ PASSED (2026-06-22, 7/7):** V1 deploy · V2 signed-in · V3 ring+sync · V4 offline→online · V5 PWA · V6 cross-account isolation (proven via RLS) · V7 resilience ×10 (no loss/dups). Runbook: `plans/2026-06-21-golden-path-verification.md`.
 
 **Consolidation → trip (features frozen):**
 - Integration & release-readiness (four streams hang together + builds/deploys/on-device): `plans/2026-06-21-integration-release-readiness.md` (next for the freeing dev).
-- Trip readiness go/no-go + demo runbook (the ship decision): `plans/2026-06-21-trip-readiness-go-no-go.md` (PO; fill the verdict on the day).
+- Trip readiness go/no-go + demo runbook (the ship decision): `plans/2026-06-21-trip-readiness-go-no-go.md` — ✅ **GO (2026-06-22)**; only the on-device smoke (A4/C1) remains, done at device setup.
 
 ---
 

@@ -12,13 +12,13 @@ Ship only when every line is green. Each maps to work already done or in verific
 
 | Gate | Source | Status |
 |---|---|---|
-| Tier 1 correctness verified | Tier-1 plan + acceptance pass | ⏳ in verification |
+| Tier 1 correctness verified | verified 2026-06-21 (5/5, regression tests) | ✅ |
 | Tier 2 accountability verified | verified 2026-06-21 (14/14, 46 tests) | ✅ |
-| Tier 3 usability done | Tier-3 plan | ⏳ almost done |
-| Golden path passes (sync / offline / isolation) | `golden-path-verification.md` | ⏳ assigned |
-| Integration + release-readiness passes | `integration-release-readiness.md` | ⏳ next |
-| Production build succeeds + deploys (not just dev) | integration A2/A3 | ⏳ |
-| Runs offline on the brother's actual device | integration C1/C2 | ⏳ |
+| Tier 3 usability done | 6/7 done; WAFI-021 void path open (NOT a trip blocker) | ✅ (effectively) |
+| Golden path passes (sync / offline / isolation) | passed 2026-06-22 (7/7, V6 isolation via RLS) | ✅ |
+| Integration + release-readiness passes | passed 2026-06-22 (10/12; A1 463/463, all B green) | ✅ |
+| Production build succeeds + deploys (not just dev) | A1 463/463 · A2 clean · A3 deploy ✅ | ✅ |
+| Runs offline on the brother's actual device | C2 ✅ (golden-path V7); A4 + C1 = on-device smoke at setup | ⏳ on-site only |
 
 **Two hard stops (no-go regardless of everything else):**
 - **Cross-account isolation fails** (golden-path V6) — a tenant breach; do not ship.
@@ -77,6 +77,10 @@ The trip succeeds if he starts *using* it, not just watching a demo.
 
 ---
 
-## 6. The one-line verdict (fill on the day)
+## 6. The verdict (2026-06-22)
 
-> Ready: **YES / NO** — because: ________. Outstanding: ________.
+> Ready: **GO** — Tier 1–3 verified, golden path 7/7 (incl. cross-account isolation via RLS), integration/release-readiness clean (463/463 tests, production build clean, deploy works, full end-to-end chain + operator switch + audit immutability + Manager/lockout all green).
+>
+> Outstanding (non-blocking, on-site only): **A4 PWA update pickup** and **C1 install** — both require the brother's actual device, done as a smoke test when setting up his device. Offline (C2) already proven via golden-path V7.
+>
+> Recommendation: de-risk A4 + a proxy install on **any** phone before flying (cheap, removes the last unknowns); final-confirm C1 on his device at setup. Real-catalog load is post-trip by design.
