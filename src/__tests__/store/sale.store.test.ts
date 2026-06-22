@@ -1,6 +1,16 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
+
+vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
+vi.mock('@/data/supabase/client', () => ({
+  supabase: {
+    from: () => ({}),
+    auth: { onAuthStateChange: vi.fn(), getSession: vi.fn().mockResolvedValue({ data: { session: null } }) },
+  },
+}))
+
 import { useSaleStore } from '@/store/sale.store'
+import { db } from '@/data/powersync/db'
 
 describe('useSaleStore', () => {
   beforeEach(() => {
@@ -145,5 +155,54 @@ describe('useSaleStore', () => {
     expect(store.lines[0].unitPriceUsd).toBe(10)
     store.updateUnitPrice('p1', NaN)
     expect(store.lines[0].unitPriceUsd).toBe(10)
+  })
+})
+
+describe('useSaleStore — receipt counter reconciliation (durability)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+    vi.clearAllMocks()
+  })
+
+  it('seeds deviceSequence from MAX(device_sequence) of synced sales when the DB is ahead', async () => {
+    // Cache-clear scenario: localStorage empty (counter 0) but the server already
+    // has sales up to A-000020, synced down into the local table.
+    vi.mocked(db.getOptional).mockResolvedValue({ max_seq: 20 } as any)
+    const store = useSaleStore()
+    expect(store.deviceSequence).toBe(0)
+
+    await store.reconcileSequenceFromDb()
+
+    expect(store.deviceSequence).toBe(20)            // next sale → A-000021, no collision
+    expect(localStorage.getItem('wafi_device_seq')).toBe('20')
+  })
+
+  it('keeps the local counter when it is already ahead of the DB (never goes backwards)', async () => {
+    localStorage.setItem('wafi_device_seq', '30')
+    vi.mocked(db.getOptional).mockResolvedValue({ max_seq: 5 } as any)
+    const store = useSaleStore()
+    expect(store.deviceSequence).toBe(30)
+
+    await store.reconcileSequenceFromDb()
+
+    expect(store.deviceSequence).toBe(30)
+  })
+
+  it('is a no-op when there are no synced sales (MAX is null)', async () => {
+    vi.mocked(db.getOptional).mockResolvedValue({ max_seq: null } as any)
+    const store = useSaleStore()
+
+    await store.reconcileSequenceFromDb()
+
+    expect(store.deviceSequence).toBe(0)
+  })
+
+  it('never throws if the DB is not ready', async () => {
+    vi.mocked(db.getOptional).mockRejectedValue(new Error('db not ready'))
+    const store = useSaleStore()
+
+    await expect(store.reconcileSequenceFromDb()).resolves.toBeUndefined()
+    expect(store.deviceSequence).toBe(0)
   })
 })

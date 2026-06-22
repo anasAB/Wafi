@@ -14,6 +14,7 @@ import { useShift }      from '@/features/shifts/composables/useShift'
 import { useStaff }      from '@/features/staff/composables/useStaff'
 import LockScreen        from '@/features/shifts/components/LockScreen.vue'
 import { db }            from '@/data/powersync/db'
+import { useSaleStore }  from '@/store/sale.store'
 
 const { offlineReady, dismissOfflineReady, needRefresh, applyUpdate, dismissNeedRefresh } = usePwaLifecycle()
 
@@ -63,6 +64,11 @@ onMounted(async () => {
       new Promise(resolve => setTimeout(resolve, 8000)),
     ]).catch(() => { /* offline/error — fall back to local state */ })
   }
+
+  // Durably seed the receipt counter from already-synced sales, so a cache clear
+  // / PWA reinstall / new device can't re-issue a receipt number that already
+  // exists (which would jam sync on uq_sale_number_per_shop).
+  await useSaleStore().reconcileSequenceFromDb()
 
   const staffExist = await hasAnyStaff()
   hasStaff.value = staffExist

@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { db } from '@/data/powersync/db'
+import { useDeviceStore } from '@/store/device.store'
 
 export interface SaleLine {
   productId:    string
@@ -106,6 +108,31 @@ export const useSaleStore = defineStore('sale', () => {
     localStorage.setItem('wafi_device_seq', String(deviceSequence.value))
   }
 
+  // Make the receipt counter durable. localStorage alone is fragile: clearing
+  // site data, reinstalling the PWA, or moving to a new device resets it to 0,
+  // so the next sale re-issues A-000001 and collides with an already-synced sale
+  // (uq_sale_number_per_shop), jamming sync. On startup (after first sync) seed
+  // the counter to the higher of localStorage and MAX(device_sequence) of the
+  // sales already in the local DB — device_sequence equals the receipt number,
+  // so this guarantees the next number is past every synced sale. Scoped to this
+  // device, whose code prefixes its own numbering. Never goes backwards.
+  async function reconcileSequenceFromDb(): Promise<void> {
+    try {
+      const device = useDeviceStore()
+      const row = await db.getOptional<{ max_seq: number | null }>(
+        'SELECT MAX(device_sequence) AS max_seq FROM sales WHERE device_id = ?',
+        [device.deviceId],
+      )
+      const dbMax = row?.max_seq ?? 0
+      if (dbMax > deviceSequence.value) {
+        deviceSequence.value = dbMax
+        localStorage.setItem('wafi_device_seq', String(dbMax))
+      }
+    } catch {
+      // DB not ready / offline with no local cache — keep the persisted value.
+    }
+  }
+
   function clear() {
     lines.value              = []
     lockedExchangeRate.value = null
@@ -128,6 +155,7 @@ export const useSaleStore = defineStore('sale', () => {
     setLockedRate,
     setRateChangeNotice,
     incrementSequence,
+    reconcileSequenceFromDb,
     clear,
   }
 })
