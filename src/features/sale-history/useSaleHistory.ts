@@ -64,6 +64,72 @@ export async function buildReceiptData(saleId: string): Promise<ReceiptData> {
   }
 }
 
+/**
+ * Shared enrichment helper — runs the three side queries (pending via ps_crud,
+ * returned, fully-returned) and maps raw sale rows to SaleRecord[].
+ * Both loadHistory and searchByNumber call this so the enrichment logic is never
+ * duplicated.
+ */
+async function enrichAndMapSales(
+  rawRows: any[],
+  shopId: string,
+): Promise<SaleRecord[]> {
+  const [crudResult, returnedSalesResult, fullyReturnedResult] = await Promise.all([
+    db.execute(
+      `SELECT DISTINCT json_extract(data, '$.id') as sale_id FROM ps_crud WHERE "table" = 'sales'`
+    ).catch(() => ({ rows: { _array: [] } })),
+    db.execute(
+      `SELECT DISTINCT original_sale_id AS sale_id
+       FROM returns
+       WHERE shop_id = ?`,
+      [shopId]
+    ).catch(() => ({ rows: { _array: [] } })),
+    db.execute(
+      `SELECT r.original_sale_id AS sale_id
+       FROM returns r
+       JOIN return_line_items rli ON rli.return_id = r.id
+       WHERE r.shop_id = ?
+       GROUP BY r.original_sale_id
+       HAVING COALESCE(SUM(rli.qty_returned), 0) >= (
+         SELECT COALESCE(SUM(sli.quantity), 0)
+         FROM sale_line_items sli
+         WHERE sli.sale_id = r.original_sale_id
+       )`,
+      [shopId]
+    ).catch(() => ({ rows: { _array: [] } })),
+  ])
+
+  const pendingIds = new Set<string>(
+    ((crudResult as any).rows._array as any[]).map((r: any) => r.sale_id).filter(Boolean)
+  )
+  const returnedIds = new Set<string>(
+    ((returnedSalesResult as any).rows._array as any[]).map((r: any) => r.sale_id).filter(Boolean)
+  )
+  const fullyReturnedIds = new Set<string>(
+    ((fullyReturnedResult as any).rows._array as any[]).map((r: any) => r.sale_id).filter(Boolean)
+  )
+
+  return rawRows.map(r => ({
+    id:                     r.id,
+    shopId:                 r.shop_id,
+    deviceId:               r.device_id,
+    deviceSequence:         r.device_sequence,
+    displaySaleNumber:      r.display_sale_number,
+    createdAt:              r.created_at,
+    totalUsd:               r.total_usd,
+    totalSyp:               r.total_syp,
+    exchangeRateAtSale:     r.exchange_rate_at_sale,
+    paymentMethod:          r.payment_method,
+    amountReceived:         r.amount_received,
+    amountReceivedCurrency: r.amount_received_currency,
+    changeDue:              r.change_due,
+    isPending:              pendingIds.has(r.id),
+    isSplit:                (r.is_split ?? 0) === 1,
+    hasReturn:              returnedIds.has(r.id),
+    isFullyReturned:        fullyReturnedIds.has(r.id),
+  }))
+}
+
 export function useSaleHistory() {
   const sales   = ref<SaleRecord[]>([])
   const loading = ref(false)
@@ -90,61 +156,38 @@ export function useSaleHistory() {
         params = [device.shopId, sevenDaysAgo]
       }
 
-      const [result, crudResult, returnedSalesResult, fullyReturnedResult] = await Promise.all([
-        db.execute(query, params),
-        db.execute(
-          `SELECT DISTINCT json_extract(data, '$.id') as sale_id FROM ps_crud WHERE "table" = 'sales'`
-        ).catch(() => ({ rows: { _array: [] } })),
-        db.execute(
-          `SELECT DISTINCT original_sale_id AS sale_id
-           FROM returns
-           WHERE shop_id = ?`,
-          [device.shopId]
-        ).catch(() => ({ rows: { _array: [] } })),
-        db.execute(
-          `SELECT r.original_sale_id AS sale_id
-           FROM returns r
-           JOIN return_line_items rli ON rli.return_id = r.id
-           WHERE r.shop_id = ?
-           GROUP BY r.original_sale_id
-           HAVING COALESCE(SUM(rli.qty_returned), 0) >= (
-             SELECT COALESCE(SUM(sli.quantity), 0)
-             FROM sale_line_items sli
-             WHERE sli.sale_id = r.original_sale_id
-           )`,
-          [device.shopId]
-        ).catch(() => ({ rows: { _array: [] } })),
-      ])
-      const pendingIds = new Set<string>(
-        ((crudResult as any).rows._array as any[]).map((r: any) => r.sale_id).filter(Boolean)
+      const result = await db.execute(query, params)
+      const rawRows = (result as any).rows._array as any[]
+      sales.value = await enrichAndMapSales(rawRows, device.shopId)
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e)
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
+   * Search all-time sales by receipt number (prefix match).
+   * Loads into `sales` so the existing row rendering (return/reprint/WhatsApp)
+   * works unchanged on the results.
+   * Guards: empty/whitespace query is a no-op (does not run an unbounded scan).
+   * SQL injection prevention: the query string is never concatenated into SQL;
+   * it is always passed as a bound parameter.
+   */
+  async function searchByNumber(query: string): Promise<void> {
+    const trimmed = query.trim()
+    if (!trimmed) return  // empty input — do nothing; caller clears via loadHistory
+
+    const device = useDeviceStore()
+    loading.value = true
+    error.value   = null
+    try {
+      const result = await db.execute(
+        `SELECT * FROM sales WHERE shop_id = ? AND display_sale_number LIKE ? ORDER BY created_at DESC`,
+        [device.shopId, `${trimmed}%`]
       )
-      const returnRows = (returnedSalesResult as any).rows._array as any[]
-      const fullyReturnedRows = (fullyReturnedResult as any).rows._array as any[]
-      const returnedIds = new Set<string>(
-        returnRows.map((r: any) => r.sale_id).filter(Boolean)
-      )
-      const fullyReturnedIds = new Set<string>(
-        fullyReturnedRows.map((r: any) => r.sale_id).filter(Boolean)
-      )
-      sales.value = ((result as any).rows._array as any[]).map(r => ({
-        id:                  r.id,
-        shopId:              r.shop_id,
-        deviceId:            r.device_id,
-        deviceSequence:      r.device_sequence,
-        displaySaleNumber:   r.display_sale_number,
-        createdAt:           r.created_at,
-        totalUsd:            r.total_usd,
-        totalSyp:            r.total_syp,
-        exchangeRateAtSale:  r.exchange_rate_at_sale,
-        paymentMethod:       r.payment_method,
-        amountReceived:      r.amount_received,
-        amountReceivedCurrency: r.amount_received_currency,
-        changeDue:           r.change_due,
-        isPending:           pendingIds.has(r.id),
-        isSplit:             (r.is_split ?? 0) === 1,
-        hasReturn:           returnedIds.has(r.id),
-        isFullyReturned:     fullyReturnedIds.has(r.id),
-      }))
+      const rawRows = (result as any).rows._array as any[]
+      sales.value = await enrichAndMapSales(rawRows, device.shopId)
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
     } finally {
@@ -157,5 +200,5 @@ export function useSaleHistory() {
     await printer.print(receipt)
   }
 
-  return { sales, loading, error, loadHistory, reprint, reprintError: printer.error }
+  return { sales, loading, error, loadHistory, searchByNumber, reprint, reprintError: printer.error }
 }

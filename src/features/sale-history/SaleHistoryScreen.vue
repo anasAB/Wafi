@@ -19,7 +19,7 @@ import { buildReceiptData } from './useSaleHistory'
 
 const router  = useRouter()
 const route   = useRoute()
-const { sales, loading, loadHistory, reprint } = useSaleHistory()
+const { sales, loading, loadHistory, searchByNumber, reprint } = useSaleHistory()
 const { period, setPeriod } = usePeriodToggle()
 const expandedId = ref<string | null>(null)
 const toast      = ref<string | null>(null)
@@ -86,6 +86,19 @@ function toggleMethodMenu() {
 
 function clearSearch() {
   searchQuery.value = ''
+  // Revert to the period window when the search box is cleared
+  void refreshHistoryForCurrentPeriod()
+}
+
+/**
+ * Called on Enter in the search box.
+ * If there is a non-empty query, broadens the lookup to all-time (shop-scoped)
+ * so receipts outside the selected period window can be found too.
+ */
+async function runNumberSearch() {
+  const q = searchQuery.value.trim()
+  if (!q) return
+  await searchByNumber(q)
 }
 
 function onDocumentClick(event: MouseEvent) {
@@ -215,6 +228,7 @@ function onWaSend(payload: { phone: string; text: string }) {
             type="text"
             class="search-input"
             placeholder="ابحث برقم الفاتورة..."
+            @keyup.enter="runNumberSearch"
           />
           <button
             v-if="searchQuery"

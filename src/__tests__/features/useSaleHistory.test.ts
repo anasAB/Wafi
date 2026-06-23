@@ -63,6 +63,97 @@ describe('useSaleHistory', () => {
     expect(byId['s3'].isFullyReturned).toBe(false)
   })
 
+  // ── searchByNumber ──────────────────────────────────────────────────────────
+
+  it('searchByNumber issues a LIKE query scoped to shop_id with query + % param', async () => {
+    const { searchByNumber } = useSaleHistory()
+    await searchByNumber('A-000247')
+    // Must use display_sale_number LIKE and shop_id
+    expect(db.execute).toHaveBeenCalledWith(
+      expect.stringMatching(/display_sale_number\s+LIKE/),
+      expect.arrayContaining(['A-000247%'])
+    )
+    // shop_id param must also be present (scoped)
+    const calls = vi.mocked(db.execute).mock.calls
+    const likeCall = calls.find(([sql]) => /display_sale_number\s+LIKE/.test(sql as string))
+    expect(likeCall).toBeDefined()
+    expect(likeCall![1]).toEqual(expect.arrayContaining([expect.stringContaining('')])) // has params
+  })
+
+  it('searchByNumber maps returned rows with enrichment fields (hasReturn, isFullyReturned, isPending)', async () => {
+    vi.mocked(db.execute)
+      .mockResolvedValueOnce({ rows: { _array: [
+        { id: 's1', shop_id: 'shop1', device_id: 'd1', device_sequence: 1,
+          display_sale_number: 'A-000247', created_at: '2026-06-01T10:00:00Z',
+          total_usd: 75, total_syp: 1087500, exchange_rate_at_sale: 14500,
+          payment_method: 'cash_usd', amount_received: 75,
+          amount_received_currency: 'USD', change_due: null, is_split: 0 },
+      ] } } as any) // sales LIKE query
+      .mockResolvedValueOnce({ rows: { _array: [] } } as any)  // ps_crud
+      .mockResolvedValueOnce({ rows: { _array: [{ sale_id: 's1' }] } } as any) // returned sales
+      .mockResolvedValueOnce({ rows: { _array: [{ sale_id: 's1' }] } } as any) // fully returned
+
+    const { sales, searchByNumber } = useSaleHistory()
+    await searchByNumber('A-000247')
+
+    expect(sales.value).toHaveLength(1)
+    expect(sales.value[0].id).toBe('s1')
+    expect(sales.value[0].displaySaleNumber).toBe('A-000247')
+    expect(sales.value[0].hasReturn).toBe(true)
+    expect(sales.value[0].isFullyReturned).toBe(true)
+    expect(sales.value[0].isPending).toBe(false)
+  })
+
+  it('searchByNumber with empty/whitespace query does not run an unbounded LIKE query', async () => {
+    const { searchByNumber } = useSaleHistory()
+    await searchByNumber('   ')
+    // No call with a LIKE clause should have been made
+    const calls = vi.mocked(db.execute).mock.calls
+    const likeCall = calls.find(([sql]) => /display_sale_number\s+LIKE/.test(sql as string))
+    expect(likeCall).toBeUndefined()
+  })
+
+  it('searchByNumber prefix A-0002 returns all matching sales', async () => {
+    vi.mocked(db.execute)
+      .mockResolvedValueOnce({ rows: { _array: [
+        { id: 's1', shop_id: 'shop1', device_id: 'd1', device_sequence: 1,
+          display_sale_number: 'A-000247', created_at: '2026-06-01T10:00:00Z',
+          total_usd: 75, total_syp: 1087500, exchange_rate_at_sale: 14500,
+          payment_method: 'cash_usd', amount_received: 75,
+          amount_received_currency: 'USD', change_due: null, is_split: 0 },
+        { id: 's2', shop_id: 'shop1', device_id: 'd1', device_sequence: 2,
+          display_sale_number: 'A-000248', created_at: '2026-06-01T11:00:00Z',
+          total_usd: 50, total_syp: 725000, exchange_rate_at_sale: 14500,
+          payment_method: 'cash_syp', amount_received: 725000,
+          amount_received_currency: 'SYP', change_due: null, is_split: 0 },
+      ] } } as any) // sales LIKE query
+      .mockResolvedValueOnce({ rows: { _array: [] } } as any)  // ps_crud
+      .mockResolvedValueOnce({ rows: { _array: [] } } as any)  // returned sales
+      .mockResolvedValueOnce({ rows: { _array: [] } } as any)  // fully returned
+
+    const { sales, searchByNumber } = useSaleHistory()
+    await searchByNumber('A-0002')
+
+    expect(sales.value).toHaveLength(2)
+    // LIKE param must be prefix
+    expect(db.execute).toHaveBeenCalledWith(
+      expect.stringMatching(/display_sale_number\s+LIKE/),
+      expect.arrayContaining(['A-0002%'])
+    )
+  })
+
+  it('searchByNumber unknown number returns empty sales', async () => {
+    vi.mocked(db.execute)
+      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // sales LIKE query returns nothing
+      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // ps_crud
+      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // returned
+      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // fully returned
+
+    const { sales, searchByNumber } = useSaleHistory()
+    await searchByNumber('Z-999999')
+    expect(sales.value).toHaveLength(0)
+  })
+
   it('reprint uses the real shop name + split breakdown and marks fully-returned (WAFI-031)', async () => {
     vi.mocked(db.execute).mockImplementation(async (sql: string) => {
       if (sql.includes('FROM sales WHERE id')) return { rows: { _array: [{
