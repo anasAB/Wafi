@@ -13,6 +13,9 @@ import ReturnSheet from '@/features/returns/components/ReturnSheet.vue'
 import ReturnDetailSheet from '@/features/returns/components/ReturnDetailSheet.vue'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
+import WhatsAppPreviewSheet from '@/features/messaging/components/WhatsAppPreviewSheet.vue'
+import { useSendReceipt } from '@/features/messaging/useSendReceipt'
+import { buildReceiptData } from './useSaleHistory'
 
 const router  = useRouter()
 const route   = useRoute()
@@ -163,6 +166,33 @@ async function handleReprint(saleId: string) {
     toastType.value = 'error'
     toast.value = `خطأ: ${e instanceof Error ? e.message : String(e)}`
   }
+}
+
+// ── WhatsApp send ─────────────────────────────────────────────────────────────
+const { prepare, send } = useSendReceipt()
+const waSheetOpen   = ref(false)
+const waSheetText   = ref('')
+const waSheetPhone  = ref<string | null>(null)
+
+async function handleWhatsApp(saleId: string) {
+  try {
+    const receipt  = await buildReceiptData(saleId)
+    // SaleRecord has no phone — always go through the enter-number path
+    const prepared = prepare(receipt)
+    waSheetText.value  = prepared.text
+    waSheetPhone.value = prepared.phone   // null
+    waSheetOpen.value  = true
+  } catch (e) {
+    toastType.value = 'error'
+    toast.value = `خطأ: ${e instanceof Error ? e.message : String(e)}`
+  }
+}
+
+function onWaSend(payload: { phone: string; text: string }) {
+  send(payload.phone, payload.text)
+  waSheetOpen.value = false
+  toastType.value = 'info'
+  toast.value = 'تم فتح واتساب'
 }
 </script>
 
@@ -317,6 +347,13 @@ async function handleReprint(saleId: string) {
                     إعادة طباعة
                   </button>
                   <button
+                    type="button"
+                    class="btn-reprint btn-reprint--wa"
+                    @click="handleWhatsApp(data.id)"
+                  >
+                    واتساب
+                  </button>
+                  <button
                     v-if="!data.isFullyReturned"
                     type="button"
                     class="btn-reprint"
@@ -368,6 +405,11 @@ async function handleReprint(saleId: string) {
                 @click="handleReprint(sale.id)"
               >إعادة طباعة</button>
               <button
+                type="button"
+                class="btn-reprint-full btn-reprint-full--wa"
+                @click="handleWhatsApp(sale.id)"
+              >إرسال عبر واتساب</button>
+              <button
                 v-if="!sale.isFullyReturned"
                 type="button"
                 class="btn-reprint-full"
@@ -401,6 +443,14 @@ async function handleReprint(saleId: string) {
       @close="detailSaleId = null"
     />
   </Teleport>
+
+  <WhatsAppPreviewSheet
+    v-if="waSheetOpen"
+    :text="waSheetText"
+    :phone="waSheetPhone"
+    @send="onWaSend"
+    @cancel="waSheetOpen = false"
+  />
 </template>
 
 <style scoped>
@@ -1207,6 +1257,17 @@ async function handleReprint(saleId: string) {
   color: #60A5FA;
 }
 
+.btn-reprint--wa {
+  border-color: rgba(37, 211, 102, 0.25);
+  color: #25D366;
+}
+
+.btn-reprint--wa:hover {
+  border-color: rgba(37, 211, 102, 0.55);
+  color: #25D366;
+  background: rgba(37, 211, 102, 0.08);
+}
+
 .btn-reprint-full {
   width: 100%;
   height: 40px;
@@ -1223,6 +1284,16 @@ async function handleReprint(saleId: string) {
 .btn-reprint-full:hover {
   border-color: rgba(26, 86, 219, 0.40);
   color: #60A5FA;
+}
+
+.btn-reprint-full--wa {
+  border-color: rgba(37, 211, 102, 0.25);
+  color: #25D366;
+}
+
+.btn-reprint-full--wa:hover {
+  border-color: rgba(37, 211, 102, 0.55);
+  background: rgba(37, 211, 102, 0.08);
 }
 
 /* ─── Mobile cards ────────────────────────────────────────── */
