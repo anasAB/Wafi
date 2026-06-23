@@ -36,7 +36,20 @@ describe('formatReceiptText', () => {
       changeDue: 2,
     })
     expect(t).toMatch(/الباقي|المتبقي|الفكة/)
-    expect(t).toContain('2')
+    expect(t).toContain('$2.00')
+  })
+
+  it('formats SYP change in ل.س with thousands grouping, not as USD', () => {
+    const t = formatReceiptText({
+      ...receipt,
+      amountReceived: 20000,
+      amountReceivedCurrency: 'SYP',
+      changeDue: 5000,
+    })
+    expect(t).toMatch(/الباقي|المتبقي|الفكة/)
+    expect(t).toContain('5,000')
+    expect(t).toContain('ل.س')
+    expect(t).not.toContain('$5')
   })
 
   it('includes footerText when present', () => {

@@ -13,8 +13,7 @@ import ReturnSheet from '@/features/returns/components/ReturnSheet.vue'
 import ReturnDetailSheet from '@/features/returns/components/ReturnDetailSheet.vue'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
-import WhatsAppPreviewSheet from '@/features/messaging/components/WhatsAppPreviewSheet.vue'
-import { useSendReceipt } from '@/features/messaging/useSendReceipt'
+import { WhatsAppPreviewSheet, useSendReceipt } from '@/features/messaging'
 import { buildReceiptData } from './useSaleHistory'
 
 const router  = useRouter()

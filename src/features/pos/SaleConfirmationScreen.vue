@@ -9,8 +9,7 @@ import type { ReceiptData } from '@/composables/usePrinter'
 import { useReceiptSettings } from '@/features/receipt/composables/useReceiptSettings'
 import { loadCompletedSale } from './loadCompletedSale'
 import { db } from '@/data/powersync/db'
-import WhatsAppPreviewSheet from '@/features/messaging/components/WhatsAppPreviewSheet.vue'
-import { useSendReceipt } from '@/features/messaging/useSendReceipt'
+import { WhatsAppPreviewSheet, useSendReceipt } from '@/features/messaging'
 
 const router  = useRouter()
 const route   = useRoute()

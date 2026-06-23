@@ -20,6 +20,7 @@ const PAYMENT_LABEL: Record<PaymentMethod, string> = {
 
 function formatDate(iso: string): string {
   // "2026-06-23T10:00:00Z" → "2026-06-23 10:00"
+  // Intentionally UTC — Asia/Damascus localization deferred to v1.5.
   const d = new Date(iso)
   const date = d.toISOString().slice(0, 10)
   const time = d.toISOString().slice(11, 16)
@@ -87,7 +88,11 @@ export function formatReceiptText(
   }
 
   if (receipt.changeDue !== undefined && receipt.changeDue > 0) {
-    lines.push(`الباقي (الفكة): ${fmtUsd(receipt.changeDue)}`)
+    const changeFormatted =
+      receipt.amountReceivedCurrency === 'SYP'
+        ? `${fmtSyp(receipt.changeDue)} ل.س`
+        : fmtUsd(receipt.changeDue)
+    lines.push(`الباقي (الفكة): ${changeFormatted}`)
   }
 
   // ── Footer ─────────────────────────────────────────────────────────────────
