@@ -14,6 +14,7 @@ import {
   SALES_HEADERS, EXPENSES_HEADERS,
   PRODUCTS_HEADERS, CUSTOMERS_HEADERS,
 } from './export.types'
+import { validateCustomRange, isLargeExport } from './export.validation'
 import type { ExportDataset, ExportFormat } from './export.types'
 
 const router = useRouter()
@@ -46,6 +47,16 @@ const datasets: { key: ExportDataset; label: string; desc: string }[] = [
 ]
 
 async function onExport() {
+  // Validate a custom range before doing any work, so reversed/blank dates give a
+  // clear message instead of a silently-empty file (which surfaces as "no data").
+  if (showDateRange.value && useCustomRange.value) {
+    const err = validateCustomRange(customStart.value, customEnd.value)
+    if (err) {
+      toast.value = { message: err, type: 'error' }
+      return
+    }
+  }
+
   loading.value = true
   toast.value   = null
   try {
@@ -74,6 +85,13 @@ async function onExport() {
       filename = `wafi-customers-${today}.${ext}`
     }
 
+    // A very large file is built synchronously and can briefly freeze a low-end
+    // device — warn and let the owner decide before committing to the build.
+    if (isLargeExport(rows.length) &&
+        !window.confirm(`الملف كبير (${rows.length} سطر) وقد يستغرق وقتاً. هل تريد المتابعة؟`)) {
+      return
+    }
+
     buildAndDownload(headers, rows, filename, selectedFormat.value)
     toast.value = { message: 'تم تصدير الملف بنجاح', type: 'success' }
   } catch (e: unknown) {
@@ -86,9 +104,12 @@ async function onExport() {
 </script>
 
 <template>
-  <div class="page-root" dir="rtl">
+  <!-- Mobile-only header; on desktop this renders inside the Settings content panel -->
+  <div class="lg:hidden">
     <AppHeader title="تصدير البيانات" :show-back="true" @back="router.back()" />
+  </div>
 
+  <div class="page-body" dir="rtl">
     <main class="page-main">
 
       <!-- Step 1: Dataset -->
@@ -181,15 +202,15 @@ async function onExport() {
 </template>
 
 <style scoped>
-.page-root {
-  display: flex; flex-direction: column;
-  min-height: 100dvh;
-  background: #06090F;
+.page-body {
+  padding: 1.5rem 1rem 80px;
+  max-width: 42rem; margin: 0 auto; width: 100%;
   font-family: 'Tajawal', system-ui, sans-serif;
 }
+@media (min-width: 1024px) {
+  .page-body { padding: 20px; max-width: none; }
+}
 .page-main {
-  flex: 1; padding: 1.5rem 1rem 80px;
-  max-width: 42rem; margin-inline: auto; width: 100%;
   display: flex; flex-direction: column; gap: 1.5rem;
 }
 .step-section { display: flex; flex-direction: column; gap: 0.75rem; }

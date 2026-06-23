@@ -26,6 +26,7 @@ export default {
     staff:           'الموظفون',
     returnReasons:   'أسباب الإرجاع',
     auditLog:        'سجل النشاط',
+    dataExport:      'تصدير البيانات',
     about:           'حول التطبيق',
     selectSection:   'اختر قسماً من القائمة',
   },

@@ -66,6 +66,10 @@ describe('useSaleHistory', () => {
   // ── searchByNumber ──────────────────────────────────────────────────────────
 
   it('searchByNumber issues a LIKE query scoped to shop_id with query + % param', async () => {
+    const { useDeviceStore } = await import('@/store/device.store')
+    const device = useDeviceStore()
+    const expectedShopId = device.shopId
+
     const { searchByNumber } = useSaleHistory()
     await searchByNumber('A-000247')
     // Must use display_sale_number LIKE and shop_id
@@ -73,11 +77,11 @@ describe('useSaleHistory', () => {
       expect.stringMatching(/display_sale_number\s+LIKE/),
       expect.arrayContaining(['A-000247%'])
     )
-    // shop_id param must also be present (scoped)
+    // shop_id param must also be present (scoped) — verify both params
     const calls = vi.mocked(db.execute).mock.calls
     const likeCall = calls.find(([sql]) => /display_sale_number\s+LIKE/.test(sql as string))
     expect(likeCall).toBeDefined()
-    expect(likeCall![1]).toEqual(expect.arrayContaining([expect.stringContaining('')])) // has params
+    expect(likeCall![1]).toEqual([expectedShopId, 'A-000247%'])
   })
 
   it('searchByNumber maps returned rows with enrichment fields (hasReturn, isFullyReturned, isPending)', async () => {

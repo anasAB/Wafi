@@ -118,6 +118,25 @@ const APP_VERSION = 'v0.1.0'
           </svg>
         </button>
 
+        <!-- Data export -->
+        <button
+          type="button"
+          class="nav-row"
+          @click="router.push('/settings/exports')"
+        >
+          <div class="nav-row-start">
+            <span class="nav-icon-wrap">
+              <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+            </span>
+            <span class="nav-title">{{ t('settings.dataExport') }}</span>
+          </div>
+          <svg class="nav-arrow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+
         <!-- Sign out (disabled) -->
         <button type="button" class="nav-row nav-row--danger nav-row--last" disabled>
           <div class="nav-row-start">
@@ -214,6 +233,7 @@ const APP_VERSION = 'v0.1.0'
             to="/settings/audit-log"
             class="desktop-nav-link"
             :class="route.path === '/settings/audit-log' ? 'desktop-nav-link--active' : ''"
+            style="border-bottom: 1px solid rgba(26,86,219,0.14)"
           >
             <div class="nav-row-start">
               <svg class="nav-icon-sm" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
@@ -222,6 +242,20 @@ const APP_VERSION = 'v0.1.0'
               <span>{{ t('settings.auditLog') }}</span>
             </div>
             <span v-if="route.path === '/settings/audit-log'" class="active-dot" />
+          </RouterLink>
+
+          <RouterLink
+            to="/settings/exports"
+            class="desktop-nav-link"
+            :class="route.path === '/settings/exports' ? 'desktop-nav-link--active' : ''"
+          >
+            <div class="nav-row-start">
+              <svg class="nav-icon-sm" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              <span>{{ t('settings.dataExport') }}</span>
+            </div>
+            <span v-if="route.path === '/settings/exports'" class="active-dot" />
           </RouterLink>
 
           <!-- About row -->
