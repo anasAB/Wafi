@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppHeader from '@/components/ui/AppHeader.vue'
@@ -8,17 +9,34 @@ const route  = useRoute()
 const { t }  = useI18n()
 
 const APP_VERSION = 'v0.1.0'
+
+// Settings is a list (mobile) / sidebar + panel (desktop). The sub-screens render
+// through a single <RouterView>, but it can only live in ONE branch or the child
+// mounts twice. So we pick the layout reactively by breakpoint (v-if, not CSS) and
+// keep exactly one RouterView active: desktop always uses the panel; mobile uses
+// the list at the index and swaps to the child screen on a sub-route.
+const mq = window.matchMedia('(min-width: 1024px)')
+const isDesktop = ref(mq.matches)
+const onMqChange = (e: MediaQueryListEvent) => { isDesktop.value = e.matches }
+onMounted(() => mq.addEventListener('change', onMqChange))
+onUnmounted(() => mq.removeEventListener('change', onMqChange))
+
+const isIndex = computed(() => route.path === '/settings')
+// The settings title bar is shown on desktop and at the mobile index; on a mobile
+// sub-screen the child supplies its own header, so we hide this one.
+const showSettingsHeader = computed(() => isDesktop.value || isIndex.value)
 </script>
 
 <template>
   <div class="page-root" dir="rtl">
     <AppHeader
+      v-if="showSettingsHeader"
       :title="t('settings.title')"
       @back="router.back()"
     />
 
-    <!-- Mobile layout (hidden on lg+) -->
-    <main class="mobile-main lg:hidden">
+    <!-- Mobile: the settings list (index only) -->
+    <main v-if="!isDesktop && isIndex" class="mobile-main">
 
       <p class="section-label">{{ t('settings.personal') }}</p>
       <div class="settings-card">
@@ -162,8 +180,11 @@ const APP_VERSION = 'v0.1.0'
 
     </main>
 
-    <!-- Desktop layout (lg+) -->
-    <div class="desktop-layout hidden lg:flex">
+    <!-- Mobile: a sub-screen renders here (the child provides its own header) -->
+    <RouterView v-if="!isDesktop && !isIndex" />
+
+    <!-- Desktop layout (lg+): sidebar + content panel -->
+    <div v-if="isDesktop" class="desktop-layout lg:flex">
 
       <!-- Settings nav sidebar -->
       <nav class="desktop-nav">

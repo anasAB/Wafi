@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import AppToast from '@/components/ui/AppToast.vue'
+import AppDatePicker from '@/components/ui/AppDatePicker.vue'
 import { usePeriodToggle } from '@/features/dashboard/composables/usePeriodToggle'
 import { getDateRange } from '@/features/dashboard/composables/periodUtils'
 import {
@@ -31,6 +32,34 @@ const toast            = ref<{ message: string; type: 'success' | 'error' } | nu
 const showDateRange = computed(() =>
   selectedDataset.value === 'sales' || selectedDataset.value === 'expenses'
 )
+
+function parseIsoDate(value: string): Date | null {
+  if (!value) return null
+  const [year, month, day] = value.split('-').map(Number)
+  if (!year || !month || !day) return null
+  return new Date(year, month - 1, day)
+}
+
+function toIsoDate(value: Date): string {
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const customStartDate = computed<Date | null>({
+  get: () => parseIsoDate(customStart.value),
+  set: (value) => {
+    customStart.value = value ? toIsoDate(value) : ''
+  },
+})
+
+const customEndDate = computed<Date | null>({
+  get: () => parseIsoDate(customEnd.value),
+  set: (value) => {
+    customEnd.value = value ? toIsoDate(value) : ''
+  },
+})
 
 const effectiveDateRange = computed(() => {
   if (useCustomRange.value && customStart.value && customEnd.value) {
@@ -144,11 +173,29 @@ async function onExport() {
           <div v-if="useCustomRange" class="custom-range-inputs">
             <label class="date-label">
               <span>من</span>
-              <input v-model="customStart" type="date" class="date-input" />
+              <AppDatePicker
+                v-model="customStartDate"
+                class="date-input date-picker-input"
+                date-format="yy-mm-dd"
+                show-icon
+                icon-display="input"
+                :manual-input="false"
+                show-button-bar
+                input-id="export-custom-start"
+              />
             </label>
             <label class="date-label">
               <span>إلى</span>
-              <input v-model="customEnd" type="date" class="date-input" />
+              <AppDatePicker
+                v-model="customEndDate"
+                class="date-input date-picker-input"
+                date-format="yy-mm-dd"
+                show-icon
+                icon-display="input"
+                :manual-input="false"
+                show-button-bar
+                input-id="export-custom-end"
+              />
             </label>
           </div>
         </div>
@@ -250,33 +297,23 @@ async function onExport() {
   font-family: 'Tajawal', system-ui, sans-serif;
 }
 .custom-range-inputs { display: flex; gap: 12px; flex-wrap: wrap; }
-.date-label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #637285; }
+.date-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #637285;
+  flex: 1;
+  min-width: 180px;
+}
 .date-input {
-  padding: 7px 10px; border-radius: 8px; font-size: 13px;
-  background: rgba(255,255,255,0.05); border: 1px solid rgba(26,86,219,0.25);
-  color: #E8EDF5; font-family: 'Tajawal', system-ui, sans-serif;
-  color-scheme: dark;
-  appearance: none;
-  -webkit-appearance: none;
   min-height: 38px;
-  outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+  font-size: 13px;
+  font-family: 'Tajawal', system-ui, sans-serif;
 }
 
-.date-input:hover {
-  border-color: rgba(26,86,219,0.45);
-  background: rgba(255,255,255,0.07);
-}
-
-.date-input:focus {
-  border-color: rgba(26,86,219,0.75);
-  box-shadow: 0 0 0 3px rgba(26,86,219,0.16);
-}
-
-.date-input::-webkit-calendar-picker-indicator {
-  filter: invert(84%) sepia(8%) saturate(392%) hue-rotate(179deg) brightness(89%) contrast(90%);
-  opacity: 0.95;
-  cursor: pointer;
+.date-picker-input {
+  width: 100%;
 }
 .format-row { display: flex; gap: 10px; }
 .format-btn {
