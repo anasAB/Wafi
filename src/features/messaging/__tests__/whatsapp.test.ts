@@ -6,6 +6,8 @@ describe('resolvePhone', () => {
   it('converts a local leading-zero number', () => expect(resolvePhone('0944123456')).toBe('963944123456'))
   it('prepends country code to a bare local number', () => expect(resolvePhone('944123456')).toBe('963944123456'))
   it('strips spaces/dashes', () => expect(resolvePhone('0944 123-456')).toBe('963944123456'))
+  it('drops stray + mid-string', () => expect(resolvePhone('963+944123456')).toBe('963944123456'))
+  it('returns null for undefined', () => expect(resolvePhone(undefined)).toBeNull())
   it('returns null for empty/too-short/null', () => {
     expect(resolvePhone('')).toBeNull()
     expect(resolvePhone('12')).toBeNull()
