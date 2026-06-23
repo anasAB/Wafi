@@ -5,6 +5,7 @@ import { resolvePhone } from '../whatsapp'
 const props = defineProps<{
   text:  string
   phone: string | null
+  title?: string
 }>()
 
 const emit = defineEmits<{
@@ -34,12 +35,15 @@ function onTextInput() {
 function handleSend() {
   phoneError.value = null
 
-  // Use the prop phone if it resolved, else use whatever is typed in the input
-  const rawPhone = (props.phone && props.phone.length > 0)
-    ? props.phone
-    : phoneInput.value.trim()
+  // If a phone was already resolved upstream by useSendReceipt.prepare, emit it
+  // directly — no need to re-validate an already-resolved number.
+  if (props.phone && props.phone.length > 0) {
+    emit('send', { phone: props.phone, text: editedText.value })
+    return
+  }
 
-  const resolved = resolvePhone(rawPhone)
+  // Walk-in path: validate the manually-typed number before emitting.
+  const resolved = resolvePhone(phoneInput.value.trim())
   if (!resolved) {
     phoneError.value = 'رقم غير صالح — أدخل رقماً دولياً أو محلياً صحيحاً'
     return
@@ -62,7 +66,7 @@ function handleSend() {
         <div class="sheet-header">
           <div class="sheet-header-main">
             <div class="sheet-header-text">
-              <span class="sheet-title">إرسال الفاتورة عبر واتساب</span>
+              <span class="sheet-title">{{ title ?? 'إرسال عبر واتساب' }}</span>
               <span class="sheet-sub">راجع النص وعدّله قبل الإرسال</span>
             </div>
             <button

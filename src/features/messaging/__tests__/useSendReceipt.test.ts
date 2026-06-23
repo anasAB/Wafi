@@ -40,6 +40,7 @@ describe('useSendReceipt', () => {
       const result = prepare(receipt)
       expect(result.text).toBe(formatReceiptText(receipt))
       expect(result.phone).toBeNull()
+      expect(whatsapp.resolvePhone).not.toHaveBeenCalled()
     })
 
     it('returns phone=null when an empty string is given', () => {

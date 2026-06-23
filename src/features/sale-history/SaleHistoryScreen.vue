@@ -448,6 +448,7 @@ function onWaSend(payload: { phone: string; text: string }) {
     v-if="waSheetOpen"
     :text="waSheetText"
     :phone="waSheetPhone"
+    title="إرسال الفاتورة عبر واتساب"
     @send="onWaSend"
     @cancel="waSheetOpen = false"
   />
