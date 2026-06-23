@@ -85,6 +85,16 @@ async function handleDelete() {
   await softDelete(customerId)
   router.push('/customers')
 }
+
+function handleStatementSent(payload: { phone: string; text: string }) {
+  sendStatement.send(payload.phone, payload.text)
+  showStatement.value = false
+  toast.value = { message: 'تم إرسال كشف الحساب', type: 'success' }
+}
+
+function handleStatementCancel() {
+  showStatement.value = false
+}
 </script>
 
 <template>
@@ -271,8 +281,8 @@ async function handleDelete() {
     title="كشف الحساب"
     :text="statementPreview.text"
     :phone="statementPreview.phone"
-    @send="({ phone, text }) => { sendStatement.send(phone, text); showStatement = false; toast = { message: 'تم إرسال كشف الحساب', type: 'success' } }"
-    @cancel="showStatement = false"
+    @send="handleStatementSent"
+    @cancel="handleStatementCancel"
   />
 
   <AppToast v-if="toast" :message="toast.message" :type="toast.type" @dismiss="toast = null" />

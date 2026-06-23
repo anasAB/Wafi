@@ -154,6 +154,12 @@ describe('useSendStatement', () => {
       expect(text).toContain(baseInput.customerName)
       expect(phone).toBeNull()
     })
+
+    it('passes negative balanceUsd through unchanged (customer-credit / overpayment case)', () => {
+      const { prepare } = useSendStatement()
+      const { text } = prepare({ ...baseInput, openInvoices: [], balanceUsd: -50 })
+      expect(text).toContain('-$50.00')
+    })
   })
 
   describe('send()', () => {
