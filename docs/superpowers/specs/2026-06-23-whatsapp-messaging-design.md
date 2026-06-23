@@ -6,6 +6,35 @@
 > Sacred Rules touched: Offline-first (1), Arabic (2)
 > Delivers: Epic 4.6 (WhatsApp statement) + the WhatsApp half of Epic 6 (WhatsApp receipt).
 
+## Implementation Status — 2026-06-23 (hand-off)
+
+Built via the plan `docs/superpowers/plans/2026-06-23-whatsapp-messaging.md`. Tests green; only free `wa.me` used (no API).
+
+### ✅ Done — Receipt half (Tasks 1–4) — branch `feat/whatsapp-receipt` (merge-ready, NOT pushed)
+- `src/features/messaging/whatsapp.ts` — `resolvePhone` (→ intl digits, Syria `963` default), `buildWaMeUrl`, `openWhatsApp`.
+- `src/features/messaging/receiptText.ts` — pure `formatReceiptText(receipt, opts?)` → Arabic text (shop, prominent number, lines, USD+SYP totals, payment/change, footer + optional return-policy). Change/received are currency-correct (SYP vs USD).
+- `src/features/messaging/components/WhatsAppPreviewSheet.vue` — shared editable review-before-send sheet. Props `{ text, phone, title? }`; emits `send({ phone, text })` / `cancel`. **Never auto-sends.**
+- `src/features/messaging/useSendReceipt.ts` — `prepare(receipt, phoneRaw?) → { text, phone }`, `send(phone, text)`.
+- `src/features/messaging/index.ts` — public barrel (import the feature only via `@/features/messaging`).
+- Wired into `SaleConfirmationScreen.vue` (prefills phone from the sale's customer if any; else enter-number) and every `SaleHistoryScreen.vue` row (enter-number).
+- `useSaleHistory.ts` — extracted `buildReceiptData(saleId)` (shared by print + WhatsApp) and `enrichAndMapSales` (shared by `loadHistory` + new `searchByNumber`).
+- `searchByNumber(query)` — all-time, shop-scoped, prefix `LIKE`, bound params → find old receipts for returns; wired into the existing history search box (Enter broadens to all-time, clear reverts to period).
+
+### 🟡 In progress — Statement half — branch `feat/whatsapp-statement` (stacked on receipt half)
+- ✅ Task 5: `src/features/messaging/statementText.ts` — pure `formatStatementText({ customerName, shopName, periodLabel, rows[{date,label,amountUsd,runningUsd}], balanceUsd })`. Renders only (caller supplies ordered rows + running balance).
+
+### ⬜ Left to do — Task 6 (only remaining work)
+Wire send-statement into the customer screen:
+- Create `src/features/messaging/useSendStatement.ts` — `prepare(customer, period?) → { text, phone }` (default period = current month), `send(phone, text)`. Assemble `rows` + `balanceUsd` from the **existing** `useCustomerBalance` / `useInvoiceDetail` data already loaded on the customer screen — do NOT duplicate queries.
+- Modify `src/features/customers/CustomerDetailPage.vue` — add an "إرسال كشف الحساب عبر واتساب" button that opens the shared `WhatsAppPreviewSheet` (pass `title`), prefill the customer's number, send via `wa.me`.
+- Test `useSendStatement` (mock `whatsapp.ts`); export it from `src/features/messaging/index.ts`.
+- **Reuse contract:** the shared sheet emits `send({ phone, text })` (object, not a bare string) — the walk-in/typed-number path depends on it.
+
+### Decisions taken during build (don't redo)
+- No DB migration: return-policy/greeting composed at send time (reuse `receipt_settings.footer_text`).
+- Returns are validated against the looked-up real sale, never the message text.
+- Known deferrals (not bugs): receipt timestamp is UTC (Asia/Damascus → v1.5); UI Arabic strings are inline (matches existing screens).
+
 ## Problem
 
 The brother's shop has no printer, so a sold customer currently walks away with **no proof of purchase** — and paper receipts get lost. Credit customers also have no easy way to see what they owe. WhatsApp is universal in Syria and is the product's intended customer channel ("WhatsApp is the portal"). We need to send receipts and statements over WhatsApp, and make a sent receipt usable to find the sale later (e.g. for returns).
