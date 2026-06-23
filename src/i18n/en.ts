@@ -26,6 +26,7 @@ export default {
     staff:           'Staff',
     returnReasons:   'Return reasons',
     auditLog:        'Activity log',
+    dataExport:      'Export data',
     about:           'About',
     selectSection:   'Select a section',
   },

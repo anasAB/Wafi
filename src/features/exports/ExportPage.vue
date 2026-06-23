@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import AppToast from '@/components/ui/AppToast.vue'
+import AppDatePicker from '@/components/ui/AppDatePicker.vue'
 import { usePeriodToggle } from '@/features/dashboard/composables/usePeriodToggle'
 import { getDateRange } from '@/features/dashboard/composables/periodUtils'
 import {
@@ -14,6 +15,7 @@ import {
   SALES_HEADERS, EXPENSES_HEADERS,
   PRODUCTS_HEADERS, CUSTOMERS_HEADERS,
 } from './export.types'
+import { validateCustomRange, isLargeExport } from './export.validation'
 import type { ExportDataset, ExportFormat } from './export.types'
 
 const router = useRouter()
@@ -31,6 +33,34 @@ const showDateRange = computed(() =>
   selectedDataset.value === 'sales' || selectedDataset.value === 'expenses'
 )
 
+function parseIsoDate(value: string): Date | null {
+  if (!value) return null
+  const [year, month, day] = value.split('-').map(Number)
+  if (!year || !month || !day) return null
+  return new Date(year, month - 1, day)
+}
+
+function toIsoDate(value: Date): string {
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const customStartDate = computed<Date | null>({
+  get: () => parseIsoDate(customStart.value),
+  set: (value) => {
+    customStart.value = value ? toIsoDate(value) : ''
+  },
+})
+
+const customEndDate = computed<Date | null>({
+  get: () => parseIsoDate(customEnd.value),
+  set: (value) => {
+    customEnd.value = value ? toIsoDate(value) : ''
+  },
+})
+
 const effectiveDateRange = computed(() => {
   if (useCustomRange.value && customStart.value && customEnd.value) {
     return { start: customStart.value, end: customEnd.value }
@@ -46,6 +76,16 @@ const datasets: { key: ExportDataset; label: string; desc: string }[] = [
 ]
 
 async function onExport() {
+  // Validate a custom range before doing any work, so reversed/blank dates give a
+  // clear message instead of a silently-empty file (which surfaces as "no data").
+  if (showDateRange.value && useCustomRange.value) {
+    const err = validateCustomRange(customStart.value, customEnd.value)
+    if (err) {
+      toast.value = { message: err, type: 'error' }
+      return
+    }
+  }
+
   loading.value = true
   toast.value   = null
   try {
@@ -74,6 +114,13 @@ async function onExport() {
       filename = `wafi-customers-${today}.${ext}`
     }
 
+    // A very large file is built synchronously and can briefly freeze a low-end
+    // device — warn and let the owner decide before committing to the build.
+    if (isLargeExport(rows.length) &&
+        !window.confirm(`الملف كبير (${rows.length} سطر) وقد يستغرق وقتاً. هل تريد المتابعة؟`)) {
+      return
+    }
+
     buildAndDownload(headers, rows, filename, selectedFormat.value)
     toast.value = { message: 'تم تصدير الملف بنجاح', type: 'success' }
   } catch (e: unknown) {
@@ -86,9 +133,12 @@ async function onExport() {
 </script>
 
 <template>
-  <div class="page-root" dir="rtl">
+  <!-- Mobile-only header; on desktop this renders inside the Settings content panel -->
+  <div class="lg:hidden">
     <AppHeader title="تصدير البيانات" :show-back="true" @back="router.back()" />
+  </div>
 
+  <div class="page-body" dir="rtl">
     <main class="page-main">
 
       <!-- Step 1: Dataset -->
@@ -123,11 +173,29 @@ async function onExport() {
           <div v-if="useCustomRange" class="custom-range-inputs">
             <label class="date-label">
               <span>من</span>
-              <input v-model="customStart" type="date" class="date-input" />
+              <AppDatePicker
+                v-model="customStartDate"
+                class="date-input date-picker-input"
+                date-format="yy-mm-dd"
+                show-icon
+                icon-display="input"
+                :manual-input="false"
+                show-button-bar
+                input-id="export-custom-start"
+              />
             </label>
             <label class="date-label">
               <span>إلى</span>
-              <input v-model="customEnd" type="date" class="date-input" />
+              <AppDatePicker
+                v-model="customEndDate"
+                class="date-input date-picker-input"
+                date-format="yy-mm-dd"
+                show-icon
+                icon-display="input"
+                :manual-input="false"
+                show-button-bar
+                input-id="export-custom-end"
+              />
             </label>
           </div>
         </div>
@@ -181,15 +249,15 @@ async function onExport() {
 </template>
 
 <style scoped>
-.page-root {
-  display: flex; flex-direction: column;
-  min-height: 100dvh;
-  background: #06090F;
+.page-body {
+  padding: 1.5rem 1rem 80px;
+  max-width: 42rem; margin: 0 auto; width: 100%;
   font-family: 'Tajawal', system-ui, sans-serif;
 }
+@media (min-width: 1024px) {
+  .page-body { padding: 20px; max-width: none; }
+}
 .page-main {
-  flex: 1; padding: 1.5rem 1rem 80px;
-  max-width: 42rem; margin-inline: auto; width: 100%;
   display: flex; flex-direction: column; gap: 1.5rem;
 }
 .step-section { display: flex; flex-direction: column; gap: 0.75rem; }
@@ -229,33 +297,23 @@ async function onExport() {
   font-family: 'Tajawal', system-ui, sans-serif;
 }
 .custom-range-inputs { display: flex; gap: 12px; flex-wrap: wrap; }
-.date-label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #637285; }
+.date-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #637285;
+  flex: 1;
+  min-width: 180px;
+}
 .date-input {
-  padding: 7px 10px; border-radius: 8px; font-size: 13px;
-  background: rgba(255,255,255,0.05); border: 1px solid rgba(26,86,219,0.25);
-  color: #E8EDF5; font-family: 'Tajawal', system-ui, sans-serif;
-  color-scheme: dark;
-  appearance: none;
-  -webkit-appearance: none;
   min-height: 38px;
-  outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+  font-size: 13px;
+  font-family: 'Tajawal', system-ui, sans-serif;
 }
 
-.date-input:hover {
-  border-color: rgba(26,86,219,0.45);
-  background: rgba(255,255,255,0.07);
-}
-
-.date-input:focus {
-  border-color: rgba(26,86,219,0.75);
-  box-shadow: 0 0 0 3px rgba(26,86,219,0.16);
-}
-
-.date-input::-webkit-calendar-picker-indicator {
-  filter: invert(84%) sepia(8%) saturate(392%) hue-rotate(179deg) brightness(89%) contrast(90%);
-  opacity: 0.95;
-  cursor: pointer;
+.date-picker-input {
+  width: 100%;
 }
 .format-row { display: flex; gap: 10px; }
 .format-btn {

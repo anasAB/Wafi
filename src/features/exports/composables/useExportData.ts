@@ -16,7 +16,7 @@ type SaleRow = {
   total_usd: number
   payment_method: string
   cashier_name: string | null
-  product_name: string
+  product_name: string | null
   qty: number
   unit_price_usd: number
   unit_price_syp: number
@@ -39,7 +39,7 @@ export async function fetchSalesRows(
        ROUND(li.unit_price_usd * s.exchange_rate_at_sale) AS unit_price_syp
      FROM sales s
      JOIN sale_line_items li ON li.sale_id = s.id
-     JOIN products p         ON p.id = li.product_id
+     LEFT JOIN products p    ON p.id = li.product_id
      LEFT JOIN cashier_shifts cs ON cs.id = s.shift_id
      LEFT JOIN staff st          ON st.id = cs.staff_id
      WHERE s.shop_id = ?
@@ -51,7 +51,7 @@ export async function fetchSalesRows(
   return rows.map(r => ({
     'رقم البيع':        r.display_sale_number,
     'التاريخ':          r.created_at.slice(0, 16).replace('T', ' '),
-    'المنتج':           r.product_name,
+    'المنتج':           r.product_name ?? 'منتج محذوف',
     'الكمية':           r.qty,
     'سعر الوحدة $':     r.unit_price_usd,
     'سعر الوحدة ل.س':   r.unit_price_syp,

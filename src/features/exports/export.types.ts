@@ -6,6 +6,11 @@ export interface ExportDateRange {
   end:   string // 'YYYY-MM-DD'
 }
 
+// Above this row count, building the workbook synchronously can briefly freeze a
+// low-end device, so the user is warned and asked to confirm first. Itemized
+// sales over a long range is the realistic trigger (see import-export-plan).
+export const LARGE_EXPORT_ROWS = 5000
+
 export const SALES_HEADERS = [
   'رقم البيع', 'التاريخ', 'المنتج', 'الكمية',
   'سعر الوحدة $', 'سعر الوحدة ل.س', 'إجمالي السطر $',

@@ -9,8 +9,10 @@ import CustomerForm from './components/CustomerForm.vue'
 import RecordPaymentSheet from './components/RecordPaymentSheet.vue'
 import InvoiceDetailSheet from './components/InvoiceDetailSheet.vue'
 import AuditHistory from '@/features/audit/components/AuditHistory.vue'
+import { WhatsAppPreviewSheet, useSendStatement } from '@/features/messaging'
 import { useCustomers } from './composables/useCustomers'
 import { useCustomerBalance } from './composables/useCustomerBalance'
+import { useReceiptSettings } from '@/features/receipt/composables/useReceiptSettings'
 import type { Customer, OpenInvoice } from './customer.types'
 
 const router = useRouter()
@@ -19,16 +21,20 @@ const customerId = route.params.id as string
 
 const { customers, load: loadCustomers, softDelete } = useCustomers()
 const { balanceUsd, openInvoices, payments, load: loadBalance } = useCustomerBalance(customerId)
+const { settings: receiptSettings, load: loadReceiptSettings } = useReceiptSettings()
+const sendStatement = useSendStatement()
 
 const customer    = ref<Customer | undefined>(undefined)
 const showPayment = ref(false)
 const showEdit    = ref(false)
 const showDelete  = ref(false)
+const showStatement = ref(false)
 const selectedInvoice = ref<OpenInvoice | null>(null)
 const toast       = ref<{ message: string; type: 'success' | 'error' } | null>(null)
+const statementPreview = ref<{ text: string; phone: string | null } | null>(null)
 
 onMounted(async () => {
-  await Promise.all([loadCustomers(), loadBalance()])
+  await Promise.all([loadCustomers(), loadBalance(), loadReceiptSettings()])
   customer.value = customers.value.find(c => c.id === customerId)
 })
 
@@ -41,6 +47,25 @@ const canPay    = computed(() => balanceUsd.value > 0.001)
 
 function formatDate(iso: string): string {
   return new Intl.DateTimeFormat('ar-SY', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(iso))
+}
+
+function buildPeriodLabel(): string {
+  const today = new Intl.DateTimeFormat('ar-SY', { day: 'numeric', month: 'numeric', year: 'numeric' }).format(new Date())
+  return `كشف حساب حتى ${today}`
+}
+
+function openStatementSheet() {
+  if (!customer.value) return
+  const preview = sendStatement.prepare({
+    customerName: customer.value.name,
+    shopName:     receiptSettings.value.shopName || 'المحل',
+    periodLabel:  buildPeriodLabel(),
+    balanceUsd:   balanceUsd.value,
+    openInvoices: openInvoices.value,
+    phoneRaw:     customer.value.phone || customer.value.mobile,
+  })
+  statementPreview.value = preview
+  showStatement.value = true
 }
 
 async function handlePaymentSaved() {
@@ -59,6 +84,16 @@ async function handleEditSaved() {
 async function handleDelete() {
   await softDelete(customerId)
   router.push('/customers')
+}
+
+function handleStatementSent(payload: { phone: string; text: string }) {
+  sendStatement.send(payload.phone, payload.text)
+  showStatement.value = false
+  toast.value = { message: 'تم إرسال كشف الحساب', type: 'success' }
+}
+
+function handleStatementCancel() {
+  showStatement.value = false
 }
 </script>
 
@@ -126,6 +161,22 @@ async function handleDelete() {
                 class="btn-primary btn-pay"
                 @click="showPayment = true"
               >تسجيل دفعة</button>
+            </div>
+
+            <!-- Statement via WhatsApp -->
+            <div class="statement-section">
+              <button
+                type="button"
+                data-testid="send-statement-btn"
+                class="btn-statement"
+                @click="openStatementSheet"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                  <path d="M11.953 2C6.465 2 2 6.465 2 11.953c0 1.821.497 3.53 1.359 4.997L2 22l5.218-1.328A9.912 9.912 0 0011.953 22c5.488 0 9.953-4.465 9.953-9.953S17.441 2 11.953 2zm0 18.12a8.16 8.16 0 01-4.159-1.139l-.298-.177-3.098.789.812-3.006-.196-.31A8.12 8.12 0 013.84 11.953c0-4.476 3.638-8.12 8.113-8.12 4.476 0 8.12 3.644 8.12 8.12s-3.644 8.167-8.12 8.167z"/>
+                </svg>
+                إرسال كشف الحساب عبر واتساب
+              </button>
             </div>
           </div>
 
@@ -223,6 +274,15 @@ async function handleDelete() {
     :danger="true"
     @confirm="handleDelete"
     @cancel="showDelete = false"
+  />
+
+  <WhatsAppPreviewSheet
+    v-if="showStatement && statementPreview"
+    title="كشف الحساب"
+    :text="statementPreview.text"
+    :phone="statementPreview.phone"
+    @send="handleStatementSent"
+    @cancel="handleStatementCancel"
   />
 
   <AppToast v-if="toast" :message="toast.message" :type="toast.type" @dismiss="toast = null" />
@@ -393,6 +453,37 @@ async function handleDelete() {
 .btn-primary:disabled { opacity: 0.3; cursor: not-allowed; }
 
 .btn-pay { width: 100%; }
+
+/* ── Statement section ───────────────────────────────────── */
+.statement-section {
+  padding: 0 1rem 1rem;
+  border-top: 1px solid rgba(26,86,219,0.14);
+  padding-top: 0.75rem;
+}
+
+.btn-statement {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  height: 40px;
+  padding-inline: 1rem;
+  border-radius: 0.75rem;
+  background: rgba(37, 211, 102, 0.10);
+  color: #25D366;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border: 1px solid rgba(37, 211, 102, 0.28);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.btn-statement:hover {
+  background: rgba(37, 211, 102, 0.18);
+  border-color: rgba(37, 211, 102, 0.45);
+}
 
 /* ── Delete link ─────────────────────────────────────────── */
 .delete-link {

@@ -105,6 +105,7 @@ async function onConfirm() {
             v-for="(line, i) in sheet.lines.value"
             :key="line.productId"
             :line="line"
+            @update="(patch) => sheet.updateLine(i, patch)"
             @remove="sheet.removeLine(i)"
           />
           <p v-if="!sheet.lines.value.length" class="muted empty-lines">لم تتم إضافة أصناف بعد.</p>

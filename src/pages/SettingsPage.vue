@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppHeader from '@/components/ui/AppHeader.vue'
@@ -8,17 +9,34 @@ const route  = useRoute()
 const { t }  = useI18n()
 
 const APP_VERSION = 'v0.1.0'
+
+// Settings is a list (mobile) / sidebar + panel (desktop). The sub-screens render
+// through a single <RouterView>, but it can only live in ONE branch or the child
+// mounts twice. So we pick the layout reactively by breakpoint (v-if, not CSS) and
+// keep exactly one RouterView active: desktop always uses the panel; mobile uses
+// the list at the index and swaps to the child screen on a sub-route.
+const mq = window.matchMedia('(min-width: 1024px)')
+const isDesktop = ref(mq.matches)
+const onMqChange = (e: MediaQueryListEvent) => { isDesktop.value = e.matches }
+onMounted(() => mq.addEventListener('change', onMqChange))
+onUnmounted(() => mq.removeEventListener('change', onMqChange))
+
+const isIndex = computed(() => route.path === '/settings')
+// The settings title bar is shown on desktop and at the mobile index; on a mobile
+// sub-screen the child supplies its own header, so we hide this one.
+const showSettingsHeader = computed(() => isDesktop.value || isIndex.value)
 </script>
 
 <template>
   <div class="page-root" dir="rtl">
     <AppHeader
+      v-if="showSettingsHeader"
       :title="t('settings.title')"
       @back="router.back()"
     />
 
-    <!-- Mobile layout (hidden on lg+) -->
-    <main class="mobile-main lg:hidden">
+    <!-- Mobile: the settings list (index only) -->
+    <main v-if="!isDesktop && isIndex" class="mobile-main">
 
       <p class="section-label">{{ t('settings.personal') }}</p>
       <div class="settings-card">
@@ -118,6 +136,25 @@ const APP_VERSION = 'v0.1.0'
           </svg>
         </button>
 
+        <!-- Data export -->
+        <button
+          type="button"
+          class="nav-row"
+          @click="router.push('/settings/exports')"
+        >
+          <div class="nav-row-start">
+            <span class="nav-icon-wrap">
+              <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+            </span>
+            <span class="nav-title">{{ t('settings.dataExport') }}</span>
+          </div>
+          <svg class="nav-arrow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+
         <!-- Sign out (disabled) -->
         <button type="button" class="nav-row nav-row--danger nav-row--last" disabled>
           <div class="nav-row-start">
@@ -143,8 +180,11 @@ const APP_VERSION = 'v0.1.0'
 
     </main>
 
-    <!-- Desktop layout (lg+) -->
-    <div class="desktop-layout hidden lg:flex">
+    <!-- Mobile: a sub-screen renders here (the child provides its own header) -->
+    <RouterView v-if="!isDesktop && !isIndex" />
+
+    <!-- Desktop layout (lg+): sidebar + content panel -->
+    <div v-if="isDesktop" class="desktop-layout lg:flex">
 
       <!-- Settings nav sidebar -->
       <nav class="desktop-nav">
@@ -214,6 +254,7 @@ const APP_VERSION = 'v0.1.0'
             to="/settings/audit-log"
             class="desktop-nav-link"
             :class="route.path === '/settings/audit-log' ? 'desktop-nav-link--active' : ''"
+            style="border-bottom: 1px solid rgba(26,86,219,0.14)"
           >
             <div class="nav-row-start">
               <svg class="nav-icon-sm" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
@@ -222,6 +263,20 @@ const APP_VERSION = 'v0.1.0'
               <span>{{ t('settings.auditLog') }}</span>
             </div>
             <span v-if="route.path === '/settings/audit-log'" class="active-dot" />
+          </RouterLink>
+
+          <RouterLink
+            to="/settings/exports"
+            class="desktop-nav-link"
+            :class="route.path === '/settings/exports' ? 'desktop-nav-link--active' : ''"
+          >
+            <div class="nav-row-start">
+              <svg class="nav-icon-sm" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              <span>{{ t('settings.dataExport') }}</span>
+            </div>
+            <span v-if="route.path === '/settings/exports'" class="active-dot" />
           </RouterLink>
 
           <!-- About row -->

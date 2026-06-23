@@ -8,6 +8,8 @@ import { useDeviceStore } from '@/store/device.store'
 import type { ReceiptData } from '@/composables/usePrinter'
 import { useReceiptSettings } from '@/features/receipt/composables/useReceiptSettings'
 import { loadCompletedSale } from './loadCompletedSale'
+import { db } from '@/data/powersync/db'
+import { WhatsAppPreviewSheet, useSendReceipt } from '@/features/messaging'
 
 const router  = useRouter()
 const route   = useRoute()
@@ -34,13 +36,13 @@ const methodLabels: Record<string, string> = {
   split:    'متعدد',
 }
 
-async function handlePrint() {
-  if (!sale.value) return
+/** Build ReceiptData from the current sale — shared by print and WhatsApp paths. */
+async function buildReceipt(): Promise<ReceiptData | null> {
+  if (!sale.value) return null
   const s = sale.value
   const { settings, load } = useReceiptSettings()
   await load()
-
-  const receipt: ReceiptData = {
+  return {
     saleId:                 s.saleId,
     displaySaleNumber:      s.displaySaleNumber,
     shopName:               settings.value.shopName || device.shopId,
@@ -56,13 +58,56 @@ async function handlePrint() {
     taxNumber:              settings.value.taxNumber  || undefined,
     headerText:             settings.value.headerText || undefined,
     footerText:             settings.value.footerText || undefined,
+    splitPayments:          s.splitPayments?.map(p => ({ method: p.method, amountUsd: p.amountUsd })),
   }
+}
+
+async function handlePrint() {
+  const receipt = await buildReceipt()
+  if (!receipt) return
   try {
     await printer.print(receipt)
     toast.value = { message: 'تم إرسال الفاتورة للطباعة', type: 'success' }
   } catch {
     toast.value = { message: `خطأ في الطباعة: ${printer.error.value}`, type: 'error' }
   }
+}
+
+// ── WhatsApp send ─────────────────────────────────────────────────────────────
+const { prepare, send } = useSendReceipt()
+const waSheetOpen   = ref(false)
+const waSheetText   = ref('')
+const waSheetPhone  = ref<string | null>(null)
+
+async function handleWhatsApp() {
+  const receipt = await buildReceipt()
+  if (!receipt) return
+
+  // Try to look up the customer's phone if this sale has a customerId
+  let phoneRaw: string | undefined
+  if (sale.value?.customerId) {
+    try {
+      const res = await db.execute(
+        `SELECT phone, mobile FROM customers WHERE id = ? LIMIT 1`,
+        [sale.value.customerId],
+      )
+      const row = ((res as any).rows._array as any[])[0]
+      phoneRaw = (row?.phone || row?.mobile) ?? undefined
+    } catch {
+      // DB error → fall back to enter-number path
+    }
+  }
+
+  const prepared = prepare(receipt, phoneRaw)
+  waSheetText.value  = prepared.text
+  waSheetPhone.value = prepared.phone
+  waSheetOpen.value  = true
+}
+
+function onWaSend(payload: { phone: string; text: string }) {
+  send(payload.phone, payload.text)
+  waSheetOpen.value = false
+  toast.value = { message: 'تم فتح واتساب', type: 'success' }
 }
 </script>
 
@@ -129,6 +174,18 @@ async function handlePrint() {
         {{ printer.printing.value ? 'جارٍ الطباعة...' : 'طباعة الفاتورة' }}
       </button>
 
+      <button
+        type="button"
+        class="btn-whatsapp"
+        @click="handleWhatsApp"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+          <path d="M11.953 2C6.465 2 2 6.465 2 11.953c0 1.821.497 3.53 1.359 4.997L2 22l5.218-1.328A9.912 9.912 0 0011.953 22c5.488 0 9.953-4.465 9.953-9.953S17.441 2 11.953 2zm0 18.12a8.16 8.16 0 01-4.159-1.139l-.298-.177-3.098.789.812-3.006-.196-.31A8.12 8.12 0 013.84 11.953c0-4.476 3.638-8.12 8.113-8.12 4.476 0 8.12 3.644 8.12 8.12s-3.644 8.167-8.12 8.167z"/>
+        </svg>
+        إرسال الفاتورة عبر واتساب
+      </button>
+
       <button type="button" class="btn-new-sale" @click="router.push('/pos')">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -143,6 +200,15 @@ async function handlePrint() {
   </div>
 
   <AppToast v-if="toast" :message="toast.message" :type="toast.type" @dismiss="toast = null" />
+
+  <WhatsAppPreviewSheet
+    v-if="waSheetOpen"
+    :text="waSheetText"
+    :phone="waSheetPhone"
+    title="إرسال الفاتورة عبر واتساب"
+    @send="onWaSend"
+    @cancel="waSheetOpen = false"
+  />
 </template>
 
 <style scoped>
@@ -281,6 +347,28 @@ async function handlePrint() {
 
 .btn-print:hover:not(:disabled) { background: rgba(255,255,255,0.11); }
 .btn-print:disabled { opacity: 0.50; cursor: not-allowed; }
+
+.btn-whatsapp {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 48px;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  color: #fff;
+  background: linear-gradient(135deg, #25D366, #128C7E);
+  border: none;
+  box-shadow: 0 4px 20px rgba(37, 211, 102, 0.30);
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.btn-whatsapp:hover  { opacity: 0.90; }
+.btn-whatsapp:active { transform: scale(0.98); }
 
 .btn-new-sale {
   display: flex;

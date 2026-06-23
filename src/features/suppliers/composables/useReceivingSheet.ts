@@ -45,6 +45,16 @@ export function useReceivingSheet() {
     lines.value.splice(index, 1)
   }
 
+  // Apply an edit from a line row. The composable owns `lines`, so the row emits
+  // its change here rather than mutating the prop object it was handed.
+  function updateLine(
+    index: number,
+    patch: Partial<Pick<ReceivingLine, 'qtyReceived' | 'unitCostUsd' | 'updateCost'>>,
+  ): void {
+    const line = lines.value[index]
+    if (line) Object.assign(line, patch)
+  }
+
   async function confirm(): Promise<void> {
     if (!supplierId.value || lines.value.length === 0 || lines.value.some(l => l.qtyReceived <= 0)) {
       throw new Error('confirm() called without valid state')
@@ -113,6 +123,6 @@ export function useReceivingSheet() {
 
   return {
     supplierId, supplierName, lines, invoicePhotoUrl, notes,
-    totalCostUsd, canConfirm, addLine, removeLine, confirm,
+    totalCostUsd, canConfirm, addLine, removeLine, updateLine, confirm,
   }
 }

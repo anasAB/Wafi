@@ -3,7 +3,13 @@ import { computed } from 'vue'
 import type { ReceivingLine } from '../receiving.types'
 
 const props = defineProps<{ line: ReceivingLine }>()
-const emit = defineEmits<{ remove: [] }>()
+const emit = defineEmits<{
+  remove: []
+  update: [patch: Partial<Pick<ReceivingLine, 'qtyReceived' | 'unitCostUsd' | 'updateCost'>>]
+}>()
+
+const num = (e: Event) => Number((e.target as HTMLInputElement).value)
+const checked = (e: Event) => (e.target as HTMLInputElement).checked
 
 const costDiffers = computed(() => props.line.unitCostUsd !== props.line.currentCostUsd)
 </script>
@@ -20,14 +26,17 @@ const costDiffers = computed(() => props.line.unitCostUsd !== props.line.current
     </div>
     <div class="inputs">
       <label>الكمية
-        <input v-model.number="line.qtyReceived" type="number" min="1" step="1" />
+        <input :value="line.qtyReceived" type="number" min="1" step="1"
+               @input="emit('update', { qtyReceived: num($event) })" />
       </label>
       <label>سعر التكلفة ($)
-        <input v-model.number="line.unitCostUsd" type="number" min="0" step="0.01" />
+        <input :value="line.unitCostUsd" type="number" min="0" step="0.01"
+               @input="emit('update', { unitCostUsd: num($event) })" />
       </label>
     </div>
     <label v-if="costDiffers" class="cost-toggle">
-      <input v-model="line.updateCost" type="checkbox" />
+      <input :checked="line.updateCost" type="checkbox"
+             @change="emit('update', { updateCost: checked($event) })" />
       تحديث سعر التكلفة؟ {{ line.currentCostUsd }}$ ← {{ line.unitCostUsd }}$
     </label>
   </div>

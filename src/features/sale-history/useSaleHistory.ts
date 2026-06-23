@@ -5,6 +5,131 @@ import { usePrinter } from '@/composables/usePrinter'
 import type { ReceiptData } from '@/composables/usePrinter'
 import type { SaleRecord } from './sale-history.types'
 
+export async function buildReceiptData(saleId: string): Promise<ReceiptData> {
+  const device = useDeviceStore()
+  const [saleRes, linesRes, settingsRes, paymentsRes, fullyReturnedRes] = await Promise.all([
+    db.execute(`SELECT * FROM sales WHERE id = ?`, [saleId]),
+    // LEFT JOIN so a since-deleted product still reprints its line.
+    db.execute(`SELECT sli.*, p.name_ar FROM sale_line_items sli LEFT JOIN products p ON sli.product_id = p.id WHERE sli.sale_id = ?`, [saleId]),
+    // Real shop name/header/footer/tax — not the shop UUID.
+    db.execute(`SELECT * FROM receipt_settings WHERE shop_id = ? LIMIT 1`, [device.shopId]),
+    // Split-payment legs, so a reprint of a split sale shows the same breakdown.
+    db.execute(`SELECT method, amount_usd FROM sale_payments WHERE sale_id = ?`, [saleId]),
+    // Was every sold unit returned? Then mark the reprint as fully returned.
+    db.execute(
+      `SELECT r.original_sale_id AS sale_id
+       FROM returns r
+       JOIN return_line_items rli ON rli.return_id = r.id
+       WHERE r.original_sale_id = ?
+       GROUP BY r.original_sale_id
+       HAVING COALESCE(SUM(rli.qty_returned), 0) >= (
+         SELECT COALESCE(SUM(sli.quantity), 0) FROM sale_line_items sli WHERE sli.sale_id = ?
+       )`,
+      [saleId, saleId],
+    ).catch(() => ({ rows: { _array: [] } })),
+  ])
+  const sale  = ((saleRes as any).rows._array as any[])[0]
+  const lines = (linesRes as any).rows._array as any[]
+  if (!sale) throw new Error('Sale not found')
+
+  const settings        = ((settingsRes as any).rows._array as any[])[0]
+  const paymentRows     = (paymentsRes as any).rows._array as any[]
+  const isFullyReturned = ((fullyReturnedRes as any).rows._array as any[]).length > 0
+
+  return {
+    saleId:            sale.id,
+    displaySaleNumber: sale.display_sale_number,
+    shopName:          settings?.shop_name || device.shopId,
+    createdAt:         sale.created_at,
+    lines: lines.map((l: any) => ({
+      nameAr:       l.name_ar ?? '—',
+      quantity:     l.quantity,
+      unitPriceUsd: l.unit_price_usd,
+      lineTotalUsd: l.line_total_usd,
+    })),
+    totalUsd:       sale.total_usd,
+    totalSyp:       sale.total_syp,
+    exchangeRate:   sale.exchange_rate_at_sale,
+    paymentMethod:  sale.payment_method,
+    amountReceived: sale.amount_received,
+    amountReceivedCurrency: sale.amount_received_currency,
+    changeDue:      sale.change_due ?? undefined,
+    taxNumber:      settings?.tax_number  || undefined,
+    headerText:     settings?.header_text || undefined,
+    footerText:     settings?.footer_text || undefined,
+    splitPayments:  (sale.is_split ?? 0) === 1
+      ? paymentRows.map((p: any) => ({ method: p.method, amountUsd: p.amount_usd }))
+      : undefined,
+    isFullyReturned,
+  }
+}
+
+/**
+ * Shared enrichment helper — runs the three side queries (pending via ps_crud,
+ * returned, fully-returned) and maps raw sale rows to SaleRecord[].
+ * Both loadHistory and searchByNumber call this so the enrichment logic is never
+ * duplicated.
+ */
+async function enrichAndMapSales(
+  rawRows: any[],
+  shopId: string,
+): Promise<SaleRecord[]> {
+  const [crudResult, returnedSalesResult, fullyReturnedResult] = await Promise.all([
+    db.execute(
+      `SELECT DISTINCT json_extract(data, '$.id') as sale_id FROM ps_crud WHERE "table" = 'sales'`
+    ).catch(() => ({ rows: { _array: [] } })),
+    db.execute(
+      `SELECT DISTINCT original_sale_id AS sale_id
+       FROM returns
+       WHERE shop_id = ?`,
+      [shopId]
+    ).catch(() => ({ rows: { _array: [] } })),
+    db.execute(
+      `SELECT r.original_sale_id AS sale_id
+       FROM returns r
+       JOIN return_line_items rli ON rli.return_id = r.id
+       WHERE r.shop_id = ?
+       GROUP BY r.original_sale_id
+       HAVING COALESCE(SUM(rli.qty_returned), 0) >= (
+         SELECT COALESCE(SUM(sli.quantity), 0)
+         FROM sale_line_items sli
+         WHERE sli.sale_id = r.original_sale_id
+       )`,
+      [shopId]
+    ).catch(() => ({ rows: { _array: [] } })),
+  ])
+
+  const pendingIds = new Set<string>(
+    ((crudResult as any).rows._array as any[]).map((r: any) => r.sale_id).filter(Boolean)
+  )
+  const returnedIds = new Set<string>(
+    ((returnedSalesResult as any).rows._array as any[]).map((r: any) => r.sale_id).filter(Boolean)
+  )
+  const fullyReturnedIds = new Set<string>(
+    ((fullyReturnedResult as any).rows._array as any[]).map((r: any) => r.sale_id).filter(Boolean)
+  )
+
+  return rawRows.map(r => ({
+    id:                     r.id,
+    shopId:                 r.shop_id,
+    deviceId:               r.device_id,
+    deviceSequence:         r.device_sequence,
+    displaySaleNumber:      r.display_sale_number,
+    createdAt:              r.created_at,
+    totalUsd:               r.total_usd,
+    totalSyp:               r.total_syp,
+    exchangeRateAtSale:     r.exchange_rate_at_sale,
+    paymentMethod:          r.payment_method,
+    amountReceived:         r.amount_received,
+    amountReceivedCurrency: r.amount_received_currency,
+    changeDue:              r.change_due,
+    isPending:              pendingIds.has(r.id),
+    isSplit:                (r.is_split ?? 0) === 1,
+    hasReturn:              returnedIds.has(r.id),
+    isFullyReturned:        fullyReturnedIds.has(r.id),
+  }))
+}
+
 export function useSaleHistory() {
   const sales   = ref<SaleRecord[]>([])
   const loading = ref(false)
@@ -31,61 +156,38 @@ export function useSaleHistory() {
         params = [device.shopId, sevenDaysAgo]
       }
 
-      const [result, crudResult, returnedSalesResult, fullyReturnedResult] = await Promise.all([
-        db.execute(query, params),
-        db.execute(
-          `SELECT DISTINCT json_extract(data, '$.id') as sale_id FROM ps_crud WHERE "table" = 'sales'`
-        ).catch(() => ({ rows: { _array: [] } })),
-        db.execute(
-          `SELECT DISTINCT original_sale_id AS sale_id
-           FROM returns
-           WHERE shop_id = ?`,
-          [device.shopId]
-        ).catch(() => ({ rows: { _array: [] } })),
-        db.execute(
-          `SELECT r.original_sale_id AS sale_id
-           FROM returns r
-           JOIN return_line_items rli ON rli.return_id = r.id
-           WHERE r.shop_id = ?
-           GROUP BY r.original_sale_id
-           HAVING COALESCE(SUM(rli.qty_returned), 0) >= (
-             SELECT COALESCE(SUM(sli.quantity), 0)
-             FROM sale_line_items sli
-             WHERE sli.sale_id = r.original_sale_id
-           )`,
-          [device.shopId]
-        ).catch(() => ({ rows: { _array: [] } })),
-      ])
-      const pendingIds = new Set<string>(
-        ((crudResult as any).rows._array as any[]).map((r: any) => r.sale_id).filter(Boolean)
+      const result = await db.execute(query, params)
+      const rawRows = (result as any).rows._array as any[]
+      sales.value = await enrichAndMapSales(rawRows, device.shopId)
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e)
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
+   * Search all-time sales by receipt number (prefix match).
+   * Loads into `sales` so the existing row rendering (return/reprint/WhatsApp)
+   * works unchanged on the results.
+   * Guards: empty/whitespace query is a no-op (does not run an unbounded scan).
+   * SQL injection prevention: the query string is never concatenated into SQL;
+   * it is always passed as a bound parameter.
+   */
+  async function searchByNumber(query: string): Promise<void> {
+    const trimmed = query.trim()
+    if (!trimmed) return  // empty input — do nothing; caller clears via loadHistory
+
+    const device = useDeviceStore()
+    loading.value = true
+    error.value   = null
+    try {
+      const result = await db.execute(
+        `SELECT * FROM sales WHERE shop_id = ? AND display_sale_number LIKE ? ORDER BY created_at DESC`,
+        [device.shopId, `${trimmed}%`]
       )
-      const returnRows = (returnedSalesResult as any).rows._array as any[]
-      const fullyReturnedRows = (fullyReturnedResult as any).rows._array as any[]
-      const returnedIds = new Set<string>(
-        returnRows.map((r: any) => r.sale_id).filter(Boolean)
-      )
-      const fullyReturnedIds = new Set<string>(
-        fullyReturnedRows.map((r: any) => r.sale_id).filter(Boolean)
-      )
-      sales.value = ((result as any).rows._array as any[]).map(r => ({
-        id:                  r.id,
-        shopId:              r.shop_id,
-        deviceId:            r.device_id,
-        deviceSequence:      r.device_sequence,
-        displaySaleNumber:   r.display_sale_number,
-        createdAt:           r.created_at,
-        totalUsd:            r.total_usd,
-        totalSyp:            r.total_syp,
-        exchangeRateAtSale:  r.exchange_rate_at_sale,
-        paymentMethod:       r.payment_method,
-        amountReceived:      r.amount_received,
-        amountReceivedCurrency: r.amount_received_currency,
-        changeDue:           r.change_due,
-        isPending:           pendingIds.has(r.id),
-        isSplit:             (r.is_split ?? 0) === 1,
-        hasReturn:           returnedIds.has(r.id),
-        isFullyReturned:     fullyReturnedIds.has(r.id),
-      }))
+      const rawRows = (result as any).rows._array as any[]
+      sales.value = await enrichAndMapSales(rawRows, device.shopId)
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
     } finally {
@@ -94,64 +196,9 @@ export function useSaleHistory() {
   }
 
   async function reprint(saleId: string): Promise<void> {
-    const device = useDeviceStore()
-    const [saleRes, linesRes, settingsRes, paymentsRes, fullyReturnedRes] = await Promise.all([
-      db.execute(`SELECT * FROM sales WHERE id = ?`, [saleId]),
-      // LEFT JOIN so a since-deleted product still reprints its line.
-      db.execute(`SELECT sli.*, p.name_ar FROM sale_line_items sli LEFT JOIN products p ON sli.product_id = p.id WHERE sli.sale_id = ?`, [saleId]),
-      // Real shop name/header/footer/tax — not the shop UUID.
-      db.execute(`SELECT * FROM receipt_settings WHERE shop_id = ? LIMIT 1`, [device.shopId]),
-      // Split-payment legs, so a reprint of a split sale shows the same breakdown.
-      db.execute(`SELECT method, amount_usd FROM sale_payments WHERE sale_id = ?`, [saleId]),
-      // Was every sold unit returned? Then mark the reprint as fully returned.
-      db.execute(
-        `SELECT r.original_sale_id AS sale_id
-         FROM returns r
-         JOIN return_line_items rli ON rli.return_id = r.id
-         WHERE r.original_sale_id = ?
-         GROUP BY r.original_sale_id
-         HAVING COALESCE(SUM(rli.qty_returned), 0) >= (
-           SELECT COALESCE(SUM(sli.quantity), 0) FROM sale_line_items sli WHERE sli.sale_id = ?
-         )`,
-        [saleId, saleId],
-      ).catch(() => ({ rows: { _array: [] } })),
-    ])
-    const sale  = ((saleRes as any).rows._array as any[])[0]
-    const lines = (linesRes as any).rows._array as any[]
-    if (!sale) throw new Error('Sale not found')
-
-    const settings        = ((settingsRes as any).rows._array as any[])[0]
-    const paymentRows     = (paymentsRes as any).rows._array as any[]
-    const isFullyReturned = ((fullyReturnedRes as any).rows._array as any[]).length > 0
-
-    const receipt: ReceiptData = {
-      saleId:            sale.id,
-      displaySaleNumber: sale.display_sale_number,
-      shopName:          settings?.shop_name || device.shopId,
-      createdAt:         sale.created_at,
-      lines: lines.map((l: any) => ({
-        nameAr:       l.name_ar ?? '—',
-        quantity:     l.quantity,
-        unitPriceUsd: l.unit_price_usd,
-        lineTotalUsd: l.line_total_usd,
-      })),
-      totalUsd:       sale.total_usd,
-      totalSyp:       sale.total_syp,
-      exchangeRate:   sale.exchange_rate_at_sale,
-      paymentMethod:  sale.payment_method,
-      amountReceived: sale.amount_received,
-      amountReceivedCurrency: sale.amount_received_currency,
-      changeDue:      sale.change_due ?? undefined,
-      taxNumber:      settings?.tax_number  || undefined,
-      headerText:     settings?.header_text || undefined,
-      footerText:     settings?.footer_text || undefined,
-      splitPayments:  (sale.is_split ?? 0) === 1
-        ? paymentRows.map((p: any) => ({ method: p.method, amountUsd: p.amount_usd }))
-        : undefined,
-      isFullyReturned,
-    }
+    const receipt = await buildReceiptData(saleId)
     await printer.print(receipt)
   }
 
-  return { sales, loading, error, loadHistory, reprint, reprintError: printer.error }
+  return { sales, loading, error, loadHistory, searchByNumber, reprint, reprintError: printer.error }
 }

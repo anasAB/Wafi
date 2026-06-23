@@ -10,7 +10,9 @@
     "test": "vitest run",
     "test:ui": "vitest --ui",
     "test:watch": "vitest",
-    "type-check:test": "vue-tsc -p tsconfig.vitest.json --noEmit"
+    "type-check:test": "vue-tsc -p tsconfig.vitest.json --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
   },
   "dependencies": {
     "@powersync/web": "^1.38.1",
