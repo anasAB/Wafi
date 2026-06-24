@@ -1,6 +1,6 @@
 -- Wafi POS — owner offline recovery codes (WAFI-057).
--- Expand-only: nullable-by-default JSONB array of single-use code records,
--- each { "hash": text, "salt": text, "usedAt": iso8601 | null }. Hashes only —
+-- Expand-only: NOT NULL JSONB defaulting to '[]' — an array of single-use code
+-- records, each { "hash": text, "salt": text, "usedAt": iso8601 | null }. Hashes only —
 -- never plaintext. Rides the existing PowerSync publication (004) so it syncs
 -- to the shop's devices and verifies OFFLINE with no extra round-trip.
 ALTER TABLE public.staff
