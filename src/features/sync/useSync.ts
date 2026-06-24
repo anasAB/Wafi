@@ -1,13 +1,52 @@
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useSyncStore } from '@/store/sync.store'
 import { useDeviceStore } from '@/store/device.store'
 import { db } from '@/data/powersync/db'
 import { SupabaseConnector } from '@/data/powersync/connector'
+import {
+  countDeadLetter, listDeadLetter, retryDeadLetterOp, discardDeadLetterOp,
+  type DeadLetterEntry, type RetryResult,
+} from '@/data/powersync/dead-letter'
 import { supabase } from '@/data/supabase/client'
 
 export function useSync() {
   const syncStore  = useSyncStore()
   const deviceStore = useDeviceStore()
+
+  // Ops the server permanently rejected, held locally for owner recovery.
+  const deadLetter = ref<DeadLetterEntry[]>([])
+
+  // Refresh the two queue depths the UI shows: pendingCount = writes still
+  // waiting in PowerSync's upload queue (ps_crud); blockedCount = poison ops
+  // parked in the dead-letter holding. Best-effort — never throw into the
+  // status listener that drives it.
+  async function refreshCounts() {
+    try {
+      const [pending] = await db.getAll<{ n: number }>('SELECT count(*) AS n FROM ps_crud')
+      syncStore.setPendingCount(pending?.n ?? 0)
+      syncStore.setBlockedCount(await countDeadLetter(db))
+    } catch {
+      /* counts are advisory UI; a transient read failure must not break sync */
+    }
+  }
+
+  async function refreshDeadLetter() {
+    deadLetter.value = await listDeadLetter(db)
+    syncStore.setBlockedCount(deadLetter.value.length)
+  }
+
+  async function retryBlocked(id: string): Promise<RetryResult> {
+    const result = await retryDeadLetterOp(db, id)
+    await refreshDeadLetter()
+    await refreshCounts()
+    return result
+  }
+
+  async function discardBlocked(id: string): Promise<void> {
+    await discardDeadLetterOp(db, id)
+    await refreshDeadLetter()
+    await refreshCounts()
+  }
 
   function waitForConnected(timeoutMs = 8000): Promise<boolean> {
     if (db.currentStatus?.connected) return Promise.resolve(true)
@@ -53,6 +92,10 @@ export function useSync() {
         // is visible instead of silent. PowerSync clears uploadError on the next
         // successful upload, so this self-resolves once the server is fixed.
         const uploadError = status.dataFlowStatus?.uploadError
+
+        // Keep the queue-depth indicators live: each status change (upload
+        // start/stop) is when ps_crud drains or a poison op gets parked.
+        void refreshCounts()
 
         if (status.connected) {
           syncStore.setStatus('online')
@@ -117,15 +160,20 @@ export function useSync() {
 
   let unbind: (() => void) | undefined
 
-  onMounted(() => { unbind = bindPowerSync() })
+  onMounted(() => { unbind = bindPowerSync(); void refreshCounts() })
   onUnmounted(() => { unbind?.() })
 
   return {
     status:       computed(() => syncStore.status),
     pendingCount: computed(() => syncStore.pendingCount),
+    blockedCount: computed(() => syncStore.blockedCount),
     lastSyncedAt: computed(() => syncStore.lastSyncedAt),
     errorMessage: computed(() => syncStore.errorMessage),
     isStale,
     syncNow,
+    deadLetter,
+    refreshDeadLetter,
+    retryBlocked,
+    discardBlocked,
   }
 }

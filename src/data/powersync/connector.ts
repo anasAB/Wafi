@@ -1,40 +1,25 @@
-import { AbstractPowerSyncDatabase, UpdateType } from '@powersync/web'
+import type { AbstractPowerSyncDatabase } from '@powersync/web'
 import type { PowerSyncBackendConnector } from '@powersync/common'
-import type { PostgrestError } from '@supabase/supabase-js'
 import { supabase } from '@/data/supabase/client'
+import { runOp, isPermanentError } from './ops'
+import { quarantineOp } from './dead-letter'
 
-/** Apply one CRUD op to Supabase, returning the PostgrestError (or null on success).
- *  Exported for unit testing the append-only audit_log guard. */
-export async function runOp(
-  type: UpdateType,
-  table: string,
-  id: string,
-  opData: Record<string, unknown> | undefined,
-): Promise<PostgrestError | null> {
-  // audit_log is append-only at the DB (migration 018): a BEFORE UPDATE/DELETE
-  // trigger hard-rejects any modification. PowerSync emits inserts as PUT, which
-  // we'd normally upsert (ON CONFLICT DO UPDATE) — but a retried batch can
-  // re-send an already-synced audit row, and that conflicting UPDATE would trip
-  // the trigger and JAM sync forever. So for audit_log: insert-only with
-  // ON CONFLICT DO NOTHING (ignoreDuplicates), and never PATCH/DELETE.
-  if (table === 'audit_log') {
-    if (type !== UpdateType.PUT) return null
-    return (await supabase.from(table).upsert({ id, ...opData }, { ignoreDuplicates: true })).error
-  }
+// Re-export so existing importers and the runOp unit tests keep one entry point.
+export { runOp, isPermanentError } from './ops'
 
-  switch (type) {
-    case UpdateType.PUT:
-      return (await supabase.from(table).upsert({ id, ...opData })).error
-    case UpdateType.PATCH:
-      return (await supabase.from(table).update(opData!).eq('id', id)).error
-    case UpdateType.DELETE:
-      return (await supabase.from(table).delete().eq('id', id)).error
-    default:
-      return null
-  }
-}
+/** A permanently-rejected op gets this many upload attempts before it is moved
+ *  to the dead-letter holding — enough to absorb a one-off blip that happened to
+ *  surface as a 4xx, while still draining the queue quickly for a true poison op. */
+export const MAX_PERMANENT_ATTEMPTS = 3
 
 export class SupabaseConnector implements PowerSyncBackendConnector {
+  // Per-op attempt counts for ops currently failing with a *permanent* error,
+  // keyed by the stable ps_crud client id. Transient failures never count here.
+  private permanentFailures = new Map<number, number>()
+  // Ops already moved to the dead-letter holding this session — skipped on every
+  // subsequent pass so a poison op can't re-block the writes queued behind it.
+  private quarantined = new Set<number>()
+
   async fetchCredentials() {
     const psUrl = import.meta.env.VITE_POWERSYNC_URL as string
     // db.ts only calls connect() when VITE_POWERSYNC_URL is set, so this path
@@ -51,16 +36,37 @@ export class SupabaseConnector implements PowerSyncBackendConnector {
     if (!batch) return
 
     for (const op of batch.crud) {
+      // Already dead-lettered (a later op forced a retry before the batch could
+      // complete): skip it so the rest of the queue drains past it.
+      if (this.quarantined.has(op.clientId)) continue
+
       const error = await runOp(op.op, op.table, op.id, op.opData)
-      if (error) {
-        // Never drop a write — it may be a sale. On ANY rejection we leave the
-        // batch uncompleted so PowerSync keeps it queued and retries. A
-        // server-side reject (RLS / constraint) therefore PAUSES sync until the
-        // server is fixed, rather than silently losing data. PowerSync exposes
-        // the thrown error via status.dataFlowStatus.uploadError, which useSync
-        // surfaces to the UI so a stuck queue is visible, not silent.
+      if (!error) {
+        this.permanentFailures.delete(op.clientId)
+        continue
+      }
+
+      if (!isPermanentError(error)) {
+        // Transient (offline / 5xx / timeout): leave the batch uncompleted so
+        // PowerSync re-queues and retries the WHOLE batch. Never counts toward
+        // quarantine — a long outage must not poison a perfectly good sale.
         throw new Error(`[PowerSync upload][${op.op}] ${op.table}/${op.id}: ${error.message}`)
       }
+
+      // Permanent reject (constraint / RLS / 4xx). Give it a few attempts to
+      // absorb a misclassified blip; throwing re-queues the batch.
+      const attempts = (this.permanentFailures.get(op.clientId) ?? 0) + 1
+      if (attempts < MAX_PERMANENT_ATTEMPTS) {
+        this.permanentFailures.set(op.clientId, attempts)
+        throw new Error(`[PowerSync upload][${op.op}] ${op.table}/${op.id}: ${error.message}`)
+      }
+
+      // Poison op. Preserve it in the dead-letter holding BEFORE completing the
+      // batch (which clears it from the queue) — never drop a write, it may be a
+      // sale. The owner retries or discards it from the sync panel.
+      await quarantineOp(database, op, error)
+      this.permanentFailures.delete(op.clientId)
+      this.quarantined.add(op.clientId)
     }
 
     await batch.complete()

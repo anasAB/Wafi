@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import type { SyncStatus } from '@/store/sync.store'
 
-const props = defineProps<{ status: SyncStatus; pendingCount?: number }>()
+const props = defineProps<{ status: SyncStatus; pendingCount?: number; blockedCount?: number }>()
 
 // Explain the indicator on hover — offline is a supported state here, not an
 // error, so the tooltip reassures rather than alarms (BUG-015 new list).
@@ -27,5 +27,7 @@ const tooltip = computed(() => {
       {{ status === 'online' ? 'متصل' : status === 'syncing' ? 'جارٍ المزامنة' : 'غير متصل' }}
     </span>
     <span v-if="(pendingCount ?? 0) > 0" class="text-text-muted">({{ pendingCount }})</span>
+    <!-- Quarantined writes are a distinct, attention-worthy state — not plain offline. -->
+    <span v-if="(blockedCount ?? 0) > 0" class="font-bold text-amber-400" title="معاملات متوقفة عن المزامنة">⚠ {{ blockedCount }}</span>
   </span>
 </template>

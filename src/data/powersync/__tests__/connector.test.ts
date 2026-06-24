@@ -1,42 +1,115 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { UpdateType } from '@powersync/web'
 
-// Capture the upsert/update/delete builder calls so we can assert how each op
-// is translated for the append-only audit_log table.
-const upsert = vi.fn(() => ({ error: null }))
-const update = vi.fn(() => ({ eq: () => ({ error: null }) }))
-const del    = vi.fn(() => ({ eq: () => ({ error: null }) }))
-const from   = vi.fn(() => ({ upsert, update, delete: del }))
+// Drive runOp's result by row id: rows in `permanentRows` get a constraint
+// reject, rows in `transientRows` get a network-style (empty-code) error, the
+// rest succeed.
+const permanentRows = new Set<string>()
+const transientRows = new Set<string>()
+const resultFor = (id: string) =>
+  permanentRows.has(id) ? { code: '23505', message: 'duplicate key' }
+  : transientRows.has(id) ? { code: '', message: 'Failed to fetch' }
+  : null
 
-vi.mock('@/data/supabase/client', () => ({ supabase: { from: (t: string) => from(t) } }))
+const upsert = vi.fn((payload: any) => ({ error: resultFor(payload.id) }))
+const update = vi.fn((_d: any) => ({ eq: (_c: string, id: string) => ({ error: resultFor(id) }) }))
+const del    = vi.fn(() => ({ eq: (_c: string, id: string) => ({ error: resultFor(id) }) }))
+vi.mock('@/data/supabase/client', () => ({
+  supabase: { from: () => ({ upsert, update, delete: del }) },
+}))
 
-import { runOp } from '../connector'
+// Spy on quarantine so we assert poison ops are preserved without needing a DB.
+const quarantineOp = vi.fn(async () => {})
+vi.mock('../dead-letter', () => ({ quarantineOp: (...a: any[]) => quarantineOp(...a) }))
 
-describe('connector runOp — audit_log is append-only', () => {
-  beforeEach(() => vi.clearAllMocks())
+import { SupabaseConnector } from '../connector'
 
-  it('inserts audit_log rows with ignoreDuplicates (ON CONFLICT DO NOTHING), never a plain upsert', async () => {
-    await runOp(UpdateType.PUT, 'audit_log', 'a1', { event: 'sale.completed' })
-    expect(upsert).toHaveBeenCalledWith(
-      { id: 'a1', event: 'sale.completed' },
-      { ignoreDuplicates: true },
-    )
+const op = (id: string, clientId: number, type = UpdateType.PUT) =>
+  ({ clientId, op: type, table: 'sales', id, opData: { total_usd: 1 } }) as any
+
+/** A fresh batch whose crud list is the given ops; complete() is a spy. The same
+ *  ops reappear on every call until the test completes the batch — mirroring how
+ *  PowerSync re-queues an uncompleted batch. */
+const batchOf = (...ops: any[]) => ({ crud: ops, complete: vi.fn(async () => {}) })
+
+const dbReturning = (batch: any) => ({ getCrudBatch: vi.fn(async () => batch) }) as any
+
+describe('SupabaseConnector.uploadData — poison-op quarantine', () => {
+  beforeEach(() => {
+    permanentRows.clear()
+    transientRows.clear()
+    vi.clearAllMocks()
   })
 
-  it('drops PATCH on audit_log — never sends an UPDATE that would trip the trigger', async () => {
-    const err = await runOp(UpdateType.PATCH, 'audit_log', 'a1', { event: 'x' })
-    expect(err).toBeNull()
-    expect(update).not.toHaveBeenCalled()
+  it('completes the batch and quarantines nothing when every op succeeds', async () => {
+    const c = new SupabaseConnector()
+    const batch = batchOf(op('a', 1), op('b', 2))
+    await c.uploadData(dbReturning(batch))
+
+    expect(batch.complete).toHaveBeenCalledOnce()
+    expect(quarantineOp).not.toHaveBeenCalled()
   })
 
-  it('drops DELETE on audit_log', async () => {
-    const err = await runOp(UpdateType.DELETE, 'audit_log', 'a1', undefined)
-    expect(err).toBeNull()
-    expect(del).not.toHaveBeenCalled()
+  it('leaves the batch uncompleted and never quarantines on a transient error', async () => {
+    transientRows.add('a')
+    const c = new SupabaseConnector()
+    const batch = batchOf(op('a', 1))
+
+    for (let i = 0; i < 5; i++) {
+      await expect(c.uploadData(dbReturning(batch))).rejects.toThrow()
+    }
+    expect(batch.complete).not.toHaveBeenCalled()
+    expect(quarantineOp).not.toHaveBeenCalled() // transient must retry forever
   })
 
-  it('still upserts (with conflict-update) for every other table', async () => {
-    await runOp(UpdateType.PUT, 'sales', 's1', { total_usd: 10 })
-    expect(upsert).toHaveBeenCalledWith({ id: 's1', total_usd: 10 })
+  it('retries a permanent error a few times before quarantining (absorbs a misclassified blip)', async () => {
+    permanentRows.add('a')
+    const c = new SupabaseConnector()
+    const batch = batchOf(op('a', 1))
+
+    // First two attempts: still retrying — no quarantine, batch held.
+    await expect(c.uploadData(dbReturning(batch))).rejects.toThrow()
+    await expect(c.uploadData(dbReturning(batch))).rejects.toThrow()
+    expect(quarantineOp).not.toHaveBeenCalled()
+    expect(batch.complete).not.toHaveBeenCalled()
+
+    // Third attempt: quarantine and let the batch complete.
+    await c.uploadData(dbReturning(batch))
+    expect(quarantineOp).toHaveBeenCalledOnce()
+    expect(batch.complete).toHaveBeenCalledOnce()
+  })
+
+  it('a poison op does not block an unrelated queued write from syncing', async () => {
+    permanentRows.add('poison')
+    const c = new SupabaseConnector()
+    const batch = batchOf(op('poison', 1), op('good', 2))
+
+    // Burn through the retry buffer for the poison op.
+    await expect(c.uploadData(dbReturning(batch))).rejects.toThrow()
+    await expect(c.uploadData(dbReturning(batch))).rejects.toThrow()
+    await c.uploadData(dbReturning(batch))
+
+    // Poison quarantined, good write uploaded, batch drained.
+    expect(quarantineOp).toHaveBeenCalledOnce()
+    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ id: 'good' }))
+    expect(batch.complete).toHaveBeenCalledOnce()
+  })
+
+  it('does not re-attempt or re-quarantine an already-quarantined op when a later op stays transient', async () => {
+    permanentRows.add('poison')
+    transientRows.add('laggy')
+    const c = new SupabaseConnector()
+    const batch = batchOf(op('poison', 1), op('laggy', 2))
+
+    // 3 attempts → poison quarantined; then 'laggy' throws so the batch never completes.
+    for (let i = 0; i < 4; i++) {
+      await expect(c.uploadData(dbReturning(batch))).rejects.toThrow()
+    }
+    expect(quarantineOp).toHaveBeenCalledOnce() // not re-quarantined each round
+    expect(batch.complete).not.toHaveBeenCalled()
+
+    // After quarantine, the poison row is skipped entirely (runOp not re-issued for it).
+    const poisonAttempts = upsert.mock.calls.filter(([p]) => p.id === 'poison').length
+    expect(poisonAttempts).toBe(3) // only the 3 attempts before quarantine
   })
 })

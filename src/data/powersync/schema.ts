@@ -184,6 +184,22 @@ const return_reasons = new Table({
   is_active:  column.integer,  // 0 | 1
 })
 
+// Local-only holding for upload ops the server permanently rejected (constraint
+// / RLS / 4xx). NOT synced (localOnly) — it must never generate its own CRUD ops
+// or it would re-enter the very queue it exists to unblock. The connector moves
+// a poison op here so the rest of the queue can drain; the owner retries or
+// discards it from the sync panel. See connector.ts / dead-letter.ts (WAFI-015).
+const sync_dead_letter = new Table({
+  client_id:     column.integer, // ps_crud op id at quarantine — dedupes re-quarantine
+  op_type:       column.text,    // 'PUT' | 'PATCH' | 'DELETE'
+  table_name:    column.text,
+  row_id:        column.text,
+  op_data:       column.text,    // JSON of the op payload (null for DELETE)
+  error_code:    column.text,    // PostgrestError.code at the last failed attempt
+  error_message: column.text,
+  failed_at:     column.text,    // ISO timestamp of the last failed attempt
+}, { localOnly: true })
+
 const audit_log = new Table({
   shop_id:     column.text,
   staff_id:    column.text,
@@ -245,6 +261,7 @@ export const AppSchema = new Schema({
   returns,
   return_line_items,
   return_reasons,
+  sync_dead_letter,
   audit_log,
   suppliers,
   stock_receivings,

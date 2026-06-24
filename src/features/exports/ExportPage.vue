@@ -175,26 +175,28 @@ async function onExport() {
               <span>من</span>
               <AppDatePicker
                 v-model="customStartDate"
-                class="date-input date-picker-input"
+                class="export-date-picker"
                 date-format="yy-mm-dd"
+                placeholder="اختر التاريخ"
                 show-icon
                 icon-display="input"
-                :manual-input="false"
-                show-button-bar
+                append-to="self"
                 input-id="export-custom-start"
+                :input-class="'form-input date-input prime-date-input'"
               />
             </label>
             <label class="date-label">
               <span>إلى</span>
               <AppDatePicker
                 v-model="customEndDate"
-                class="date-input date-picker-input"
+                class="export-date-picker"
                 date-format="yy-mm-dd"
+                placeholder="اختر التاريخ"
                 show-icon
                 icon-display="input"
-                :manual-input="false"
-                show-button-bar
+                append-to="self"
                 input-id="export-custom-end"
+                :input-class="'form-input date-input prime-date-input'"
               />
             </label>
           </div>
@@ -306,15 +308,211 @@ async function onExport() {
   flex: 1;
   min-width: 180px;
 }
-.date-input {
-  min-height: 38px;
-  font-size: 13px;
+
+.form-input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 0.75rem;
+  padding: 0.625rem 0.875rem;
+  color: #E8EDF5;
+  font-size: 0.875rem;
   font-family: 'Tajawal', system-ui, sans-serif;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
 }
 
-.date-picker-input {
+.form-input::placeholder { color: #3D4F6B; }
+
+.form-input:focus {
+  border-color: rgba(26, 86, 219, 0.8);
+  box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.25), 0 0 12px rgba(26, 86, 219, 0.15);
+}
+
+.date-input {
+  height: 40px;
+  min-height: 40px;
+  padding-inline-end: 2.75rem;
+  padding-inline-start: 0.875rem;
+  color-scheme: dark;
+  line-height: 1.2;
+}
+
+.prime-date-input {
+  font-variant-numeric: tabular-nums;
+}
+
+.export-date-picker {
   width: 100%;
 }
+
+.export-date-picker :deep(.p-inputtext),
+.export-date-picker :deep(input.p-datepicker-input) {
+  background: rgba(255, 255, 255, 0.07) !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  color: #E8EDF5 !important;
+}
+
+.export-date-picker :deep(.p-inputtext:enabled:hover),
+.export-date-picker :deep(input.p-datepicker-input:enabled:hover) {
+  border-color: rgba(26, 86, 219, 0.45) !important;
+}
+
+.export-date-picker :deep(.p-inputtext:enabled:focus),
+.export-date-picker :deep(input.p-datepicker-input:enabled:focus) {
+  border-color: rgba(26, 86, 219, 0.8) !important;
+  box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.25), 0 0 12px rgba(26, 86, 219, 0.15) !important;
+}
+
+.export-date-picker :deep(.p-datepicker-input) {
+  height: 40px !important;
+  min-height: 40px !important;
+  line-height: 1.2;
+  box-sizing: border-box;
+  padding-inline-start: 0.875rem !important;
+  padding-inline-end: 2.75rem !important;
+  padding-right: 0.875rem !important;
+  padding-left: 2.75rem !important;
+  text-align: right;
+}
+
+.export-date-picker :deep(.p-inputtext::placeholder) {
+  color: #3D4F6B;
+  opacity: 1;
+}
+
+.export-date-picker :deep(.p-datepicker-input-icon-container) {
+  position: absolute;
+  inset-inline-end: 0.75rem;
+  inset-block: 0;
+  margin: auto;
+  width: 1rem;
+  height: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #637285;
+  padding: 0;
+  background: transparent;
+  border: none;
+  pointer-events: none;
+}
+
+.export-date-picker :deep(.p-datepicker-input-icon) {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.export-date-picker :deep(.p-datepicker-dropdown) {
+  display: none;
+}
+
+.export-date-picker :deep(.p-datepicker-panel) {
+  margin-top: 6px;
+  min-width: 18rem;
+  border-radius: 12px;
+  border: 1px solid rgba(26,86,219,0.30);
+  backdrop-filter: blur(20px) saturate(180%);
+  background: linear-gradient(180deg, rgba(13,24,40,0.97), rgba(7,11,20,0.97));
+  box-shadow: 0 10px 30px rgba(0,0,0,0.45), 0 4px 18px rgba(26,86,219,0.16);
+  color: #E8EDF5;
+}
+
+.export-date-picker :deep(.p-datepicker-calendar-container),
+.export-date-picker :deep(.p-datepicker-calendar),
+.export-date-picker :deep(.p-datepicker-month-view),
+.export-date-picker :deep(.p-datepicker-year-view) {
+  background: transparent !important;
+}
+
+.export-date-picker :deep(.p-datepicker-header) {
+  background: transparent;
+  border-bottom: 1px solid rgba(26,86,219,0.20);
+  color: #E8EDF5;
+}
+
+.export-date-picker :deep(.p-datepicker-title button),
+.export-date-picker :deep(.p-datepicker-prev),
+.export-date-picker :deep(.p-datepicker-next) {
+  color: #C8D5E8;
+}
+
+.export-date-picker :deep(.p-datepicker-title) {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.export-date-picker :deep(.p-datepicker-select-month),
+.export-date-picker :deep(.p-datepicker-select-year) {
+  min-width: 5.25rem;
+  height: 2rem;
+  border-radius: 0;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.export-date-picker :deep(.p-datepicker-select-month:hover),
+.export-date-picker :deep(.p-datepicker-select-year:hover),
+.export-date-picker :deep(.p-datepicker-select-month:focus),
+.export-date-picker :deep(.p-datepicker-select-year:focus),
+.export-date-picker :deep(.p-datepicker-select-month:focus-visible),
+.export-date-picker :deep(.p-datepicker-select-year:focus-visible) {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.export-date-picker :deep(.p-datepicker-calendar table) {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0.2rem;
+}
+
+.export-date-picker :deep(.p-datepicker-calendar th),
+.export-date-picker :deep(.p-datepicker-calendar td) {
+  text-align: center;
+}
+
+.export-date-picker :deep(.p-datepicker-title button:hover),
+.export-date-picker :deep(.p-datepicker-prev:hover),
+.export-date-picker :deep(.p-datepicker-next:hover) {
+  background: rgba(26, 86, 219, 0.16) !important;
+}
+
+.export-date-picker :deep(.p-datepicker-day),
+.export-date-picker :deep(.p-datepicker-month),
+.export-date-picker :deep(.p-datepicker-year) {
+  width: 2.15rem;
+  height: 2.15rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  color: #C8D5E8;
+}
+
+.export-date-picker :deep(.p-datepicker-day:hover) {
+  background: rgba(26,86,219,0.16);
+}
+
+.export-date-picker :deep(.p-datepicker-day-selected) {
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  color: #FFFFFF;
+}
+
+.export-date-picker :deep(.p-datepicker-select-month),
+.export-date-picker :deep(.p-datepicker-select-year),
+.export-date-picker :deep(.p-select),
+.export-date-picker :deep(.p-select-label),
+.export-date-picker :deep(.p-select-dropdown) {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: #E8EDF5 !important;
+}
+
 .format-row { display: flex; gap: 10px; }
 .format-btn {
   flex: 1; padding: 10px; border-radius: 10px; font-size: 14px; font-weight: 600;
