@@ -20,6 +20,20 @@ export function isRouteAllowed(
 }
 
 /**
+ * Where a staff member lands after unlocking (WAFI-058). The dashboard ('/') is
+ * a financial roll-up gated by `can_view_reports`, so only the owner and a
+ * reports-granted manager land there; everyone else lands on the POS ('/pos').
+ *
+ * Used both to navigate after unlock and as the router's deny fallback. Because
+ * '/pos' carries no permission it is always reachable — using it as the fallback
+ * avoids the redirect loop that a now-gated '/' would otherwise cause, and means
+ * an ungranted operator never flashes the dashboard before being bounced.
+ */
+export function resolveLanding(staff: Staff | null): string {
+  return isRouteAllowed('can_view_reports', staff) ? '/' : '/pos'
+}
+
+/**
  * Whether `actor` may reset `target`'s PIN (WAFI-056). Single source of truth
  * for both the recovery UI and the `resetStaffPin` action (defence in depth).
  *

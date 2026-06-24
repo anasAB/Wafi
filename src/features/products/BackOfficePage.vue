@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
+import { useSessionStore } from '@/store/session.store'
+import type { StaffPermissions } from '@/features/staff/staff.types'
 
 const router = useRouter()
+const session = useSessionStore()
 
 onMounted(() => {
   if (window.matchMedia('(min-width: 1024px)').matches) {
@@ -11,14 +14,28 @@ onMounted(() => {
   }
 })
 
-const modules = [
-  { key: 'history',   label: 'المبيعات',  description: 'سجل جميع المبيعات',       route: '/history',        active: true  },
-  { key: 'products',  label: 'المنتجات',  description: 'إدارة المخزون والأسعار',  route: '/products',       active: true  },
-  { key: 'expenses',  label: 'المصاريف',  description: 'تتبع مصاريف المحل',       route: '/expenses',       active: true  },
-  { key: 'shifts',    label: 'الورديات',  description: 'الورديات وتقرير اليومية', route: '/shifts/history', active: true  },
-  { key: 'customers', label: 'الزبائن',   description: 'الديون والمدفوعات',       route: '/customers',      active: true  },
-  { key: 'reports',   label: 'التقارير',  description: 'الأرباح والمبيعات',       route: null,              active: false },
+// `permission` gates a tile so a manager without a financial grant doesn't tap
+// into a screen that just bounces them back (WAFI-058). History stays open — it's
+// the returns/reprint lookup and self-gates its browse list. Expenses needs
+// can_view_expenses; products/customers carry their existing role gates.
+const modules: Array<{
+  key: string; label: string; description: string
+  route: string | null; active: boolean; permission: keyof StaffPermissions | null
+}> = [
+  { key: 'history',   label: 'المبيعات',  description: 'سجل جميع المبيعات',       route: '/history',        active: true,  permission: null },
+  { key: 'products',  label: 'المنتجات',  description: 'إدارة المخزون والأسعار',  route: '/products',       active: true,  permission: 'can_manage_products' },
+  { key: 'expenses',  label: 'المصاريف',  description: 'تتبع مصاريف المحل',       route: '/expenses',       active: true,  permission: 'can_view_expenses' },
+  { key: 'shifts',    label: 'الورديات',  description: 'الورديات وتقرير اليومية', route: '/shifts/history', active: true,  permission: null },
+  { key: 'customers', label: 'الزبائن',   description: 'الديون والمدفوعات',       route: '/customers',      active: true,  permission: 'can_manage_customers' },
+  { key: 'reports',   label: 'التقارير',  description: 'الأرباح والمبيعات',       route: null,              active: false, permission: 'can_view_reports' },
 ]
+
+const visibleModules = computed(() => {
+  const perms   = session.permissions
+  const isOwner = session.activeStaff?.role === 'owner'
+  if (!perms || isOwner) return modules
+  return modules.filter(m => !m.permission || (perms as any)[m.permission])
+})
 
 function handleTile(mod: typeof modules[number]) {
   if (mod.route) router.push(mod.route)
@@ -35,7 +52,7 @@ function handleTile(mod: typeof modules[number]) {
       <div class="section-label">الأقسام</div>
       <div class="nav-list">
         <button
-          v-for="mod in modules.filter(m => m.active)"
+          v-for="mod in visibleModules.filter(m => m.active)"
           :key="mod.key"
           type="button"
           :data-testid="`tile-${mod.key}`"
@@ -76,11 +93,11 @@ function handleTile(mod: typeof modules[number]) {
       </div>
 
       <!-- Coming soon -->
-      <div v-if="modules.some(m => !m.active)" class="coming-soon-section">
+      <div v-if="visibleModules.some(m => !m.active)" class="coming-soon-section">
         <div class="section-label">قريباً</div>
         <div class="coming-soon-grid">
           <div
-            v-for="mod in modules.filter(m => !m.active)"
+            v-for="mod in visibleModules.filter(m => !m.active)"
             :key="mod.key"
             :data-testid="`tile-${mod.key}`"
             class="coming-soon-item"

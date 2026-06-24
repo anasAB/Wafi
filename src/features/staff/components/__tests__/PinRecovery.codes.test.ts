@@ -12,8 +12,9 @@ const updateStaffPin = vi.fn()
 vi.mock('@/features/staff/composables/useStaff', () => ({
   useStaff: () => ({ staff: { value: [] }, loadStaff: vi.fn(), resetStaffPin: vi.fn(), updateStaffPin }),
 }))
+const { logRecoveryCodeUsed } = vi.hoisted(() => ({ logRecoveryCodeUsed: vi.fn() }))
 vi.mock('@/features/audit/composables/useAuditLog', () => ({
-  useAuditLog: () => ({ logRecoveryCodeUsed: vi.fn() }),
+  useAuditLog: () => ({ logRecoveryCodeUsed }),
 }))
 vi.mock('@/data/supabase/auth', () => ({ verifyAccountPassword: vi.fn() }))
 
@@ -26,7 +27,7 @@ function mountIt() {
 }
 
 describe('PinRecovery recovery-code path (WAFI-057)', () => {
-  beforeEach(() => { setActivePinia(createPinia()); vi.clearAllMocks() })
+  beforeEach(() => { setActivePinia(createPinia()); vi.clearAllMocks(); logRecoveryCodeUsed.mockClear() })
 
   it('offers the recovery-code option for an owner target', () => {
     const w = mountIt()
@@ -47,5 +48,6 @@ describe('PinRecovery recovery-code path (WAFI-057)', () => {
     await Promise.resolve(); await Promise.resolve()
     // Now on the set-pin step — the PIN pad is shown (prompt changed).
     expect(w.text()).toContain(i18n.global.t('staff.newPinFor', { name: owner.name }))
+    expect(logRecoveryCodeUsed).toHaveBeenCalledWith(owner.id, owner.name)
   })
 })

@@ -10,6 +10,18 @@ const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 
 type CodeRecord = { hash: string; salt: string; usedAt: string | null }
 
+/** Thrown when a code write matches no staff row. Guards against the silent
+ *  no-op where codes are persisted against an id that does not exist (e.g. a
+ *  stale session id): the write would affect zero rows, yet the caller would
+ *  believe it succeeded — and every code would later read back as "[]" and look
+ *  "wrong or already used". Failing loudly here surfaces the mismatch instead. */
+export class RecoveryCodesTargetMissingError extends Error {
+  constructor(staffId: string) {
+    super(`No staff row for id ${staffId}; recovery codes were not saved`)
+    this.name = 'RecoveryCodesTargetMissingError'
+  }
+}
+
 /** Fold a user-typed code to its canonical form so dashes, spaces and case
  *  never cause a false mismatch. Anything outside the alphabet is dropped. */
 export function normalizeCode(raw: string): string {
@@ -21,15 +33,36 @@ function randomCode(): string {
   return Array.from(bytes, (b) => ALPHABET[b % ALPHABET.length]).join('')
 }
 
+/** Parse the stored codes, tolerating a value that a JSONB sync round-trip
+ *  double-encoded as a JSON *string* (the array text wrapped in quotes) instead
+ *  of a JSON array. We unwrap one extra level before giving up, so codes written
+ *  before the column became TEXT (migration 024) still verify. */
+function parseCodes(raw: string | null | undefined): CodeRecord[] {
+  if (!raw) return []
+  try {
+    let parsed: unknown = JSON.parse(raw)
+    if (typeof parsed === 'string') parsed = JSON.parse(parsed)
+    return Array.isArray(parsed) ? (parsed as CodeRecord[]) : []
+  } catch {
+    return []
+  }
+}
+
 async function readCodes(staffId: string): Promise<CodeRecord[]> {
   const row = await db.getOptional<{ recovery_codes: string }>(
     `SELECT recovery_codes FROM staff WHERE id = ?`, [staffId],
   )
-  try { return JSON.parse(row?.recovery_codes ?? '[]') as CodeRecord[] }
-  catch { return [] }
+  return parseCodes(row?.recovery_codes)
 }
 
 async function writeCodes(staffId: string, codes: CodeRecord[]): Promise<void> {
+  // Confirm the target row exists BEFORE writing. PowerSync tables are updatable
+  // views backed by INSTEAD OF triggers, so an UPDATE matching no row is a silent
+  // no-op AND `rowsAffected` is unreliable (0 even on success) — we can't lean on
+  // it. Writing to a missing id would persist nowhere yet look successful, then
+  // read back as "[]" and make every code seem "wrong or already used".
+  const row = await db.getOptional<{ id: string }>(`SELECT id FROM staff WHERE id = ?`, [staffId])
+  if (!row) throw new RecoveryCodesTargetMissingError(staffId)
   await db.execute(`UPDATE staff SET recovery_codes = ? WHERE id = ?`, [JSON.stringify(codes), staffId])
 }
 

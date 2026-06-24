@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted }  from 'vue'
+import { useRouter }       from 'vue-router'
 import { useI18n }         from 'vue-i18n'
 import { useStaff }        from '@/features/staff/composables/useStaff'
 import { verifyPin }       from '@/features/staff/composables/usePinAuth'
@@ -9,8 +10,9 @@ import { useOperatorSwitch } from '@/features/staff/composables/useOperatorSwitc
 import { useAuditLog }     from '@/features/audit/composables/useAuditLog'
 import PinPad              from '@/features/staff/components/PinPad.vue'
 import PinRecovery         from '@/features/staff/components/PinRecovery.vue'
-import type { Staff }      from '@/features/staff/staff.types'
+import type { Staff, StaffPermissions } from '@/features/staff/staff.types'
 import { roleLabel }       from '@/features/staff/staff.types'
+import { resolveLanding, isRouteAllowed } from '@/router/permissions'
 
 // `login` (default): the app gate — pick staff, PIN, then open a shift with a
 // cash count. `switch`: re-auth as another operator inside an open shift — no
@@ -19,6 +21,7 @@ const props = withDefaults(defineProps<{ mode?: 'login' | 'switch' }>(), { mode:
 const emit  = defineEmits<{ done: []; cancel: [] }>()
 
 const { t } = useI18n()
+const router = useRouter()
 const { staff, loadStaff } = useStaff()
 const { openShift }        = useShift()
 const { switchTo }         = useOperatorSwitch()
@@ -95,6 +98,15 @@ async function onPinComplete(pin: string) {
   // shift untouched. Login mode: proceed to the opening-cash count.
   if (props.mode === 'switch') {
     await switchTo(s)
+    // If the screen the previous operator was on is no longer permitted for the
+    // new operator (e.g. Owner → ungranted Manager on the dashboard), bounce to
+    // a permitted landing so financial views vanish immediately (WAFI-058). An
+    // already-permitted route is left untouched — no needless yank to the
+    // dashboard when switching back to the owner mid-POS.
+    const required = router.currentRoute.value.meta.permission as keyof StaffPermissions | undefined
+    if (!isRouteAllowed(required, s)) {
+      await router.replace(resolveLanding(s))
+    }
     emit('done')
     return
   }
@@ -106,6 +118,10 @@ async function confirmOpen() {
   loading.value = true
   try {
     await openShift(selectedStaff.value, parseFloat(openingCashUsd.value) || 0)
+    // Land on the right home before first paint: the owner and a reports-granted
+    // manager get the dashboard; everyone else gets the POS, so an ungranted
+    // operator never flashes the financial dashboard then bounces (WAFI-058).
+    await router.replace(resolveLanding(selectedStaff.value))
   } finally {
     loading.value = false
   }

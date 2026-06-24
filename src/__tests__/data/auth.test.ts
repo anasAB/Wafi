@@ -89,6 +89,7 @@ describe('signUpOwner', () => {
 
   it('omits recovery_email entirely when not provided or blank', async () => {
     await signUpOwner({ phone: '0944', password: 'secret123', shopName: 's', businessType: 'general', country: 'SY', recoveryEmail: '   ' })
+    expect(signUp).toHaveBeenCalled()
     const call = signUp.mock.calls.at(-1)![0]
     expect(call.options.data).not.toHaveProperty('recovery_email')
   })

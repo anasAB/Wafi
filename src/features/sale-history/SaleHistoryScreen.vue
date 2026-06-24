@@ -5,6 +5,7 @@ import AppHeader from '@/components/ui/AppHeader.vue'
 import AppToast from '@/components/ui/AppToast.vue'
 import PeriodToggle from '@/features/dashboard/components/PeriodToggle.vue'
 import { db } from '@/data/powersync/db'
+import { useSessionStore } from '@/store/session.store'
 import { useSaleHistory } from './useSaleHistory'
 import { usePeriodToggle } from '@/features/dashboard/composables/usePeriodToggle'
 import { getDateRange } from '@/features/dashboard/composables/periodUtils'
@@ -18,8 +19,16 @@ import { buildReceiptData } from './useSaleHistory'
 
 const router  = useRouter()
 const route   = useRoute()
+const session = useSessionStore()
 const { sales, loading, loadHistory, searchByNumber, reprint } = useSaleHistory()
 const { period, setPeriod } = usePeriodToggle()
+
+// WAFI-058: the full sale-history browse list and its period total are a
+// financial roll-up — owner-only by default. Staff without can_view_reports get
+// a receipt-number lookup only (so returns/reprints still work — "returns lookup
+// exempt"), never the browse-everything list or the period total. Owners hold
+// the flag; fail closed when there is no operator.
+const canViewReports = computed(() => Boolean(session.activeStaff?.permissions?.can_view_reports))
 const expandedId = ref<string | null>(null)
 const toast      = ref<string | null>(null)
 const toastType  = ref<'info' | 'error'>('info')
@@ -32,6 +41,10 @@ const detailSaleId     = ref<string | null>(null)
 const detailSaleNumber = ref('')
 
 async function refreshHistoryForCurrentPeriod() {
+  // No browse list for staff without reports access — they reach this screen
+  // only to look up a specific receipt (returns/reprint), so loading the whole
+  // period would be exactly the roll-up WAFI-058 hides.
+  if (!canViewReports.value) return
   await loadHistory(getDateRange(period.value))
 }
 
@@ -45,15 +58,22 @@ function openReturnDetail(sale: SaleRecord) {
   detailSaleNumber.value = sale.displaySaleNumber
 }
 
-function onReturnConfirmed() {
+async function onReturnConfirmed() {
   returnSaleId.value = null
-  refreshHistoryForCurrentPeriod()
+  // Refresh the right view: re-run the active receipt search (the only view a
+  // reports-less operator has) so the return badge appears, else reload the
+  // period list for a reports-capable operator.
+  const q = searchQuery.value.trim()
+  if (q) await searchByNumber(q)
+  else await refreshHistoryForCurrentPeriod()
 }
 
 // If ?period= is in the URL, use that period; otherwise use the current singleton value
 const isPeriodDrillDown = computed(() => !!route.query.period)
 
 const periodTitle = computed(() => {
+  // Reports-less operators see a lookup tool, not a sales browser — title it so.
+  if (!canViewReports.value) return 'بحث عن فاتورة'
   const labels: Record<string, string> = { today: 'اليوم', week: 'الأسبوع', month: 'الشهر' }
   return isPeriodDrillDown.value ? `مبيعات ${labels[period.value] ?? ''}` : 'آخر المبيعات'
 })
@@ -145,8 +165,11 @@ onBeforeUnmount(() => {
   unbindSyncListener?.()
 })
 
-// Reload from the DB whenever the selected period changes.
+// Reload from the DB whenever the selected period changes. Guarded so a
+// reports-less operator never loads the browse list (the period toggle is hidden
+// for them, but fail closed regardless — WAFI-058).
 watch(period, async (newPeriod) => {
+  if (!canViewReports.value) return
   await loadHistory(getDateRange(newPeriod))
 })
 
@@ -217,7 +240,7 @@ function onWaSend(payload: { phone: string; text: string }) {
          stay aligned instead of drifting to opposite edges (BUG-011 new list). -->
     <div class="filter-bar" dir="rtl">
       <div class="filter-row">
-        <PeriodToggle class="filter-period" />
+        <PeriodToggle v-if="canViewReports" class="filter-period" />
         <div class="search-wrap">
           <svg class="search-icon" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
@@ -237,7 +260,7 @@ function onWaSend(payload: { phone: string; text: string }) {
             @click="clearSearch"
           >×</button>
         </div>
-        <div ref="methodMenuRef" class="method-filter-wrap">
+        <div v-if="canViewReports" ref="methodMenuRef" class="method-filter-wrap">
           <button
             type="button"
             class="method-filter-btn"
@@ -271,7 +294,7 @@ function onWaSend(payload: { phone: string; text: string }) {
             >{{ m.label }}</button>
           </div>
         </div>
-        <div v-if="filteredSales.length > 0" class="period-total">
+        <div v-if="canViewReports && filteredSales.length > 0" class="period-total">
           إجمالي: ${{ periodTotal.toFixed(2) }}
         </div>
       </div>
@@ -282,6 +305,17 @@ function onWaSend(payload: { phone: string; text: string }) {
       <!-- Loading -->
       <div v-if="loading" class="loading-wrap">
         <div class="spinner" />
+      </div>
+
+      <!-- Reports-less operator, no active search → prompt for a receipt lookup
+           (their only entry point here, e.g. to process a return). -->
+      <div v-else-if="!canViewReports && sales.length === 0" class="empty-state">
+        <div class="empty-icon-wrap">
+          <svg class="empty-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+          </svg>
+        </div>
+        <p class="empty-text">ابحث برقم الفاتورة لعرضها أو إجراء إرجاع</p>
       </div>
 
       <!-- Empty: nothing in this period -->

@@ -6,11 +6,21 @@ import { useRecoveryCodes, normalizeCode, RECOVERY_CODE_COUNT } from '../useReco
 import { db } from '@/data/powersync/db'
 
 // An in-memory stand-in for the single staff row's recovery_codes cell.
+// `existing` models which staff ids actually have a row, so the existence probe
+// (SELECT id FROM staff) returns null for an unknown id — the case PowerSync's
+// updatable views silently no-op (and can't be detected via rowsAffected).
 let cell = '[]'
+let existing: Set<string>
 beforeEach(() => {
   vi.clearAllMocks()
   cell = '[]'
-  vi.mocked(db.getOptional).mockImplementation(async () => ({ recovery_codes: cell }) as any)
+  existing = new Set(['owner-1'])
+  vi.mocked(db.getOptional).mockImplementation(async (sql: string, params?: any[]) => {
+    if (typeof sql === 'string' && sql.includes('SELECT id FROM staff')) {
+      return existing.has(params?.[0] as string) ? ({ id: params![0] } as any) : null
+    }
+    return { recovery_codes: cell } as any
+  })
   vi.mocked(db.execute).mockImplementation(async (sql: string, params?: any[]) => {
     if (typeof sql === 'string' && sql.includes('UPDATE staff SET recovery_codes')) cell = params![0]
     return { rows: { _array: [] } } as any
@@ -51,10 +61,39 @@ describe('useRecoveryCodes', () => {
     expect(await verifyAndConsume('owner-1', messy)).toBe(true)
   })
 
+  it('verifyAndConsume tolerates a JSONB-roundtrip double-encoded value', async () => {
+    // Online, the JSONB column re-encodes the stored array text as a JSON *string*
+    // scalar; the client then reads a quoted string where JSON.parse yields a
+    // String, not an array. The code must still be found and consumed. (Offline,
+    // with no sync round-trip, the value stays a clean array — hence the
+    // online-only failure that surfaced this.)
+    const { generate, verifyAndConsume } = useRecoveryCodes()
+    const codes = await generate('owner-1')
+    cell = JSON.stringify(cell) // simulate the extra encoding the JSONB round-trip introduces
+    expect(await verifyAndConsume('owner-1', codes[0])).toBe(true)
+  })
+
   it('verifyAndConsume rejects an unknown code', async () => {
     const { generate, verifyAndConsume } = useRecoveryCodes()
     await generate('owner-1')
     expect(await verifyAndConsume('owner-1', 'ZZZZZZZZ')).toBe(false)
+  })
+
+  it('generate replaces the previous batch — old codes stop working', async () => {
+    const { generate, verifyAndConsume } = useRecoveryCodes()
+    const firstBatch = await generate('owner-1')
+    await generate('owner-1') // regenerate: invalidates the first batch
+    expect(await verifyAndConsume('owner-1', firstBatch[0])).toBe(false)
+  })
+
+  it('generate throws when the target staff row does not exist (no silent no-op)', async () => {
+    // The bug: codes were generated against an id that matched no row, so the
+    // write silently affected zero rows and every code later read back as "[]"
+    // ("wrong or already used"). A 0-row write must fail loudly instead.
+    const { generate } = useRecoveryCodes()
+    await expect(generate('ghost-id')).rejects.toThrow()
+    // Nothing was persisted to the real row.
+    expect(cell).toBe('[]')
   })
 
   it('remaining counts only unused codes', async () => {

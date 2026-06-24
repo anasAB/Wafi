@@ -21,7 +21,11 @@ interface NavItem {
 // Labels are i18n keys (resolved in the template) so the nav re-renders on a
 // language switch without rebuilding this list.
 const allNavItems: NavItem[] = [
-  { key: 'home',        labelKey: 'nav.home',       href: '/',               permission: null },
+  // Home is the business-health dashboard — a financial roll-up, so gated by
+  // can_view_reports (owner-only by default, owner-grantable) per WAFI-058.
+  // History stays open: it's also the returns/reprint lookup, and self-gates its
+  // browse list internally ("returns lookup exempt").
+  { key: 'home',        labelKey: 'nav.home',       href: '/',               permission: 'can_view_reports' },
   { key: 'pos',         labelKey: 'nav.pos',        href: '/pos',            permission: null },
   { key: 'history',     labelKey: 'nav.sales',      href: '/history',        permission: null },
   { key: 'products',    labelKey: 'nav.products',   href: '/products',       permission: 'can_manage_products' },

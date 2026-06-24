@@ -15,5 +15,6 @@ describe('useAuditLog recovery-code events (WAFI-057)', () => {
     const call = vi.mocked(db.execute).mock.calls.find(c => typeof c[0] === 'string' && c[0].includes('INSERT INTO audit_log'))
     expect(call).toBeTruthy()
     expect(call![1]).toEqual(expect.arrayContaining(['staff.recovery_code_used', 'staff', 'owner-1']))
+    expect(JSON.parse(call![1]![7] as string)).toMatchObject({ name: 'أحمد' })
   })
 })
