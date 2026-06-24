@@ -5,33 +5,45 @@ import { useI18n } from 'vue-i18n'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import { useRecoveryCodes, RECOVERY_CODE_COUNT } from '@/features/staff/composables/useRecoveryCodes'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
-import { useSessionStore } from '@/store/session.store'
+import { useStaff } from '@/features/staff/composables/useStaff'
 
 // Owner-only: generate/replace the owner's offline recovery codes. Codes are
 // shown ONCE here and never persisted in plaintext (see useRecoveryCodes).
 const { t } = useI18n()
 const { generate, remaining } = useRecoveryCodes()
 const { logRecoveryCodesGenerated } = useAuditLog()
-const session = useSessionStore()
+const { staff, loadStaff } = useStaff()
 const router  = useRouter()
 
 const left      = ref(0)
 const codes     = ref<string[] | null>(null) // non-null only while showing a fresh set
 const busy      = ref(false)
 const copied    = ref(false)
+const error     = ref('')
 
-const owner = () => session.activeStaff
+// Resolve the owner from the live DB row — the SAME source LockScreen/PinRecovery
+// verify against — rather than the persisted session object, whose id can go
+// stale (e.g. after provisioning reconciles the owner row). Keying generation
+// and verification to the same id is what makes a saved code actually verify.
+const owner = () => staff.value.find((s) => s.role === 'owner') ?? null
 
-onMounted(async () => { if (owner()) left.value = await remaining(owner()!.id) })
+onMounted(async () => {
+  await loadStaff()
+  if (owner()) left.value = await remaining(owner()!.id)
+})
 
 async function onGenerate() {
   const o = owner()
   if (!o || busy.value) return
   busy.value = true
+  error.value = ''
   try {
     codes.value = await generate(o.id)
-    left.value = RECOVERY_CODE_COUNT
+    left.value = await remaining(o.id) // truthful re-read, not an optimistic assumption
     await logRecoveryCodesGenerated(o.id, o.name)
+  } catch {
+    // generate() throws if the write matched no row — never claim success.
+    error.value = t('staff.codesGenerateFailed')
   } finally { busy.value = false }
 }
 
@@ -56,6 +68,8 @@ function done() { codes.value = null; copied.value = false }
 
   <div class="rc">
     <h2 class="rc-title">{{ t('staff.codesTitle') }}</h2>
+
+    <p v-if="error" class="rc-error">{{ error }}</p>
 
     <!-- Reveal-once view -->
     <template v-if="codes">
@@ -89,6 +103,11 @@ function done() { codes.value = null; copied.value = false }
 .rc-intro, .rc-warn-soft { font-size: 0.85rem; color: #8EA3BF; line-height: 1.6; }
 .rc-remaining { font-size: 0.95rem; font-weight: 700; color: #C8D5E8; }
 .rc-warn { font-size: 0.85rem; color: #FBBF24; font-weight: 700; }
+.rc-error {
+  font-size: 0.8125rem; color: #FCA5A5;
+  background: rgba(239, 68, 68, 0.10); border: 1px solid rgba(239, 68, 68, 0.28);
+  border-radius: 0.625rem; padding: 0.5rem 0.875rem;
+}
 .rc-grid {
   list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;
 }

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { ref } from 'vue'
+import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import { i18n } from '@/i18n'
 
@@ -11,6 +12,15 @@ vi.mock('@/features/staff/composables/useRecoveryCodes', () => ({
 }))
 vi.mock('@/features/audit/composables/useAuditLog', () => ({
   useAuditLog: () => ({ logRecoveryCodesGenerated: vi.fn() }),
+}))
+
+// The owner row as it lives in the DB (the single source PinRecovery/LockScreen
+// verify against). loadStaff() populates the staff list with this row.
+const ownerRow = { id: 'owner-DB', name: 'أحمد', role: 'owner', permissions: {} }
+const staffRef = ref<any[]>([])
+const loadStaff = vi.fn(async () => { staffRef.value = [ownerRow] })
+vi.mock('@/features/staff/composables/useStaff', () => ({
+  useStaff: () => ({ staff: staffRef, loadStaff }),
 }))
 
 import RecoveryCodesScreen from '../RecoveryCodesScreen.vue'
@@ -29,18 +39,32 @@ describe('RecoveryCodesScreen (WAFI-057)', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    staffRef.value = []
     remaining.mockResolvedValue(8)
-    const session = useSessionStore()
-    session.setActiveStaff({ id: 'owner-1', name: 'أحمد', role: 'owner' } as any)
   })
 
   it('reveals the generated codes exactly once and hides them again on done', async () => {
     generate.mockResolvedValue(['ABCD2345', 'EFGH6789'])
     const w = mountIt()
+    await flushPromises()
     await w.get('[data-test="generate"]').trigger('click')
-    await Promise.resolve(); await Promise.resolve()
+    await flushPromises()
     expect(w.text()).toContain('ABCD2345')
     await w.get('[data-test="codes-done"]').trigger('click')
     expect(w.text()).not.toContain('ABCD2345')
+  })
+
+  it('generates against the live DB owner row, not a stale persisted session id', async () => {
+    // Regression: codes were generated against session.activeStaff.id, which can
+    // be a stale persisted id that no longer matches the live owner row. The
+    // write then hit zero rows while the screen still showed "success", so the
+    // codes never verified. Generation must key off the same row verification reads.
+    useSessionStore().setActiveStaff({ id: 'owner-STALE', name: 'أحمد', role: 'owner' } as any)
+    generate.mockResolvedValue(['ABCD2345'])
+    const w = mountIt()
+    await flushPromises()
+    await w.get('[data-test="generate"]').trigger('click')
+    await flushPromises()
+    expect(generate).toHaveBeenCalledWith('owner-DB')
   })
 })

@@ -2,21 +2,32 @@
 import { useRoute, RouterLink } from 'vue-router'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useSessionStore } from '@/store/session.store'
 
 const route = useRoute()
 const { t }  = useI18n()
+const session = useSessionStore()
 
 // Labels are i18n keys (resolved in the template) and reuse the shared `nav`
 // namespace, so the bar relabels on a language switch with no rebuild.
+// `permission` gates a tab: null = always shown.
 const allTabs = [
-  { key: 'home',      labelKey: 'nav.home',      to: '/'           },
-  { key: 'sell',      labelKey: 'nav.posShort',  to: '/pos'         },
-  { key: 'products',  labelKey: 'nav.products',  to: '/products'    },
-  { key: 'customers', labelKey: 'nav.customers', to: '/customers'   },
-  { key: 'manage',    labelKey: 'nav.more',      to: '/back-office' },
+  { key: 'home',      labelKey: 'nav.home',      to: '/',           permission: 'can_view_reports' as const },
+  { key: 'sell',      labelKey: 'nav.posShort',  to: '/pos',        permission: null },
+  { key: 'products',  labelKey: 'nav.products',  to: '/products',   permission: null },
+  { key: 'customers', labelKey: 'nav.customers', to: '/customers',  permission: null },
+  { key: 'manage',    labelKey: 'nav.more',      to: '/back-office', permission: null },
 ]
 
-const tabs = computed(() => allTabs)
+// Hide the dashboard (home) tab for staff without can_view_reports so an
+// ungranted operator never taps into a financial screen that just bounces them
+// back (WAFI-058). Owners hold every permission.
+const tabs = computed(() => {
+  const perms   = session.permissions
+  const isOwner = session.activeStaff?.role === 'owner'
+  if (!perms || isOwner) return allTabs
+  return allTabs.filter(tab => !tab.permission || (perms as any)[tab.permission])
+})
 
 function isActive(key: string): boolean {
   switch (key) {

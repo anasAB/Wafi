@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted }  from 'vue'
+import { ref, computed, onMounted }  from 'vue'
 import { useShift }        from '@/features/shifts/composables/useShift'
 import { useZReport }      from '@/features/shifts/composables/useZReport'
 import { useShiftStore }   from '@/features/shifts/shift.store'
 import { useDeviceStore }  from '@/store/device.store'
+import { useSessionStore } from '@/store/session.store'
 import CashCountSheet      from './CashCountSheet.vue'
 import type { ZReportMetrics } from '@/features/shifts/shift.types'
 import type { CashierShift }   from '@/features/shifts/shift.types'
@@ -14,6 +15,16 @@ const { loadActiveShift, closeShift } = useShift()
 const { compute, printZReport }       = useZReport()
 const shiftStore = useShiftStore()
 const device     = useDeviceStore()
+const session    = useSessionStore()
+
+// WAFI-058: the Z-report's money figures (revenue, profit, payment mix,
+// per-operator sales, expenses) are a financial roll-up — owner-only by default.
+// A staffer without can_view_reports can still COUNT the drawer and close the
+// shift: only the cash count and variance stay visible, never the money lines.
+// Owners hold can_view_reports, so this reads true for them; fail closed (false)
+// when there is no active operator. Keyed off the CURRENT operator (session),
+// not the shift opener, so an operator switch re-scopes what's shown.
+const canViewMoney = computed(() => Boolean(session.activeStaff?.permissions?.can_view_reports))
 
 const step       = ref<'cash-count' | 'report'>('cash-count')
 const shift      = ref<CashierShift | null>(null)
@@ -86,7 +97,7 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
           <span class="zreport-title">تقرير الوردية</span>
           <span class="zreport-subtitle">{{ shiftStore.activeStaff?.name }} · {{ new Date(shift!.openedAt).toLocaleTimeString('ar-SY') }}</span>
         </div>
-        <div class="zreport-hero-stat">
+        <div v-if="canViewMoney" class="zreport-hero-stat">
           <span class="zreport-hero-label">إجمالي المبيعات</span>
           <span class="zreport-hero-value">{{ fmt(metrics.totalRevenueUsd) }}</span>
         </div>
@@ -113,7 +124,7 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
             </div>
           </div>
 
-          <div class="z-card">
+          <div v-if="canViewMoney" class="z-card">
             <div class="z-card-header">
               <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z" /></svg>
               تفصيل طريقة الدفع
@@ -127,8 +138,8 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
           </div>
         </div>
 
-        <!-- Col B: sales totals + expenses -->
-        <div class="z-col">
+        <!-- Col B: sales totals + expenses — financial roll-up, owner-only (WAFI-058) -->
+        <div v-if="canViewMoney" class="z-col">
           <div class="z-card">
             <div class="z-card-header">
               <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" /></svg>
@@ -153,9 +164,15 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
 
       </div><!-- /z-grid-top -->
 
-      <!-- Sales by operator — per-operator breakdown within this one shift
-           (operators can swap mid-shift; cash variance below stays shift-level). -->
-      <div v-if="metrics.byOperator.length > 1" class="z-card">
+      <!-- Money masked for staff without reports access — they still count the
+           drawer and close below. Plain note so the screen doesn't look broken. -->
+      <div v-if="!canViewMoney" class="z-masked-note">
+        الأرقام المالية مخفية. عُدّ النقد وأغلق الوردية — التفاصيل المالية للمالك.
+      </div>
+
+      <!-- Sales by operator — per-operator "who sold what" breakdown. A financial
+           roll-up, so owner-only by default (WAFI-058). -->
+      <div v-if="canViewMoney && metrics.byOperator.length > 1" class="z-card">
         <div class="z-card-header">
           <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" /></svg>
           المبيعات حسب المستخدم
@@ -180,11 +197,16 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
           <div class="z-recon-col">
             <p class="z-recon-col-title">دولار $</p>
             <div class="z-rows">
-              <div class="z-row"><span class="z-label">رصيد الفتح</span><span class="z-value">{{ fmt(shift!.openingCashUsd) }}</span></div>
-              <div class="z-row"><span class="z-label">+ نقد مبيعات</span><span class="z-value z-value-green">{{ fmt(metrics.cashUsdSales) }}</span></div>
-              <div class="z-row"><span class="z-label">- مصاريف نقدية</span><span class="z-value z-value-red">{{ fmt(metrics.cashExpensesUsd) }}</span></div>
-              <div class="z-divider" />
-              <div class="z-row"><span class="z-label">متوقع</span><span class="z-value z-value-bold">{{ fmt(metrics.expectedUsd) }}</span></div>
+              <!-- Opening + sales + expenses + expected reveal the shift's money
+                   roll-up → owner-only. The counted total and variance always
+                   show so any shift-capable staffer can close (WAFI-058). -->
+              <template v-if="canViewMoney">
+                <div class="z-row"><span class="z-label">رصيد الفتح</span><span class="z-value">{{ fmt(shift!.openingCashUsd) }}</span></div>
+                <div class="z-row"><span class="z-label">+ نقد مبيعات</span><span class="z-value z-value-green">{{ fmt(metrics.cashUsdSales) }}</span></div>
+                <div class="z-row"><span class="z-label">- مصاريف نقدية</span><span class="z-value z-value-red">{{ fmt(metrics.cashExpensesUsd) }}</span></div>
+                <div class="z-divider" />
+                <div class="z-row"><span class="z-label">متوقع</span><span class="z-value z-value-bold">{{ fmt(metrics.expectedUsd) }}</span></div>
+              </template>
               <div class="z-row"><span class="z-label">عند العد</span><span class="z-value z-value-bold">{{ fmt(metrics.actualUsd) }}</span></div>
             </div>
             <div class="z-variance-row" :class="metrics.varianceUsd < 0 ? 'z-variance-neg' : 'z-variance-pos'">
@@ -199,7 +221,7 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
           <div class="z-recon-col z-recon-col-syp">
             <p class="z-recon-col-title">ليرة سورية ل.س</p>
             <div class="z-rows">
-              <div class="z-row"><span class="z-label">متوقع</span><span class="z-value">{{ fmtSyp(metrics.expectedSyp) }}</span></div>
+              <div v-if="canViewMoney" class="z-row"><span class="z-label">متوقع</span><span class="z-value">{{ fmtSyp(metrics.expectedSyp) }}</span></div>
               <div class="z-row"><span class="z-label">عند العد</span><span class="z-value">{{ fmtSyp(metrics.actualSyp) }}</span></div>
             </div>
             <div class="z-variance-row" :class="metrics.varianceSyp < 0 ? 'z-variance-neg' : 'z-variance-pos'">
@@ -210,13 +232,20 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
         </div>
       </div>
 
-      <!-- Actions: side by side on desktop -->
+      <!-- Actions: side by side on desktop. Print is hidden for staff without
+           reports access — a printed Z-report carries the masked money figures,
+           so they close without printing (the shift still closes). -->
       <div class="z-actions">
-        <button class="z-btn-primary" :disabled="closing" @click="handleClose(true)">
+        <button v-if="canViewMoney" class="z-btn-primary" :disabled="closing" @click="handleClose(true)">
           <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z" /></svg>
           طباعة وإغلاق
         </button>
-        <button class="z-btn-ghost" :disabled="closing" @click="handleClose(false)">
+        <button
+          class="z-btn-ghost"
+          :class="{ 'z-btn-ghost--solo': !canViewMoney }"
+          :disabled="closing"
+          @click="handleClose(false)"
+        >
           إغلاق بدون طباعة
         </button>
       </div>
@@ -633,4 +662,29 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
 }
 
 .z-btn-ghost:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* When the print button is hidden (no reports access), the close button is the
+   sole, primary action — give it the full primary treatment. */
+.z-btn-ghost--solo {
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  border: none;
+  color: #fff;
+  box-shadow: 0 6px 24px rgba(26,86,219,0.50);
+}
+.z-btn-ghost--solo:hover {
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  color: #fff;
+}
+
+/* Note shown in place of the masked money cards. */
+.z-masked-note {
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(26,86,219,0.07);
+  border: 1px solid rgba(26,86,219,0.20);
+  color: #93A3B8;
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: center;
+}
 </style>

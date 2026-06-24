@@ -41,6 +41,15 @@ const PERM_LABELS: Array<[keyof StaffPermissions, string]> = [
   ['can_manage_settings',  'الإعدادات'],
 ]
 
+// WAFI-058: a manager runs the floor by default and sees NO financials. The
+// owner can grant these two financial views per manager; everything else about
+// the manager role is fixed (products/customers yes, settings no), so only
+// these toggles appear. Plain-language labels, not accounting jargon.
+const MANAGER_FINANCIAL_LABELS: Array<[keyof StaffPermissions, string]> = [
+  ['can_view_reports',  'عرض التقارير والأرباح'],
+  ['can_view_expenses', 'عرض المصاريف'],
+]
+
 function submitInfo() {
   if (!name.value.trim()) { nameError.value = 'يرجى إدخال الاسم'; return }
   nameError.value = ''
@@ -146,6 +155,27 @@ async function saveStaff(pin: string) {
           <p class="perms-sub">حدّد ما يمكن لهذا الموظف الوصول إليه</p>
           <label
             v-for="[key, label] in PERM_LABELS"
+            :key="key"
+            class="perm-row"
+            :class="{ 'perm-row--on': (perms as any)[key] }"
+          >
+            <span class="perm-label">{{ label }}</span>
+            <input
+              v-model="(perms as any)[key]"
+              type="checkbox"
+              class="perm-check"
+            />
+          </label>
+        </div>
+
+        <!-- WAFI-058: owner-only financial grants for a manager. Only the owner
+             reaches this form (it lives behind can_manage_settings), so a manager
+             can never grant themselves access. Both default off. -->
+        <div v-if="role === 'manager'" class="perms-card">
+          <p class="perms-title">الصلاحيات المالية</p>
+          <p class="perms-sub">المدير يدير المنتجات والزبائن دائماً. هذه الصلاحيات المالية مغلقة افتراضياً — امنحها عند الحاجة فقط.</p>
+          <label
+            v-for="[key, label] in MANAGER_FINANCIAL_LABELS"
             :key="key"
             class="perm-row"
             :class="{ 'perm-row--on': (perms as any)[key] }"

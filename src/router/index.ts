@@ -1,12 +1,14 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useSessionStore } from '@/store/session.store'
-import { isRouteAllowed } from './permissions'
+import { isRouteAllowed, resolveLanding } from './permissions'
 import type { StaffPermissions } from '@/features/staff/staff.types'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/',                  component: () => import('@/pages/HomePage.vue') },
+    // The home dashboard is the business-health financial roll-up — owner-only
+    // by default, owner-grantable to a manager via can_view_reports (WAFI-058).
+    { path: '/',                  component: () => import('@/pages/HomePage.vue'), meta: { permission: 'can_view_reports' } },
     { path: '/pos',               component: () => import('@/pages/PosPage.vue') },
     { path: '/pos/confirmation',  component: () => import('@/features/pos/SaleConfirmationScreen.vue') },
     { path: '/history',           component: () => import('@/pages/SaleHistoryPage.vue') },
@@ -43,14 +45,21 @@ const router = createRouter({
 })
 
 // Enforce staff permissions on navigation. to.meta merges all matched records'
-// meta, so settings children inherit the parent's permission. Unauthorized
-// staff are sent home rather than reaching a screen the sidebar hides.
+// meta, so settings children inherit the parent's permission. An unauthorized
+// staffer is sent to their landing route — never to '/', which is itself gated
+// by can_view_reports and would loop. resolveLanding() returns '/pos' (always
+// reachable) for anyone lacking reports, so a deep-link to a denied financial
+// route fails closed onto the POS instead of bouncing (WAFI-058).
 router.beforeEach((to) => {
   const required = to.meta.permission as keyof StaffPermissions | undefined
   // Active operator lives in the session store (WAFI-011) — the same store a
   // "switch operator" updates, so guards re-scope on switch.
   const staff = useSessionStore().activeStaff
-  return isRouteAllowed(required, staff) ? true : '/'
+  if (isRouteAllowed(required, staff)) return true
+  const landing = resolveLanding(staff)
+  // Guard against any self-redirect (defensive — resolveLanding never returns a
+  // gated route for a staffer who lacks it).
+  return to.path === landing ? true : landing
 })
 
 export default router

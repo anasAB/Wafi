@@ -80,6 +80,37 @@ Three workstreams: **export** ✅ built (verify + WAFI-033), **catalog import** 
 
 Receipt + statement via free `wa.me` (text-only, review-before-send), plus search-sale-by-receipt-number for returns. The pre-trip dev feature. Spec: `specs/2026-06-23-whatsapp-messaging-design.md` · Plan: `plans/2026-06-23-whatsapp-messaging.md`. Sequencing inside the epic: core → receipt (shippable after plan task 4) → statement.
 
+## 🔵 NEXT TO DISCUSS (PO proposals, 2026-06-24) — shift/accountability value
+
+> Two competitor-benchmarked use cases from the 2026-06-24 alignment review. **Approved
+> by CEO to put on the agenda as the next features to talk through.** Both directly
+> reinforce the Staff Pack ("see who's stealing") and fix trust holes in the shift
+> numbers. Discuss pack placement, sequencing (relative to Epic 5 remediation), and
+> scope before specing.
+
+- **Use Case A — In-shift cash management: pay-in / pay-out / cash drops to safe.**
+  Record cash leaving or entering the drawer mid-shift (supplier paid in cash, large
+  bills dropped to a safe, petty-cash top-up) so it counts toward expected cash.
+  *Benchmark:* standard in Square, Lightspeed, Loyverse, Clover. *Why:* today such
+  movements surface as a **shortage** — a false theft signal. A POS that cries theft
+  when nobody stole gets abandoned. This makes the headline variance number
+  **trustworthy** — the only reason an owner keeps paying for the Staff Pack.
+  **Retention-critical; effectively table-stakes we're missing.** Pack: Staff. Litmus:
+  passes (variance integrity is the feature owners bought).
+- **Use Case B — Owner shift-anomaly alerts via WhatsApp.**
+  Push the owner a WhatsApp when a shift closes with >5% variance, repeated voids, or
+  after-hours sales. *Benchmark:* Square Team activity, Loyverse employee alerts. *Why:*
+  today shift history + audit log are **passive** (owner must go look); the real
+  job-to-be-done is "tell me when something's wrong while I'm away." Converts data we
+  already capture into active peace-of-mind. **Revenue + retention** — upsells the
+  Reporting Pack (+$5) on top of the Staff Pack; low build cost (data exists; reuses the
+  `wa.me` WhatsApp plumbing from `plans/2026-06-23-whatsapp-messaging.md`). Pack:
+  Reporting (+ Staff). Litmus: passes ("would an owner pay for just this?" — yes).
+
+> Sequencing note: Use Case A pairs naturally with the Epic 5 remediation (it depends on
+> the same shift/variance plumbing — WAFI-059/060). Use Case B depends on the WhatsApp
+> messaging epic landing first.
+
 ## Candidate new value features (PO proposals, 2026-06-21)
 
 Competitor-benchmarked, NOT yet on the roadmap, high-value for Syrian retail. Proposed as v1.5 depth.
@@ -112,6 +143,28 @@ WAFI-015 first.
 - **WAFI-057 — Owner WhatsApp digest. ⛔ DEFERRED** — superseded by owner-only financials;
   conditionally revivable if a Manager is granted reports; real fix is the read-only Owner
   Dashboard app / automated push. `plans/2026-06-24-owner-remote-visibility-whatsapp-digest.md`.
+
+## Epic 5 remediation tickets (2026-06-24) — from the alignment review
+
+Closes every gap found reviewing Epic 5 (cashier shifts) against the implementation.
+File: `plans/2026-06-24-epic5-remediation-tickets.md` (coverage matrix inside maps every
+reviewed gap → a ticket; nothing dropped). Order: **WAFI-059 → 060 → 061 → 062 → 063 →
+064**, with **WAFI-065** runnable in parallel after the shared migration lands.
+
+- **WAFI-059 — Dual-currency opening cash (SYP + USD).** No `opening_cash_syp` today →
+  SYP variance computed against a missing baseline (Sacred Rule #2). P1.
+- **WAFI-060 — Persist immutable close evidence.** Variance, close note, and a Z-report
+  **snapshot** (today the Z-report is recomputed from live data, so history is mutable). P1.
+- **WAFI-061 — Shift history depth.** Filters + shift-detail drill-down + pagination
+  (no silent `LIMIT 50`). P2.
+- **WAFI-062 — Idle-timeout PIN re-entry.** Lock without closing the shift; configurable. P2.
+- **WAFI-063 — Centralize permission checks (`canUserDo`).** Kill inline
+  `permissions.can_*` reads in components (Epic 5 DoD). P2.
+- **WAFI-064 — Verify-and-close.** Sale attribution (`shift_id`+`employee_id`) + audit-log
+  append-only DB guard & action coverage. P2.
+- **WAFI-065 — Zombie open shifts.** One-shift-per-device guard + owner force-close +
+  long-open visibility + `abandoned` status. **Not** auto-close (corrupts variance).
+  `plans/2026-06-24-zombie-open-shifts.md`. Depends on WAFI-060's `force_closed_by` column. P1.
 
 ## Locked PO decisions (2026-06-20/21)
 

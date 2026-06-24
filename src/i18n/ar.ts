@@ -119,6 +119,7 @@ export default {
     codesShownOnce:     'لن تظهر هذه الرموز مرة أخرى — احفظها الآن.',
     codesCopied:        'تم النسخ',
     codesDone:          'حفظتها — تم',
+    codesGenerateFailed: 'تعذّر إنشاء الرموز. أعد المحاولة، وإن استمرت المشكلة سجّل الخروج ثم ادخل من جديد.',
     copy:               'نسخ',
   },
   // WAFI-054: profit caveat shown when sales in the period have no cost price,

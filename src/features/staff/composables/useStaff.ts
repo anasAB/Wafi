@@ -4,8 +4,8 @@ import { useDeviceStore } from '@/store/device.store'
 import { supabase } from '@/data/supabase/client'
 import { hashPin, generateSalt } from './usePinAuth'
 import { usePinLockout } from './usePinLockout'
-import type { Staff, NewStaff, StaffPermissions, StaffRole } from '../staff.types'
-import { OWNER_PERMISSIONS, MANAGER_PERMISSIONS } from '../staff.types'
+import type { Staff, NewStaff, StaffPermissions } from '../staff.types'
+import { permissionsForRole } from '../staff.types'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 import { canResetPin } from '@/router/permissions'
 
@@ -15,14 +15,6 @@ export class PinResetNotAllowedError extends Error {
     super('Not authorised to reset this staff member’s PIN')
     this.name = 'PinResetNotAllowedError'
   }
-}
-
-/** Owner and manager have fixed, role-derived permission sets; cashiers carry a
- *  per-staff custom set. Single source of truth for both reads and writes. */
-function permissionsForRole(role: StaffRole, custom: StaffPermissions): StaffPermissions {
-  if (role === 'owner')   return OWNER_PERMISSIONS
-  if (role === 'manager') return MANAGER_PERMISSIONS
-  return custom
 }
 
 function rowToStaff(r: any): Staff {
