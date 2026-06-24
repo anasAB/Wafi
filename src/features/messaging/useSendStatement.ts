@@ -61,6 +61,19 @@ export function useSendStatement() {
       }
     })
 
+    // Reconcile: if store-credit refunds on cash sales (WAFI-026/027) mean
+    // balanceUsd < Σ remainingUsd, append one reconciling row so the running
+    // column ends exactly at the authoritative balance.
+    const runningTotal = rows.length ? rows[rows.length - 1].runningUsd : 0
+    if (Math.abs(balanceUsd - runningTotal) > 0.01) {
+      rows.push({
+        date:       '',
+        label:      'دفعات/إرجاع/رصيد لكم',
+        amountUsd:  balanceUsd - runningTotal,
+        runningUsd: balanceUsd,
+      })
+    }
+
     const text = formatStatementText({
       customerName,
       shopName,
@@ -69,8 +82,8 @@ export function useSendStatement() {
       balanceUsd,
     })
 
-    const phone = phoneRaw !== undefined && phoneRaw !== ''
-      ? resolvePhone(phoneRaw, '963')
+    const phone = phoneRaw?.trim()
+      ? resolvePhone(phoneRaw.trim(), '963')
       : null
 
     return { text, phone }

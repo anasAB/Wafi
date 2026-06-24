@@ -52,15 +52,29 @@ export function formatStatementText(input: StatementInput): string {
     lines.push('لا توجد حركات في هذه الفترة.')
   } else {
     for (const row of rows) {
-      // Short date + label + amount + running balance
-      lines.push(`${row.date}  ${row.label}`)
+      // Short date + label + amount + running balance.
+      // When date is empty/whitespace (e.g. reconciling row), omit the date prefix.
+      if (row.date.trim()) {
+        lines.push(`${row.date}  ${row.label}`)
+      } else {
+        lines.push(row.label)
+      }
       lines.push(`  المبلغ: ${fmtUsd(row.amountUsd)}   الرصيد: ${fmtUsd(row.runningUsd)}`)
     }
   }
   lines.push('─────────────────────')
 
-  // ── Final balance owing (plain language) ───────────────────────────────────
-  lines.push(`الرصيد المستحق: ${fmtUsd(balanceUsd)}`)
+  // ── Final balance — sign-aware plain-language label ────────────────────────
+  let footerLine: string
+  if (balanceUsd > 0.01) {
+    footerLine = `الرصيد المستحق عليكم: ${fmtUsd(balanceUsd)}`
+  } else if (Math.abs(balanceUsd) <= 0.01) {
+    footerLine = 'الحساب مسوّى ✓'
+  } else {
+    // balanceUsd < -0.01 → customer has credit; show a positive number, positive framing
+    footerLine = `رصيد لكم لدى المحل: ${fmtUsd(Math.abs(balanceUsd))}`
+  }
+  lines.push(footerLine)
   lines.push('─────────────────────')
 
   // ── Polite closing ─────────────────────────────────────────────────────────

@@ -155,10 +155,69 @@ describe('useSendStatement', () => {
       expect(phone).toBeNull()
     })
 
-    it('passes negative balanceUsd through unchanged (customer-credit / overpayment case)', () => {
+    it('passes negative balanceUsd through — footer shows credit label with positive amount', () => {
       const { prepare } = useSendStatement()
       const { text } = prepare({ ...baseInput, openInvoices: [], balanceUsd: -50 })
-      expect(text).toContain('-$50.00')
+      // Sign-aware footer: credit → رصيد لكم لدى المحل: $50.00 (positive)
+      expect(text).toContain('رصيد لكم لدى المحل')
+      expect(text).toContain('$50.00')
+      // Footer line must show positive amount, not leading minus
+      expect(text).not.toContain('لدى المحل: -$')
+    })
+
+    // ── Reconciling row ───────────────────────────────────────────────────────
+
+    it('appends a reconciling row when Σ remainingUsd ≠ balanceUsd (e.g. store-credit refunds)', () => {
+      const { prepare } = useSendStatement()
+      // One open invoice with remainingUsd: 100, but authoritative balanceUsd: 70
+      // (difference of -30 = credit/refund that created no open invoice)
+      const invoices: OpenInvoice[] = [
+        {
+          saleId:        'sale-001',
+          displayNumber: 'A-000001',
+          saleDate:      '2026-06-01T08:00:00Z',
+          totalUsd:      100,
+          remainingUsd:  100,
+          itemsSummary:  'بضاعة',
+        },
+      ]
+      const { text } = prepare({
+        ...baseInput,
+        openInvoices: invoices,
+        balanceUsd: 70,
+      })
+
+      // The reconciling label must be present
+      expect(text).toContain('دفعات/إرجاع/رصيد لكم')
+
+      // The final running balance shown in rows must reach $70.00 (authoritative)
+      // $100.00 running from invoice row, then $70.00 after reconciling row
+      expect(text).toContain('$100.00')
+      expect(text).toContain('$70.00')
+
+      // Footer (sign-aware, positive balance) must also show $70.00
+      expect(text).toContain('الرصيد المستحق عليكم: $70.00')
+    })
+
+    it('does NOT append a reconciling row when running total already equals balanceUsd', () => {
+      const { prepare } = useSendStatement()
+      // baseInput: 80 + 150 = 230 = balanceUsd — no reconciling row needed
+      const { text } = prepare({ ...baseInput })
+      expect(text).not.toContain('دفعات/إرجاع/رصيد لكم')
+    })
+
+    // ── Whitespace-only phone → null ──────────────────────────────────────────
+
+    it('returns phone=null when phoneRaw is whitespace-only', () => {
+      const { prepare } = useSendStatement()
+      const { phone } = prepare({ ...baseInput, phoneRaw: '   ' })
+      expect(phone).toBeNull()
+    })
+
+    it('returns phone=null when phoneRaw is tab/newline whitespace', () => {
+      const { prepare } = useSendStatement()
+      const { phone } = prepare({ ...baseInput, phoneRaw: '\t\n' })
+      expect(phone).toBeNull()
     })
   })
 
