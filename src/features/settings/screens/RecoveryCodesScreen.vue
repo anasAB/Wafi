@@ -63,7 +63,7 @@ function done() { codes.value = null; copied.value = false }
       <ul class="rc-grid" dir="ltr">
         <li v-for="c in codes" :key="c" class="rc-code">{{ c }}</li>
       </ul>
-      <button type="button" class="rc-secondary" @click="copyAll">
+      <button type="button" class="rc-secondary" :aria-label="t('staff.copy')" @click="copyAll">
         {{ copied ? t('staff.codesCopied') : '⧉' }}
       </button>
       <button type="button" class="rc-primary" data-test="codes-done" @click="done">

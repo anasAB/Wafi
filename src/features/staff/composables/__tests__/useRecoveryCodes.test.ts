@@ -57,6 +57,13 @@ describe('useRecoveryCodes', () => {
     expect(await verifyAndConsume('owner-1', 'ZZZZZZZZ')).toBe(false)
   })
 
+  it('generate replaces the previous batch — old codes stop working', async () => {
+    const { generate, verifyAndConsume } = useRecoveryCodes()
+    const firstBatch = await generate('owner-1')
+    await generate('owner-1') // regenerate: invalidates the first batch
+    expect(await verifyAndConsume('owner-1', firstBatch[0])).toBe(false)
+  })
+
   it('remaining counts only unused codes', async () => {
     const { generate, verifyAndConsume, remaining } = useRecoveryCodes()
     const codes = await generate('owner-1')

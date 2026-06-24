@@ -205,11 +205,11 @@ export function useAuditLog() {
     _logSensitive('staff.pin_changed', 'staff', staffId,
       actor ? { name, actor_id: actor.id, actor_name: actor.name } : { name })
 
-  const logRecoveryCodesGenerated = (ownerId: string, ownerName: string) =>
-    _logSensitive('staff.recovery_codes_generated', 'staff', ownerId, { name: ownerName })
+  const logRecoveryCodesGenerated = (staffId: string, name: string) =>
+    _logSensitive('staff.recovery_codes_generated', 'staff', staffId, { name })
 
-  const logRecoveryCodeUsed = (ownerId: string, ownerName: string) =>
-    _logSensitive('staff.recovery_code_used', 'staff', ownerId, { name: ownerName })
+  const logRecoveryCodeUsed = (staffId: string, name: string) =>
+    _logSensitive('staff.recovery_code_used', 'staff', staffId, { name })
 
   const logLoginFailed = (staffId: string, name: string) =>
     _logSensitive('auth.login_failed', 'staff', staffId, { name })

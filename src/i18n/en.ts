@@ -118,6 +118,7 @@ export default {
     codesShownOnce:     "These codes won't be shown again — save them now.",
     codesCopied:        'Copied',
     codesDone:          "I've saved them — done",
+    copy:               'Copy',
   },
   // WAFI-054: profit caveat shown when sales in the period have no cost price,
   // so the profit figure overstates reality. Plain shop-owner language.
