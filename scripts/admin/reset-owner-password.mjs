@@ -21,9 +21,17 @@ const tempPassword = 'Wafi-' + Math.random().toString(36).slice(2, 10) + '-' + D
 const admin = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
 
 // Find the user by their synthetic email, then set a new password.
-const { data, error: listErr } = await admin.auth.admin.listUsers()
-if (listErr) { console.error('listUsers failed:', listErr.message); process.exit(1) }
-const user = data.users.find((u) => u.email === email)
+// Paginate to collect all users (listUsers returns ~1000 per page).
+let users = []
+let page = 1
+while (true) {
+  const { data, error: listErr } = await admin.auth.admin.listUsers({ page, perPage: 1000 })
+  if (listErr) { console.error('listUsers failed:', listErr.message); process.exit(1) }
+  users = users.concat(data.users)
+  if (data.users.length < 1000) break
+  page++
+}
+const user = users.find((u) => u.email === email)
 if (!user) { console.error('No account for', email); process.exit(1) }
 
 const { error } = await admin.auth.admin.updateUserById(user.id, { password: tempPassword })

@@ -22,6 +22,10 @@ Run the script (operator workstation, never committed env):
     SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
       node scripts/admin/reset-owner-password.mjs --phone "+963944123456"
 
+**Shell history hygiene:** Don't leave the service-role key in shell history.
+Prefer a gitignored `.env` sourced with `set -a; source .env; set +a`, or
+clear the history entry afterward (e.g., `history -d $(history 1)`).
+
 It prints a temporary password. Share it over a channel the owner controls,
 and tell them to change it immediately after signing in.
 
