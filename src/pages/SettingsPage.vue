@@ -98,6 +98,25 @@ const showSettingsHeader = computed(() => isDesktop.value || isIndex.value)
           </svg>
         </button>
 
+        <!-- Recovery codes -->
+        <button
+          type="button"
+          class="nav-row"
+          @click="router.push('/settings/recovery-codes')"
+        >
+          <div class="nav-row-start">
+            <span class="nav-icon-wrap">
+              <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+              </svg>
+            </span>
+            <span class="nav-title">{{ t('settings.recoveryCodes') }}</span>
+          </div>
+          <svg class="nav-arrow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+
         <!-- Return reasons -->
         <button
           type="button"
@@ -233,6 +252,21 @@ const showSettingsHeader = computed(() => isDesktop.value || isIndex.value)
               <span>{{ t('settings.staff') }}</span>
             </div>
             <span v-if="route.path === '/settings/staff'" class="active-dot" />
+          </RouterLink>
+
+          <RouterLink
+            to="/settings/recovery-codes"
+            class="desktop-nav-link"
+            :class="route.path === '/settings/recovery-codes' ? 'desktop-nav-link--active' : ''"
+            style="border-bottom: 1px solid rgba(26,86,219,0.14)"
+          >
+            <div class="nav-row-start">
+              <svg class="nav-icon-sm" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+              </svg>
+              <span>{{ t('settings.recoveryCodes') }}</span>
+            </div>
+            <span v-if="route.path === '/settings/recovery-codes'" class="active-dot" />
           </RouterLink>
 
           <RouterLink

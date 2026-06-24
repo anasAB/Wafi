@@ -31,6 +31,7 @@ const router = createRouter({
         { path: 'staff',          component: () => import('@/features/staff/components/StaffList.vue') },
         { path: 'return-reasons', component: () => import('@/features/settings/screens/ReturnReasonsScreen.vue') },
         { path: 'audit-log', component: () => import('@/features/audit/AuditLogPage.vue') },
+        { path: 'recovery-codes', component: () => import('@/features/settings/screens/RecoveryCodesScreen.vue') },
         { path: 'exports',   component: () => import('@/features/exports/ExportPage.vue') },
       ],
     },
