@@ -23,6 +23,8 @@ export type AuditEvent =
   | 'staff.deactivated'
   | 'staff.permissions_changed'
   | 'staff.pin_changed'
+  | 'staff.recovery_codes_generated'
+  | 'staff.recovery_code_used'
   | 'auth.login_failed'
   | 'auth.locked_out'
   | 'supplier.created'

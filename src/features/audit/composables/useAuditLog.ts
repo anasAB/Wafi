@@ -190,8 +190,26 @@ export function useAuditLog() {
     _log('staff.permissions_changed', 'staff', staffId, { name })
 
   // Security events — surface write failures (see _logSensitive).
-  const logPinChanged = (staffId: string, name: string) =>
-    _logSensitive('staff.pin_changed', 'staff', staffId, { name })
+  //
+  // `actor` names WHO changed the PIN, distinct from the target (the entity).
+  // On the owner-only edit path the actor is the active operator and is already
+  // captured in the row's staff_id/staff_name columns, so it may be omitted.
+  // On the WAFI-056 recovery path the shop is locked (no active operator → those
+  // columns are 'system'), so the authoriser is passed explicitly and recorded
+  // in meta — the only place the actor survives.
+  const logPinChanged = (
+    staffId: string,
+    name: string,
+    actor?: { id: string; name: string },
+  ) =>
+    _logSensitive('staff.pin_changed', 'staff', staffId,
+      actor ? { name, actor_id: actor.id, actor_name: actor.name } : { name })
+
+  const logRecoveryCodesGenerated = (ownerId: string, ownerName: string) =>
+    _logSensitive('staff.recovery_codes_generated', 'staff', ownerId, { name: ownerName })
+
+  const logRecoveryCodeUsed = (ownerId: string, ownerName: string) =>
+    _logSensitive('staff.recovery_code_used', 'staff', ownerId, { name: ownerName })
 
   const logLoginFailed = (staffId: string, name: string) =>
     _logSensitive('auth.login_failed', 'staff', staffId, { name })
@@ -247,6 +265,8 @@ export function useAuditLog() {
     logStaffDeactivated,
     logStaffPermissionsChanged,
     logPinChanged,
+    logRecoveryCodesGenerated,
+    logRecoveryCodeUsed,
     logLoginFailed,
     logLockedOut,
     logSupplierCreated,
