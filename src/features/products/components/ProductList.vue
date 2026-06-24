@@ -6,8 +6,9 @@ import { matchesArabicQuery } from '@/shared/text/arabic'
 import type { Product } from '@/features/pos/pos.types'
 
 const props = defineProps<{
-  products:        Product[]
-  filterLowStock?: boolean
+  products:           Product[]
+  filterLowStock?:    boolean
+  filterMissingCost?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -56,6 +57,12 @@ const displayed = computed(() => {
     ? props.products.filter(p => p.currentStock <= p.lowStockThreshold)
     : props.products
 
+  // WAFI-054: tap-through target from the dashboard profit caveat — show only the
+  // products with no cost price so the owner can fix the source of the estimate.
+  if (props.filterMissingCost) {
+    list = list.filter(p => !p.costPriceUsd || p.costPriceUsd <= 0)
+  }
+
   if (selectedCategory.value) {
     list = list.filter(p => (p.category ?? '').trim() === selectedCategory.value)
   }
@@ -97,7 +104,7 @@ function onPage(e: { first: number; rows: number }) {
 // Jump back to the first page whenever the result set changes (filter, search,
 // category, or a product removed), so we never land on an empty page.
 watch(
-  () => [search.value, selectedCategory.value, props.filterLowStock, displayed.value.length],
+  () => [search.value, selectedCategory.value, props.filterLowStock, props.filterMissingCost, displayed.value.length],
   () => { if (first.value >= displayed.value.length) first.value = 0 },
 )
 watch([search, selectedCategory], () => { first.value = 0 })

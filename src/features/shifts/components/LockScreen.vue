@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted }  from 'vue'
+import { useI18n }         from 'vue-i18n'
 import { useStaff }        from '@/features/staff/composables/useStaff'
 import { verifyPin }       from '@/features/staff/composables/usePinAuth'
 import { usePinLockout }   from '@/features/staff/composables/usePinLockout'
@@ -7,6 +8,7 @@ import { useShift }        from '@/features/shifts/composables/useShift'
 import { useOperatorSwitch } from '@/features/staff/composables/useOperatorSwitch'
 import { useAuditLog }     from '@/features/audit/composables/useAuditLog'
 import PinPad              from '@/features/staff/components/PinPad.vue'
+import PinRecovery         from '@/features/staff/components/PinRecovery.vue'
 import type { Staff }      from '@/features/staff/staff.types'
 import { roleLabel }       from '@/features/staff/staff.types'
 
@@ -16,6 +18,7 @@ import { roleLabel }       from '@/features/staff/staff.types'
 const props = withDefaults(defineProps<{ mode?: 'login' | 'switch' }>(), { mode: 'login' })
 const emit  = defineEmits<{ done: []; cancel: [] }>()
 
+const { t } = useI18n()
 const { staff, loadStaff } = useStaff()
 const { openShift }        = useShift()
 const { switchTo }         = useOperatorSwitch()
@@ -30,15 +33,28 @@ const openingCashUsd = ref('')
 const pinPadRef      = ref<InstanceType<typeof PinPad> | null>(null)
 const loading        = ref(false)
 const authError      = ref('')
+// WAFI-056: "Forgot PIN?" recovery overlays the PIN entry for the selected staff.
+const recovering     = ref(false)
+const recoveryDone   = ref(false)
 
 onMounted(() => loadStaff())
 
 function selectStaff(s: Staff) {
   selectedStaff.value = s
+  recovering.value = false
+  recoveryDone.value = false
   authError.value = lockout.isLockedOut(s.id)
     ? 'الحساب مقفل مؤقتاً بسبب محاولات خاطئة. حاول لاحقاً.'
     : ''
   step.value = 'enter-pin'
+}
+
+// A reset both sets a new PIN and clears the lockout, so the employee returns to
+// the PIN entry and signs in with the PIN that was just set on this device.
+function onRecoveryDone() {
+  recovering.value = false
+  recoveryDone.value = true
+  authError.value = ''
 }
 
 async function onPinComplete(pin: string) {
@@ -101,6 +117,8 @@ function back() {
   step.value = 'pick-staff'
   selectedStaff.value = null
   authError.value = ''
+  recovering.value = false
+  recoveryDone.value = false
 }
 </script>
 
@@ -132,13 +150,26 @@ function back() {
         </button>
       </template>
 
-      <!-- Step 2: enter PIN -->
+      <!-- Step 2: enter PIN (or, if recovering, the Forgot-PIN flow) -->
       <template v-else-if="step === 'enter-pin'">
-        <p class="prompt">مرحباً {{ selectedStaff?.name }}</p>
-        <p class="sub">أدخل الرقم السري</p>
-        <p v-if="authError" class="auth-error">{{ authError }}</p>
-        <PinPad ref="pinPadRef" @complete="onPinComplete" />
-        <button type="button" class="back-btn" @click="back">رجوع</button>
+        <!-- WAFI-056: in-person recovery for the selected staff member. -->
+        <PinRecovery
+          v-if="recovering && selectedStaff"
+          :target="selectedStaff"
+          @done="onRecoveryDone"
+          @cancel="recovering = false"
+        />
+        <template v-else>
+          <p class="prompt">مرحباً {{ selectedStaff?.name }}</p>
+          <p class="sub">أدخل الرقم السري</p>
+          <p v-if="recoveryDone" class="reset-done">{{ t('staff.resetDone') }}</p>
+          <p v-if="authError" class="auth-error">{{ authError }}</p>
+          <PinPad ref="pinPadRef" @complete="onPinComplete" />
+          <button type="button" class="forgot-btn" @click="recovering = true">
+            {{ t('staff.forgotPin') }}
+          </button>
+          <button type="button" class="back-btn" @click="back">رجوع</button>
+        </template>
       </template>
 
       <!-- Step 3: opening cash -->
@@ -252,4 +283,17 @@ function back() {
   transition: color 0.15s, background 0.15s;
 }
 .back-btn:hover { color: #C8D5E8; background: rgba(255, 255, 255, 0.05); }
+
+.forgot-btn {
+  margin-top: 1rem; padding: 0.35rem 0.5rem; border: none; background: transparent;
+  color: #93B4F0; font-size: 0.8125rem; font-weight: 600; font-family: inherit; cursor: pointer;
+  transition: color 0.15s;
+}
+.forgot-btn:hover { color: #C8D5E8; text-decoration: underline; }
+
+.reset-done {
+  font-size: 0.8125rem; color: #4ADE80; text-align: center;
+  background: rgba(34, 197, 94, 0.10); border: 1px solid rgba(34, 197, 94, 0.28);
+  border-radius: 0.625rem; padding: 0.5rem 0.875rem; margin-bottom: 0.75rem; width: 100%;
+}
 </style>

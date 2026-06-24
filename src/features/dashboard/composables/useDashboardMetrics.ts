@@ -12,13 +12,22 @@ export function useDashboardMetrics() {
   const refundsUsd       = ref(0)
   const missingCostCount = ref(0)
   const invoiceCount     = ref(0)
+  // WAFI-054: sales IN THE SELECTED PERIOD whose profit is distorted because at
+  // least one sold line had no cost snapshot. Distinct from `missingCostCount`,
+  // which counts currently-active products — that signal can disagree with the
+  // period being shown, so the profit caveat must be driven by this one.
+  const costlessSalesInPeriod = ref(0)
 
   const profitUsd = computed(() => revenueUsd.value - cogsUsd.value - expensesUsd.value)
+
+  // The profit headline is only an estimate (real profit is lower) when the
+  // period contains at least one cost-less sale. A clean period shows no caveat.
+  const profitIsEstimated = computed(() => costlessSalesInPeriod.value > 0)
 
   async function load(period: Period) {
     const { start, end } = getDateRange(period)
 
-    const [revRow, cogsRow, expRow, refundRow, cogsReversalRow, missingRow, countRow] = await Promise.all([
+    const [revRow, cogsRow, expRow, refundRow, cogsReversalRow, missingRow, countRow, costlessRow] = await Promise.all([
       db.getOptional<{ total: number }>(
         `SELECT COALESCE(SUM(total_usd), 0) as total
          FROM sales WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?`,
@@ -71,6 +80,30 @@ export function useDashboardMetrics() {
          WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?`,
         [device.shopId, start, end]
       ),
+      // WAFI-054: count distinct sales IN THE PERIOD whose profit is distorted by
+      // a missing cost. A sale counts when it has ≥1 line with no/zero unit cost
+      // (mixed lines still count — its profit is partially wrong) AND it has not
+      // been fully returned (a fully-returned sale nets ~0 to both revenue and
+      // COGS, so a missing cost there no longer distorts profit). Same shop scope
+      // and localtime boundary as revenue/COGS so the signal matches the headline.
+      db.getOptional<{ count: number }>(
+        `SELECT COUNT(*) as count FROM sales s
+         WHERE s.shop_id = ? AND DATE(s.created_at, 'localtime') BETWEEN ? AND ?
+           AND EXISTS (
+             SELECT 1 FROM sale_line_items sli
+             WHERE sli.sale_id = s.id
+               AND (sli.unit_cost_usd = 0 OR sli.unit_cost_usd IS NULL)
+           )
+           AND COALESCE(
+                 (SELECT SUM(sli.quantity) FROM sale_line_items sli WHERE sli.sale_id = s.id), 0
+               ) > COALESCE(
+                 (SELECT SUM(rli.qty_returned)
+                  FROM return_line_items rli
+                  JOIN returns r ON r.id = rli.return_id
+                  WHERE r.original_sale_id = s.id), 0
+               )`,
+        [device.shopId, start, end]
+      ),
     ])
 
     refundsUsd.value       = refundRow?.total ?? 0
@@ -79,7 +112,11 @@ export function useDashboardMetrics() {
     expensesUsd.value      = expRow?.total    ?? 0
     missingCostCount.value = missingRow?.count ?? 0
     invoiceCount.value     = countRow?.count   ?? 0
+    costlessSalesInPeriod.value = costlessRow?.count ?? 0
   }
 
-  return { revenueUsd, cogsUsd, expensesUsd, refundsUsd, profitUsd, missingCostCount, invoiceCount, load }
+  return {
+    revenueUsd, cogsUsd, expensesUsd, refundsUsd, profitUsd,
+    missingCostCount, invoiceCount, costlessSalesInPeriod, profitIsEstimated, load,
+  }
 }

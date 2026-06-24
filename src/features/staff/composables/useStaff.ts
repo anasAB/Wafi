@@ -3,9 +3,19 @@ import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { supabase } from '@/data/supabase/client'
 import { hashPin, generateSalt } from './usePinAuth'
+import { usePinLockout } from './usePinLockout'
 import type { Staff, NewStaff, StaffPermissions, StaffRole } from '../staff.types'
 import { OWNER_PERMISSIONS, MANAGER_PERMISSIONS } from '../staff.types'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
+import { canResetPin } from '@/router/permissions'
+
+/** Thrown when a PIN reset is attempted by an actor the role rule forbids. */
+export class PinResetNotAllowedError extends Error {
+  constructor() {
+    super('Not authorised to reset this staff member’s PIN')
+    this.name = 'PinResetNotAllowedError'
+  }
+}
 
 /** Owner and manager have fixed, role-derived permission sets; cashiers carry a
  *  per-staff custom set. Single source of truth for both reads and writes. */
@@ -31,6 +41,7 @@ function rowToStaff(r: any): Staff {
 
 export function useStaff() {
   const { logStaffCreated, logStaffUpdated, logStaffDeactivated, logStaffPermissionsChanged, logPinChanged } = useAuditLog()
+  const lockout = usePinLockout()
 
   const staff = ref<Staff[]>([])
   const loading = ref(false)
@@ -130,19 +141,51 @@ export function useStaff() {
     return created
   }
 
-  async function updateStaffPin(staffId: string, newPin: string): Promise<void> {
-    // Mint a fresh salt on every PIN change — this also upgrades any legacy
-    // unsalted row to salted on its next PIN set (verify-until-reset).
+  /** Write a fresh salted hash and clear any standing lockout for this staff
+   *  member. Minting a new salt also upgrades a legacy unsalted row to salted on
+   *  its next PIN set (verify-until-reset). Clearing the lockout here means a
+   *  newly-set PIN always works immediately — no leftover cooldown (gap #2). */
+  async function _writePinHash(staffId: string, newPin: string): Promise<void> {
     const pinSalt = generateSalt()
     await db.execute(`UPDATE staff SET pin_hash = ?, pin_salt = ? WHERE id = ?`, [
       await hashPin(newPin, pinSalt),
       pinSalt,
       staffId,
     ])
+    lockout.reset(staffId)
+  }
+
+  /** Set a staff member's PIN. `actor` is optional: the owner-only edit path
+   *  runs with an active operator (captured by the audit row's columns), while
+   *  the WAFI-056 owner self-recovery path passes the owner explicitly because
+   *  the shop is locked (no active operator) when the PIN is reset. */
+  async function updateStaffPin(
+    staffId: string,
+    newPin: string,
+    actor?: { id: string; name: string },
+  ): Promise<void> {
+    await _writePinHash(staffId, newPin)
     const nameRow = await db.getOptional<{ name: string }>(
       `SELECT name FROM staff WHERE id = ?`, [staffId]
     )
-    await logPinChanged(staffId, nameRow?.name ?? staffId)
+    await logPinChanged(staffId, nameRow?.name ?? staffId, actor)
+  }
+
+  /**
+   * Reset a staff member's PIN on their behalf (WAFI-056 in-person recovery).
+   *
+   * `actor` is the operator who authenticated to authorise the reset; `target`
+   * is the staff member who forgot their PIN. The role rule is enforced here too
+   * (defence in depth) — the UI hides forbidden targets, but a forbidden reset
+   * must also be impossible to drive programmatically. On success the new PIN
+   * works immediately (lockout cleared) and the audit row names both parties.
+   *
+   * Fully offline: a local DB write plus a localStorage lockout clear, no network.
+   */
+  async function resetStaffPin(actor: Staff, target: Staff, newPin: string): Promise<void> {
+    if (!canResetPin(actor, target)) throw new PinResetNotAllowedError()
+    await _writePinHash(target.id, newPin)
+    await logPinChanged(target.id, target.name, { id: actor.id, name: actor.name })
   }
 
   /** Update a staff member's name, role and permissions (owner-only action). */
@@ -193,6 +236,7 @@ export function useStaff() {
     hasAnyStaff,
     createStaff,
     updateStaffPin,
+    resetStaffPin,
     updateStaff,
     updateStaffPermissions,
     deactivateStaff,

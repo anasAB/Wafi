@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import VueApexCharts from 'vue3-apexcharts'
 
 import AppDialog   from '@/components/ui/AppDialog.vue'
@@ -27,6 +28,7 @@ import { db }                  from '@/data/powersync/db'
 
 const router = useRouter()
 const device = useDeviceStore()
+const { t } = useI18n()
 
 const { currentRate, loadRate } = useExchangeRate()
 const { hasDraft, loadDraft, restoreDraft, clearDraft } = useSaleDraft()
@@ -152,6 +154,13 @@ async function handleExpenseSaved() {
   showExpenseForm.value = false
   toast.value = { message: 'تم حفظ المصروف', type: 'success' }
   await Promise.all([metrics.load(period.value), drawer.load(period.value)])
+}
+
+// WAFI-054: tap-through from the profit caveat → the products list filtered to
+// the products missing a cost, so the owner can fix the source of the estimate.
+function goToMissingCostProducts() {
+  showProfitSheet.value = false
+  router.push('/products?filter=missing-cost')
 }
 
 const canStartSale = computed(() => currentRate.value !== null)
@@ -373,7 +382,16 @@ const ACTIVITY_HEADING: Record<string, string> = { today: 'اليوم', week: '�
               <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
             </svg>
           </div>
-          <div class="kc-label">الربح الإجمالي</div>
+          <div class="kc-label">
+            الربح الإجمالي
+            <!-- WAFI-054: degrade the headline to "estimated" (never blank) when a
+                 sale in the period had no cost — full caveat is in the ProfitSheet. -->
+            <span
+              v-if="metrics.profitIsEstimated.value"
+              class="kc-estimated-badge"
+              data-testid="profit-estimated-badge"
+            >{{ t('dashboard.profitEstimatedBadge') }}</span>
+          </div>
           <div class="kc-value" dir="ltr" :class="metrics.profitUsd.value >= 0 ? 'positive' : 'negative'">
             ${{ metrics.profitUsd.value.toLocaleString() }}
           </div>
@@ -591,7 +609,10 @@ const ACTIVITY_HEADING: Record<string, string> = { today: 'اليوم', week: '�
     :expenses-usd="metrics.expensesUsd.value"
     :profit-usd="metrics.profitUsd.value"
     :period="period"
+    :profit-is-estimated="metrics.profitIsEstimated.value"
+    :costless-sales-in-period="metrics.costlessSalesInPeriod.value"
     @close="showProfitSheet = false"
+    @fix="goToMissingCostProducts"
   />
   <CashDrawerSheet
     v-if="showCashDrawer"
@@ -776,6 +797,19 @@ const ACTIVITY_HEADING: Record<string, string> = { today: 'اليوم', week: '�
 
 .kc-icon { margin-bottom: 8px; color: #637285; }
 .kc-label { font-size: 11px; color: #637285; margin-bottom: 5px; }
+/* WAFI-054: amber "estimated" chip on the profit tile when cost data is missing. */
+.kc-estimated-badge {
+  display: inline-block;
+  margin-inline-start: 5px;
+  padding: 1px 6px;
+  border-radius: 9999px;
+  font-size: 9px;
+  font-weight: 700;
+  color: #FCD34D;
+  background: rgba(245,158,11,0.12);
+  border: 1px solid rgba(245,158,11,0.32);
+  vertical-align: middle;
+}
 .kc-value {
   font-size: 19px; font-weight: 800; color: #E8EDF5;
   text-align: right; margin-bottom: 3px;

@@ -90,6 +90,29 @@ Competitor-benchmarked, NOT yet on the roadmap, high-value for Syrian retail. Pr
 - **Profit Report screen — ✅ SPECED (2026-06-23), focused version.** Dedicated `/reports` screen: Week/Month/Quarter **+ custom range**, profit headline + green/red trend chart + plain breakdown, reusing the verified `useDashboardMetrics`. Spec: `specs/2026-06-23-profit-report-design.md`. **Reports v2 (deferred, feedback-driven):** P&L export/PDF · best-sellers here · pre-aggregation · advanced multi-metric charts. (Superseded the quarterly-only idea below.)
 - **[superseded] Quarterly profit view + trend chart (CEO/customer-#0 request, 2026-06-23).** "Did I make money over the last 3 months, shown clearly." Extends the existing Today/Week/Month dashboard with a quarter period + a monthly-profit trend chart (3 bars, green/red) + plain-language breakdown (money in − cost of goods − expenses). Pack: **Reporting (+$5/mo)** — also a hook for adopting that pack. *Benchmark:* QuickBooks/Xero P&L + profit-trend charts. **Timing: build POST-trip, not now** — it has nothing to show until ~3 months of real usage accrue (real catalog loads post-trip), and profit accuracy needs cost prices entered. Schedule it so it's ready by the time he has a quarter of data; do **pre-aggregation by month** in that window (computing a quarter live on a cheap Android is slow). **Open questions (ask the brother on the trip):** (1) calendar quarter vs rolling last-3-months; (2) confirm the chart shape; (3) surface a "X products missing cost — profit may be off" caveat.
 
+## PO tickets (2026-06-24) — from the alignment review
+
+New, pickup-ready. Plans dated 2026-06-24. Order: WAFI-054 now → WAFI-058 / WAFI-056 →
+WAFI-055 (post-trip epic) → WAFI-010 (post-trip epic). All gated behind landing/verifying
+WAFI-015 first.
+
+- **WAFI-054 — Dashboard profit-headline trust.** Profit shown as truth even when sales had
+  no cost → attach a period-accurate "estimated" caveat. `plans/2026-06-24-po-tickets-accountability-profit-trust-onboarding.md`. Small; do now.
+- **WAFI-055 — Self-serve onboarding + real auth + device registration.** The gate to pilot
+  #2; concretizes the 2026-06-20 Auth epic. Same file. First post-trip epic.
+- **WAFI-010 — Server-side role enforcement (concretized).** Makes "see who's stealing" real;
+  now **also** must enforce owner-only/granted financials (WAFI-058) server-side. Same file.
+  Second post-trip epic; resolve KD-2/KD-3 first.
+- **WAFI-056 — Forgotten/locked PIN recovery.** Owner+Manager reset a cashier's PIN in
+  person; owner self-recovers via account password; reset clears the lockout.
+  `plans/2026-06-24-pin-reset-recovery.md`.
+- **WAFI-058 — Financial visibility: owner-only by default, owner-grantable to a Manager.**
+  Redefines the Manager role; supersedes the "Manager sees reports" half of WAFI-013.
+  `plans/2026-06-24-owner-only-financial-visibility.md`.
+- **WAFI-057 — Owner WhatsApp digest. ⛔ DEFERRED** — superseded by owner-only financials;
+  conditionally revivable if a Manager is granted reports; real fix is the read-only Owner
+  Dashboard app / automated push. `plans/2026-06-24-owner-remote-visibility-whatsapp-digest.md`.
+
 ## Locked PO decisions (2026-06-20/21)
 
 - **Manager role** — build in v1 (WAFI-013).
@@ -98,6 +121,11 @@ Competitor-benchmarked, NOT yet on the roadmap, high-value for Syrian retail. Pr
 - **Exchange rate** — integer-only (WAFI-035).
 - **Shift model** — one shift per working session; operators swap inside it (switch-operator spec).
 - **Sale attribution** — the operator who *completes* the sale (switch-operator spec).
+- **Financial visibility (2026-06-24)** — Owner-only **by default**; the Owner may grant a
+  specific Manager `can_view_reports` / `can_view_expenses` (WAFI-058). Manager otherwise
+  runs the floor with no financial roll-ups.
+- **PIN recovery (2026-06-24)** — no self-service reset; Owner **or** Manager resets a
+  cashier's PIN in person (direct-set); Owner self-recovers via account password (WAFI-056).
 
 ## Open / pending
 

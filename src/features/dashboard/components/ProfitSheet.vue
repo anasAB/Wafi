@@ -1,16 +1,23 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { Period } from '@/features/dashboard/composables/periodUtils'
 
 const props = defineProps<{
-  revenueUsd:  number
-  cogsUsd:     number
-  expensesUsd: number
-  profitUsd:   number
-  period:      Period
+  revenueUsd:           number
+  cogsUsd:              number
+  expensesUsd:          number
+  profitUsd:            number
+  period:               Period
+  // WAFI-054: period-accurate profit-trust signal. `profitIsEstimated` drives the
+  // caveat; `costlessSalesInPeriod` fills the count in the message.
+  profitIsEstimated?:    boolean
+  costlessSalesInPeriod?: number
 }>()
 
-const emit = defineEmits<{ (e: 'close'): void }>()
+const emit = defineEmits<{ (e: 'close'): void; (e: 'fix'): void }>()
+
+const { t } = useI18n()
 
 const grossProfit = computed(() => props.revenueUsd - props.cogsUsd)
 
@@ -20,7 +27,13 @@ const periodLabel: Record<Period, string> = {
   month: 'الشهر',
 }
 
-const showCogsWarning = computed(() => props.cogsUsd === 0 && props.revenueUsd > 0)
+// Period-accurate caveat: shown only when a sale in THIS period had no cost
+// (real profit is lower). Replaces the old cogs===0 heuristic, which both
+// missed mixed sales and nagged shops that legitimately had no COGS.
+const showProfitCaveat = computed(() => props.profitIsEstimated === true)
+const caveatText = computed(() =>
+  t('dashboard.profitEstimatedCaveat', { count: props.costlessSalesInPeriod ?? 0 })
+)
 
 function fmt(n: number, sign = false): string {
   const abs = Math.abs(n).toFixed(2)
@@ -63,15 +76,6 @@ function fmt(n: number, sign = false): string {
           </span>
         </div>
 
-        <!-- COGS warning -->
-        <div
-          v-if="showCogsWarning"
-          data-testid="cogs-warning"
-          class="cogs-warning"
-        >
-          بعض المنتجات بدون سعر تكلفة — الربح الإجمالي قد يكون أعلى من الحقيقي
-        </div>
-
         <div class="profit-row" data-testid="row-gross">
           <span class="row-label row-label--emphasis">الربح الإجمالي</span>
           <span class="row-value row-value--emphasis" dir="ltr">{{ fmt(grossProfit) }}</span>
@@ -85,13 +89,31 @@ function fmt(n: number, sign = false): string {
         </div>
 
         <div class="profit-row profit-row--net" data-testid="row-net">
-          <span class="net-label">صافي الربح</span>
+          <span class="net-label">
+            صافي الربح
+            <span v-if="showProfitCaveat" class="net-estimated-badge" data-testid="profit-estimated-badge">
+              {{ t('dashboard.profitEstimatedBadge') }}
+            </span>
+          </span>
           <span
             class="net-value"
             :class="profitUsd > 0 ? 'positive' : profitUsd < 0 ? 'negative' : 'muted'"
             dir="ltr"
           >{{ fmt(profitUsd, true) }}</span>
         </div>
+
+        <!-- WAFI-054: period-accurate profit caveat. Tappable → jumps to the
+             products list filtered to the ones missing a cost so the owner can fix it. -->
+        <button
+          v-if="showProfitCaveat"
+          type="button"
+          data-testid="profit-estimated-caveat"
+          class="profit-caveat"
+          @click="emit('fix')"
+        >
+          <span class="profit-caveat-text">{{ caveatText }}</span>
+          <span class="profit-caveat-action">{{ t('dashboard.profitEstimatedFixHint') }} ›</span>
+        </button>
       </div>
 
       <!-- Close button -->
@@ -227,14 +249,54 @@ function fmt(n: number, sign = false): string {
   color: #637285;
 }
 
-.cogs-warning {
-  margin: 0.5rem 0;
-  padding: 0.5rem 0.75rem;
+/* WAFI-054: estimated-profit caveat + badge */
+.net-estimated-badge {
+  display: inline-block;
+  margin-inline-start: 0.5rem;
+  padding: 0.0625rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  color: #FCD34D;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.32);
+  vertical-align: middle;
+}
+
+.profit-caveat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  margin: 0.25rem 0 0.5rem;
+  padding: 0.625rem 0.75rem;
   border-radius: 0.75rem;
-  font-size: 0.75rem;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  text-align: right;
   color: #FCD34D;
   background: rgba(245, 158, 11, 0.08);
   border: 1px solid rgba(245, 158, 11, 0.28);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.profit-caveat:hover {
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.45);
+}
+
+.profit-caveat-text {
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.profit-caveat-action {
+  flex-shrink: 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  white-space: nowrap;
+  color: #FBBF24;
 }
 
 .sheet-footer {

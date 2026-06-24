@@ -36,14 +36,31 @@ describe('ProfitSheet', () => {
     expect(w.find('[data-testid="row-net"] .net-value').classes()).toContain('negative')
   })
 
-  it('shows COGS warning when cogsUsd is 0 and revenue > 0', () => {
-    const w = mountSheet({ cogsUsd: 0, revenueUsd: 450 })
-    expect(w.find('[data-testid="cogs-warning"]').exists()).toBe(true)
+  // WAFI-054: period-accurate "estimated profit" caveat (replaces the old
+  // cogs===0 heuristic, which both missed mixed sales and nagged clean shops).
+  it('shows the estimated-profit caveat (with the period count) when profitIsEstimated', () => {
+    const w = mountSheet({ profitIsEstimated: true, costlessSalesInPeriod: 3 })
+    const caveat = w.find('[data-testid="profit-estimated-caveat"]')
+    expect(caveat.exists()).toBe(true)
+    expect(caveat.text()).toContain('3')
+    expect(w.find('[data-testid="profit-estimated-badge"]').exists()).toBe(true)
   })
 
-  it('hides COGS warning when cogsUsd > 0', () => {
-    const w = mountSheet({ cogsUsd: 100 })
-    expect(w.find('[data-testid="cogs-warning"]').exists()).toBe(false)
+  it('hides the caveat when no sale in the period is missing a cost', () => {
+    const w = mountSheet({ profitIsEstimated: false, costlessSalesInPeriod: 0 })
+    expect(w.find('[data-testid="profit-estimated-caveat"]').exists()).toBe(false)
+    expect(w.find('[data-testid="profit-estimated-badge"]').exists()).toBe(false)
+  })
+
+  it('hides the caveat when the estimate props are omitted (clean by default)', () => {
+    const w = mountSheet()
+    expect(w.find('[data-testid="profit-estimated-caveat"]').exists()).toBe(false)
+  })
+
+  it('emits fix when the caveat is tapped (tap-through to fix missing costs)', async () => {
+    const w = mountSheet({ profitIsEstimated: true, costlessSalesInPeriod: 1 })
+    await w.find('[data-testid="profit-estimated-caveat"]').trigger('click')
+    expect(w.emitted('fix')).toBeTruthy()
   })
 
   it('emits close when backdrop is clicked', async () => {
