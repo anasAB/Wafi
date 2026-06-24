@@ -75,9 +75,20 @@ export function useSync() {
     })
   }
 
+  // A ticking clock so isStale re-evaluates as time passes, not only when sync
+  // state changes — otherwise a device left untouched would never cross the
+  // threshold in the UI. One minute is ample resolution for a 24h check.
+  const STALE_AFTER_MS = 24 * 60 * 60 * 1000
+  const now = ref(Date.now())
+  let staleTimer: ReturnType<typeof setInterval> | undefined
+
   const isStale = computed(() => {
-    if (!syncStore.lastSyncedAt) return false
-    return Date.now() - syncStore.lastSyncedAt.getTime() > 24 * 60 * 60 * 1000
+    if (!syncStore.lastSyncedAt) {
+      // Never synced: that's only a problem if there are writes stuck locally
+      // with nowhere to go yet — then it's a genuine stale-data warning.
+      return syncStore.pendingCount > 0
+    }
+    return now.value - syncStore.lastSyncedAt.getTime() > STALE_AFTER_MS
   })
 
   function bindPowerSync() {
@@ -92,6 +103,7 @@ export function useSync() {
         // is visible instead of silent. PowerSync clears uploadError on the next
         // successful upload, so this self-resolves once the server is fixed.
         const uploadError = status.dataFlowStatus?.uploadError
+        const downloadError = status.dataFlowStatus?.downloadError
 
         // Keep the queue-depth indicators live: each status change (upload
         // start/stop) is when ps_crud drains or a poison op gets parked.
@@ -107,6 +119,15 @@ export function useSync() {
           // are actually flowing again.
           if (uploadError) syncStore.setError(`فشل رفع التغييرات إلى الخادم: ${uploadError.message}`)
           else syncStore.setLastSynced(new Date())
+        } else if (downloadError && navigator.onLine) {
+          // Network is up but the server refused the download — commonly the sync
+          // rules / auth rejected the request. This is a real problem the owner
+          // must see, distinct from plain offline (a calm, supported state shown
+          // silently). When the device is actually offline we fall through and
+          // stay silent — navigator.onLine separates "server said no" from "no
+          // network", since PowerSync reports both as a downloadError.
+          syncStore.setStatus('offline')
+          syncStore.setError(`تعذّرت مزامنة البيانات من الخادم (قد تكون قواعد المزامنة رفضت الطلب): ${downloadError.message}`)
         } else if (status.dataFlowStatus?.downloading || status.dataFlowStatus?.uploading) {
           syncStore.setStatus('syncing')
         } else {
@@ -160,8 +181,15 @@ export function useSync() {
 
   let unbind: (() => void) | undefined
 
-  onMounted(() => { unbind = bindPowerSync(); void refreshCounts() })
-  onUnmounted(() => { unbind?.() })
+  onMounted(() => {
+    unbind = bindPowerSync()
+    void refreshCounts()
+    staleTimer = setInterval(() => { now.value = Date.now() }, 60_000)
+  })
+  onUnmounted(() => {
+    unbind?.()
+    if (staleTimer) clearInterval(staleTimer)
+  })
 
   return {
     status:       computed(() => syncStore.status),
