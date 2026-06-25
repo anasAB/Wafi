@@ -24,9 +24,10 @@ export function useDashboardMetrics() {
   // period contains at least one cost-less sale. A clean period shows no caveat.
   const profitIsEstimated = computed(() => costlessSalesInPeriod.value > 0)
 
-  async function load(period: Period) {
-    const { start, end } = getDateRange(period)
-
+  // The query body, parameterised by an explicit local-time date range. Both the
+  // period loader (home dashboard) and the explicit-range loader (reports screen)
+  // call this — one profit engine, no second calculation.
+  async function run(start: string, end: string) {
     const [revRow, cogsRow, expRow, refundRow, cogsReversalRow, missingRow, countRow, costlessRow] = await Promise.all([
       db.getOptional<{ total: number }>(
         `SELECT COALESCE(SUM(total_usd), 0) as total
@@ -115,8 +116,17 @@ export function useDashboardMetrics() {
     costlessSalesInPeriod.value = costlessRow?.count ?? 0
   }
 
+  async function load(period: Period) {
+    const { start, end } = getDateRange(period)
+    await run(start, end)
+  }
+
+  async function loadRange(start: string, end: string) {
+    await run(start, end)
+  }
+
   return {
     revenueUsd, cogsUsd, expensesUsd, refundsUsd, profitUsd,
-    missingCostCount, invoiceCount, costlessSalesInPeriod, profitIsEstimated, load,
+    missingCostCount, invoiceCount, costlessSalesInPeriod, profitIsEstimated, load, loadRange,
   }
 }

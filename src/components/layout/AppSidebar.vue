@@ -35,7 +35,7 @@ const allNavItems: NavItem[] = [
   { key: 'suppliers',   labelKey: 'nav.suppliers',  href: '/suppliers',      permission: 'can_manage_products' },
   { key: 'receivings',  labelKey: 'nav.receivings', href: '/receivings',     permission: 'can_manage_products' },
   { key: 'shifts',      labelKey: 'nav.shifts',     href: '/shifts/history', permission: null },
-  { key: 'reports',     labelKey: 'nav.reports',    href: null,              permission: 'can_view_reports' },
+  { key: 'reports',     labelKey: 'nav.reports',    href: '/reports',        permission: 'can_view_reports' },
 ]
 
 const navItems = computed(() => {

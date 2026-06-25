@@ -129,4 +129,15 @@ export default {
     profitEstimatedCaveat:  'ربح تقديري — {count} عملية بيع بدون تكلفة، الربح الحقيقي أقل',
     profitEstimatedFixHint: 'أضف سعر التكلفة',
   },
+  // Reporting Pack — profit report screen (/reports). Plain shop-owner language.
+  reports: {
+    title: 'تقرير الأرباح',
+    week: 'أسبوع', month: 'شهر', quarter: '٣ أشهر', custom: 'مخصص',
+    profit: 'الربح', moneyIn: 'الدخل', cogs: 'تكلفة البضاعة', expenses: 'المصاريف',
+    profitVerb: 'ربحت', lossVerb: 'خسرت',
+    empty: 'لا توجد مبيعات في هذه الفترة',
+    estimated: 'بعض المنتجات بلا تكلفة — الربح تقديري وقد يكون أقل',
+    invalidRange: 'تاريخ البداية يجب أن يكون قبل تاريخ النهاية',
+    from: 'من', to: 'إلى',
+  },
 }

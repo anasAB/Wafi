@@ -39,3 +39,36 @@ export function getMonthRange(offset: number): { start: string; end: string } {
   const end = new Date(now.getFullYear(), now.getMonth() + offset + 1, 0)
   return { start: toDateStr(start), end: toDateStr(end) }
 }
+
+export type ReportPeriod = 'week' | 'month' | 'quarter' | 'custom'
+
+// Reuses this file's existing toDateStr/getDateRange. Quarter = the last 3 calendar
+// months: 1st of (current month − 2) through today. Custom echoes the inputs.
+export function getReportRange(
+  period: ReportPeriod,
+  customStart?: string,
+  customEnd?: string,
+): { start: string; end: string } {
+  if (period === 'custom') {
+    return { start: customStart ?? '', end: customEnd ?? '' }
+  }
+  if (period === 'week' || period === 'month') {
+    // Delegate to the existing day-of-week / 1st-of-month logic.
+    return getDateRange(period)
+  }
+  // quarter
+  const now = new Date()
+  const start = new Date(now.getFullYear(), now.getMonth() - 2, 1)
+  return { start: toDateStr(start), end: toDateStr(now) }
+}
+
+// Day buckets stay readable up to ~2 months; longer ranges (quarter, long custom)
+// switch to monthly buckets so the chart doesn't render 90+ bars on a cheap phone.
+export function bucketForRange(start: string, end: string): 'day' | 'month' {
+  const [sy, sm, sd] = start.split('-').map(Number)
+  const [ey, em, ed] = end.split('-').map(Number)
+  const from = new Date(sy, (sm ?? 1) - 1, sd ?? 1)
+  const to   = new Date(ey, (em ?? 1) - 1, ed ?? 1)
+  const days = Math.round((to.getTime() - from.getTime()) / 86_400_000)
+  return days > 62 ? 'month' : 'day'
+}
