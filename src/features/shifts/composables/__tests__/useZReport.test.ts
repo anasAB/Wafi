@@ -128,4 +128,34 @@ describe('useZReport — shift/device scoping (multi-device)', () => {
     expect(m.expectedSyp).toBe(100_000)
     expect(m.varianceSyp).toBe(0)
   })
+
+  it('includes mid-shift pay-ins/pay-outs in the reconciliation', async () => {
+    vi.mocked(db.getOptional).mockResolvedValue({ total: 0, count: 0 } as any)
+    // Movements query (db.getAll, matched by SQL) returns one $80 pay-out (USD) and
+    // one 300,000 SYP drop; the byOperator query (also db.getAll) returns [].
+    vi.mocked(db.getAll).mockImplementation(async (sql: string) => {
+      if (/FROM cash_movements/.test(sql)) {
+        return [
+          { direction: 'out', currency: 'USD', total: 80 },
+          { direction: 'out', currency: 'SYP', total: 300_000 },
+        ] as any
+      }
+      return [] as any
+    })
+    const { compute } = useZReport()
+    const m = await compute(shift, 0, 0)
+    expect(m.cashPayOutsUsd).toBe(80)
+    expect(m.cashPayOutsSyp).toBe(300_000)
+    // Baseline expectedUsd = openingCashUsd (100); the $80 pay-out lowers it to 20.
+    expect(m.expectedUsd).toBe(100 - 80)
+  })
+
+  it('scopes the movements query to this shift via shift_id', async () => {
+    const { compute } = useZReport()
+    await compute(shift, 0, 0)
+    const mvCall = vi.mocked(db.getAll).mock.calls.find(c => /FROM cash_movements/.test(sqlOf(c)))
+    expect(mvCall).toBeTruthy()
+    expect(sqlOf(mvCall!)).toMatch(/shift_id\s*=\s*\?/)
+    expect(paramsOf(mvCall!)).toContain('shift-1')
+  })
 })

@@ -33,6 +33,7 @@ const snapshot: ZReportMetrics = {
   invoiceCount: 2, totalRevenueUsd: 80, cashUsdSales: 60, cashSypSalesRaw: 0,
   cardSales: 0, creditSales: 20, cashExpensesUsd: 0, cashExpensesSyp: 0,
   cashRefundsUsd: 0, cashRefundsSyp: 0, cashCreditPaymentsUsd: 0, cashCreditPaymentsSyp: 0,
+  cashPayInsUsd: 0, cashPayInsSyp: 0, cashPayOutsUsd: 0, cashPayOutsSyp: 0,
   expectedUsd: 160, actualUsd: 160, varianceUsd: 0,
   expectedSyp: 50_000, actualSyp: 50_000, varianceSyp: 0,
   durationMinutes: 1200, byOperator: [],
