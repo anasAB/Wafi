@@ -113,6 +113,10 @@ function goNextShift() {
   void router.push(`/shifts/${nextShiftId.value}`)
 }
 
+function goBackToHistory() {
+  void router.push('/shifts/history')
+}
+
 // Closed shifts read the WAFI-060 snapshot (immutable, consistent with reprint);
 // open shifts have no snapshot yet → live/partial detail labelled "مفتوحة".
 const z = computed(() => shift.value?.zReportData ?? null)
@@ -148,7 +152,7 @@ const varClass = computed(() => {
 
 <template>
   <div class="page-root" dir="rtl">
-    <AppHeader title="تفاصيل الوردية" @back="router.back()" />
+    <AppHeader title="تفاصيل الوردية" :show-back="true" @back="goBackToHistory" />
 
     <div class="shift-nav-row">
       <button

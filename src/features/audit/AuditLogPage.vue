@@ -22,10 +22,20 @@ const loading = ref(false)
 const filterStaffId = ref<string | null>(null)
 const filterEvent = ref<AuditEvent | null>(null)
 const searchQuery = ref('')
+const expandedEntryId = ref<string | null>(null)
 const staffMenuOpen = ref(false)
 const eventMenuOpen = ref(false)
 const staffMenuRef = ref<HTMLElement | null>(null)
 const eventMenuRef = ref<HTMLElement | null>(null)
+
+type ReceivingLineItemMeta = {
+  productId?: string
+  productName?: string
+  qtyReceived?: number
+  unitCostUsd?: number
+  lineTotalUsd?: number
+  costUpdated?: boolean
+}
 
 type SortKey = 'createdAt' | 'staffName' | 'event' | 'entityType'
 const sortKey = ref<SortKey>('createdAt')
@@ -162,6 +172,36 @@ function onPage(e: { first: number; rows: number }) {
 
 function clearSearch() {
   searchQuery.value = ''
+}
+
+function toggleEntryDetails(entryId: string) {
+  expandedEntryId.value = expandedEntryId.value === entryId ? null : entryId
+}
+
+function isEntryExpanded(entryId: string): boolean {
+  return expandedEntryId.value === entryId
+}
+
+function formatUsd(value: unknown): string {
+  const amount = Number(value ?? 0)
+  return `$${amount.toFixed(2)}`
+}
+
+function formatIsoDateTime(iso: string): string {
+  return new Intl.DateTimeFormat('ar-SY', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(new Date(iso))
+}
+
+function getReceivingLineItems(entry: AuditLog): ReceivingLineItemMeta[] {
+  if (entry.event !== 'receiving.created') return []
+  if (!Array.isArray(entry.meta.lineItems)) return []
+  return entry.meta.lineItems as ReceivingLineItemMeta[]
 }
 
 function toggleStaffMenu() {
@@ -404,14 +444,89 @@ watch(
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="e in paginatedEntries" :key="e.id" class="table-row">
-                    <td class="td td-time">{{ formatAuditTime(e.createdAt) }}</td>
-                    <td class="td td-event">{{ eventLabel(e) }}</td>
-                    <td class="td td-staff">{{ e.staffName }}</td>
-                    <td class="td td-entity">
-                      <span class="entity-badge">{{ entityLabel(e) }}</span>
-                    </td>
-                  </tr>
+                  <template v-for="e in paginatedEntries" :key="e.id">
+                    <tr class="table-row">
+                      <td class="td td-time">{{ formatAuditTime(e.createdAt) }}</td>
+                      <td class="td td-event">
+                        <button
+                          type="button"
+                          class="event-toggle-btn"
+                          :aria-expanded="isEntryExpanded(e.id)"
+                          @click="toggleEntryDetails(e.id)"
+                        >
+                          <span class="event-toggle-label">{{ eventLabel(e) }}</span>
+                          <span class="event-toggle-arrow">{{ isEntryExpanded(e.id) ? '▲' : '▼' }}</span>
+                        </button>
+                      </td>
+                      <td class="td td-staff">{{ e.staffName }}</td>
+                      <td class="td td-entity">
+                        <span class="entity-badge">{{ entityLabel(e) }}</span>
+                      </td>
+                    </tr>
+
+                    <tr v-if="isEntryExpanded(e.id)" class="table-row table-row-details">
+                      <td colspan="4" class="td td-details">
+                        <div class="details-grid">
+                          <div class="detail-item">
+                            <span class="detail-key">الوقت الكامل</span>
+                            <span class="detail-value">{{ formatIsoDateTime(e.createdAt) }}</span>
+                          </div>
+                          <div class="detail-item">
+                            <span class="detail-key">الحدث</span>
+                            <span class="detail-value">{{ eventLabel(e) }}</span>
+                          </div>
+                          <div class="detail-item">
+                            <span class="detail-key">النوع</span>
+                            <span class="detail-value">{{ entityLabel(e) }}</span>
+                          </div>
+                          <div class="detail-item">
+                            <span class="detail-key">معرّف السجل</span>
+                            <span class="detail-value detail-value-mono">{{ e.entityId ?? '—' }}</span>
+                          </div>
+                        </div>
+
+                        <div v-if="e.event === 'receiving.created'" class="receiving-details">
+                          <div class="details-grid receiving-summary-grid">
+                            <div class="detail-item">
+                              <span class="detail-key">المورد</span>
+                              <span class="detail-value">{{ String(e.meta.supplierName ?? '—') }}</span>
+                            </div>
+                            <div class="detail-item">
+                              <span class="detail-key">الإجمالي</span>
+                              <span class="detail-value">{{ formatUsd(e.meta.totalUsd) }}</span>
+                            </div>
+                            <div class="detail-item">
+                              <span class="detail-key">عدد الأصناف</span>
+                              <span class="detail-value">{{ Number(e.meta.lineCount ?? 0) }}</span>
+                            </div>
+                          </div>
+
+                          <div class="receiving-lines-wrap">
+                            <p class="receiving-lines-title">تفاصيل الأصناف</p>
+                            <table v-if="getReceivingLineItems(e).length > 0" class="receiving-lines-table">
+                              <thead>
+                                <tr>
+                                  <th>الصنف</th>
+                                  <th>الكمية</th>
+                                  <th>تكلفة الوحدة</th>
+                                  <th>الإجمالي</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <tr v-for="(line, idx) in getReceivingLineItems(e)" :key="`${e.id}-line-${idx}`">
+                                  <td>{{ line.productName ?? '—' }}</td>
+                                  <td>{{ Number(line.qtyReceived ?? 0) }}</td>
+                                  <td>{{ formatUsd(line.unitCostUsd) }}</td>
+                                  <td>{{ formatUsd(line.lineTotalUsd ?? ((Number(line.qtyReceived ?? 0) * Number(line.unitCostUsd ?? 0)))) }}</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                            <p v-else class="details-empty">لا توجد تفاصيل أصناف لهذا السجل.</p>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  </template>
                 </tbody>
               </table>
             </div>
@@ -422,8 +537,53 @@ watch(
                   <span class="log-time">{{ formatAuditTime(e.createdAt) }}</span>
                   <span class="entity-badge">{{ entityLabel(e) }}</span>
                 </div>
-                <p class="log-label">{{ eventLabel(e) }}</p>
+                <button
+                  type="button"
+                  class="log-toggle-btn"
+                  :aria-expanded="isEntryExpanded(e.id)"
+                  @click="toggleEntryDetails(e.id)"
+                >
+                  <span class="log-label">{{ eventLabel(e) }}</span>
+                  <span class="event-toggle-arrow">{{ isEntryExpanded(e.id) ? '▲' : '▼' }}</span>
+                </button>
                 <p class="log-staff">{{ e.staffName }}</p>
+
+                <div v-if="isEntryExpanded(e.id)" class="mobile-details">
+                  <div class="details-grid">
+                    <div class="detail-item">
+                      <span class="detail-key">الوقت الكامل</span>
+                      <span class="detail-value">{{ formatIsoDateTime(e.createdAt) }}</span>
+                    </div>
+                    <div class="detail-item">
+                      <span class="detail-key">الحدث</span>
+                      <span class="detail-value">{{ eventLabel(e) }}</span>
+                    </div>
+                  </div>
+
+                  <div v-if="e.event === 'receiving.created'" class="receiving-details">
+                    <div class="details-grid receiving-summary-grid">
+                      <div class="detail-item">
+                        <span class="detail-key">المورد</span>
+                        <span class="detail-value">{{ String(e.meta.supplierName ?? '—') }}</span>
+                      </div>
+                      <div class="detail-item">
+                        <span class="detail-key">الإجمالي</span>
+                        <span class="detail-value">{{ formatUsd(e.meta.totalUsd) }}</span>
+                      </div>
+                      <div class="detail-item">
+                        <span class="detail-key">عدد الأصناف</span>
+                        <span class="detail-value">{{ Number(e.meta.lineCount ?? 0) }}</span>
+                      </div>
+                    </div>
+                    <ul v-if="getReceivingLineItems(e).length > 0" class="mobile-lines-list">
+                      <li v-for="(line, idx) in getReceivingLineItems(e)" :key="`${e.id}-mobile-line-${idx}`" class="mobile-line-item">
+                        <span class="mobile-line-name">{{ line.productName ?? '—' }}</span>
+                        <span class="mobile-line-meta">{{ Number(line.qtyReceived ?? 0) }} × {{ formatUsd(line.unitCostUsd) }} = {{ formatUsd(line.lineTotalUsd ?? ((Number(line.qtyReceived ?? 0) * Number(line.unitCostUsd ?? 0)))) }}</span>
+                      </li>
+                    </ul>
+                    <p v-else class="details-empty">لا توجد تفاصيل أصناف لهذا السجل.</p>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -891,6 +1051,36 @@ watch(
   font-weight: 600;
 }
 
+.event-toggle-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+  text-align: right;
+}
+
+.event-toggle-btn:hover .event-toggle-label {
+  color: #BFDBFE;
+}
+
+.event-toggle-label {
+  color: #E8EDF5;
+  font-weight: 700;
+}
+
+.event-toggle-arrow {
+  color: #8FA2BC;
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+
 .td-staff {
   color: #9CB3D0;
 }
@@ -906,6 +1096,105 @@ watch(
   color: #60A5FA;
   font-size: 0.68rem;
   font-weight: 700;
+}
+
+.table-row-details {
+  background: rgba(8, 16, 29, 0.72);
+}
+
+.td-details {
+  padding: 0.85rem 0.9rem 1rem;
+}
+
+.details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.detail-item {
+  border-radius: 0.6rem;
+  border: 1px solid rgba(26, 86, 219, 0.22);
+  background: rgba(26, 86, 219, 0.08);
+  padding: 0.45rem 0.55rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.16rem;
+}
+
+.detail-key {
+  color: #8FA2BC;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.detail-value {
+  color: #E8EDF5;
+  font-size: 0.8rem;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.detail-value-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.74rem;
+}
+
+.receiving-details {
+  margin-top: 0.7rem;
+  border-top: 1px dashed rgba(26, 86, 219, 0.26);
+  padding-top: 0.7rem;
+}
+
+.receiving-summary-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.receiving-lines-wrap {
+  margin-top: 0.65rem;
+}
+
+.receiving-lines-title {
+  margin: 0 0 0.35rem;
+  color: #C8D5E8;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.receiving-lines-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid rgba(26, 86, 219, 0.22);
+  border-radius: 0.65rem;
+  overflow: hidden;
+}
+
+.receiving-lines-table th,
+.receiving-lines-table td {
+  padding: 0.45rem 0.5rem;
+  border-bottom: 1px solid rgba(26, 86, 219, 0.14);
+  text-align: right;
+  font-size: 0.76rem;
+}
+
+.receiving-lines-table th {
+  background: rgba(255, 255, 255, 0.04);
+  color: #93A3B8;
+  font-weight: 700;
+}
+
+.receiving-lines-table td {
+  color: #D8E2F0;
+}
+
+.receiving-lines-table tr:last-child td {
+  border-bottom: none;
+}
+
+.details-empty {
+  margin: 0;
+  color: #8FA2BC;
+  font-size: 0.76rem;
 }
 
 .mobile-list {
@@ -938,6 +1227,63 @@ watch(
   color: #E8EDF5;
   font-size: 0.86rem;
   font-weight: 700;
+}
+
+.log-toggle-btn {
+  margin-top: 0.42rem;
+  width: 100%;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0;
+  text-align: right;
+  cursor: pointer;
+}
+
+.mobile-details {
+  margin-top: 0.6rem;
+  border-top: 1px dashed rgba(26, 86, 219, 0.26);
+  padding-top: 0.6rem;
+}
+
+.mobile-lines-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.mobile-line-item {
+  border: 1px solid rgba(26, 86, 219, 0.2);
+  border-radius: 0.58rem;
+  background: rgba(26, 86, 219, 0.08);
+  padding: 0.42rem 0.5rem;
+}
+
+.mobile-line-name {
+  display: block;
+  color: #E8EDF5;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.mobile-line-meta {
+  display: block;
+  margin-top: 0.16rem;
+  color: #9CB3D0;
+  font-size: 0.72rem;
+}
+
+@media (max-width: 820px) {
+  .details-grid,
+  .receiving-summary-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .log-staff {

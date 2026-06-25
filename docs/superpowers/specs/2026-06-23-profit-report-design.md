@@ -1,5 +1,7 @@
 # Profit Report Screen — Design
 
+> **2026-06-25 — v1.0 EXTENSION APPROVED.** This spec describes the shipped **v0 baseline** (headline + breakdown + trend). It is extended by **PRD "Premium Insights & Reporting Pack v1.0"** → build plan `docs/superpowers/plans/2026-06-25-premium-insights-reporting-pack-v1.md`. v1.0 adds: two tabs (Profitability | Expenses), period-over-period delta (with same-elapsed-day clamping), a **cumulative area chart replacing the v0 bar chart**, chart drill-down, anomaly banners (revenue-floor-gated), and an expense category donut + top-offenders list. The hyperinflation / live-data-only and offline-first rules below STILL GOVERN v1.0 (PoP is USD, live-sales-only). No DB migration: `expenses.category` already exists.
+
 > Date: 2026-06-23
 > Status: Approved (pending spec review)
 > Pack: Reporting (+$5/mo)

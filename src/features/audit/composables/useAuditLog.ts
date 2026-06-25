@@ -28,6 +28,24 @@ type ReceivingMetaHydrationRow = {
   line_count: number
 }
 
+type ReceivingLineHydrationRow = {
+  receiving_id: string
+  product_id: string
+  product_name: string
+  qty_received: number
+  unit_cost_usd: number
+  cost_updated: number
+}
+
+type ReceivingAuditLineItem = {
+  productId: string
+  productName: string
+  qtyReceived: number
+  unitCostUsd: number
+  lineTotalUsd: number
+  costUpdated: boolean
+}
+
 function hasReceivingMeta(entry: AuditLog): boolean {
   if (entry.event !== 'receiving.created') return true
   const m = entry.meta
@@ -37,8 +55,15 @@ function hasReceivingMeta(entry: AuditLog): boolean {
   return hasSupplier && hasTotal && hasLineCount
 }
 
+function hasReceivingLineItems(entry: AuditLog): boolean {
+  if (entry.event !== 'receiving.created') return true
+  return Array.isArray(entry.meta.lineItems)
+}
+
 async function hydrateReceivingMeta(entries: AuditLog[], shopId: string): Promise<AuditLog[]> {
-  const missing = entries.filter(e => e.event === 'receiving.created' && !hasReceivingMeta(e))
+  const missing = entries.filter(
+    e => e.event === 'receiving.created' && (!hasReceivingMeta(e) || !hasReceivingLineItems(e)),
+  )
   if (!missing.length) return entries
 
   const ids = missing.map(e => e.entityId).filter((id): id is string => Boolean(id))
@@ -58,14 +83,59 @@ async function hydrateReceivingMeta(entries: AuditLog[], shopId: string): Promis
     [shopId, ...ids],
   )
 
+  const lineRows = await db.getAll<ReceivingLineHydrationRow>(
+    `SELECT li.receiving_id,
+            li.product_id,
+            COALESCE(p.name_ar, '—') AS product_name,
+            COALESCE(li.qty_received, 0) AS qty_received,
+            COALESCE(li.unit_cost_usd, 0) AS unit_cost_usd,
+            COALESCE(li.cost_updated, 0) AS cost_updated
+     FROM stock_receiving_line_items li
+     LEFT JOIN products p ON p.id = li.product_id
+     WHERE li.shop_id = ? AND li.receiving_id IN (${placeholders})`,
+    [shopId, ...ids],
+  )
+
   const byId = new Map(rows.map(r => [r.id, r]))
+  const linesByReceivingId = new Map<string, ReceivingAuditLineItem[]>()
+
+  for (const row of lineRows) {
+    const line: ReceivingAuditLineItem = {
+      productId: row.product_id,
+      productName: row.product_name,
+      qtyReceived: Number(row.qty_received ?? 0),
+      unitCostUsd: Number(row.unit_cost_usd ?? 0),
+      lineTotalUsd: Number(row.qty_received ?? 0) * Number(row.unit_cost_usd ?? 0),
+      costUpdated: Number(row.cost_updated ?? 0) === 1,
+    }
+    const current = linesByReceivingId.get(row.receiving_id)
+    if (current) {
+      current.push(line)
+    } else {
+      linesByReceivingId.set(row.receiving_id, [line])
+    }
+  }
 
   return entries.map((entry) => {
-    if (entry.event !== 'receiving.created' || hasReceivingMeta(entry)) return entry
+    if (entry.event !== 'receiving.created' || (hasReceivingMeta(entry) && hasReceivingLineItems(entry))) {
+      return entry
+    }
     const id = entry.entityId
     if (!id) return entry
     const row = byId.get(id)
-    if (!row) return entry
+    const hydratedLineItems = linesByReceivingId.get(id) ?? []
+
+    if (!row) {
+      if (hasReceivingLineItems(entry)) return entry
+      return {
+        ...entry,
+        meta: {
+          ...entry.meta,
+          lineItems: hydratedLineItems,
+        },
+      }
+    }
+
     return {
       ...entry,
       meta: {
@@ -73,6 +143,9 @@ async function hydrateReceivingMeta(entries: AuditLog[], shopId: string): Promis
         supplierName: row.supplier_name,
         totalUsd: Number(row.total_cost_usd ?? 0),
         lineCount: Number(row.line_count ?? 0),
+        lineItems: hasReceivingLineItems(entry)
+          ? (entry.meta.lineItems as unknown[])
+          : hydratedLineItems,
       },
     }
   })
@@ -314,9 +387,18 @@ export function useAuditLog() {
     _log('supplier.updated', 'supplier', supplierId, { name })
 
   const logReceivingCreated = (
-    receivingId: string, supplierName: string, totalUsd: number, lineCount: number,
+    receivingId: string,
+    supplierName: string,
+    totalUsd: number,
+    lineCount: number,
+    lineItems?: ReceivingAuditLineItem[],
   ) => _log('receiving.created', 'receiving', receivingId,
-            { supplierName, totalUsd, lineCount })
+            {
+              supplierName,
+              totalUsd,
+              lineCount,
+              ...(lineItems ? { lineItems } : {}),
+            })
 
   // Switching the active operator is an accountability event (no shift change).
   // Entity is the staff switched TO; meta carries both sides for the log sentence.

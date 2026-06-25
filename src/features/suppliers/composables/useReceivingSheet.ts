@@ -130,7 +130,20 @@ export function useReceivingSheet() {
         )
     const auditSupplierName = supplierNameFromState || supplierNameFromDb?.name || 'مورد غير معروف'
 
-    await logReceivingCreated(receivingId, auditSupplierName, total, snapshotLines.length)
+    await logReceivingCreated(
+      receivingId,
+      auditSupplierName,
+      total,
+      snapshotLines.length,
+      snapshotLines.map((line) => ({
+        productId: line.productId,
+        productName: line.productName,
+        qtyReceived: Number(line.qtyReceived) || 0,
+        unitCostUsd: Number(line.unitCostUsd) || 0,
+        lineTotalUsd: (Number(line.qtyReceived) || 0) * (Number(line.unitCostUsd) || 0),
+        costUpdated: line.updateCost,
+      })),
+    )
   }
 
   return {
