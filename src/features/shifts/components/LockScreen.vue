@@ -11,6 +11,7 @@ import { useAuditLog }     from '@/features/audit/composables/useAuditLog'
 import PinPad              from '@/features/staff/components/PinPad.vue'
 import PinRecovery         from '@/features/staff/components/PinRecovery.vue'
 import type { Staff, StaffPermissions } from '@/features/staff/staff.types'
+import type { CashierShift } from '@/features/shifts/shift.types'
 import { roleLabel }       from '@/features/staff/staff.types'
 import { resolveLanding, isRouteAllowed } from '@/router/permissions'
 
@@ -23,7 +24,7 @@ const emit  = defineEmits<{ done: []; cancel: [] }>()
 const { t } = useI18n()
 const router = useRouter()
 const { staff, loadStaff } = useStaff()
-const { openShift }        = useShift()
+const { openShift, loadLastClosedShift } = useShift()
 const { switchTo }         = useOperatorSwitch()
 const lockout              = usePinLockout()
 const { logLoginFailed, logLockedOut } = useAuditLog()
@@ -32,7 +33,15 @@ type Step = 'pick-staff' | 'enter-pin' | 'opening-cash'
 
 const step           = ref<Step>('pick-staff')
 const selectedStaff  = ref<Staff | null>(null)
+// WAFI-059: opening cash is dual-currency. SYP is the primary field (focused first
+// for Syrian shops); both persist on the shift.
+const openingCashSyp = ref('')
 const openingCashUsd = ref('')
+// Previous shift's closing cash, shown as a hint above the inputs (epic Story 5.3).
+const lastClosed     = ref<CashierShift | null>(null)
+// Empty-input guard: an empty count is allowed but must be a deliberate "continue
+// with 0?", never a silent zero (epic Story 5.3 AC). Holds the pending open.
+const confirmZero    = ref(false)
 const pinPadRef      = ref<InstanceType<typeof PinPad> | null>(null)
 const loading        = ref(false)
 const authError      = ref('')
@@ -110,14 +119,35 @@ async function onPinComplete(pin: string) {
     emit('done')
     return
   }
+  // Moving to the cash count — surface the previous shift's closing cash as a hint.
+  // Best-effort: a missing/failed read just hides the hint, never blocks opening.
+  lastClosed.value = await loadLastClosedShift().catch(() => null)
+  confirmZero.value = false
   step.value = 'opening-cash'
 }
 
-async function confirmOpen() {
+// An empty count is allowed but must be deliberate: a blank SYP and/or USD field
+// raises the confirm-with-zero prompt instead of silently opening at 0.
+function confirmOpen() {
+  if (!selectedStaff.value) return
+  const sypBlank = openingCashSyp.value.trim() === ''
+  const usdBlank = openingCashUsd.value.trim() === ''
+  if (sypBlank || usdBlank) {
+    confirmZero.value = true
+    return
+  }
+  void doOpen()
+}
+
+async function doOpen() {
   if (!selectedStaff.value) return
   loading.value = true
   try {
-    await openShift(selectedStaff.value, parseFloat(openingCashUsd.value) || 0)
+    await openShift(
+      selectedStaff.value,
+      parseFloat(openingCashUsd.value) || 0,
+      parseFloat(openingCashSyp.value) || 0,
+    )
     // Land on the right home before first paint: the owner and a reports-granted
     // manager get the dashboard; everyone else gets the POS, so an ungranted
     // operator never flashes the financial dashboard then bounces (WAFI-058).
@@ -127,6 +157,9 @@ async function confirmOpen() {
   }
 }
 
+const fmtSyp = (n: number) => `${n.toLocaleString('en-US')} ل.س`
+const fmtUsd = (n: number) => `$${n.toFixed(2)}`
+
 function back() {
   // From PIN entry → staff list. From cash entry → also back to staff list (not
   // PIN re-entry), per the requested flow (#21).
@@ -135,6 +168,9 @@ function back() {
   authError.value = ''
   recovering.value = false
   recoveryDone.value = false
+  openingCashSyp.value = ''
+  openingCashUsd.value = ''
+  confirmZero.value = false
 }
 </script>
 
@@ -188,23 +224,52 @@ function back() {
         </template>
       </template>
 
-      <!-- Step 3: opening cash -->
+      <!-- Step 3: opening cash (dual currency — SYP first, WAFI-059) -->
       <template v-else-if="step === 'opening-cash'">
         <p class="prompt">كم في الصندوق؟</p>
-        <p class="sub">أدخل رصيد الفتح بالدولار</p>
-        <div class="cash-input-card">
-          <span class="cash-currency">$</span>
-          <input
-            v-model="openingCashUsd"
-            type="number" min="0" step="0.01"
-            class="cash-input"
-            placeholder="0.00" dir="ltr" autofocus
-          />
-        </div>
-        <button type="button" class="btn-primary" :disabled="loading" @click="confirmOpen">
-          {{ loading ? 'جاري الفتح...' : 'فتح الوردية' }}
-        </button>
-        <button type="button" class="back-btn" @click="back">رجوع</button>
+        <p class="sub">أدخل رصيد الفتح بالليرة والدولار</p>
+
+        <!-- Last shift's closing cash, as a starting reference -->
+        <p v-if="lastClosed" class="last-closed-hint">
+          أُغلقت الوردية السابقة بـ
+          <span dir="ltr">{{ fmtSyp(lastClosed.closingCashSyp ?? 0) }}</span>
+          +
+          <span dir="ltr">{{ fmtUsd(lastClosed.closingCashUsd ?? 0) }}</span>
+        </p>
+
+        <!-- Confirm-with-zero prompt: an empty count must be deliberate -->
+        <template v-if="confirmZero">
+          <p class="zero-warning">لم تُدخل العد — هل تريد الاستمرار بـ 0؟</p>
+          <button type="button" class="btn-primary" :disabled="loading" @click="doOpen">
+            {{ loading ? 'جاري الفتح...' : 'نعم، افتح بـ 0' }}
+          </button>
+          <button type="button" class="back-btn" @click="confirmZero = false">إلغاء — تعديل العد</button>
+        </template>
+
+        <template v-else>
+          <div class="cash-input-card">
+            <span class="cash-currency">ل.س</span>
+            <input
+              v-model="openingCashSyp"
+              type="number" min="0" step="1"
+              class="cash-input"
+              placeholder="0" dir="ltr" autofocus
+            />
+          </div>
+          <div class="cash-input-card cash-input-card--spaced">
+            <span class="cash-currency">$</span>
+            <input
+              v-model="openingCashUsd"
+              type="number" min="0" step="0.01"
+              class="cash-input"
+              placeholder="0.00" dir="ltr"
+            />
+          </div>
+          <button type="button" class="btn-primary" :disabled="loading" @click="confirmOpen">
+            {{ loading ? 'جاري الفتح...' : 'فتح الوردية' }}
+          </button>
+          <button type="button" class="back-btn" @click="back">رجوع</button>
+        </template>
       </template>
     </div>
   </div>
@@ -275,7 +340,20 @@ function back() {
   border-color: rgba(26, 86, 219, 0.8);
   box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.25);
 }
-.cash-currency { color: #637285; font-size: 1.25rem; }
+.cash-input-card--spaced { margin-top: 0.75rem; }
+.cash-currency { color: #637285; font-size: 1.25rem; min-width: 2.25rem; text-align: center; }
+
+.last-closed-hint {
+  font-size: 0.8125rem; color: #93B4F0; text-align: center; width: 100%;
+  background: rgba(26, 86, 219, 0.10); border: 1px solid rgba(26, 86, 219, 0.25);
+  border-radius: 0.625rem; padding: 0.5rem 0.75rem; margin-bottom: 1rem; line-height: 1.5;
+}
+
+.zero-warning {
+  font-size: 0.875rem; color: #FCD34D; text-align: center; width: 100%;
+  background: rgba(234, 179, 8, 0.10); border: 1px solid rgba(234, 179, 8, 0.30);
+  border-radius: 0.625rem; padding: 0.625rem 0.875rem; margin-bottom: 0.5rem; line-height: 1.5;
+}
 .cash-input {
   flex: 1; background: transparent; border: none; outline: none;
   color: #E8EDF5; font-size: 1.5rem; font-weight: 700; font-family: inherit;

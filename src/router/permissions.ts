@@ -1,22 +1,40 @@
 import type { Staff, StaffPermissions } from '@/features/staff/staff.types'
+import { permissionsForRole } from '@/features/staff/staff.types'
+
+/**
+ * THE single source of truth for "can this staff do X" (WAFI-063). Both the router
+ * (isRouteAllowed) and UI components ask here — no component reads a permission flag
+ * inline — so the permission model can evolve (WAFI-010 server enforcement, v1.5
+ * custom permissions) by changing this one function, not every call site.
+ *
+ * - No active operator → denied (fail closed). The active operator is the single
+ *   source of truth (WAFI-011); a gated action must never open for nobody.
+ * - Owner → always true (owners hold every permission).
+ * - Otherwise → the staff's EFFECTIVE permission, derived through
+ *   `permissionsForRole` (not the raw stored blob) so the role default and any
+ *   owner-granted override can never drift apart, and a manager can never
+ *   self-escalate the role-fixed flags (WAFI-058).
+ */
+export function canUserDo(
+  staff: Staff | null,
+  action: keyof StaffPermissions,
+): boolean {
+  if (!staff) return false
+  if (staff.role === 'owner') return true
+  return Boolean(permissionsForRole(staff.role, staff.permissions)[action])
+}
 
 /**
  * Whether the active staff may enter a route requiring `required` permission.
- * - No required permission → always allowed (public route).
- * - No active operator on a permission-gated route → denied (fail closed). The
- *   active operator is the single source of truth (WAFI-011); a gated route must
- *   never open for nobody.
- * - Owner → allowed (owners hold every permission).
- * - Otherwise (cashier/manager) → only if the staff's permission flag is set.
+ * A public route (no required permission) is always allowed; otherwise it defers
+ * to `canUserDo` so routes and components share one decision (WAFI-063).
  */
 export function isRouteAllowed(
   required: keyof StaffPermissions | undefined,
   staff: Staff | null,
 ): boolean {
   if (!required) return true
-  if (!staff) return false
-  if (staff.role === 'owner') return true
-  return Boolean(staff.permissions?.[required])
+  return canUserDo(staff, required)
 }
 
 /**

@@ -15,6 +15,7 @@ const shift: CashierShift = {
   openedAt:       '2026-06-19T06:00:00.000Z',
   closedAt:       null,
   openingCashUsd: 100,
+  openingCashSyp: 0,
   closingCashUsd: null,
   closingCashSyp: null,
   status:         'open',

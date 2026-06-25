@@ -342,6 +342,37 @@ rejected. Coverage list reviewed and recorded in this ticket. Build green.
 
 ---
 
+### WAFI-064 — verification record (2026-06-25)
+
+**5.4 Sale attribution — CONFIRMED present (no fix needed).** `usePayment.confirm()`
+(`src/features/payment/usePayment.ts`) writes both `shift_id` (`shiftStore.activeShiftId`)
+and `staff_id` (`sessionStore.activeStaff.id`, the operator who *completes* the sale) on
+the `sales` INSERT. Migration 017 added `sales.staff_id`; `shift_id` came in 009. Tests
+added: `usePayment.test.ts` now asserts `shift_id` is persisted and that attribution
+follows an operator switch (the completer, not the opener, is recorded).
+
+**5.8 Audit append-only — CONFIRMED at the DB level (no fix needed).** Migration 018
+(`018_audit_log_append_only.sql`) drops the UPDATE/DELETE RLS policies, revokes the
+grants, AND installs a `BEFORE UPDATE OR DELETE` trigger (`audit_log_block_modify`) that
+hard-blocks modification for every non-BYPASSRLS role — independent of policy state, so a
+re-run of an earlier migration can't reopen the hole. (DB-level enforcement can't be
+exercised from the vitest mock; verify on the hosted shop with a manual UPDATE/DELETE.)
+
+**Audit action coverage — reviewed.** Covered today (`useAuditLog`): sale completed/deleted,
+return processed, product created/updated/deleted/price_changed, expense created/updated/deleted,
+customer created/updated/deleted, customer payment recorded, stock adjusted, shift opened/closed,
+exchange rate changed, receipt settings updated, staff created/updated/deactivated/permissions_changed,
+PIN changed, recovery codes generated/used, login failed, locked out, supplier created/updated,
+receiving created, operator switched.
+
+Gaps filed as follow-up sub-tasks (not blocking; none are silent data loss):
+- **WAFI-064a** — dedicated `product.cost_changed` event (cost edits currently fold into
+  `product.updated`, losing the old/new cost pair the price path already records).
+- **WAFI-064b** — `customer.payment_edited` / `customer.payment_deleted` events (only
+  `payment_recorded` exists today).
+- **WAFI-064c** — `customer.balance_adjusted` event for any manual credit-balance override.
+- **WAFI-064d** — `shift.force_closed` event (owned by WAFI-065, uses `force_closed_by`).
+
 ## Notes for the dev
 
 - Two reviewed sub-items — **one-shift-per-device guard** (5.3) and **owner

@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import { useSettingsStore } from '@/features/settings'
-import type { Language, Theme, TextSize } from '@/features/settings'
+import type { Language, Theme, TextSize, IdleTimeout } from '@/features/settings'
 import ThemePickerScreen from './ThemePickerScreen.vue'
 
 const router   = useRouter()
@@ -21,6 +21,14 @@ const themes = computed(() => [
   { value: 'dark'  as Theme, label: t('theme.dark')  },
   { value: 'auto'  as Theme, label: t('theme.auto')  },
 ])
+
+const idleOptions: { value: IdleTimeout; label: string }[] = [
+  { value: 5,       label: '5 د'  },
+  { value: 15,      label: '15 د' },
+  { value: 30,      label: '30 د' },
+  { value: 60,      label: '60 د' },
+  { value: 'never', label: 'أبداً' },
+]
 
 const textSizes = computed(() => [
   { value: 'small'   as TextSize, short: t('textSize.small'),   full: t('textSize.smallFull')   },
@@ -127,6 +135,24 @@ const textSizes = computed(() => [
     <!-- Session group -->
     <p class="section-label">{{ t('personal.sessionSection') }}</p>
     <div class="settings-card">
+
+      <!-- WAFI-062: idle auto-lock (PIN re-entry without closing the shift) -->
+      <div class="settings-row settings-row--inner">
+        <p class="row-title row-title--spaced">القفل التلقائي بعد الخمول</p>
+        <div class="option-grid option-grid--five">
+          <button
+            v-for="opt in idleOptions"
+            :key="String(opt.value)"
+            type="button"
+            class="option-btn"
+            :class="{ 'option-btn--active': settings.idleTimeout === opt.value }"
+            @click="settings.idleTimeout = opt.value"
+          >
+            {{ opt.label }}
+          </button>
+        </div>
+      </div>
+
       <button
         type="button"
         class="settings-row settings-row--last signout-row"
@@ -287,6 +313,10 @@ button.settings-row:hover:not(:disabled) {
 
 .option-grid--three {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.option-grid--five {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .option-grid--four {

@@ -128,6 +128,7 @@ export function useZReport() {
 
       const recon = computeCashReconciliation({
         openingCashUsd: shift.openingCashUsd,
+        openingCashSyp: shift.openingCashSyp ?? 0,
         cashUsdSales,
         cashExpensesUsd,
         closingCashUsd,
@@ -226,6 +227,7 @@ export function useZReport() {
       `عند العد:       ${fmtUsd(m.actualUsd)}`,
       `الفرق:          ${varUsd >= 0 ? '+' : ''}${fmtUsd(varUsd)}${varUsd < 0 ? ' !!!' : ''}`,
       '',
+      `رصيد فتح ليرة:  ${fmtSyp(shift.openingCashSyp ?? 0)}`,
       `نقد ليرة مبيعات: ${fmtSyp(m.cashSypSalesRaw)}`,
       ...(m.cashCreditPaymentsSyp > 0 ? [`+ تحصيل ديون ليرة: ${fmtSyp(m.cashCreditPaymentsSyp)}`] : []),
       ...(m.cashExpensesSyp > 0 ? [`- مصاريف ليرة:  ${fmtSyp(m.cashExpensesSyp)}`] : []),

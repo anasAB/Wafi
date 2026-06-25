@@ -3,24 +3,82 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import ZReportScreen from '@/features/shifts/components/ZReportScreen.vue'
-import { useShift } from '@/features/shifts/composables/useShift'
+import { useShift, type ShiftHistoryFilters } from '@/features/shifts/composables/useShift'
 import { useStaff } from '@/features/staff/composables/useStaff'
+import { useCan } from '@/composables/useCan'
+import { varianceLevel } from '@/features/shifts/shift.types'
 import type { CashierShift } from '@/features/shifts/shift.types'
+
+const PAGE_SIZE = 25
 
 const router = useRouter()
 const { loadShiftHistory } = useShift()
 const { staff, loadStaff } = useStaff()
+// WAFI-058: cash figures on the cards are owner-only.
+const { can } = useCan()
+const canViewMoney = can('can_view_reports')
+
 const shifts  = ref<CashierShift[]>([])
 const loading = ref(false)
+const loadingMore = ref(false)
+const hasMore = ref(false)
+const offset  = ref(0)
 // Opens the same Z-report / close-shift flow the sidebar uses (BUG-012 new list).
 const showZReport = ref(false)
 
-onMounted(async () => {
+// WAFI-061 filters
+const filterStaffId  = ref<string>('')
+const filterStart    = ref<string>('')
+const filterEnd      = ref<string>('')
+const filterVariance = ref<'any' | 'match' | 'variance'>('any')
+
+function currentFilters(extra: Partial<ShiftHistoryFilters> = {}): ShiftHistoryFilters {
+  return {
+    staffId:        filterStaffId.value || null,
+    startDate:      filterStart.value || null,
+    endDate:        filterEnd.value || null,
+    varianceStatus: filterVariance.value,
+    limit:          PAGE_SIZE,
+    offset:         offset.value,
+    ...extra,
+  }
+}
+
+async function reload() {
   loading.value = true
+  offset.value = 0
   try {
-    await loadStaff()
-    shifts.value = await loadShiftHistory()
+    const page = await loadShiftHistory(currentFilters({ offset: 0 }))
+    shifts.value = page.shifts
+    hasMore.value = page.hasMore
   } finally { loading.value = false }
+}
+
+async function loadMore() {
+  loadingMore.value = true
+  offset.value += PAGE_SIZE
+  try {
+    const page = await loadShiftHistory(currentFilters())
+    shifts.value = [...shifts.value, ...page.shifts]
+    hasMore.value = page.hasMore
+  } finally { loadingMore.value = false }
+}
+
+function clearFilters() {
+  filterStaffId.value = ''
+  filterStart.value = ''
+  filterEnd.value = ''
+  filterVariance.value = 'any'
+  void reload()
+}
+
+const hasActiveFilters = computed(() =>
+  Boolean(filterStaffId.value || filterStart.value || filterEnd.value || filterVariance.value !== 'any')
+)
+
+onMounted(async () => {
+  await loadStaff()
+  await reload()
 })
 
 const staffMap = computed(() => {
@@ -49,52 +107,63 @@ function fmtDuration(s: CashierShift): string {
   return hours > 0 ? `${hours}س ${mins % 60}د` : `${mins}د`
 }
 
+// Persisted USD variance (WAFI-060). Falls back to closing−opening for legacy
+// closed shifts that predate the variance column.
 function variance(s: CashierShift): number | null {
+  if (s.varianceUsd !== null && s.varianceUsd !== undefined) return s.varianceUsd
   if (s.closingCashUsd === null || s.closingCashUsd === undefined) return null
   return s.closingCashUsd - s.openingCashUsd
 }
 
+// Colour class for a row's variance: green match / yellow <5% / red ≥5% (WAFI-061).
+function varColour(s: CashierShift): string {
+  const v = variance(s)
+  if (v === null) return ''
+  const expected = s.zReportData?.expectedUsd ?? s.openingCashUsd
+  const level = varianceLevel(v, expected)
+  return level === 'alert' ? '#EF4444' : level === 'warn' ? '#FCD34D' : '#22C55E'
+}
+
+function openDetail(s: CashierShift) {
+  router.push(`/shifts/${s.id}`)
+}
+
 const openShifts   = computed(() => shifts.value.filter(s => s.status === 'open'))
 const closedShifts = computed(() => shifts.value.filter(s => s.status !== 'open'))
-
-const totalHours = computed(() => {
-  let mins = 0
-  for (const s of closedShifts.value) {
-    if (!s.closedAt) continue
-    mins += Math.floor((new Date(s.closedAt).getTime() - new Date(s.openedAt).getTime()) / 60_000)
-  }
-  const h = Math.floor(mins / 60)
-  return h > 0 ? `${h}س ${mins % 60}د` : `${mins}د`
-})
 </script>
 
 <template>
   <div class="page-root" dir="rtl">
     <AppHeader title="سجل الورديات" @back="router.push('/')" />
 
-    <!-- Stats summary bar (desktop) -->
-    <div v-if="!loading && shifts.length > 0" class="stats-bar hidden lg:flex">
-      <div class="stat-cell">
-        <span class="stat-label">إجمالي الورديات</span>
-        <span class="stat-value">{{ shifts.length }}</span>
+    <!-- Filter bar (WAFI-061): cashier · date range · variance status -->
+    <div class="filter-bar">
+      <div class="filter-field">
+        <label class="filter-label">الكاشير</label>
+        <select v-model="filterStaffId" class="filter-input" @change="reload">
+          <option value="">الكل</option>
+          <option v-for="s in staff" :key="s.id" :value="s.id">{{ s.name }}</option>
+        </select>
       </div>
-      <div class="stat-divider"></div>
-      <div class="stat-cell">
-        <span class="stat-label">مفتوحة الآن</span>
-        <span class="stat-value" :style="openShifts.length > 0 ? 'color: #22C55E' : 'color: #637285'">
-          {{ openShifts.length }}
-        </span>
+      <div class="filter-field">
+        <label class="filter-label">من</label>
+        <input v-model="filterStart" type="date" class="filter-input" @change="reload" />
       </div>
-      <div class="stat-divider"></div>
-      <div class="stat-cell">
-        <span class="stat-label">مغلقة</span>
-        <span class="stat-value">{{ closedShifts.length }}</span>
+      <div class="filter-field">
+        <label class="filter-label">إلى</label>
+        <input v-model="filterEnd" type="date" class="filter-input" @change="reload" />
       </div>
-      <div class="stat-divider"></div>
-      <div class="stat-cell">
-        <span class="stat-label">إجمالي الوقت</span>
-        <span class="stat-value">{{ totalHours }}</span>
+      <div class="filter-field">
+        <label class="filter-label">الفرق</label>
+        <select v-model="filterVariance" class="filter-input" @change="reload">
+          <option value="any">الكل</option>
+          <option value="match">مطابق فقط</option>
+          <option value="variance">به فرق فقط</option>
+        </select>
       </div>
+      <button v-if="hasActiveFilters" type="button" class="filter-clear" @click="clearFilters">
+        مسح الفلاتر
+      </button>
     </div>
 
     <main class="page-main">
@@ -111,8 +180,9 @@ const totalHours = computed(() => {
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
         </div>
-        <p class="empty-title">لا توجد ورديات مسجّلة</p>
-        <p class="empty-sub">ستظهر الورديات هنا بعد فتح أول وردية</p>
+        <p class="empty-title">{{ hasActiveFilters ? 'لا توجد ورديات مطابقة' : 'لا توجد ورديات مسجّلة' }}</p>
+        <p class="empty-sub">{{ hasActiveFilters ? 'جرّب تغيير الفلاتر أو امسحها' : 'ستظهر الورديات هنا بعد فتح أول وردية' }}</p>
+        <button v-if="hasActiveFilters" type="button" class="filter-clear" @click="clearFilters">مسح الفلاتر</button>
       </div>
 
       <template v-else>
@@ -183,7 +253,11 @@ const totalHours = computed(() => {
             <div
               v-for="s in closedShifts"
               :key="s.id"
-              class="shift-card"
+              class="shift-card shift-card--link"
+              role="button"
+              tabindex="0"
+              @click="openDetail(s)"
+              @keydown.enter="openDetail(s)"
             >
               <!-- Top row -->
               <div class="shift-card-top">
@@ -210,7 +284,8 @@ const totalHours = computed(() => {
                   <span class="stat-tiny-value">{{ staffName(s.staffId) }}</span>
                 </div>
 
-                <template v-if="s.closingCashUsd !== null && s.closingCashUsd !== undefined">
+                <!-- Cash + variance are financial — owner-only (WAFI-058). -->
+                <template v-if="canViewMoney && s.closingCashUsd !== null && s.closingCashUsd !== undefined">
                   <div class="stat-tiny-divider"></div>
                   <div class="shift-stat">
                     <span class="stat-tiny-label">النقد</span>
@@ -218,14 +293,14 @@ const totalHours = computed(() => {
                   </div>
                 </template>
 
-                <template v-if="variance(s) !== null && variance(s) !== 0">
+                <template v-if="canViewMoney && variance(s) !== null && variance(s) !== 0">
                   <div class="stat-tiny-divider"></div>
                   <div class="shift-stat">
                     <span class="stat-tiny-label">الفرق</span>
                     <span
                       class="stat-tiny-value"
                       dir="ltr"
-                      :style="variance(s)! < 0 ? 'color: #EF4444' : 'color: #22C55E'"
+                      :style="{ color: varColour(s) }"
                     >
                       {{ variance(s)! > 0 ? '+' : '' }}${{ variance(s)!.toFixed(2) }}
                     </span>
@@ -233,6 +308,13 @@ const totalHours = computed(() => {
                 </template>
               </div>
             </div>
+          </div>
+
+          <!-- No silent truncation: older shifts stay reachable via load-more -->
+          <div v-if="hasMore" class="load-more-wrap">
+            <button type="button" class="load-more-btn" :disabled="loadingMore" @click="loadMore">
+              {{ loadingMore ? 'جاري التحميل...' : 'تحميل المزيد' }}
+            </button>
           </div>
         </div>
 
@@ -393,6 +475,72 @@ const totalHours = computed(() => {
 }
 
 .shift-card:hover { border-color: rgba(26, 86, 219, 0.45); }
+
+.shift-card--link { cursor: pointer; }
+.shift-card--link:hover { border-color: rgba(26, 86, 219, 0.55); transform: translateY(-1px); }
+.shift-card--link:focus-visible { outline: 2px solid rgba(96,165,250,0.7); outline-offset: 2px; }
+
+/* ─── Filter bar (WAFI-061) ───────────────────────────────── */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  margin: 16px 16px 0;
+  padding: 12px 14px;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, rgba(26, 86, 219, 0.10), rgba(255, 255, 255, 0.03));
+  border: 1px solid rgba(26, 86, 219, 0.24);
+}
+@media (min-width: 1024px) { .filter-bar { margin: 20px 24px 0; } }
+
+.filter-field { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 120px; }
+.filter-label { font-size: 0.7rem; color: #637285; }
+.filter-input {
+  height: 38px;
+  border-radius: 0.6rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(26, 86, 219, 0.25);
+  color: #E8EDF5;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  font-size: 0.8125rem;
+  padding: 0 0.6rem;
+  outline: none;
+}
+.filter-input:focus { border-color: rgba(26, 86, 219, 0.7); }
+
+.filter-clear {
+  height: 38px;
+  padding: 0 0.9rem;
+  border-radius: 0.6rem;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #93B4F0;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.filter-clear:hover { background: rgba(26, 86, 219, 0.10); color: #C8D5E8; }
+
+/* ─── Load more ───────────────────────────────────────────── */
+.load-more-wrap { display: flex; justify-content: center; margin-top: 16px; }
+.load-more-btn {
+  height: 42px;
+  padding: 0 1.5rem;
+  border-radius: 0.75rem;
+  background: rgba(26, 86, 219, 0.12);
+  border: 1px solid rgba(26, 86, 219, 0.35);
+  color: #93B4F0;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  font-size: 0.875rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.load-more-btn:hover:not(:disabled) { background: rgba(26, 86, 219, 0.2); }
+.load-more-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .shift-card--open {
   border-color: rgba(34, 197, 94, 0.35);

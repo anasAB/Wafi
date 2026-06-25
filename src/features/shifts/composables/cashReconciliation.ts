@@ -6,6 +6,7 @@ interface ReconciliationInput {
   cashSypSalesRaw: number
   closingCashSyp:  number
   // Optional — default 0 so existing callers keep their behavior.
+  openingCashSyp?:  number  // WAFI-059: opening cash counted in SYP (enters the SYP drawer)
   cashExpensesSyp?: number  // SYP-denominated cash expenses (leave the SYP drawer)
   cashRefundsUsd?:  number  // cash USD refunds paid out this shift
   cashRefundsSyp?:  number  // cash SYP refunds paid out this shift
@@ -21,6 +22,7 @@ export interface ReconciliationResult {
 }
 
 export function computeCashReconciliation(input: ReconciliationInput): ReconciliationResult {
+  const openingCashSyp        = input.openingCashSyp        ?? 0
   const cashExpensesSyp       = input.cashExpensesSyp       ?? 0
   const cashRefundsUsd        = input.cashRefundsUsd        ?? 0
   const cashRefundsSyp        = input.cashRefundsSyp        ?? 0
@@ -29,12 +31,14 @@ export function computeCashReconciliation(input: ReconciliationInput): Reconcili
 
   // Each currency reconciles against its own drawer. SYP expenses/refunds must hit the
   // SYP bucket — not the USD one — or both variances are wrong. Cash credit-payments
-  // are an inflow (customer hands over cash to settle debt).
+  // are an inflow (customer hands over cash to settle debt). The opening balance is the
+  // baseline each drawer starts from (WAFI-059 adds the SYP opening, mirroring USD).
   const expectedUsd =
     input.openingCashUsd + input.cashUsdSales + cashCreditPaymentsUsd
     - input.cashExpensesUsd - cashRefundsUsd
   const expectedSyp =
-    input.cashSypSalesRaw + cashCreditPaymentsSyp - cashExpensesSyp - cashRefundsSyp
+    openingCashSyp + input.cashSypSalesRaw + cashCreditPaymentsSyp
+    - cashExpensesSyp - cashRefundsSyp
 
   return {
     expectedUsd,

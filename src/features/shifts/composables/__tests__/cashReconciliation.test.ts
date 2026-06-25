@@ -103,6 +103,23 @@ describe('computeCashReconciliation', () => {
     expect(r.varianceSyp).toBe(0)
   })
 
+  it('opening SYP forms the SYP-drawer baseline (WAFI-059)', () => {
+    // Open with SYP=50,000 + USD=35; no sales/expenses → expected = the opening balances.
+    const r = computeCashReconciliation({
+      openingCashUsd:  35,
+      openingCashSyp:  50_000,
+      cashUsdSales:    0,
+      cashExpensesUsd: 0,
+      closingCashUsd:  35,
+      cashSypSalesRaw: 0,
+      closingCashSyp:  50_000,
+    })
+    expect(r.expectedSyp).toBe(50_000)
+    expect(r.varianceSyp).toBe(0)
+    expect(r.expectedUsd).toBe(35)
+    expect(r.varianceUsd).toBe(0)
+  })
+
   it('cash refunds reduce the expected cash in each currency', () => {
     const r = computeCashReconciliation({
       openingCashUsd:  50,

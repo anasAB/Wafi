@@ -4,7 +4,7 @@ import { useShift }        from '@/features/shifts/composables/useShift'
 import { useZReport }      from '@/features/shifts/composables/useZReport'
 import { useShiftStore }   from '@/features/shifts/shift.store'
 import { useDeviceStore }  from '@/store/device.store'
-import { useSessionStore } from '@/store/session.store'
+import { useCan }          from '@/composables/useCan'
 import CashCountSheet      from './CashCountSheet.vue'
 import type { ZReportMetrics } from '@/features/shifts/shift.types'
 import type { CashierShift }   from '@/features/shifts/shift.types'
@@ -15,16 +15,16 @@ const { loadActiveShift, closeShift } = useShift()
 const { compute, printZReport }       = useZReport()
 const shiftStore = useShiftStore()
 const device     = useDeviceStore()
-const session    = useSessionStore()
+const { can }    = useCan()
 
 // WAFI-058: the Z-report's money figures (revenue, profit, payment mix,
 // per-operator sales, expenses) are a financial roll-up — owner-only by default.
 // A staffer without can_view_reports can still COUNT the drawer and close the
 // shift: only the cash count and variance stay visible, never the money lines.
-// Owners hold can_view_reports, so this reads true for them; fail closed (false)
-// when there is no active operator. Keyed off the CURRENT operator (session),
-// not the shift opener, so an operator switch re-scopes what's shown.
-const canViewMoney = computed(() => Boolean(session.activeStaff?.permissions?.can_view_reports))
+// Resolved through the single permission accessor (WAFI-063), keyed off the
+// CURRENT operator, so an operator switch re-scopes what's shown and fail-closed
+// applies when there is no active operator.
+const canViewMoney = can('can_view_reports')
 
 const step       = ref<'cash-count' | 'report'>('cash-count')
 const shift      = ref<CashierShift | null>(null)
@@ -33,6 +33,23 @@ const cashCountError = ref('')
 const closingUsd = ref(0)
 const closingSyp = ref(0)
 const closing    = ref(false)
+// WAFI-060: a close whose variance exceeds 5% must carry a reason note.
+const closeNote  = ref('')
+const noteError  = ref('')
+
+// |variance| / |expected| per currency. A zero expected with a nonzero variance is
+// treated as significant (any unexplained cash is over 5% of nothing).
+function exceeds5pct(variance: number, expected: number): boolean {
+  if (expected === 0) return variance !== 0
+  return Math.abs(variance) / Math.abs(expected) > 0.05
+}
+
+// True when either drawer is off by more than 5% — forces a close note (Story 5.5).
+const requiresNote = computed(() => {
+  if (!metrics.value) return false
+  const m = metrics.value
+  return exceeds5pct(m.varianceUsd, m.expectedUsd) || exceeds5pct(m.varianceSyp, m.expectedSyp)
+})
 
 onMounted(async () => { shift.value = await loadActiveShift() })
 
@@ -53,6 +70,12 @@ async function onCashCounted(usd: number, syp: number) {
 
 async function handleClose(withPrint: boolean) {
   if (!shift.value || !metrics.value) return
+  // Block a >5% close until the cashier explains the gap. Never close silently.
+  if (requiresNote.value && closeNote.value.trim() === '') {
+    noteError.value = 'الفرق يتجاوز 5% — أدخل سبب الفرق قبل الإغلاق.'
+    return
+  }
+  noteError.value = ''
   closing.value = true
   try {
     if (withPrint) {
@@ -63,7 +86,18 @@ async function handleClose(withPrint: boolean) {
         metrics.value
       )
     }
-    await closeShift(closingUsd.value, closingSyp.value, shift.value.id)
+    // Persist the immutable evidence with the close: variance per currency, the
+    // reason note, and the full Z-report snapshot. Closed-shift reads come back
+    // from this snapshot, so later edits can't rewrite history (WAFI-060).
+    await closeShift({
+      closingCashUsd: closingUsd.value,
+      closingCashSyp: closingSyp.value,
+      shiftId:        shift.value.id,
+      varianceUsd:    metrics.value.varianceUsd,
+      varianceSyp:    metrics.value.varianceSyp,
+      closeNote:      closeNote.value.trim() || null,
+      zReport:        metrics.value,
+    })
   } finally {
     closing.value = false
   }
@@ -221,6 +255,7 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
           <div class="z-recon-col z-recon-col-syp">
             <p class="z-recon-col-title">ليرة سورية ل.س</p>
             <div class="z-rows">
+              <div v-if="canViewMoney" class="z-row"><span class="z-label">رصيد الفتح</span><span class="z-value">{{ fmtSyp(shift!.openingCashSyp ?? 0) }}</span></div>
               <div v-if="canViewMoney" class="z-row"><span class="z-label">متوقع</span><span class="z-value">{{ fmtSyp(metrics.expectedSyp) }}</span></div>
               <div class="z-row"><span class="z-label">عند العد</span><span class="z-value">{{ fmtSyp(metrics.actualSyp) }}</span></div>
             </div>
@@ -230,6 +265,21 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
             </div>
           </div>
         </div>
+      </div>
+
+      <!-- >5% variance: a reason note is mandatory before the shift can close
+           (WAFI-060 / Story 5.5). Shown to whoever is closing, money-access or not. -->
+      <div v-if="requiresNote" class="z-note-card">
+        <label class="z-note-label" for="z-close-note">سبب الفرق (مطلوب — الفرق يتجاوز 5%)</label>
+        <textarea
+          id="z-close-note"
+          v-model="closeNote"
+          class="z-note-input"
+          rows="2"
+          placeholder="مثال: دفعت سلفة للموظف، أو خطأ في العد..."
+          dir="rtl"
+        ></textarea>
+        <p v-if="noteError" class="z-note-error">{{ noteError }}</p>
       </div>
 
       <!-- Actions: side by side on desktop. Print is hidden for staff without
@@ -674,6 +724,41 @@ const fmtSyp = (n: number) => `${n.toLocaleString()} ل.س`
 .z-btn-ghost--solo:hover {
   background: linear-gradient(135deg, #1A56DB, #1248B3);
   color: #fff;
+}
+
+/* ── Close-note (mandatory on >5% variance) ── */
+.z-note-card {
+  background: rgba(234, 179, 8, 0.07);
+  border: 1px solid rgba(234, 179, 8, 0.30);
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.z-note-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #FCD34D;
+}
+.z-note-input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  padding: 8px 10px;
+  color: #E8EDF5;
+  font-size: 13px;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.z-note-input:focus { border-color: rgba(234, 179, 8, 0.55); }
+.z-note-error {
+  margin: 0;
+  font-size: 12px;
+  color: #FCA5A5;
 }
 
 /* Note shown in place of the masked money cards. */

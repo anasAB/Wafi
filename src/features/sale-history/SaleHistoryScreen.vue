@@ -5,7 +5,7 @@ import AppHeader from '@/components/ui/AppHeader.vue'
 import AppToast from '@/components/ui/AppToast.vue'
 import PeriodToggle from '@/features/dashboard/components/PeriodToggle.vue'
 import { db } from '@/data/powersync/db'
-import { useSessionStore } from '@/store/session.store'
+import { useCan } from '@/composables/useCan'
 import { useSaleHistory } from './useSaleHistory'
 import { usePeriodToggle } from '@/features/dashboard/composables/usePeriodToggle'
 import { getDateRange } from '@/features/dashboard/composables/periodUtils'
@@ -19,7 +19,7 @@ import { buildReceiptData } from './useSaleHistory'
 
 const router  = useRouter()
 const route   = useRoute()
-const session = useSessionStore()
+const { can } = useCan()
 const { sales, loading, loadHistory, searchByNumber, reprint } = useSaleHistory()
 const { period, setPeriod } = usePeriodToggle()
 
@@ -28,7 +28,7 @@ const { period, setPeriod } = usePeriodToggle()
 // a receipt-number lookup only (so returns/reprints still work — "returns lookup
 // exempt"), never the browse-everything list or the period total. Owners hold
 // the flag; fail closed when there is no operator.
-const canViewReports = computed(() => Boolean(session.activeStaff?.permissions?.can_view_reports))
+const canViewReports = can('can_view_reports')
 const expandedId = ref<string | null>(null)
 const toast      = ref<string | null>(null)
 const toastType  = ref<'info' | 'error'>('info')

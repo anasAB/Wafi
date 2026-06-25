@@ -148,8 +148,16 @@ const cashier_shifts = new Table({
   opened_at:        column.text,
   closed_at:        column.text,    // nullable
   opening_cash_usd: column.real,
+  opening_cash_syp: column.real,    // WAFI-059: opening cash in SYP (primary currency)
   closing_cash_usd: column.real,    // nullable
   closing_cash_syp: column.real,    // nullable
+  // WAFI-060: immutable close evidence. variance_* are persisted (not recomputed);
+  // z_report_data holds the JSON snapshot of the Z-report as it was at close.
+  variance_usd:     column.real,    // nullable — set at close
+  variance_syp:     column.real,    // nullable — set at close
+  close_note:       column.text,    // nullable — required when |variance| > 5%
+  force_closed_by:  column.text,    // nullable — staff id, WAFI-065 force-close
+  z_report_data:    column.text,    // nullable — JSON snapshot of ZReportMetrics
   status:           column.text,    // 'open' | 'closed'
 })
 

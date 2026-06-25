@@ -6,9 +6,31 @@ export interface CashierShift {
   openedAt:       string        // ISO timestamp
   closedAt:       string | null // null = still open
   openingCashUsd: number
+  openingCashSyp: number        // WAFI-059: opening cash in SYP (primary currency); 0 default
   closingCashUsd: number | null
   closingCashSyp: number | null
+  // WAFI-060 — immutable close evidence. Optional so callers/fixtures predating the
+  // column stay valid; rowToShift always populates them (null until a shift closes).
+  varianceUsd?:   number | null
+  varianceSyp?:   number | null
+  closeNote?:     string | null
+  forceClosedBy?: string | null
+  zReportData?:   ZReportMetrics | null  // Z-report snapshot captured at close
   status:         'open' | 'closed'
+}
+
+/**
+ * Severity of a cash variance, for consistent colour-coding across the shift
+ * history rows and the detail screen (WAFI-061):
+ *   'match' (exact, green) · 'warn' (<5%, yellow) · 'alert' (≥5%, red).
+ * A nonzero variance against a zero expected is 'alert' (unexplained cash).
+ */
+export type VarianceLevel = 'match' | 'warn' | 'alert'
+
+export function varianceLevel(variance: number, expected: number): VarianceLevel {
+  if (variance === 0) return 'match'
+  if (expected === 0) return 'alert'
+  return Math.abs(variance) / Math.abs(expected) >= 0.05 ? 'alert' : 'warn'
 }
 
 /** One operator's sales within a single shift (operator switching). */

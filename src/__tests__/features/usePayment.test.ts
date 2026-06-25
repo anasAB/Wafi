@@ -250,6 +250,44 @@ describe('usePayment', () => {
     expect(salesInsert![1][salesInsert![1].length - 1]).toBe('op-7')
   })
 
+  it('attributes the sale to the active shift (shift_id) at confirm (WAFI-064)', async () => {
+    const { useShiftStore } = await import('@/features/shifts/shift.store')
+    useShiftStore().openShift('shift-99', { id: 'op-1', name: 'سامي' } as any)
+    const tx = setupTx({ cost_price_usd: 0, current_stock: 10 })
+
+    const { selectMethod, confirm } = usePayment()
+    selectMethod('card')
+    await confirm()
+
+    const salesInsert = tx.mock.calls.find(c =>
+      (c[0] as string).includes('INSERT INTO sales') && (c[0] as string).includes('shift_id')
+    )
+    expect(salesInsert).toBeDefined()
+    // shift_id is written (the param immediately before the trailing staff_id).
+    expect(salesInsert![1]).toContain('shift-99')
+  })
+
+  it('attribution follows an operator switch — the completer is recorded (WAFI-064)', async () => {
+    const { useShiftStore }   = await import('@/features/shifts/shift.store')
+    const { useSessionStore } = await import('@/store/session.store')
+    // Shift opened by one operator...
+    useShiftStore().openShift('shift-1', { id: 'opener', name: 'محمد' } as any)
+    // ...but a switch makes someone else the active operator who completes the sale.
+    useSessionStore().setActiveStaff({ id: 'completer', name: 'أحمد', role: 'cashier', permissions: {} } as any)
+    const tx = setupTx({ cost_price_usd: 0, current_stock: 10 })
+
+    const { selectMethod, confirm } = usePayment()
+    selectMethod('card')
+    await confirm()
+
+    const salesInsert = tx.mock.calls.find(c =>
+      (c[0] as string).includes('INSERT INTO sales') && (c[0] as string).includes('staff_id')
+    )
+    expect(salesInsert).toBeDefined()
+    // staff_id (final param) is the COMPLETER, not the shift opener.
+    expect(salesInsert![1][salesInsert![1].length - 1]).toBe('completer')
+  })
+
   it('confirm writes customer_id and is_credit=1 for credit sales', async () => {
     const tx = setupTx({ cost_price_usd: 5, current_stock: 10 })
 

@@ -13,6 +13,8 @@ import { useShiftStore } from '@/features/shifts/shift.store'
 import { useShift }      from '@/features/shifts/composables/useShift'
 import { useStaff }      from '@/features/staff/composables/useStaff'
 import LockScreen        from '@/features/shifts/components/LockScreen.vue'
+import IdleLockOverlay   from '@/features/shifts/components/IdleLockOverlay.vue'
+import { useIdleLock }   from '@/composables/useIdleLock'
 import { db }            from '@/data/powersync/db'
 import { useSaleStore }  from '@/store/sale.store'
 
@@ -26,6 +28,9 @@ useThemePalette()
 const shiftStore   = useShiftStore()
 const { loadActiveShift } = useShift()
 const { hasAnyStaff }     = useStaff()
+// WAFI-062: idle auto-lock. `locked` only flips while a shift is open (see
+// useIdleLock), so the overlay never collides with the login gate.
+const { locked: idleLocked, unlock: unlockIdle } = useIdleLock()
 const appReady  = ref(false)
 const hasStaff  = ref(false)
 
@@ -162,6 +167,10 @@ watch(
           <AppBottomNav v-if="showBottomNav" />
         </div>
       </div>
+
+      <!-- Idle lock: dims the shell and requires PIN re-entry; the shift stays
+           open underneath (WAFI-062). -->
+      <IdleLockOverlay v-if="idleLocked" @unlock="unlockIdle" />
     </div>
   </template>
 </template>
