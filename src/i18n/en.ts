@@ -128,4 +128,15 @@ export default {
     profitEstimatedCaveat:  'Estimated — {count} sales are missing a cost price, real profit is lower',
     profitEstimatedFixHint: 'Add a cost price',
   },
+  // Reporting Pack — profit report screen (/reports).
+  reports: {
+    title: 'Profit Report',
+    week: 'Week', month: 'Month', quarter: '3 Months', custom: 'Custom',
+    profit: 'Profit', moneyIn: 'Money in', cogs: 'Cost of goods', expenses: 'Expenses',
+    profitVerb: 'You made', lossVerb: 'You lost',
+    empty: 'No sales in this period',
+    estimated: 'Some products have no cost — profit is estimated and may be lower',
+    invalidRange: 'Start date must be before the end date',
+    from: 'From', to: 'To',
+  },
 }

@@ -10,7 +10,7 @@ const props = defineProps<{ points: ProfitTrendPoint[] }>()
 const series = computed(() => [{ name: 'الربح', data: props.points.map(p => p.profitUsd) }])
 
 const options = computed(() => ({
-  chart: { type: 'bar', background: 'transparent', toolbar: { show: false }, fontFamily: 'Tajawal, system-ui, sans-serif' },
+  chart: { type: 'bar' as const, background: 'transparent', toolbar: { show: false }, fontFamily: 'Tajawal, system-ui, sans-serif' },
   plotOptions: {
     bar: {
       borderRadius: 4,
@@ -24,7 +24,7 @@ const options = computed(() => ({
   dataLabels: { enabled: false },
   xaxis: { categories: props.points.map(p => p.label), labels: { style: { colors: '#637285' } } },
   yaxis: { labels: { style: { colors: '#637285' } } },
-  tooltip: { theme: 'dark', y: { formatter: (v: number) => `$${v.toFixed(2)}` } },
+  tooltip: { theme: 'dark' as const, y: { formatter: (v: number) => `$${v.toFixed(2)}` } },
   grid: { borderColor: 'rgba(255,255,255,0.06)' },
 }))
 </script>
