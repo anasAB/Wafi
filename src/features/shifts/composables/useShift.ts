@@ -3,6 +3,7 @@ import { useDeviceStore } from '@/store/device.store'
 import { useShiftStore }  from '@/features/shifts/shift.store'
 import { useSessionStore } from '@/store/session.store'
 import type { Staff }     from '@/features/staff/staff.types'
+import { LONG_OPEN_HOURS } from '../shift.types'
 import type { CashierShift, ZReportMetrics } from '../shift.types'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 
@@ -44,6 +45,7 @@ export interface ShiftHistoryFilters {
   startDate?:      string | null   // 'YYYY-MM-DD' inclusive, on opened_at
   endDate?:        string | null   // 'YYYY-MM-DD' inclusive, on opened_at
   varianceStatus?: 'any' | 'match' | 'variance'
+  longOpenOnly?:   boolean         // WAFI-065: only shifts open past LONG_OPEN_HOURS
   limit?:          number
   offset?:         number
 }
@@ -68,18 +70,77 @@ export interface CloseShiftInput {
 
 const DEFAULT_PAGE_SIZE = 25
 
+/**
+ * Outcome of attempting to open a shift (WAFI-065 Part 1). `openShift` no longer
+ * blindly inserts — exactly one open shift may exist per device:
+ *  - `opened`   — no open shift existed; a fresh one was created.
+ *  - `resumed`  — an open shift under the SAME operator already existed on this
+ *                 device, so we re-attached to it instead of creating a duplicate
+ *                 (the common zombie cause: a lost/cleared session, same person).
+ *  - `conflict` — a DIFFERENT operator holds the device's open shift. No row is
+ *                 created; the caller surfaces Story 5.3 (block / owner force-close).
+ */
+export type OpenShiftResult =
+  | { status: 'opened';   shiftId: string }
+  | { status: 'resumed';  shiftId: string }
+  | { status: 'conflict'; shift: CashierShift }
+
+/** What a force-close persists (WAFI-065 Part 2). Mirrors a normal close's evidence
+ *  but is performed BY the owner on someone else's abandoned shift, so the actor is
+ *  passed explicitly (the session operator may differ, or be unset at the login gate). */
+export interface ForceCloseInput {
+  shiftId:        string
+  forcedBy:       Staff           // owner performing the force-close (recorded + audited)
+  closingCashUsd: number
+  closingCashSyp: number
+  varianceUsd:    number
+  varianceSyp:    number
+  closeNote:      string
+  zReport:        ZReportMetrics
+}
+
 export function useShift() {
-  const { logShiftOpened, logShiftClosed } = useAuditLog()
+  const { logShiftOpened, logShiftClosed, logShiftForceClosed } = useAuditLog()
 
   const device     = useDeviceStore()
   const shiftStore = useShiftStore()
   const session    = useSessionStore()
 
+  /** The device's current open shift, if any. One query, reused by the open guard
+   *  and the cold-start recovery in `loadActiveShift` (single source of truth). */
+  async function findOpenShiftForDevice(): Promise<CashierShift | null> {
+    const row = await db.getOptional<any>(
+      `SELECT * FROM cashier_shifts
+       WHERE shop_id = ? AND device_id = ? AND status = 'open'
+       ORDER BY opened_at DESC LIMIT 1`,
+      [device.shopId, device.deviceId]
+    )
+    return row ? rowToShift(row) : null
+  }
+
   async function openShift(
     staff: Staff,
     openingCashUsd: number,
     openingCashSyp: number,
-  ): Promise<string> {
+  ): Promise<OpenShiftResult> {
+    // Guard: at most one open shift per device (WAFI-065 Part 1). The app-level
+    // check is primary — offline-first can't rely on the DB partial unique index at
+    // write time; the index (migration 026) is the backstop for anything that slips
+    // through on sync/server.
+    const existing = await findOpenShiftForDevice()
+    if (existing) {
+      if (existing.staffId === staff.id) {
+        // Same operator returning to their own still-open shift → re-attach, never
+        // create a second row. Re-establish identity for the existing shift.
+        session.setActiveStaff(staff)
+        shiftStore.openShift(existing.id, staff)
+        return { status: 'resumed', shiftId: existing.id }
+      }
+      // A different operator already holds the device's open shift → do not open a
+      // second. Caller surfaces Story 5.3 (notify non-owner / owner force-close).
+      return { status: 'conflict', shift: existing }
+    }
+
     const shiftId = crypto.randomUUID()
     const now     = new Date().toISOString()
     await db.execute(
@@ -94,17 +155,22 @@ export function useShift() {
     session.setActiveStaff(staff)
     shiftStore.openShift(shiftId, staff)
     await logShiftOpened(shiftId)
-    return shiftId
+    return { status: 'opened', shiftId }
   }
 
-  async function closeShift(input: CloseShiftInput): Promise<void> {
-    const shiftId = shiftStore.activeShiftId ?? input.shiftId
-    if (!shiftId) throw new Error('No open shift to close')
-    const now = new Date().toISOString()
-    // Persist the variance + note + a full Z-report snapshot so the closed shift's
-    // figures are immutable: reads (history, reprint) come back from this snapshot
-    // and never recompute, so a later product/price/exchange-rate edit can't rewrite
-    // a historical Z-report (WAFI-060).
+  /** The single close write, shared by the normal close (WAFI-060) and the owner
+   *  force-close (WAFI-065): both mark the shift closed and persist the same
+   *  immutable evidence (counted cash, variance, note, force_closed_by, Z-report
+   *  snapshot). Identity teardown + audit are the caller's job — they differ. */
+  async function writeShiftClose(shiftId: string, e: {
+    closingCashUsd: number
+    closingCashSyp: number
+    varianceUsd:    number | null
+    varianceSyp:    number | null
+    closeNote:      string | null
+    forceClosedBy:  string | null
+    zReport:        ZReportMetrics | null
+  }): Promise<void> {
     await db.execute(
       `UPDATE cashier_shifts
        SET status = 'closed', closed_at = ?, closing_cash_usd = ?, closing_cash_syp = ?,
@@ -112,17 +178,66 @@ export function useShift() {
            z_report_data = ?
        WHERE id = ?`,
       [
-        now,
-        input.closingCashUsd,
-        input.closingCashSyp,
-        input.varianceUsd ?? null,
-        input.varianceSyp ?? null,
-        input.closeNote ?? null,
-        input.forceClosedBy ?? null,
-        input.zReport ? JSON.stringify(input.zReport) : null,
+        new Date().toISOString(),
+        e.closingCashUsd,
+        e.closingCashSyp,
+        e.varianceUsd,
+        e.varianceSyp,
+        e.closeNote,
+        e.forceClosedBy,
+        e.zReport ? JSON.stringify(e.zReport) : null,
         shiftId,
       ]
     )
+  }
+
+  /**
+   * Owner force-close of an abandoned shift (WAFI-065 Part 2). Closes a SPECIFIC
+   * shift by id with the same immutable evidence a normal close writes (variance +
+   * note + Z-report snapshot), plus `force_closed_by` and a security audit entry —
+   * never a silent fabricated count, so the figures stay trustworthy. Works offline:
+   * the UPDATE + audit queue for sync like any other write.
+   *
+   * Crucially this does NOT clear the live session unless the shift being forced is
+   * THIS device's active one — the owner force-closing a different/zombie shift must
+   * keep their own session intact.
+   */
+  async function forceCloseShift(input: ForceCloseInput): Promise<void> {
+    await writeShiftClose(input.shiftId, {
+      closingCashUsd: input.closingCashUsd,
+      closingCashSyp: input.closingCashSyp,
+      varianceUsd:    input.varianceUsd,
+      varianceSyp:    input.varianceSyp,
+      closeNote:      input.closeNote,
+      forceClosedBy:  input.forcedBy.id,
+      zReport:        input.zReport,
+    })
+    // Only tear down local identity if we just closed the shift this device is
+    // actively running; otherwise leave the current operator untouched.
+    if (shiftStore.activeShiftId === input.shiftId) {
+      shiftStore.closeShift()
+      session.clearSession()
+    }
+    // Accountability event — surface a failed write (force-close IS the audit trail).
+    await logShiftForceClosed(input.shiftId, input.forcedBy, input.closeNote)
+  }
+
+  async function closeShift(input: CloseShiftInput): Promise<void> {
+    const shiftId = shiftStore.activeShiftId ?? input.shiftId
+    if (!shiftId) throw new Error('No open shift to close')
+    // Persist the variance + note + a full Z-report snapshot so the closed shift's
+    // figures are immutable: reads (history, reprint) come back from this snapshot
+    // and never recompute, so a later product/price/exchange-rate edit can't rewrite
+    // a historical Z-report (WAFI-060).
+    await writeShiftClose(shiftId, {
+      closingCashUsd: input.closingCashUsd,
+      closingCashSyp: input.closingCashSyp,
+      varianceUsd:    input.varianceUsd ?? null,
+      varianceSyp:    input.varianceSyp ?? null,
+      closeNote:      input.closeNote ?? null,
+      forceClosedBy:  input.forceClosedBy ?? null,
+      zReport:        input.zReport ?? null,
+    })
     shiftStore.closeShift()
     // Log the close while identity is still set, then clear it so the two
     // identity stores fall back to null together (no stale session after logout).
@@ -135,13 +250,7 @@ export function useShift() {
     if (!shiftId) {
       // Recovery path: after refresh/restart, store state can be empty while an
       // open shift still exists in local DB for this device.
-      const row = await db.getOptional<any>(
-        `SELECT * FROM cashier_shifts
-         WHERE shop_id = ? AND device_id = ? AND status = 'open'
-         ORDER BY opened_at DESC LIMIT 1`,
-        [device.shopId, device.deviceId]
-      )
-      return row ? rowToShift(row) : null
+      return await findOpenShiftForDevice()
     }
     const row = await db.getOptional<any>(
       `SELECT * FROM cashier_shifts WHERE id = ?`,
@@ -206,6 +315,14 @@ export function useShift() {
     } else if (filters.varianceStatus === 'variance') {
       where.push('(COALESCE(variance_usd, 0) <> 0 OR COALESCE(variance_syp, 0) <> 0)')
     }
+    // Long-open ("zombie") filter (WAFI-065 Part 3): still open AND opened before the
+    // cutoff. The cutoff is computed here (not via SQLite datetime()) so the boundary
+    // is explicit and matches the in-UI badge, which uses the same LONG_OPEN_HOURS.
+    if (filters.longOpenOnly) {
+      const cutoffIso = new Date(Date.now() - LONG_OPEN_HOURS * 3_600_000).toISOString()
+      where.push("status = 'open' AND opened_at < ?")
+      params.push(cutoffIso)
+    }
 
     const result = await db.execute(
       `SELECT * FROM cashier_shifts
@@ -223,6 +340,8 @@ export function useShift() {
   return {
     openShift,
     closeShift,
+    forceCloseShift,
+    findOpenShiftForDevice,
     loadActiveShift,
     loadLastClosedShift,
     loadShiftById,

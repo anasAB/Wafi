@@ -16,6 +16,7 @@ export type AuditEvent =
   | 'stock.adjusted'
   | 'shift.opened'
   | 'shift.closed'
+  | 'shift.force_closed'
   | 'exchange_rate.changed'
   | 'settings.receipt_updated'
   | 'staff.created'

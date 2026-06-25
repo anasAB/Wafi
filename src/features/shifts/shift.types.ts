@@ -16,7 +16,27 @@ export interface CashierShift {
   closeNote?:     string | null
   forceClosedBy?: string | null
   zReportData?:   ZReportMetrics | null  // Z-report snapshot captured at close
-  status:         'open' | 'closed'
+  // WAFI-065 — 'abandoned' is reserved for orphaned shifts cleared without a count.
+  // It is NEVER a fake 'closed': abandoned shifts carry no counted cash/variance and
+  // are excluded from revenue/variance analytics. Schema-only for now — nothing is
+  // auto-abandoned without a configured threshold + PO sign-off.
+  status:         'open' | 'closed' | 'abandoned'
+}
+
+// WAFI-065 Part 3 — a shift still 'open' past this many hours is almost certainly a
+// forgotten/orphaned ("zombie") shift: a normal retail shift is ≤12h, so >18h means
+// it spanned overnight. Used for the long-open badge + history filter. One constant,
+// trivial to tune; a real shop-close-time setting can replace it later.
+export const LONG_OPEN_HOURS = 18
+
+/**
+ * True when `shift` is still open and has been open longer than LONG_OPEN_HOURS.
+ * `nowMs` is injected (not read from the clock) so callers stay deterministic/testable.
+ */
+export function isLongOpen(shift: CashierShift, nowMs: number): boolean {
+  if (shift.status !== 'open') return false
+  const openedMs = new Date(shift.openedAt).getTime()
+  return nowMs - openedMs > LONG_OPEN_HOURS * 3_600_000
 }
 
 /**

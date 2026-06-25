@@ -6,6 +6,8 @@ import { useShift } from '@/features/shifts/composables/useShift'
 import { useShiftDetail, type ShiftDetailData } from '@/features/shifts/composables/useShiftDetail'
 import { useStaff } from '@/features/staff/composables/useStaff'
 import { useCan } from '@/composables/useCan'
+import { useSessionStore } from '@/store/session.store'
+import ForceCloseSheet from '@/features/shifts/components/ForceCloseSheet.vue'
 import { varianceLevel } from '@/features/shifts/shift.types'
 import type { CashierShift } from '@/features/shifts/shift.types'
 
@@ -14,10 +16,16 @@ const route  = useRoute()
 const { loadShiftById } = useShift()
 const { loadDetail }    = useShiftDetail()
 const { staff, loadStaff } = useStaff()
+const session = useSessionStore()
 // WAFI-058: money lines in the detail are owner-only; an ungranted staffer sees the
 // shift structure (times, cashier, counts) but not the financial figures.
 const { can } = useCan()
 const canViewMoney = can('can_view_reports')
+
+// WAFI-065: only the owner may force-close an abandoned shift (not a manager) — a
+// role rule, deliberately not a permission flag, so it can't widen another grant.
+const isOwner = computed(() => session.activeStaff?.role === 'owner')
+const showForceClose = ref(false)
 
 const shift   = ref<CashierShift | null>(null)
 const detail  = ref<ShiftDetailData | null>(null)
@@ -47,7 +55,19 @@ const staffName = computed(() => {
   return (id: string | null) => (id ? map[id] ?? '—' : '—')
 })
 
-const isOpen = computed(() => shift.value?.status === 'open')
+const isOpen      = computed(() => shift.value?.status === 'open')
+const isAbandoned = computed(() => shift.value?.status === 'abandoned')
+
+// After a force-close, re-read the now-closed shift so the screen reflects the
+// recorded count, variance, snapshot, and force-closed note.
+async function onForceClosed() {
+  showForceClose.value = false
+  const s = await loadShiftById(route.params.id as string)
+  if (s) {
+    shift.value  = s
+    detail.value = await loadDetail(s)
+  }
+}
 
 // Closed shifts read the WAFI-060 snapshot (immutable, consistent with reprint);
 // open shifts have no snapshot yet → live/partial detail labelled "مفتوحة".
@@ -96,6 +116,7 @@ const varClass = computed(() => {
           <div class="card-top">
             <span class="cashier">{{ staffName(shift.staffId) }}</span>
             <span v-if="isOpen" class="badge badge-open">مفتوحة</span>
+            <span v-else-if="isAbandoned" class="badge badge-abandoned">متروكة</span>
             <span v-else class="badge badge-closed">مغلقة</span>
           </div>
           <div class="meta-grid">
@@ -103,6 +124,16 @@ const varClass = computed(() => {
             <div><span class="meta-label">الإغلاق</span><span class="meta-value">{{ shift.closedAt ? fmtDateTime(shift.closedAt) : '—' }}</span></div>
             <div><span class="meta-label">المدة</span><span class="meta-value">{{ durationLabel }}</span></div>
             <div><span class="meta-label">رصيد الفتح</span><span class="meta-value" dir="ltr">{{ fmtSyp(shift.openingCashSyp ?? 0) }} · {{ fmtUsd(shift.openingCashUsd) }}</span></div>
+          </div>
+
+          <!-- Owner force-close (WAFI-065): only for an open shift, owner only. The
+               cashier abandoned it without counting, so the owner closes it on the
+               record (force_closed_by + audit + snapshot), never silently. -->
+          <div v-if="isOpen && isOwner" class="force-close-bar">
+            <p class="force-close-hint">هذه الوردية ما زالت مفتوحة. أغلقها إجبارياً إذا غادر الكاشير دون إغلاقها.</p>
+            <button type="button" class="force-close-btn" @click="showForceClose = true">
+              إغلاق إجبارياً
+            </button>
           </div>
         </div>
 
@@ -201,6 +232,16 @@ const varClass = computed(() => {
         </div>
       </template>
     </main>
+
+    <Teleport to="body">
+      <ForceCloseSheet
+        v-if="showForceClose && shift && session.activeStaff"
+        :shift="shift"
+        :forced-by="session.activeStaff"
+        @done="onForceClosed"
+        @cancel="showForceClose = false"
+      />
+    </Teleport>
   </div>
 </template>
 
@@ -225,6 +266,18 @@ const varClass = computed(() => {
 .badge { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
 .badge-open { background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34,197,94,0.35); color: #22C55E; }
 .badge-closed { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10); color: #637285; }
+.badge-abandoned { background: rgba(248,113,113,0.12); border: 1px solid rgba(248,113,113,0.30); color: #F87171; }
+
+/* ─── Owner force-close bar (WAFI-065) ─────────────────────── */
+.force-close-bar { padding: 0 16px 16px; display: flex; flex-direction: column; gap: 8px; }
+.force-close-hint { margin: 0; font-size: 0.78rem; color: #93A3B8; line-height: 1.5; }
+.force-close-btn {
+  align-self: flex-start; padding: 8px 16px; border-radius: 0.75rem; cursor: pointer;
+  font-family: inherit; font-size: 0.8125rem; font-weight: 700; color: #FCA5A5;
+  background: rgba(248,113,113,0.10); border: 1px solid rgba(248,113,113,0.32);
+  transition: background 0.15s, color 0.15s;
+}
+.force-close-btn:hover { background: rgba(248,113,113,0.18); color: #FECACA; }
 
 .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; padding: 8px 16px 16px; }
 .meta-grid > div { display: flex; flex-direction: column; gap: 2px; }

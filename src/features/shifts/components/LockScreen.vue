@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted }  from 'vue'
+import { ref, computed, onMounted }  from 'vue'
 import { useRouter }       from 'vue-router'
 import { useI18n }         from 'vue-i18n'
 import { useStaff }        from '@/features/staff/composables/useStaff'
@@ -10,6 +10,7 @@ import { useOperatorSwitch } from '@/features/staff/composables/useOperatorSwitc
 import { useAuditLog }     from '@/features/audit/composables/useAuditLog'
 import PinPad              from '@/features/staff/components/PinPad.vue'
 import PinRecovery         from '@/features/staff/components/PinRecovery.vue'
+import ForceCloseSheet     from '@/features/shifts/components/ForceCloseSheet.vue'
 import type { Staff, StaffPermissions } from '@/features/staff/staff.types'
 import type { CashierShift } from '@/features/shifts/shift.types'
 import { roleLabel }       from '@/features/staff/staff.types'
@@ -24,12 +25,12 @@ const emit  = defineEmits<{ done: []; cancel: [] }>()
 const { t } = useI18n()
 const router = useRouter()
 const { staff, loadStaff } = useStaff()
-const { openShift, loadLastClosedShift } = useShift()
+const { openShift, loadLastClosedShift, findOpenShiftForDevice } = useShift()
 const { switchTo }         = useOperatorSwitch()
 const lockout              = usePinLockout()
 const { logLoginFailed, logLockedOut } = useAuditLog()
 
-type Step = 'pick-staff' | 'enter-pin' | 'opening-cash'
+type Step = 'pick-staff' | 'enter-pin' | 'opening-cash' | 'conflict'
 
 const step           = ref<Step>('pick-staff')
 const selectedStaff  = ref<Staff | null>(null)
@@ -48,6 +49,17 @@ const authError      = ref('')
 // WAFI-056: "Forgot PIN?" recovery overlays the PIN entry for the selected staff.
 const recovering     = ref(false)
 const recoveryDone   = ref(false)
+// WAFI-065: a different operator's shift is already open on this device (Story 5.3).
+const conflictShift  = ref<CashierShift | null>(null)
+const showForceClose = ref(false)
+
+// Only the owner may resolve a conflict inline by force-closing the other shift.
+// At the gate there is no session yet, so we read the just-authenticated staff.
+const isOwnerSelected = computed(() => selectedStaff.value?.role === 'owner')
+const conflictCashierName = computed(() => {
+  const id = conflictShift.value?.staffId
+  return staff.value.find(s => s.id === id)?.name ?? 'كاشير آخر'
+})
 
 onMounted(() => loadStaff())
 
@@ -119,8 +131,38 @@ async function onPinComplete(pin: string) {
     emit('done')
     return
   }
+  // One open shift per device (WAFI-065 Part 1). Resolve any existing open shift on
+  // this device BEFORE asking for an opening count, so nobody enters cash only to be
+  // blocked:
+  //   • same operator  → resume their shift (no second row, no recount)
+  //   • other operator → Story 5.3 conflict (block / owner force-close)
+  //   • none            → normal opening-cash step
+  const existing = await findOpenShiftForDevice().catch(() => null)
+  if (existing) {
+    if (existing.staffId === s.id) {
+      // Resume own open shift. openShift takes the resume branch and ignores the
+      // (unused) cash args; identity + store are re-established there.
+      await openShift(s, 0, 0)
+      await router.replace(resolveLanding(s))
+      return
+    }
+    conflictShift.value = existing
+    step.value = 'conflict'
+    return
+  }
+
   // Moving to the cash count — surface the previous shift's closing cash as a hint.
   // Best-effort: a missing/failed read just hides the hint, never blocks opening.
+  lastClosed.value = await loadLastClosedShift().catch(() => null)
+  confirmZero.value = false
+  step.value = 'opening-cash'
+}
+
+// Owner force-closed the conflicting shift → the device is now free; continue to the
+// owner's own opening-cash count.
+async function onConflictResolved() {
+  showForceClose.value = false
+  conflictShift.value = null
   lastClosed.value = await loadLastClosedShift().catch(() => null)
   confirmZero.value = false
   step.value = 'opening-cash'
@@ -143,11 +185,18 @@ async function doOpen() {
   if (!selectedStaff.value) return
   loading.value = true
   try {
-    await openShift(
+    const result = await openShift(
       selectedStaff.value,
       parseFloat(openingCashUsd.value) || 0,
       parseFloat(openingCashSyp.value) || 0,
     )
+    // A shift opened on this device between the PIN step and here (race) → surface
+    // the same conflict flow rather than silently doing nothing.
+    if (result.status === 'conflict') {
+      conflictShift.value = result.shift
+      step.value = 'conflict'
+      return
+    }
     // Land on the right home before first paint: the owner and a reports-granted
     // manager get the dashboard; everyone else gets the POS, so an ungranted
     // operator never flashes the financial dashboard then bounces (WAFI-058).
@@ -171,6 +220,8 @@ function back() {
   openingCashSyp.value = ''
   openingCashUsd.value = ''
   confirmZero.value = false
+  conflictShift.value = null
+  showForceClose.value = false
 }
 </script>
 
@@ -271,7 +322,39 @@ function back() {
           <button type="button" class="back-btn" @click="back">رجوع</button>
         </template>
       </template>
+
+      <!-- Step 4: an open shift by another cashier blocks this device (Story 5.3) -->
+      <template v-else-if="step === 'conflict'">
+        <p class="prompt">الوردية مفتوحة</p>
+        <p class="conflict-msg">
+          توجد وردية مفتوحة لـ<span class="conflict-name">{{ conflictCashierName }}</span>
+          على هذا الجهاز. يجب إغلاقها أولاً قبل فتح وردية جديدة.
+        </p>
+
+        <!-- Owner can resolve it here (the gate has no other entry to the shift). -->
+        <button
+          v-if="isOwnerSelected"
+          type="button"
+          class="btn-danger"
+          @click="showForceClose = true"
+        >
+          إغلاق الوردية المفتوحة إجبارياً
+        </button>
+        <!-- Non-owner: cannot force-close; must ask the owner. -->
+        <p v-else class="conflict-hint">اطلب من المالك إغلاق الوردية المفتوحة.</p>
+
+        <button type="button" class="back-btn" @click="back">رجوع</button>
+      </template>
     </div>
+
+    <!-- Owner force-close overlay (reused from the detail screen) -->
+    <ForceCloseSheet
+      v-if="showForceClose && conflictShift && selectedStaff"
+      :shift="conflictShift"
+      :forced-by="selectedStaff"
+      @done="onConflictResolved"
+      @cancel="showForceClose = false"
+    />
   </div>
 </template>
 
@@ -369,6 +452,26 @@ function back() {
 .btn-primary:hover:not(:disabled) { opacity: 0.9; }
 .btn-primary:active:not(:disabled) { transform: scale(0.98); }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Conflict (Story 5.3 / WAFI-065) ── */
+.conflict-msg {
+  font-size: 0.9375rem; color: #E8EDF5; text-align: center; line-height: 1.6;
+  margin-bottom: 1.25rem; width: 100%;
+}
+.conflict-name { font-weight: 800; color: #FCD34D; margin: 0 0.25rem; }
+.conflict-hint {
+  font-size: 0.8125rem; color: #93A3B8; text-align: center; width: 100%;
+  background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 0.625rem; padding: 0.625rem 0.875rem;
+}
+.btn-danger {
+  width: 100%; height: 52px; border-radius: 0.875rem; cursor: pointer; font-family: inherit;
+  font-size: 1rem; font-weight: 700; color: #fff; border: none;
+  background: linear-gradient(135deg, #DC2626, #B91C1C);
+  box-shadow: 0 4px 20px rgba(220,38,38,0.35); transition: opacity 0.15s, transform 0.1s;
+}
+.btn-danger:hover { opacity: 0.92; }
+.btn-danger:active { transform: scale(0.98); }
 
 .back-btn {
   margin-top: 1.25rem; padding: 0.5rem 1rem; border-radius: 0.75rem;
