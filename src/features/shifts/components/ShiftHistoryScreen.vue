@@ -6,7 +6,7 @@ import ZReportScreen from '@/features/shifts/components/ZReportScreen.vue'
 import { useShift, type ShiftHistoryFilters } from '@/features/shifts/composables/useShift'
 import { useStaff } from '@/features/staff/composables/useStaff'
 import { useCan } from '@/composables/useCan'
-import { varianceLevel } from '@/features/shifts/shift.types'
+import { varianceLevel, isLongOpen } from '@/features/shifts/shift.types'
 import type { CashierShift } from '@/features/shifts/shift.types'
 
 const PAGE_SIZE = 25
@@ -31,6 +31,8 @@ const filterStaffId  = ref<string>('')
 const filterStart    = ref<string>('')
 const filterEnd      = ref<string>('')
 const filterVariance = ref<'any' | 'match' | 'variance'>('any')
+// WAFI-065: surface forgotten ("zombie") shifts the owner needs to sweep.
+const filterLongOpen = ref(false)
 
 function currentFilters(extra: Partial<ShiftHistoryFilters> = {}): ShiftHistoryFilters {
   return {
@@ -38,6 +40,7 @@ function currentFilters(extra: Partial<ShiftHistoryFilters> = {}): ShiftHistoryF
     startDate:      filterStart.value || null,
     endDate:        filterEnd.value || null,
     varianceStatus: filterVariance.value,
+    longOpenOnly:   filterLongOpen.value,
     limit:          PAGE_SIZE,
     offset:         offset.value,
     ...extra,
@@ -69,12 +72,20 @@ function clearFilters() {
   filterStart.value = ''
   filterEnd.value = ''
   filterVariance.value = 'any'
+  filterLongOpen.value = false
   void reload()
 }
 
 const hasActiveFilters = computed(() =>
-  Boolean(filterStaffId.value || filterStart.value || filterEnd.value || filterVariance.value !== 'any')
+  Boolean(filterStaffId.value || filterStart.value || filterEnd.value || filterVariance.value !== 'any' || filterLongOpen.value)
 )
+
+// A shift open past the long-open threshold (WAFI-065). Evaluated against load time;
+// the badge doesn't need second-by-second precision.
+const nowMs = Date.now()
+function longOpen(s: CashierShift): boolean {
+  return isLongOpen(s, nowMs)
+}
 
 onMounted(async () => {
   await loadStaff()
@@ -161,6 +172,11 @@ const closedShifts = computed(() => shifts.value.filter(s => s.status !== 'open'
           <option value="variance">به فرق فقط</option>
         </select>
       </div>
+      <!-- WAFI-065: one-tap filter to the forgotten/zombie shifts that need sweeping -->
+      <label class="filter-toggle" :class="{ 'filter-toggle--on': filterLongOpen }">
+        <input v-model="filterLongOpen" type="checkbox" @change="reload" />
+        مفتوحة منذ فترة طويلة
+      </label>
       <button v-if="hasActiveFilters" type="button" class="filter-clear" @click="clearFilters">
         مسح الفلاتر
       </button>
@@ -194,7 +210,12 @@ const closedShifts = computed(() => shifts.value.filter(s => s.status !== 'open'
             <div
               v-for="s in openShifts"
               :key="s.id"
-              class="shift-card shift-card--open"
+              class="shift-card shift-card--open shift-card--link"
+              :class="{ 'shift-card--zombie': longOpen(s) }"
+              role="button"
+              tabindex="0"
+              @click="openDetail(s)"
+              @keydown.enter="openDetail(s)"
             >
               <!-- Top: status + date -->
               <div class="shift-card-top">
@@ -202,7 +223,8 @@ const closedShifts = computed(() => shifts.value.filter(s => s.status !== 'open'
                   <span class="live-dot"></span>
                   <span class="open-label">مفتوحة</span>
                 </div>
-                <span class="shift-date">{{ fmtDate(s.openedAt) }}</span>
+                <span v-if="longOpen(s)" class="badge-zombie">مفتوحة منذ فترة طويلة</span>
+                <span v-else class="shift-date">{{ fmtDate(s.openedAt) }}</span>
               </div>
 
               <!-- Time row -->
@@ -238,7 +260,7 @@ const closedShifts = computed(() => shifts.value.filter(s => s.status !== 'open'
 
               <!-- Close-shift action, right on the card (BUG-012 new list) -->
               <div class="shift-card-action">
-                <button type="button" class="close-shift-cta" @click="showZReport = true">
+                <button type="button" class="close-shift-cta" @click.stop="showZReport = true">
                   إغلاق الوردية
                 </button>
               </div>
@@ -262,7 +284,8 @@ const closedShifts = computed(() => shifts.value.filter(s => s.status !== 'open'
               <!-- Top row -->
               <div class="shift-card-top">
                 <span class="shift-date shift-date--primary">{{ fmtDate(s.openedAt) }}</span>
-                <span class="badge-closed">مغلقة</span>
+                <span v-if="s.status === 'abandoned'" class="badge-abandoned">متروكة</span>
+                <span v-else class="badge-closed">مغلقة</span>
               </div>
 
               <!-- Time range -->
@@ -524,6 +547,17 @@ const closedShifts = computed(() => shifts.value.filter(s => s.status !== 'open'
 }
 .filter-clear:hover { background: rgba(26, 86, 219, 0.10); color: #C8D5E8; }
 
+/* ─── Long-open toggle (WAFI-065) ─────────────────────────── */
+.filter-toggle {
+  display: flex; align-items: center; gap: 6px; height: 38px; padding: 0 0.75rem;
+  border-radius: 0.6rem; cursor: pointer; user-select: none;
+  font-size: 0.78rem; font-weight: 600; color: #93A3B8;
+  background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.12);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.filter-toggle input { accent-color: #F87171; width: 15px; height: 15px; }
+.filter-toggle--on { color: #FCA5A5; border-color: rgba(248,113,113,0.40); background: rgba(248,113,113,0.10); }
+
 /* ─── Load more ───────────────────────────────────────────── */
 .load-more-wrap { display: flex; justify-content: center; margin-top: 16px; }
 .load-more-btn {
@@ -545,6 +579,22 @@ const closedShifts = computed(() => shifts.value.filter(s => s.status !== 'open'
 .shift-card--open {
   border-color: rgba(34, 197, 94, 0.35);
   box-shadow: 0 4px 20px rgba(34, 197, 94, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+/* Long-open ("zombie") shift — reframe from healthy-green to attention-amber. */
+.shift-card--zombie {
+  border-color: rgba(234, 179, 8, 0.40);
+  box-shadow: 0 4px 20px rgba(234, 179, 8, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+.badge-zombie {
+  display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px;
+  font-size: 11px; font-weight: 700;
+  background: rgba(234, 179, 8, 0.15); border: 1px solid rgba(234, 179, 8, 0.38); color: #FCD34D;
+}
+.badge-abandoned {
+  display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px;
+  font-size: 11px; font-weight: 700;
+  background: rgba(248,113,113,0.12); border: 1px solid rgba(248,113,113,0.30); color: #F87171;
 }
 
 /* ─── Shift card sections ─────────────────────────────────── */

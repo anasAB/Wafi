@@ -170,6 +170,18 @@ export function useAuditLog() {
   const logShiftClosed = (shiftId: string) =>
     _log('shift.closed', 'shift', shiftId, {})
 
+  // Force-close (WAFI-065) is an accountability action: the owner closed someone
+  // else's abandoned shift without their count. Sensitive (surface write failures),
+  // and the actor is passed explicitly because the session operator can differ from
+  // the authoriser — or be unset at the login gate (mirrors logPinChanged's actor).
+  const logShiftForceClosed = (
+    shiftId: string,
+    actor: { id: string; name: string },
+    note: string,
+  ) =>
+    _logSensitive('shift.force_closed', 'shift', shiftId,
+      { actor_id: actor.id, actor_name: actor.name, note })
+
   const logExchangeRateChanged = (oldRate: number, newRate: number) =>
     _log('exchange_rate.changed', 'exchange_rate', null,
          { old_rate: oldRate, new_rate: newRate })
@@ -258,6 +270,7 @@ export function useAuditLog() {
     logStockAdjusted,
     logShiftOpened,
     logShiftClosed,
+    logShiftForceClosed,
     logExchangeRateChanged,
     logReceiptSettingsUpdated,
     logStaffCreated,
