@@ -55,6 +55,11 @@ export interface ShiftHistoryPage {
   hasMore: boolean         // true when more rows exist past this page
 }
 
+export interface ShiftNeighbors {
+  previousShiftId: string | null
+  nextShiftId: string | null
+}
+
 /** What close-shift persists: the counted cash plus the immutable evidence
  *  (variance per currency, the >5% note, the Z-report snapshot). WAFI-060. */
 export interface CloseShiftInput {
@@ -284,6 +289,26 @@ export function useShift() {
   }
 
   /**
+   * Neighbor shift ids around a given shift in the same ordering used by history
+   * (`opened_at DESC`). Used by ShiftDetail for next/previous navigation.
+   */
+  async function loadShiftNeighbors(shiftId: string): Promise<ShiftNeighbors> {
+    const result = await db.execute(
+      `SELECT id FROM cashier_shifts
+       WHERE shop_id = ?
+       ORDER BY opened_at DESC`,
+      [device.shopId]
+    )
+    const ids = ((result as any).rows._array as Array<{ id: string }>).map((r) => r.id)
+    const idx = ids.indexOf(shiftId)
+    if (idx === -1) return { previousShiftId: null, nextShiftId: null }
+    return {
+      previousShiftId: idx > 0 ? ids[idx - 1] : null,
+      nextShiftId: idx < ids.length - 1 ? ids[idx + 1] : null,
+    }
+  }
+
+  /**
    * Filtered, paginated shift history (WAFI-061). Replaces the old hardcoded
    * `LIMIT 50` (silent truncation) with explicit paging: we fetch limit+1 rows to
    * tell the caller whether more exist, so the UI can offer "load more" instead of
@@ -345,6 +370,7 @@ export function useShift() {
     loadActiveShift,
     loadLastClosedShift,
     loadShiftById,
+    loadShiftNeighbors,
     loadShiftHistory,
   }
 }

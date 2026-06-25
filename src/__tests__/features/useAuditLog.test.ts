@@ -149,6 +149,30 @@ describe('eventLabel — operator.switched', () => {
   })
 })
 
+describe('eventLabel — shift/cash movement events', () => {
+  it('renders shift.force_closed in Arabic with actor name', () => {
+    const entry = {
+      event: 'shift.force_closed',
+      meta: { actor_name: 'مالك المحل' },
+    } as unknown as AuditLog
+    const label = eventLabel(entry)
+    expect(label).toContain('إغلاق وردية إجبارياً')
+    expect(label).toContain('مالك المحل')
+  })
+
+  it('renders cash_movement.recorded with direction/category/amount', () => {
+    const entry = {
+      event: 'cash_movement.recorded',
+      meta: { direction: 'out', category: 'مصروف عاجل', currency: 'USD', amount: 12.5 },
+    } as unknown as AuditLog
+    const label = eventLabel(entry)
+    expect(label).toContain('سجّل حركة نقدية')
+    expect(label).toContain('إخراج')
+    expect(label).toContain('مصروف عاجل')
+    expect(label).toContain('$12.50')
+  })
+})
+
 describe('eventLabel — security events (WAFI-014)', () => {
   it('renders staff.pin_changed in Arabic naming the staff', () => {
     const entry = { event: 'staff.pin_changed', meta: { name: 'أحمد' } } as unknown as AuditLog

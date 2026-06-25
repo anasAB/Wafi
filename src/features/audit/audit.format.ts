@@ -30,6 +30,21 @@ export function eventLabel(entry: AuditLog): string {
     case 'stock.adjusted':            return `عدّل مخزون ${m.name}: ${m.old_qty} ← ${m.new_qty}`
     case 'shift.opened':              return `فتح وردية`
     case 'shift.closed':              return `أغلق وردية`
+    case 'shift.force_closed': {
+      const actor = (m.actor_name as string) ?? 'المالك'
+      return `إغلاق وردية إجبارياً بواسطة ${actor}`
+    }
+    case 'cash_movement.recorded': {
+      const direction = m.direction === 'in' ? 'إدخال' : 'إخراج'
+      const amount = Number(m.amount ?? 0)
+      const currency = (m.currency as string) ?? ''
+      const formattedAmount = currency === 'SYP'
+        ? `${amount.toLocaleString('en-US')} ل.س`
+        : `$${amount.toFixed(2)}`
+      const category = (m.category as string) ?? 'حركة نقدية'
+      return `سجّل حركة نقدية (${direction}) ${category}: ${formattedAmount}`
+    }
+    case 'cash_movement.voided':      return `ألغى حركة نقدية`
     case 'exchange_rate.changed':     return `غيّر سعر الصرف من ${m.old_rate} إلى ${m.new_rate}`
     case 'settings.receipt_updated':  return `عدّل إعدادات الفاتورة`
     case 'staff.created':             return `أضاف موظف: ${m.name} (${m.role})`

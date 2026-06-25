@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppHeader from '@/components/ui/AppHeader.vue'
@@ -25,6 +25,18 @@ const isIndex = computed(() => route.path === '/settings')
 // The settings title bar is shown on desktop and at the mobile index; on a mobile
 // sub-screen the child supplies its own header, so we hide this one.
 const showSettingsHeader = computed(() => isDesktop.value || isIndex.value)
+
+// Default desktop tab: when opening /settings without a selected child tab,
+// route to the audit log. Mobile keeps the list view at /settings.
+watch(
+  [isDesktop, () => route.path],
+  ([desktop, path]) => {
+    if (desktop && path === '/settings') {
+      router.replace('/settings/audit-log')
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <template>

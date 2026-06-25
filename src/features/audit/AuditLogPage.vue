@@ -53,6 +53,9 @@ const eventOptions: Array<{ value: AuditEvent | null; label: string }> = [
   { value: 'stock.adjusted', label: 'تعديل مخزون' },
   { value: 'shift.opened', label: 'فتح وردية' },
   { value: 'shift.closed', label: 'إغلاق وردية' },
+  { value: 'shift.force_closed', label: 'إغلاق وردية إجبارياً' },
+  { value: 'cash_movement.recorded', label: 'تسجيل حركة نقدية' },
+  { value: 'cash_movement.voided', label: 'إلغاء حركة نقدية' },
   { value: 'exchange_rate.changed', label: 'تغيير سعر صرف' },
   { value: 'settings.receipt_updated', label: 'تعديل إعدادات الفاتورة' },
   { value: 'staff.created', label: 'إضافة موظف' },
@@ -137,6 +140,7 @@ function entityLabel(entry: AuditLog): string {
     staff: 'موظف',
     supplier: 'مورد',
     receiving: 'استلام',
+    cash_movement: 'حركة نقدية',
   }
   return map[entry.entityType] ?? entry.entityType
 }

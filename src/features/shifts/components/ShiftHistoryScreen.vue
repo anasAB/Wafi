@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import Select from 'primevue/select'
 import AppHeader from '@/components/ui/AppHeader.vue'
+import AppDatePicker from '@/components/ui/AppDatePicker.vue'
 import ZReportScreen from '@/features/shifts/components/ZReportScreen.vue'
 import { useShift, type ShiftHistoryFilters } from '@/features/shifts/composables/useShift'
 import { useStaff } from '@/features/staff/composables/useStaff'
@@ -33,6 +35,41 @@ const filterEnd      = ref<string>('')
 const filterVariance = ref<'any' | 'match' | 'variance'>('any')
 // WAFI-065: surface forgotten ("zombie") shifts the owner needs to sweep.
 const filterLongOpen = ref(false)
+
+const staffFilterOptions = computed(() => [
+  { label: 'الكل', value: '' },
+  ...staff.value.map((s) => ({ label: s.name, value: s.id })),
+])
+
+const varianceFilterOptions = [
+  { label: 'الكل', value: 'any' as const },
+  { label: 'مطابق فقط', value: 'match' as const },
+  { label: 'به فرق فقط', value: 'variance' as const },
+]
+
+function isoToDate(value: string): Date | null {
+  if (!value) return null
+  const d = new Date(value + 'T00:00:00')
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+function dateToIso(value: Date | null): string {
+  if (!value) return ''
+  const y = value.getFullYear()
+  const m = String(value.getMonth() + 1).padStart(2, '0')
+  const d = String(value.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+const filterStartModel = computed<Date | null>({
+  get: () => isoToDate(filterStart.value),
+  set: (v) => { filterStart.value = dateToIso(v) },
+})
+
+const filterEndModel = computed<Date | null>({
+  get: () => isoToDate(filterEnd.value),
+  set: (v) => { filterEnd.value = dateToIso(v) },
+})
 
 function currentFilters(extra: Partial<ShiftHistoryFilters> = {}): ShiftHistoryFilters {
   return {
@@ -151,26 +188,55 @@ const closedShifts = computed(() => shifts.value.filter(s => s.status !== 'open'
     <div class="filter-bar">
       <div class="filter-field">
         <label class="filter-label">الكاشير</label>
-        <select v-model="filterStaffId" class="filter-input" @change="reload">
-          <option value="">الكل</option>
-          <option v-for="s in staff" :key="s.id" :value="s.id">{{ s.name }}</option>
-        </select>
+        <Select
+          v-model="filterStaffId"
+          :options="staffFilterOptions"
+          option-label="label"
+          option-value="value"
+          placeholder="الكل"
+          class="filter-select-input"
+          @update:model-value="reload"
+        />
       </div>
       <div class="filter-field">
         <label class="filter-label">من</label>
-        <input v-model="filterStart" type="date" class="filter-input" @change="reload" />
+        <AppDatePicker
+          v-model="filterStartModel"
+          date-format="yy-mm-dd"
+          placeholder="اختر التاريخ"
+          show-icon
+          icon-display="input"
+          append-to="self"
+          class="shift-filter-date-picker"
+          :input-class="'form-input date-input prime-date-input'"
+          @update:model-value="reload"
+        />
       </div>
       <div class="filter-field">
         <label class="filter-label">إلى</label>
-        <input v-model="filterEnd" type="date" class="filter-input" @change="reload" />
+        <AppDatePicker
+          v-model="filterEndModel"
+          date-format="yy-mm-dd"
+          placeholder="اختر التاريخ"
+          show-icon
+          icon-display="input"
+          append-to="self"
+          :min-date="isoToDate(filterStart) ?? undefined"
+          class="shift-filter-date-picker"
+          :input-class="'form-input date-input prime-date-input'"
+          @update:model-value="reload"
+        />
       </div>
       <div class="filter-field">
         <label class="filter-label">الفرق</label>
-        <select v-model="filterVariance" class="filter-input" @change="reload">
-          <option value="any">الكل</option>
-          <option value="match">مطابق فقط</option>
-          <option value="variance">به فرق فقط</option>
-        </select>
+        <Select
+          v-model="filterVariance"
+          :options="varianceFilterOptions"
+          option-label="label"
+          option-value="value"
+          class="filter-select-input"
+          @update:model-value="reload"
+        />
       </div>
       <!-- WAFI-065: one-tap filter to the forgotten/zombie shifts that need sweeping -->
       <label class="filter-toggle" :class="{ 'filter-toggle--on': filterLongOpen }">
@@ -531,6 +597,248 @@ const closedShifts = computed(() => shifts.value.filter(s => s.status !== 'open'
   outline: none;
 }
 .filter-input:focus { border-color: rgba(26, 86, 219, 0.7); }
+
+.filter-select-input {
+  position: relative;
+  height: 40px;
+  border-radius: 0.625rem;
+  background: linear-gradient(135deg, rgba(26,86,219,0.12), rgba(255,255,255,0.04));
+  border: 1px solid rgba(26,86,219,0.22);
+  color: #E8EDF5;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  box-shadow: 0 2px 12px rgba(26,86,219,0.08), inset 0 1px 0 rgba(255,255,255,0.07);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.filter-select-input:hover {
+  border-color: rgba(26,86,219,0.40);
+}
+
+.filter-select-input.p-focus,
+.filter-select-input.p-inputwrapper-focus,
+.filter-select-input.p-overlay-open,
+.filter-select-input[aria-expanded="true"] {
+  border-color: rgba(26,86,219,0.70);
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.18);
+  outline: none;
+}
+
+.filter-select-input :deep(.p-select-label) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  width: 100%;
+  line-height: 1.2;
+  color: #E8EDF5 !important;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  text-align: center;
+  padding-block: 0;
+  padding-inline: 0 !important;
+}
+
+.filter-select-input :deep(.p-placeholder) {
+  color: #E8EDF5 !important;
+  opacity: 1;
+}
+
+.filter-select-input :deep(.p-select-dropdown) {
+  position: absolute;
+  inset-inline-start: 0.6rem;
+  inset-block: 0;
+  margin: auto;
+  color: #637285 !important;
+  width: 1rem;
+  height: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.filter-select-input:hover :deep(.p-select-dropdown) {
+  color: #93B4F0 !important;
+}
+
+.form-input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 0.75rem;
+  padding: 0.625rem 0.875rem;
+  color: #E8EDF5;
+  font-size: 0.875rem;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+
+.form-input::placeholder { color: #3D4F6B; }
+
+.form-input:focus {
+  border-color: rgba(26, 86, 219, 0.8);
+  box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.25), 0 0 12px rgba(26, 86, 219, 0.15);
+}
+
+.date-input {
+  height: 40px;
+  min-height: 40px;
+  padding-inline-end: 2.75rem;
+  padding-inline-start: 0.875rem;
+  color-scheme: dark;
+  line-height: 1.2;
+}
+
+.prime-date-input {
+  font-variant-numeric: tabular-nums;
+}
+
+.shift-filter-date-picker {
+  width: 100%;
+}
+
+.shift-filter-date-picker :deep(.p-inputtext),
+.shift-filter-date-picker :deep(input.p-datepicker-input) {
+  background: rgba(255, 255, 255, 0.07) !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  color: #E8EDF5 !important;
+}
+
+.shift-filter-date-picker :deep(.p-inputtext:enabled:hover),
+.shift-filter-date-picker :deep(input.p-datepicker-input:enabled:hover) {
+  border-color: rgba(26, 86, 219, 0.45) !important;
+}
+
+.shift-filter-date-picker :deep(.p-inputtext:enabled:focus),
+.shift-filter-date-picker :deep(input.p-datepicker-input:enabled:focus) {
+  border-color: rgba(26, 86, 219, 0.8) !important;
+  box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.25), 0 0 12px rgba(26, 86, 219, 0.15) !important;
+}
+
+.shift-filter-date-picker :deep(.p-datepicker-input) {
+  height: 40px !important;
+  min-height: 40px !important;
+  line-height: 1.2;
+  box-sizing: border-box;
+  padding-inline-start: 0.875rem !important;
+  padding-inline-end: 2.75rem !important;
+  padding-right: 0.875rem !important;
+  padding-left: 2.75rem !important;
+  text-align: right;
+}
+
+.shift-filter-date-picker :deep(.p-inputtext::placeholder) {
+  color: #3D4F6B;
+  opacity: 1;
+}
+
+.shift-filter-date-picker :deep(.p-datepicker-input-icon-container) {
+  position: absolute;
+  inset-inline-end: 0.75rem;
+  inset-block: 0;
+  margin: auto;
+  width: 1rem;
+  height: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #637285;
+  padding: 0;
+  background: transparent;
+  border: none;
+  pointer-events: none;
+}
+
+.shift-filter-date-picker :deep(.p-datepicker-input-icon) {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.shift-filter-date-picker :deep(.p-datepicker-dropdown) {
+  display: none;
+}
+
+.shift-filter-date-picker :deep(.p-datepicker-panel) {
+  margin-top: 6px;
+  border-radius: 12px;
+  border: 1px solid rgba(26,86,219,0.30);
+  backdrop-filter: blur(20px) saturate(180%);
+  background: linear-gradient(180deg, rgba(13,24,40,0.97), rgba(7,11,20,0.97));
+  box-shadow: 0 10px 30px rgba(0,0,0,0.45), 0 4px 18px rgba(26,86,219,0.16);
+  color: #E8EDF5;
+}
+
+.shift-filter-date-picker :deep(.p-datepicker-calendar-container),
+.shift-filter-date-picker :deep(.p-datepicker-calendar),
+.shift-filter-date-picker :deep(.p-datepicker-month-view),
+.shift-filter-date-picker :deep(.p-datepicker-year-view) {
+  background: transparent !important;
+}
+
+.shift-filter-date-picker :deep(.p-datepicker-header) {
+  background: transparent;
+  border-bottom: 1px solid rgba(26,86,219,0.20);
+  color: #E8EDF5;
+}
+
+.shift-filter-date-picker :deep(.p-datepicker-title button),
+.shift-filter-date-picker :deep(.p-datepicker-prev),
+.shift-filter-date-picker :deep(.p-datepicker-next) {
+  color: #C8D5E8;
+}
+
+.shift-filter-date-picker :deep(.p-datepicker-title button:hover),
+.shift-filter-date-picker :deep(.p-datepicker-prev:hover),
+.shift-filter-date-picker :deep(.p-datepicker-next:hover) {
+  background: rgba(26, 86, 219, 0.16) !important;
+}
+
+.shift-filter-date-picker :deep(.p-datepicker-day),
+.shift-filter-date-picker :deep(.p-datepicker-month),
+.shift-filter-date-picker :deep(.p-datepicker-year) {
+  color: #C8D5E8;
+}
+
+.shift-filter-date-picker :deep(.p-datepicker-day:hover) {
+  background: rgba(26,86,219,0.16);
+}
+
+.shift-filter-date-picker :deep(.p-datepicker-day-selected) {
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  color: #FFFFFF;
+}
+
+.shift-filter-date-picker :deep(.p-datepicker-select-month),
+.shift-filter-date-picker :deep(.p-datepicker-select-year),
+.shift-filter-date-picker :deep(.p-select),
+.shift-filter-date-picker :deep(.p-select-label),
+.shift-filter-date-picker :deep(.p-select-dropdown) {
+  background: transparent !important;
+  border-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: #E8EDF5 !important;
+}
+
+.shift-filter-date-picker :deep(.p-datepicker-select-month:hover),
+.shift-filter-date-picker :deep(.p-datepicker-select-year:hover),
+.shift-filter-date-picker :deep(.p-datepicker-select-month:focus),
+.shift-filter-date-picker :deep(.p-datepicker-select-year:focus),
+.shift-filter-date-picker :deep(.p-datepicker-select-month:focus-visible),
+.shift-filter-date-picker :deep(.p-datepicker-select-year:focus-visible),
+.shift-filter-date-picker :deep(.p-select:hover),
+.shift-filter-date-picker :deep(.p-select:focus),
+.shift-filter-date-picker :deep(.p-select:focus-visible) {
+  background: transparent !important;
+  border-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
 
 .filter-clear {
   height: 38px;

@@ -73,8 +73,11 @@ export function useReceivingSheet() {
 
     const receivingId = uuidv4()
     const now = new Date().toISOString()
-    const total = totalCostUsd.value
     const snapshotLines = [...lines.value]
+    const total = snapshotLines.reduce(
+      (sum, line) => sum + (Number(line.qtyReceived) || 0) * (Number(line.unitCostUsd) || 0),
+      0,
+    )
 
     await db.writeTransaction(async (tx) => {
       await tx.execute(
@@ -118,7 +121,16 @@ export function useReceivingSheet() {
       }
     })
 
-    await logReceivingCreated(receivingId, supplierName.value, total, snapshotLines.length)
+    const supplierNameFromState = supplierName.value.trim()
+    const supplierNameFromDb = supplierNameFromState
+      ? null
+      : await db.getOptional<{ name: string }>(
+          `SELECT name FROM suppliers WHERE id = ? LIMIT 1`,
+          [supplierId.value],
+        )
+    const auditSupplierName = supplierNameFromState || supplierNameFromDb?.name || 'مورد غير معروف'
+
+    await logReceivingCreated(receivingId, auditSupplierName, total, snapshotLines.length)
   }
 
   return {

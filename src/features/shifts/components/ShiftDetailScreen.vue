@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import { useShift } from '@/features/shifts/composables/useShift'
@@ -16,7 +16,7 @@ import type { CashMovement } from '@/features/shifts/cashMovement.types'
 
 const router = useRouter()
 const route  = useRoute()
-const { loadShiftById } = useShift()
+const { loadShiftById, loadShiftNeighbors } = useShift()
 const { loadDetail }    = useShiftDetail()
 const { staff, loadStaff } = useStaff()
 const session = useSessionStore()
@@ -52,24 +52,40 @@ const shift   = ref<CashierShift | null>(null)
 const detail  = ref<ShiftDetailData | null>(null)
 const loading = ref(true)
 const notFound = ref(false)
+const previousShiftId = ref<string | null>(null)
+const nextShiftId = ref<string | null>(null)
 
 // Collapsible sections — sales open by default, the rest collapsed to keep a long
 // shift readable on a cheap phone.
 const open = ref({ sales: true, expenses: false, payments: false })
 
-onMounted(async () => {
+async function loadPage() {
   loading.value = true
+  notFound.value = false
   try {
     await loadStaff()
     const s = await loadShiftById(route.params.id as string)
-    if (!s) { notFound.value = true; return }
+    if (!s) {
+      shift.value = null
+      detail.value = null
+      previousShiftId.value = null
+      nextShiftId.value = null
+      notFound.value = true
+      return
+    }
     shift.value  = s
     detail.value = await loadDetail(s)
     await loadMovements(s.id)
+    const neighbors = await loadShiftNeighbors(s.id)
+    previousShiftId.value = neighbors.previousShiftId
+    nextShiftId.value = neighbors.nextShiftId
   } finally {
     loading.value = false
   }
-})
+}
+
+onMounted(loadPage)
+watch(() => route.params.id, loadPage)
 
 const staffName = computed(() => {
   const map: Record<string, string> = {}
@@ -84,12 +100,17 @@ const isAbandoned = computed(() => shift.value?.status === 'abandoned')
 // recorded count, variance, snapshot, and force-closed note.
 async function onForceClosed() {
   showForceClose.value = false
-  const s = await loadShiftById(route.params.id as string)
-  if (s) {
-    shift.value  = s
-    detail.value = await loadDetail(s)
-    await loadMovements(s.id)
-  }
+  await loadPage()
+}
+
+function goPreviousShift() {
+  if (!previousShiftId.value) return
+  void router.push(`/shifts/${previousShiftId.value}`)
+}
+
+function goNextShift() {
+  if (!nextShiftId.value) return
+  void router.push(`/shifts/${nextShiftId.value}`)
 }
 
 // Closed shifts read the WAFI-060 snapshot (immutable, consistent with reprint);
@@ -128,6 +149,25 @@ const varClass = computed(() => {
 <template>
   <div class="page-root" dir="rtl">
     <AppHeader title="تفاصيل الوردية" @back="router.back()" />
+
+    <div class="shift-nav-row">
+      <button
+        type="button"
+        class="shift-nav-btn"
+        :disabled="!previousShiftId || loading"
+        @click="goPreviousShift"
+      >
+        السابقة
+      </button>
+      <button
+        type="button"
+        class="shift-nav-btn"
+        :disabled="!nextShiftId || loading"
+        @click="goNextShift"
+      >
+        التالية
+      </button>
+    </div>
 
     <main class="page-main">
       <div v-if="loading" class="muted">جاري التحميل...</div>
@@ -284,6 +324,33 @@ const varClass = computed(() => {
 <style scoped>
 .page-root { display: flex; flex-direction: column; min-height: 100dvh; background: #06090F; font-family: 'Tajawal', system-ui, sans-serif; }
 .page-main { flex: 1; padding: 16px; max-width: 720px; margin: 0 auto; width: 100%; padding-bottom: 80px; display: flex; flex-direction: column; gap: 12px; }
+
+.shift-nav-row {
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px 0;
+  max-width: 720px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.shift-nav-btn {
+  flex: 1;
+  height: 38px;
+  border-radius: 0.625rem;
+  border: 1px solid rgba(26, 86, 219, 0.28);
+  background: linear-gradient(135deg, rgba(26, 86, 219, 0.11), rgba(255, 255, 255, 0.04));
+  color: #C8D5E8;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.shift-nav-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 
 .muted { color: #637285; text-align: center; padding: 24px 0; }
 .small { font-size: 0.8125rem; }

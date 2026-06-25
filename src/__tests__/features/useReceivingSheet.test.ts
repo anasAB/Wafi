@@ -140,6 +140,42 @@ describe('useReceivingSheet — confirm()', () => {
     expect(costUpd).toBeUndefined()
   })
 
+  it('writes receiving.created audit metadata with supplier/total/lineCount from confirmed state', async () => {
+    setupWriteTransaction()
+    const sheet = await ready()
+    await sheet.confirm()
+
+    const auditCall = vi.mocked(db.execute).mock.calls.find(
+      c => typeof c[0] === 'string' && c[0].includes('INSERT INTO audit_log'),
+    )
+    expect(auditCall).toBeDefined()
+
+    const metaArg = (auditCall![1] as unknown[]).find(
+      (v: unknown) => typeof v === 'string' && v.includes('supplierName'),
+    ) as string
+    const meta = JSON.parse(metaArg)
+    expect(meta).toMatchObject({ supplierName: 'النور', totalUsd: 1350, lineCount: 1 })
+  })
+
+  it('falls back to supplier name from DB for audit when supplierName ref is blank', async () => {
+    setupWriteTransaction()
+    const sheet = await ready()
+    sheet.supplierName.value = ''
+    vi.mocked(db.getOptional).mockResolvedValueOnce({ name: 'مؤسسة السلام' } as any)
+
+    await sheet.confirm()
+
+    const auditCall = vi.mocked(db.execute).mock.calls.find(
+      c => typeof c[0] === 'string' && c[0].includes('INSERT INTO audit_log'),
+    )
+    expect(auditCall).toBeDefined()
+    const metaArg = (auditCall![1] as unknown[]).find(
+      (v: unknown) => typeof v === 'string' && v.includes('supplierName'),
+    ) as string
+    const meta = JSON.parse(metaArg)
+    expect(meta.supplierName).toBe('مؤسسة السلام')
+  })
+
   it('throws when confirm() called without valid state', async () => {
     const sheet = useReceivingSheet()  // no supplier, no lines
     await expect(sheet.confirm()).rejects.toThrow()

@@ -21,6 +21,63 @@ function rowToAuditLog(r: AuditRow): AuditLog {
   }
 }
 
+type ReceivingMetaHydrationRow = {
+  id: string
+  supplier_name: string
+  total_cost_usd: number
+  line_count: number
+}
+
+function hasReceivingMeta(entry: AuditLog): boolean {
+  if (entry.event !== 'receiving.created') return true
+  const m = entry.meta
+  const hasSupplier = typeof m.supplierName === 'string' && m.supplierName.trim() !== ''
+  const hasTotal = typeof m.totalUsd === 'number' && Number.isFinite(m.totalUsd)
+  const hasLineCount = typeof m.lineCount === 'number' && Number.isFinite(m.lineCount)
+  return hasSupplier && hasTotal && hasLineCount
+}
+
+async function hydrateReceivingMeta(entries: AuditLog[], shopId: string): Promise<AuditLog[]> {
+  const missing = entries.filter(e => e.event === 'receiving.created' && !hasReceivingMeta(e))
+  if (!missing.length) return entries
+
+  const ids = missing.map(e => e.entityId).filter((id): id is string => Boolean(id))
+  if (!ids.length) return entries
+
+  const placeholders = ids.map(() => '?').join(',')
+  const rows = await db.getAll<ReceivingMetaHydrationRow>(
+    `SELECT sr.id,
+            COALESCE(s.name, 'مورد غير معروف') AS supplier_name,
+            COALESCE(sr.total_cost_usd, 0) AS total_cost_usd,
+            COALESCE(COUNT(li.id), 0) AS line_count
+     FROM stock_receivings sr
+     LEFT JOIN suppliers s ON s.id = sr.supplier_id
+     LEFT JOIN stock_receiving_line_items li ON li.receiving_id = sr.id
+     WHERE sr.shop_id = ? AND sr.id IN (${placeholders})
+     GROUP BY sr.id, s.name, sr.total_cost_usd`,
+    [shopId, ...ids],
+  )
+
+  const byId = new Map(rows.map(r => [r.id, r]))
+
+  return entries.map((entry) => {
+    if (entry.event !== 'receiving.created' || hasReceivingMeta(entry)) return entry
+    const id = entry.entityId
+    if (!id) return entry
+    const row = byId.get(id)
+    if (!row) return entry
+    return {
+      ...entry,
+      meta: {
+        ...entry.meta,
+        supplierName: row.supplier_name,
+        totalUsd: Number(row.total_cost_usd ?? 0),
+        lineCount: Number(row.line_count ?? 0),
+      },
+    }
+  })
+}
+
 export function useAuditLog() {
   const entries = ref<AuditLog[]>([])
   const device  = useDeviceStore()
@@ -93,7 +150,8 @@ export function useAuditLog() {
     if (options.event)   { sql += ' AND event = ?';    params.push(options.event) }
     sql += ' ORDER BY created_at DESC LIMIT 200'
     const rows = await db.getAll<AuditRow>(sql, params)
-    entries.value = rows.map(rowToAuditLog)
+    const parsed = rows.map(rowToAuditLog)
+    entries.value = await hydrateReceivingMeta(parsed, device.shopId)
   }
 
   async function loadEntityHistory(
@@ -106,7 +164,9 @@ export function useAuditLog() {
        ORDER BY created_at DESC LIMIT 50`,
       [entityType, entityId],
     )
-    return rows.map(rowToAuditLog)
+    const parsed = rows.map(rowToAuditLog)
+    if (entityType !== 'receiving') return parsed
+    return hydrateReceivingMeta(parsed, device.shopId)
   }
 
   // ── Typed helpers ──────────────────────────────────────────────────────────

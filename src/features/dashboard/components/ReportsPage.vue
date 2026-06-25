@@ -5,6 +5,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import AppDatePicker from '@/components/ui/AppDatePicker.vue'
 import { getReportRange, bucketForRange } from '../composables/periodUtils'
 import type { ReportPeriod } from '../composables/periodUtils'
 import { useDashboardMetrics } from '../composables/useDashboardMetrics'
@@ -18,6 +19,30 @@ const trend   = useProfitTrend()
 const period      = ref<ReportPeriod>('month')
 const customStart = ref('')
 const customEnd   = ref('')
+
+function isoToDate(value: string): Date | null {
+  if (!value) return null
+  const d = new Date(value + 'T00:00:00')
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+function dateToIso(value: Date | null): string {
+  if (!value) return ''
+  const y = value.getFullYear()
+  const m = String(value.getMonth() + 1).padStart(2, '0')
+  const d = String(value.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+const customStartModel = computed<Date | null>({
+  get: () => isoToDate(customStart.value),
+  set: (v) => { customStart.value = dateToIso(v) },
+})
+
+const customEndModel = computed<Date | null>({
+  get: () => isoToDate(customEnd.value),
+  set: (v) => { customEnd.value = dateToIso(v) },
+})
 
 const rangeError = computed(() =>
   period.value === 'custom'
@@ -58,8 +83,36 @@ onMounted(reload)
     </div>
 
     <div v-if="period === 'custom'" class="custom-range">
-      <label>{{ t('reports.from') }} <input data-test="custom-start" type="date" v-model="customStart" /></label>
-      <label>{{ t('reports.to') }} <input data-test="custom-end" type="date" v-model="customEnd" /></label>
+      <label class="date-label">
+        <span>{{ t('reports.from') }}</span>
+        <AppDatePicker
+          v-model="customStartModel"
+          input-id="reports-custom-start"
+          data-test="custom-start"
+          date-format="yy-mm-dd"
+          placeholder="اختر التاريخ"
+          show-icon
+          icon-display="input"
+          append-to="self"
+          class="reports-date-picker"
+          :input-class="'form-input date-input prime-date-input'"
+        />
+      </label>
+      <label class="date-label">
+        <span>{{ t('reports.to') }}</span>
+        <AppDatePicker
+          v-model="customEndModel"
+          input-id="reports-custom-end"
+          data-test="custom-end"
+          date-format="yy-mm-dd"
+          placeholder="اختر التاريخ"
+          show-icon
+          icon-display="input"
+          append-to="self"
+          class="reports-date-picker"
+          :input-class="'form-input date-input prime-date-input'"
+        />
+      </label>
       <p v-if="rangeError" data-test="range-error" class="warn">{{ t('reports.invalidRange') }}</p>
     </div>
 
@@ -114,10 +167,187 @@ onMounted(reload)
 .period-toggle button.active { background: #1A56DB; border-color: #1A56DB; color: #fff; }
 
 .custom-range { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-.custom-range label { display: flex; align-items: center; gap: 6px; font-size: 0.8125rem; color: #93A3B8; }
-.custom-range input {
-  padding: 8px; border-radius: 8px; color: inherit; font-family: inherit;
-  background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(26, 86, 219, 0.28);
+.date-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.8125rem;
+  color: #93A3B8;
+  min-width: 180px;
+  flex: 1;
+}
+
+.form-input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 0.75rem;
+  padding: 0.625rem 0.875rem;
+  color: #E8EDF5;
+  font-size: 0.875rem;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+
+.form-input::placeholder { color: #3D4F6B; }
+
+.form-input:focus {
+  border-color: rgba(26, 86, 219, 0.8);
+  box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.25), 0 0 12px rgba(26, 86, 219, 0.15);
+}
+
+.date-input {
+  height: 40px;
+  min-height: 40px;
+  padding-inline-end: 2.75rem;
+  padding-inline-start: 0.875rem;
+  color-scheme: dark;
+  line-height: 1.2;
+}
+
+.prime-date-input {
+  font-variant-numeric: tabular-nums;
+}
+
+.reports-date-picker {
+  width: 100%;
+}
+
+.reports-date-picker :deep(.p-inputtext),
+.reports-date-picker :deep(input.p-datepicker-input) {
+  background: rgba(255, 255, 255, 0.07) !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  color: #E8EDF5 !important;
+}
+
+.reports-date-picker :deep(.p-inputtext:enabled:hover),
+.reports-date-picker :deep(input.p-datepicker-input:enabled:hover) {
+  border-color: rgba(26, 86, 219, 0.45) !important;
+}
+
+.reports-date-picker :deep(.p-inputtext:enabled:focus),
+.reports-date-picker :deep(input.p-datepicker-input:enabled:focus) {
+  border-color: rgba(26, 86, 219, 0.8) !important;
+  box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.25), 0 0 12px rgba(26, 86, 219, 0.15) !important;
+}
+
+.reports-date-picker :deep(.p-datepicker-input) {
+  height: 40px !important;
+  min-height: 40px !important;
+  line-height: 1.2;
+  box-sizing: border-box;
+  padding-inline-start: 0.875rem !important;
+  padding-inline-end: 2.75rem !important;
+  padding-right: 0.875rem !important;
+  padding-left: 2.75rem !important;
+  text-align: right;
+}
+
+.reports-date-picker :deep(.p-inputtext::placeholder) {
+  color: #3D4F6B;
+  opacity: 1;
+}
+
+.reports-date-picker :deep(.p-datepicker-input-icon-container) {
+  position: absolute;
+  inset-inline-end: 0.75rem;
+  inset-block: 0;
+  margin: auto;
+  width: 1rem;
+  height: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #637285;
+  padding: 0;
+  background: transparent;
+  border: none;
+  pointer-events: none;
+}
+
+.reports-date-picker :deep(.p-datepicker-input-icon) {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.reports-date-picker :deep(.p-datepicker-dropdown) {
+  display: none;
+}
+
+.reports-date-picker :deep(.p-datepicker-panel) {
+  margin-top: 6px;
+  border-radius: 12px;
+  border: 1px solid rgba(26,86,219,0.30);
+  backdrop-filter: blur(20px) saturate(180%);
+  background: linear-gradient(180deg, rgba(13,24,40,0.97), rgba(7,11,20,0.97));
+  box-shadow: 0 10px 30px rgba(0,0,0,0.45), 0 4px 18px rgba(26,86,219,0.16);
+  color: #E8EDF5;
+}
+
+.reports-date-picker :deep(.p-datepicker-calendar-container),
+.reports-date-picker :deep(.p-datepicker-calendar),
+.reports-date-picker :deep(.p-datepicker-month-view),
+.reports-date-picker :deep(.p-datepicker-year-view) {
+  background: transparent !important;
+}
+
+.reports-date-picker :deep(.p-datepicker-header) {
+  background: transparent;
+  border-bottom: 1px solid rgba(26,86,219,0.20);
+  color: #E8EDF5;
+}
+
+.reports-date-picker :deep(.p-datepicker-title button),
+.reports-date-picker :deep(.p-datepicker-prev),
+.reports-date-picker :deep(.p-datepicker-next) {
+  color: #C8D5E8;
+}
+
+.reports-date-picker :deep(.p-datepicker-title button:hover),
+.reports-date-picker :deep(.p-datepicker-prev:hover),
+.reports-date-picker :deep(.p-datepicker-next:hover) {
+  background: rgba(26, 86, 219, 0.16) !important;
+}
+
+.reports-date-picker :deep(.p-datepicker-day),
+.reports-date-picker :deep(.p-datepicker-month),
+.reports-date-picker :deep(.p-datepicker-year) {
+  color: #C8D5E8;
+}
+
+.reports-date-picker :deep(.p-datepicker-day:hover) {
+  background: rgba(26,86,219,0.16);
+}
+
+.reports-date-picker :deep(.p-datepicker-day-selected) {
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
+  color: #FFFFFF;
+}
+
+.reports-date-picker :deep(.p-datepicker-select-month),
+.reports-date-picker :deep(.p-datepicker-select-year),
+.reports-date-picker :deep(.p-select),
+.reports-date-picker :deep(.p-select-label),
+.reports-date-picker :deep(.p-select-dropdown) {
+  background: transparent !important;
+  border-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: #E8EDF5 !important;
+}
+
+.reports-date-picker :deep(.p-datepicker-select-month:hover),
+.reports-date-picker :deep(.p-datepicker-select-year:hover),
+.reports-date-picker :deep(.p-datepicker-select-month:focus),
+.reports-date-picker :deep(.p-datepicker-select-year:focus),
+.reports-date-picker :deep(.p-datepicker-select-month:focus-visible),
+.reports-date-picker :deep(.p-datepicker-select-year:focus-visible) {
+  background: transparent !important;
+  border-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 .warn { color: #FBBF24; font-size: 0.85rem; margin: 0; width: 100%; }
 
