@@ -136,4 +136,50 @@ describe('computeCashReconciliation', () => {
     expect(r.expectedSyp).toBe(450_000)   // 500,000 - 50,000
     expect(r.varianceSyp).toBe(0)
   })
+
+  it('pay-ins raise and pay-outs lower the expected USD cash', () => {
+    const r = computeCashReconciliation({
+      openingCashUsd:  50,
+      cashUsdSales:    100,
+      cashExpensesUsd: 0,
+      closingCashUsd:  130,            // 50 + 100 + 20 payIn - 40 payOut = 130
+      cashSypSalesRaw: 0,
+      closingCashSyp:  0,
+      cashPayInsUsd:   20,
+      cashPayOutsUsd:  40,
+    })
+    expect(r.expectedUsd).toBe(130)
+    expect(r.varianceUsd).toBe(0)
+  })
+
+  it('a SYP drop (pay-out) lowers expected SYP only, not USD', () => {
+    const r = computeCashReconciliation({
+      openingCashUsd:  100,
+      cashUsdSales:    0,
+      cashExpensesUsd: 0,
+      closingCashUsd:  100,
+      cashSypSalesRaw: 1_000_000,
+      closingCashSyp:  700_000,        // 1,000,000 - 300,000 dropped to safe
+      cashPayOutsSyp:  300_000,
+    })
+    expect(r.expectedUsd).toBe(100)
+    expect(r.varianceUsd).toBe(0)
+    expect(r.expectedSyp).toBe(700_000)
+    expect(r.varianceSyp).toBe(0)
+  })
+
+  it('a void nets to zero (pay-out + equal reversing pay-in) → no variance impact', () => {
+    const r = computeCashReconciliation({
+      openingCashUsd:  50,
+      cashUsdSales:    0,
+      cashExpensesUsd: 0,
+      closingCashUsd:  50,
+      cashSypSalesRaw: 0,
+      closingCashSyp:  0,
+      cashPayOutsUsd:  30,             // original pay-out
+      cashPayInsUsd:   30,             // its reversing void row (opposite direction)
+    })
+    expect(r.expectedUsd).toBe(50)
+    expect(r.varianceUsd).toBe(0)
+  })
 })

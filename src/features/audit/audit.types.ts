@@ -32,12 +32,14 @@ export type AuditEvent =
   | 'supplier.updated'
   | 'receiving.created'
   | 'operator.switched'
+  | 'cash_movement.recorded'
+  | 'cash_movement.voided'
 
 export type AuditEntityType =
   | 'sale' | 'return' | 'product' | 'expense'
   | 'customer' | 'stock' | 'shift'
   | 'exchange_rate' | 'settings' | 'staff'
-  | 'supplier' | 'receiving'
+  | 'supplier' | 'receiving' | 'cash_movement'
 
 export interface AuditLog {
   id:         string

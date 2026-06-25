@@ -161,6 +161,20 @@ const cashier_shifts = new Table({
   status:           column.text,    // 'open' | 'closed'
 })
 
+const cash_movements = new Table({
+  shop_id:            column.text,
+  device_id:          column.text,
+  shift_id:           column.text,
+  staff_id:           column.text,
+  direction:          column.text,   // 'in' | 'out'
+  category:           column.text,
+  currency:           column.text,   // 'USD' | 'SYP'
+  amount:             column.real,   // raw in `currency`; integer when SYP
+  note:               column.text,
+  voids_movement_id:  column.text,   // set on a reversing (void) row
+  created_at:         column.text,
+})
+
 const returns = new Table({
   shop_id:                 column.text,
   original_sale_id:        column.text,
@@ -267,6 +281,7 @@ export const AppSchema = new Schema({
   sale_payments,
   staff,
   cashier_shifts,
+  cash_movements,
   returns,
   return_line_items,
   return_reasons,

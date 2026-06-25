@@ -74,6 +74,10 @@ export interface ZReportMetrics {
   cashRefundsSyp:  number
   cashCreditPaymentsUsd: number  // cash USD collected against customer credit
   cashCreditPaymentsSyp: number  // cash SYP collected against customer credit
+  cashPayInsUsd:   number   // cash added to the USD drawer mid-shift (movements)
+  cashPayInsSyp:   number
+  cashPayOutsUsd:  number   // cash removed from the USD drawer mid-shift (movements)
+  cashPayOutsSyp:  number
   // USD reconciliation
   expectedUsd:     number
   actualUsd:       number

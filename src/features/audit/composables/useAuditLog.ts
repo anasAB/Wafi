@@ -182,6 +182,24 @@ export function useAuditLog() {
     _logSensitive('shift.force_closed', 'shift', shiftId,
       { actor_id: actor.id, actor_name: actor.name, note })
 
+  // Routine: recording a movement must not block the action (offline-first), like sales.
+  const logCashMovementRecorded = (
+    movementId: string,
+    direction: 'in' | 'out',
+    category: string,
+    currency: 'USD' | 'SYP',
+    amount: number,
+  ) => _log('cash_movement.recorded', 'cash_movement', movementId,
+            { direction, category, currency, amount })
+
+  // Sensitive: a void reverses a money record — surface a failed write.
+  const logCashMovementVoided = (
+    voidMovementId: string,
+    originalMovementId: string,
+    note: string,
+  ) => _logSensitive('cash_movement.voided', 'cash_movement', voidMovementId,
+                     { original_id: originalMovementId, note })
+
   const logExchangeRateChanged = (oldRate: number, newRate: number) =>
     _log('exchange_rate.changed', 'exchange_rate', null,
          { old_rate: oldRate, new_rate: newRate })
@@ -271,6 +289,8 @@ export function useAuditLog() {
     logShiftOpened,
     logShiftClosed,
     logShiftForceClosed,
+    logCashMovementRecorded,
+    logCashMovementVoided,
     logExchangeRateChanged,
     logReceiptSettingsUpdated,
     logStaffCreated,

@@ -8,8 +8,11 @@ import { useStaff } from '@/features/staff/composables/useStaff'
 import { useCan } from '@/composables/useCan'
 import { useSessionStore } from '@/store/session.store'
 import ForceCloseSheet from '@/features/shifts/components/ForceCloseSheet.vue'
+import CashMovementsList from '@/features/shifts/components/CashMovementsList.vue'
+import { useCashMovements } from '@/features/shifts/composables/useCashMovements'
 import { varianceLevel } from '@/features/shifts/shift.types'
 import type { CashierShift } from '@/features/shifts/shift.types'
+import type { CashMovement } from '@/features/shifts/cashMovement.types'
 
 const router = useRouter()
 const route  = useRoute()
@@ -26,6 +29,24 @@ const canViewMoney = can('can_view_reports')
 // role rule, deliberately not a permission flag, so it can't widen another grant.
 const isOwner = computed(() => session.activeStaff?.role === 'owner')
 const showForceClose = ref(false)
+
+// In-shift cash movements (review). Voiding is for the owner/manager from this
+// review screen (the recording cashier voids from the live drill-down); voids are
+// themselves logged, so this only limits accidental cross-voiding.
+const { listForShift, voidMovement } = useCashMovements()
+const movements = ref<CashMovement[]>([])
+const canVoid = computed(() =>
+  session.activeStaff?.role === 'owner' || session.activeStaff?.role === 'manager')
+
+async function loadMovements(shiftId: string) {
+  movements.value = await listForShift(shiftId)
+}
+
+async function onVoidMovement(movementId: string) {
+  if (!shift.value) return
+  await voidMovement(movementId, 'تصحيح من شاشة الوردية')
+  await loadMovements(shift.value.id)
+}
 
 const shift   = ref<CashierShift | null>(null)
 const detail  = ref<ShiftDetailData | null>(null)
@@ -44,6 +65,7 @@ onMounted(async () => {
     if (!s) { notFound.value = true; return }
     shift.value  = s
     detail.value = await loadDetail(s)
+    await loadMovements(s.id)
   } finally {
     loading.value = false
   }
@@ -66,6 +88,7 @@ async function onForceClosed() {
   if (s) {
     shift.value  = s
     detail.value = await loadDetail(s)
+    await loadMovements(s.id)
   }
 }
 
@@ -161,6 +184,19 @@ const varClass = computed(() => {
           <div v-if="shift.closeNote" class="note-box">
             <span class="meta-label">ملاحظة الكاشير</span>
             <p class="note-text">{{ shift.closeNote }}</p>
+          </div>
+        </div>
+
+        <!-- In-shift cash movements (pay-ins / pay-outs / drops). Amount-gated by
+             can_view_reports, consistent with the Z-report block (WAFI-058). -->
+        <div v-if="canViewMoney" class="card">
+          <p class="section-title">الحركات النقدية</p>
+          <div class="movements-wrap">
+            <CashMovementsList
+              :movements="movements"
+              :can-void="canVoid"
+              @void="onVoidMovement"
+            />
           </div>
         </div>
 
@@ -285,6 +321,8 @@ const varClass = computed(() => {
 .meta-value { font-size: 0.875rem; font-weight: 600; color: #E8EDF5; }
 
 .section-title { font-size: 0.8125rem; font-weight: 700; color: #60A5FA; padding: 14px 16px 6px; margin: 0; }
+
+.movements-wrap { padding: 4px 16px 14px; }
 
 .z-rows { padding: 4px 16px 12px; display: flex; flex-direction: column; }
 .z-row { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }

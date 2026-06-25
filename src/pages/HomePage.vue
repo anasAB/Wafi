@@ -620,6 +620,7 @@ const ACTIVITY_HEADING: Record<string, string> = { today: 'اليوم', week: '�
     :cash-syp="drawer.cashSyp.value"
     :movements="drawer.movements.value"
     @close="showCashDrawer = false"
+    @recorded="drawer.load(period)"
   />
   <ExchangeRateEditor v-if="showRateEditor" @close="showRateEditor = false" />
   <AppToast v-if="toast" :message="toast.message" :type="toast.type" @dismiss="toast = null" />

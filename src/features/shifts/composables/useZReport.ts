@@ -117,6 +117,24 @@ export function useZReport() {
       )
       const byOperator: OperatorSales[] = operatorRows ?? []
 
+      // Mid-shift cash movements (pay-in / pay-out / drop). Void rows are stored as
+      // an opposite-direction entry, so SUM by direction nets them automatically.
+      // Movements carry shift_id, so scope by it directly (cleaner than the
+      // time-window scoping the sales queries need).
+      const movementRows = await db.getAll<{ direction: string; currency: string; total: number }>(
+        `SELECT direction, currency, COALESCE(SUM(amount), 0) AS total
+         FROM cash_movements
+         WHERE shop_id = ? AND shift_id = ?
+         GROUP BY direction, currency`,
+        [device.shopId, shift.id],
+      )
+      const mv = (dir: string, cur: string) =>
+        movementRows.find(r => r.direction === dir && r.currency === cur)?.total ?? 0
+      const cashPayInsUsd  = mv('in',  'USD')
+      const cashPayInsSyp  = mv('in',  'SYP')
+      const cashPayOutsUsd = mv('out', 'USD')
+      const cashPayOutsSyp = mv('out', 'SYP')
+
       const cashUsdSales          = cashUsdRow?.total       ?? 0
       const cashSypSalesRaw       = cashSypRow?.total       ?? 0
       const cashExpensesUsd       = expUsdRow?.total        ?? 0
@@ -139,6 +157,10 @@ export function useZReport() {
         cashRefundsSyp,
         cashCreditPaymentsUsd,
         cashCreditPaymentsSyp,
+        cashPayInsUsd,
+        cashPayInsSyp,
+        cashPayOutsUsd,
+        cashPayOutsSyp,
       })
 
       const durationMs = new Date(closedAt).getTime() - new Date(shift.openedAt).getTime()
@@ -156,6 +178,10 @@ export function useZReport() {
         cashRefundsSyp,
         cashCreditPaymentsUsd,
         cashCreditPaymentsSyp,
+        cashPayInsUsd,
+        cashPayInsSyp,
+        cashPayOutsUsd,
+        cashPayOutsSyp,
         expectedUsd:     recon.expectedUsd,
         actualUsd:       closingCashUsd,
         varianceUsd:     recon.varianceUsd,
@@ -221,6 +247,8 @@ export function useZReport() {
       `رصيد الفتح:     ${fmtUsd(shift.openingCashUsd)}`,
       `+ نقد مبيعات:   ${fmtUsd(m.cashUsdSales)}`,
       ...(m.cashCreditPaymentsUsd > 0 ? [`+ تحصيل ديون:   ${fmtUsd(m.cashCreditPaymentsUsd)}`] : []),
+      ...(m.cashPayInsUsd  > 0 ? [`+ إيداع نقدي:   ${fmtUsd(m.cashPayInsUsd)}`]  : []),
+      ...(m.cashPayOutsUsd > 0 ? [`- صرف نقدي:     ${fmtUsd(m.cashPayOutsUsd)}`] : []),
       `- مصاريف نقدية: ${fmtUsd(m.cashExpensesUsd)}`,
       ...(m.cashRefundsUsd > 0 ? [`- مرتجعات نقدية: ${fmtUsd(m.cashRefundsUsd)}`] : []),
       `= متوقع:        ${fmtUsd(m.expectedUsd)}`,
@@ -230,6 +258,8 @@ export function useZReport() {
       `رصيد فتح ليرة:  ${fmtSyp(shift.openingCashSyp ?? 0)}`,
       `نقد ليرة مبيعات: ${fmtSyp(m.cashSypSalesRaw)}`,
       ...(m.cashCreditPaymentsSyp > 0 ? [`+ تحصيل ديون ليرة: ${fmtSyp(m.cashCreditPaymentsSyp)}`] : []),
+      ...(m.cashPayInsSyp  > 0 ? [`+ إيداع ليرة:   ${fmtSyp(m.cashPayInsSyp)}`]  : []),
+      ...(m.cashPayOutsSyp > 0 ? [`- صرف ليرة:     ${fmtSyp(m.cashPayOutsSyp)}`] : []),
       ...(m.cashExpensesSyp > 0 ? [`- مصاريف ليرة:  ${fmtSyp(m.cashExpensesSyp)}`] : []),
       ...(m.cashRefundsSyp > 0 ? [`- مرتجعات ليرة: ${fmtSyp(m.cashRefundsSyp)}`] : []),
       `ليرة متوقع:     ${fmtSyp(m.expectedSyp)}`,
