@@ -5,6 +5,7 @@ import { useI18n }         from 'vue-i18n'
 import { useSessionStore } from '@/store/session.store'
 import ZReportScreen       from '@/features/shifts/components/ZReportScreen.vue'
 import OperatorSwitchAction from '@/features/staff/components/OperatorSwitchAction.vue'
+import CashMovementEntry    from '@/features/shifts/components/CashMovementEntry.vue'
 
 const route = useRoute()
 const { t } = useI18n()
@@ -160,6 +161,10 @@ function isActive(href: string | null): boolean {
 
       <!-- Switch the active operator without closing the shift. -->
       <OperatorSwitchAction variant="sidebar" />
+
+      <!-- Record cash entering/leaving the drawer mid-shift (pay-in / pay-out /
+           drop). Shown only while a shift is open. -->
+      <CashMovementEntry variant="sidebar" />
 
       <button class="close-shift-btn" @click="showZReport = true">
         <span class="nav-icon-wrap nav-icon-warn">

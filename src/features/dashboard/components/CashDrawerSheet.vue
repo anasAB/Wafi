@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CashMovement } from '@/features/dashboard/composables/useCashDrawer'
+import CashMovementEntry from '@/features/shifts/components/CashMovementEntry.vue'
 
 defineProps<{
   cashUsd:   number
@@ -7,7 +8,7 @@ defineProps<{
   movements: CashMovement[]
 }>()
 
-const emit = defineEmits<{ (e: 'close'): void }>()
+const emit = defineEmits<{ (e: 'close'): void; (e: 'recorded'): void }>()
 
 function relativeTime(iso: string): string {
   const diffMin = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000)
@@ -102,8 +103,9 @@ function movementTone(m: CashMovement): 'positive' | 'negative' | 'neutral' {
         </div>
       </div>
 
-      <!-- Close button -->
+      <!-- Footer: record a new movement (only while a shift is open) + close -->
       <div class="sheet-footer">
+        <CashMovementEntry variant="drawer" @recorded="emit('recorded')" />
         <button type="button" class="btn-close" @click="emit('close')">إغلاق</button>
       </div>
     </div>
@@ -379,6 +381,9 @@ function movementTone(m: CashMovement): 'positive' | 'negative' | 'neutral' {
   padding: 1rem 1.25rem;
   border-top: 1px solid rgba(26, 86, 219, 0.14);
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
 }
 
 .btn-close {
