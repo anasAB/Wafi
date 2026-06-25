@@ -61,12 +61,36 @@ Goal: the brother opens Wafi, is already signed in, his real inventory is loaded
 
 ---
 
-## What's left (ground truth 2026-06-21)
+## Ground truth 2026-06-25 (PO alignment review, verified against code)
+
+A code-level review (not self-reported status) confirmed and reclassified the following:
+
+**Verified DONE since the 2026-06-21 snapshot — update older sections accordingly:**
+- **WAFI-015 — sync reliability.** ✅ DONE. `features/sync/useSync.ts` wires a live `pendingCount` (from `ps_crud`), a real dead-letter quarantine (`data/powersync/dead-letter.ts`), `blockedCount`, and distinct upload/download error banners. The item-2 description below ("most important UNADDRESSED item… `pendingCount` is dead UI") is **stale — no longer true.**
+- **WAFI-001 — tenant scoping.** ✅ DONE & server-enforced. Migration `015_rls_tenant_scoping.sql` replaced the permissive `USING (true)` policies with per-shop scoping via `auth_shop_id()` (owner_user_id→auth.uid()) across all 19 tables. Not a stub.
+- **Epic 5 remediation WAFI-059…065** — ✅ all DONE (migrations 025/026; dual-currency opening cash, immutable close evidence + Z-report snapshot, history filters/drill-down/pagination, idle PIN lock, `canUserDo` centralization, sale attribution + append-only audit guard, zombie-shift one-per-device index + owner force-close + long-open badge + `abandoned` status reserved).
+- **WAFI-058 — owner-only financials** — ✅ DONE **client-side** (migration 023 + `router/permissions.ts`). ⚠️ Per-staff permission is **client-only by architecture** (all operators share the owner's one Supabase session, so shop-scoped RLS can't separate cashier from owner). Server enforcement remains **WAFI-010**. Tenant isolation (shop-vs-shop) is server-enforced; per-staff role is not.
+
+**Confirmed still-open gaps (priority order):**
+1. **WAFI-017 — real ESC/POS printer driver (Sacred Rule #3).** Only `SimulatedDriver` exists and the UI falsely reports "sent to printer." Highest correctness risk before the brother's real daily use. Either ship one WebUSB/Web-Serial driver or hide/relabel the print button + lead with WhatsApp receipt.
+2. **WAFI-035 — exchange rate integer-only.** `useExchangeRate.ts` guards `>0` but not `Number.isInteger`; decimals leak fractional SYP onto receipts. Trivial fix, accounting-grade downside.
+3. **Reporting Pack is empty** — nothing gates behind the +$5 pack today. Build the speced Profit Report screen (`specs/2026-06-23-profit-report-design.md`) or fold dashboard-plus into Core and drop the pack until it has substance.
+4. **AR aging** — Customer pack has an open-invoice list but no aging buckets (0-30/30-60/60+).
+5. **Electronics Pro decision** — customer #0 is an electronics shop; the pack (IMEI/repair/warranty/repair-profit, a v1 commitment in CLAUDE.md) is flagged off with zero code. Decide v1 vs cut; don't leave it in limbo.
+
+**Next feature decision (2026-06-25):** build **Use Case A — in-shift cash management (pay-in / pay-out / cash drops)**. The Epic 5 shift/variance plumbing it depends on (WAFI-059/060) just landed, so the dependency is clear. It's retention-critical: today legitimate cash movements surface as a *shortage* (false theft signal), which directly poisons the variance number the Staff Pack is sold on. Low build cost (reuses shift plumbing), no dependency on the trip or on real data accruing. **Sequence WAFI-017 (real printer or honest fallback) ahead of any printer-using customer regardless** — it's a Sacred-Rule correctness fix, not a feature.
+  - ✅ **SPECED + PLANNED (2026-06-25), ready for dev.** Spec: `specs/2026-06-25-in-shift-cash-management-design.md` · Plan: `plans/2026-06-25-in-shift-cash-management.md` (8 TDD tasks, migration 027). Locked decisions: cashier can record (fully logged) · fixed category chips + optional note · void-with-reason (append-only ledger, no edit/delete) · overdraw warns but allows · both entry points (cash-drawer drill-down + POS) · dual-currency, SYP integer.
+
+**New strategic bets proposed (competitor-benchmarked, for v1.5 scoping):** guided stock-take/الجرد with shrinkage detection (completes the anti-theft thesis + protects profit-number accuracy) and installment/layaway التقسيط with WhatsApp reminders (cultural table-stakes for MENA electronics, enormous lock-in). Both already noted in "Candidate new value features" below — promote when scoping v1.5.
+
+---
+
+## What's left (ground truth 2026-06-21 — see 2026-06-25 update above for corrections)
 
 Post-pivot build is ~complete (Tier 1 ✅, Tier 2 ✅, Tier 3 6/7, switch-operator ✅). Remaining, in priority order:
 
 1. **Verification gates (in flight, before trip):** golden-path (`golden-path-verification.md`) + integration/release-readiness (`integration-release-readiness.md`). These decide trip readiness.
-2. **WAFI-015 — sync reliability (most important UNADDRESSED item).** A rejected ("poison") upload op currently stalls the *entire* queue indefinitely, and `pendingCount` is dead UI so a stuck queue is invisible. For an offline-heavy single shop this is a silent data-trust risk — elevate it. Not in any tier.
+2. **WAFI-015 — sync reliability. ✅ DONE (verified 2026-06-25).** Dead-letter quarantine for poison ops (`data/powersync/dead-letter.ts`), live `pendingCount`/`blockedCount`, distinct upload/download error banners (`features/sync/useSync.ts`). *(Original concern below is resolved and kept only for history.)*
 3. **WAFI-021 — receiving void/reverse path** (closes Tier 3).
 4. **Small cleanups:** WAFI-019 (remove dead negative-stock UI + update Epic 2.4/2.7 spec) · WAFI-035 (rate integer-only) · WAFI-034 (receipt logo, a v1 requirement) · WAFI-033 (exports robustness) · WAFI-036/037 (migration hygiene + data-layer footguns).
 5. **Next epic (post-trip):** Real Auth & Self-Serve Onboarding + Device Registration → then Server-Side Role Enforcement.
@@ -150,6 +174,9 @@ Closes every gap found reviewing Epic 5 (cashier shifts) against the implementat
 File: `plans/2026-06-24-epic5-remediation-tickets.md` (coverage matrix inside maps every
 reviewed gap → a ticket; nothing dropped). Order: **WAFI-059 → 060 → 061 → 062 → 063 →
 064**, with **WAFI-065** runnable in parallel after the shared migration lands.
+
+> ✅ **ALL DONE (verified against code 2026-06-25):** WAFI-059…065 shipped via migrations
+> 025/026. See the "Ground truth 2026-06-25" section above.
 
 - **WAFI-059 — Dual-currency opening cash (SYP + USD).** No `opening_cash_syp` today →
   SYP variance computed against a missing baseline (Sacred Rule #2). P1.
