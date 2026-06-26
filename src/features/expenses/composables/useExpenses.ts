@@ -13,7 +13,7 @@ type ExpenseRow = {
 
 const RECUR_META_PREFIX = '__wafi_recurring__:'
 
-function parseRecurringMeta(rawNotes: string | null): {
+export function parseRecurringMeta(rawNotes: string | null): {
   cleanNotes?: string
   isRecurringMonthly?: boolean
   recurringStartDate?: string

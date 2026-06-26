@@ -6,19 +6,38 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppDatePicker from '@/components/ui/AppDatePicker.vue'
-import { getReportRange, bucketForRange } from '../composables/periodUtils'
+import { getReportRange, bucketForRange, getPreviousReportRange } from '../composables/periodUtils'
 import type { ReportPeriod } from '../composables/periodUtils'
 import { useDashboardMetrics } from '../composables/useDashboardMetrics'
 import { useProfitTrend } from '../composables/useProfitTrend'
-import ProfitTrendChart from './ProfitTrendChart.vue'
+import { useBucketBreakdown } from '../composables/useBucketBreakdown'
+import { useExpenseBreakdown } from '../composables/useExpenseBreakdown'
+import { evaluateReportAnomalies } from '../composables/useReportAnomalies'
+import ProfitCumulativeChart from './ProfitCumulativeChart.vue'
+import ReportDrilldownSheet from './ReportDrilldownSheet.vue'
+import ExpenseDonutChart from './ExpenseDonutChart.vue'
+import TopExpensesList from './TopExpensesList.vue'
 
 const { t } = useI18n()
 const metrics = useDashboardMetrics()
+const previousMetrics = useDashboardMetrics()
 const trend   = useProfitTrend()
+const drilldown = useBucketBreakdown()
+const expenseBreakdown = useExpenseBreakdown()
 
 const period      = ref<ReportPeriod>('month')
 const customStart = ref('')
 const customEnd   = ref('')
+const showProfitInfo = ref(false)
+const previousProfitUsd = ref<number | null>(null)
+const previousInvoiceCount = ref(0)
+const chartBucket = ref<'day' | 'month'>('day')
+const drilldownTitle = ref('')
+const drilldownOpen = ref(false)
+const drilldownLoading = ref(false)
+const selectedTrendPointIndex = ref<number | null>(null)
+const activeTab = ref<'profitability' | 'expenses'>('profitability')
+const selectedExpenseCategory = ref<string | null>(null)
 
 function isoToDate(value: string): Date | null {
   if (!value) return null
@@ -54,18 +73,118 @@ const isCustomIncomplete = computed(() =>
 
 const hasSales = computed(() => metrics.invoiceCount.value > 0)
 const isProfit = computed(() => metrics.profitUsd.value >= 0)
+const showTrendChart = computed(() => chartBucket.value === 'month' || trend.points.value.length >= 3)
+const anomalies = computed(() =>
+  evaluateReportAnomalies(
+    metrics.grossIncomeUsd.value,
+    metrics.expensesUsd.value,
+    metrics.refundsUsd.value,
+  ),
+)
+const popDeltaPct = computed<number | null>(() => {
+  if (previousInvoiceCount.value <= 0) return null
+  const prev = previousProfitUsd.value
+  if (prev === null || prev === 0) return null
+  return ((metrics.profitUsd.value - prev) / Math.abs(prev)) * 100
+})
+const popDirection = computed<'up' | 'down' | null>(() => {
+  if (popDeltaPct.value === null) return null
+  return popDeltaPct.value >= 0 ? 'up' : 'down'
+})
+const popDeltaLabel = computed(() => {
+  if (popDeltaPct.value === null) return ''
+  const rounded = Math.round(Math.abs(popDeltaPct.value))
+  const sign = popDeltaPct.value >= 0 ? '+' : '-'
+  return `${sign}${rounded}%`
+})
 
 async function reload() {
   if (rangeError.value || isCustomIncomplete.value) return
   const { start, end } = getReportRange(period.value, customStart.value, customEnd.value)
   if (!start || !end) return
+  const bucket = bucketForRange(start, end)
+  const previousRange = getPreviousReportRange(period.value, start, end)
+
+  showProfitInfo.value = false
+  chartBucket.value = bucket
+  selectedTrendPointIndex.value = null
+
   await Promise.all([
     metrics.loadRange(start, end),
-    trend.load(start, end, bucketForRange(start, end)),
+    trend.load(start, end, bucket),
+    expenseBreakdown.load(start, end),
+    expenseBreakdown.loadEntries(start, end, selectedExpenseCategory.value ?? undefined),
+    previousRange
+      ? previousMetrics.loadRange(previousRange.start, previousRange.end)
+      : Promise.resolve(),
   ])
+
+  if (trend.points.value.length > 0) {
+    selectedTrendPointIndex.value = trend.points.value.length - 1
+  }
+
+  if (!previousRange) {
+    previousProfitUsd.value = null
+    previousInvoiceCount.value = 0
+    return
+  }
+
+  previousProfitUsd.value = previousMetrics.profitUsd.value
+  previousInvoiceCount.value = previousMetrics.invoiceCount.value
 }
 
 function selectPeriod(p: ReportPeriod) { period.value = p }
+
+async function selectExpenseCategory(category: string) {
+  selectedExpenseCategory.value = category
+  const { start, end } = getReportRange(period.value, customStart.value, customEnd.value)
+  if (!start || !end) return
+  await expenseBreakdown.loadEntries(start, end, category)
+}
+
+async function clearExpenseCategoryFilter() {
+  selectedExpenseCategory.value = null
+  const { start, end } = getReportRange(period.value, customStart.value, customEnd.value)
+  if (!start || !end) return
+  await expenseBreakdown.loadEntries(start, end)
+}
+
+function monthWindow(monthKey: string): { start: string; end: string } | null {
+  const [year, month] = monthKey.split('-').map(Number)
+  if (!year || !month) return null
+  const start = `${year}-${String(month).padStart(2, '0')}-01`
+  const lastDay = new Date(year, month, 0).getDate()
+  const end = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+  return { start, end }
+}
+
+async function openDrilldownForPoint(index: number) {
+  const point = trend.points.value[index]
+  if (!point?.bucketKey) return
+
+  const window = chartBucket.value === 'day'
+    ? { start: point.bucketKey, end: point.bucketKey }
+    : monthWindow(point.bucketKey)
+
+  if (!window) return
+
+  drilldownTitle.value = chartBucket.value === 'day'
+    ? t('reports.drilldownDayTitle', { label: point.bucketKey })
+    : t('reports.drilldownMonthTitle', { label: point.bucketKey })
+
+  drilldownLoading.value = true
+  drilldownOpen.value = true
+  try {
+    await drilldown.load(window.start, window.end)
+  } finally {
+    drilldownLoading.value = false
+  }
+}
+
+function selectTrendPoint(index: number) {
+  selectedTrendPointIndex.value = index
+  void openDrilldownForPoint(index)
+}
 
 watch([period, customStart, customEnd], reload)
 onMounted(reload)
@@ -80,6 +199,28 @@ onMounted(reload)
       <button data-test="period-month"   :class="{ active: period === 'month' }"   @click="selectPeriod('month')">{{ t('reports.month') }}</button>
       <button data-test="period-quarter" :class="{ active: period === 'quarter' }" @click="selectPeriod('quarter')">{{ t('reports.quarter') }}</button>
       <button data-test="period-custom"  :class="{ active: period === 'custom' }"  @click="selectPeriod('custom')">{{ t('reports.custom') }}</button>
+    </div>
+
+    <div v-if="anomalies.highExpenses || anomalies.highReturns" class="anomalies-wrap">
+      <p v-if="anomalies.highExpenses" class="anomaly-banner">{{ t('reports.expenseAnomaly') }}</p>
+      <p v-if="anomalies.highReturns" class="anomaly-banner">{{ t('reports.returnsAnomaly') }}</p>
+    </div>
+
+    <div class="reports-tabs" role="tablist" aria-label="report tabs">
+      <button
+        type="button"
+        data-test="tab-profitability"
+        class="reports-tab"
+        :class="{ active: activeTab === 'profitability' }"
+        @click="activeTab = 'profitability'"
+      >{{ t('reports.tabProfitability') }}</button>
+      <button
+        type="button"
+        data-test="tab-expenses"
+        class="reports-tab"
+        :class="{ active: activeTab === 'expenses' }"
+        @click="activeTab = 'expenses'"
+      >{{ t('reports.tabExpenses') }}</button>
     </div>
 
     <div v-if="period === 'custom'" class="custom-range">
@@ -117,28 +258,84 @@ onMounted(reload)
     </div>
 
     <template v-if="!rangeError && !isCustomIncomplete">
-      <div v-if="hasSales" class="report-body">
+      <div v-if="hasSales && activeTab === 'profitability'" class="report-body" data-test="profitability-tab-panel">
         <div class="headline card" :class="isProfit ? 'pos' : 'neg'">
-          <span class="verb">{{ isProfit ? t('reports.profitVerb') : t('reports.lossVerb') }}</span>
+          <div class="headline-row">
+            <span class="verb">{{ isProfit ? t('reports.profitVerb') : t('reports.lossVerb') }}</span>
+            <button
+              type="button"
+              class="info-btn"
+              data-test="profit-info"
+              :aria-expanded="showProfitInfo"
+              @click="showProfitInfo = !showProfitInfo"
+            >ⓘ</button>
+          </div>
           <span class="amount" data-test="profit-headline" dir="ltr">${{ Math.abs(metrics.profitUsd.value).toFixed(2) }}</span>
+          <p
+            v-if="popDeltaPct !== null"
+            data-test="profit-delta"
+            class="delta-chip"
+            :class="popDirection === 'up' ? 'delta-chip--up' : 'delta-chip--down'"
+            dir="ltr"
+          >
+            <span>{{ popDirection === 'up' ? '▲' : '▼' }}</span>
+            <span>{{ popDeltaLabel }}</span>
+          </p>
+          <p v-if="showProfitInfo" data-test="profit-info-text" class="profit-info-note">
+            {{ t('reports.profitInfo') }}
+          </p>
         </div>
 
         <p v-if="metrics.profitIsEstimated.value" class="caveat">{{ t('reports.estimated') }}</p>
 
-        <div class="card chart-card">
-          <ProfitTrendChart :points="trend.points.value" />
+        <div v-if="showTrendChart" class="card chart-card">
+          <ProfitCumulativeChart
+            :points="trend.points.value"
+            :selected-index="selectedTrendPointIndex"
+            @point-select="selectTrendPoint"
+          />
         </div>
+        <p v-if="showTrendChart" class="chart-basis-note">{{ t('reports.chartBasisNote') }}</p>
+        <p v-if="showTrendChart" class="chart-tap-hint">{{ t('reports.chartTapHint') }}</p>
+        <p v-else data-test="trend-cold-start" class="cold-start-note">{{ t('reports.trendColdStart') }}</p>
 
         <ul class="breakdown card">
-          <li><span>{{ t('reports.moneyIn') }}</span><span dir="ltr">${{ metrics.revenueUsd.value.toFixed(2) }}</span></li>
+          <li><span>{{ t('reports.gross') }}</span><span dir="ltr">${{ metrics.grossIncomeUsd.value.toFixed(2) }}</span></li>
+          <li><span>− {{ t('reports.returns') }}</span><span dir="ltr">${{ metrics.refundsUsd.value.toFixed(2) }}</span></li>
           <li><span>− {{ t('reports.cogs') }}</span><span dir="ltr">${{ metrics.cogsUsd.value.toFixed(2) }}</span></li>
           <li><span>− {{ t('reports.expenses') }}</span><span dir="ltr">${{ metrics.expensesUsd.value.toFixed(2) }}</span></li>
           <li class="total"><span>= {{ t('reports.profit') }}</span><span dir="ltr">${{ metrics.profitUsd.value.toFixed(2) }}</span></li>
         </ul>
       </div>
 
+      <section v-else-if="activeTab === 'expenses'" class="report-body" data-test="expenses-tab-panel">
+        <div v-if="expenseBreakdown.totalUsd.value > 0" class="card chart-card">
+          <ExpenseDonutChart
+            :slices="expenseBreakdown.slices.value"
+            :total-usd="expenseBreakdown.totalUsd.value"
+            @category-select="selectExpenseCategory"
+          />
+        </div>
+        <p v-else class="cold-start-note">{{ t('reports.noExpensesInBucket') }}</p>
+
+        <TopExpensesList
+          :entries="expenseBreakdown.entries.value"
+          :selected-category="selectedExpenseCategory"
+          @clear-filter="clearExpenseCategoryFilter"
+        />
+      </section>
+
       <p v-else data-test="empty" class="empty">{{ t('reports.empty') }}</p>
     </template>
+
+    <ReportDrilldownSheet
+      v-if="drilldownOpen"
+      :title="drilldownTitle"
+      :loading="drilldownLoading"
+      :totals="drilldown.totals.value"
+      :expenses="drilldown.expenses.value"
+      @close="drilldownOpen = false"
+    />
   </section>
 </template>
 
@@ -165,6 +362,52 @@ onMounted(reload)
   transition: background 0.15s, border-color 0.15s;
 }
 .period-toggle button.active { background: #1A56DB; border-color: #1A56DB; color: #fff; }
+
+.reports-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem;
+  border-radius: 0.8rem;
+  border: 1px solid rgba(26, 86, 219, 0.24);
+  background: rgba(26, 86, 219, 0.08);
+}
+
+.reports-tab {
+  flex: 1;
+  height: 2.25rem;
+  border-radius: 0.6rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #C8D5E8;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.reports-tab.active {
+  background: #1A56DB;
+  border-color: #1A56DB;
+  color: #fff;
+}
+
+.anomalies-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.anomaly-banner {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.7rem;
+  border: 1px solid rgba(234, 179, 8, 0.45);
+  background: rgba(234, 179, 8, 0.14);
+  color: #FCD34D;
+  font-size: 0.83rem;
+  font-weight: 700;
+}
 
 .custom-range { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .date-label {
@@ -362,10 +605,64 @@ onMounted(reload)
 .headline {
   display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 22px 16px;
 }
+.headline-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
 .headline .verb { font-size: 0.9rem; color: #93A3B8; }
 .headline .amount { font-size: 2rem; font-weight: 800; font-variant-numeric: tabular-nums; }
 .headline.pos .amount { color: #22C55E; }
 .headline.neg .amount { color: #EF4444; }
+
+.info-btn {
+  width: 1.35rem;
+  height: 1.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(26, 86, 219, 0.35);
+  background: rgba(26, 86, 219, 0.12);
+  color: #BFDBFE;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+
+.delta-chip {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.delta-chip--up {
+  color: #22C55E;
+  background: rgba(34, 197, 94, 0.14);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+}
+
+.delta-chip--down {
+  color: #EF4444;
+  background: rgba(239, 68, 68, 0.14);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.profit-info-note {
+  margin: 0.25rem 0 0;
+  font-size: 0.77rem;
+  line-height: 1.5;
+  color: #C8D5E8;
+  text-align: center;
+  max-width: 38rem;
+}
 
 .caveat {
   margin: 0; padding: 10px 12px; border-radius: 10px; font-size: 0.85rem; color: #FCD34D;
@@ -373,6 +670,50 @@ onMounted(reload)
 }
 
 .chart-card { padding: 8px 8px 0; }
+
+.chart-basis-note {
+  margin: -0.2rem 0 0;
+  font-size: 0.76rem;
+  color: #93A3B8;
+  text-align: center;
+  line-height: 1.45;
+}
+
+.chart-tap-hint {
+  margin: -0.2rem 0 0;
+  font-size: 0.74rem;
+  color: #93A3B8;
+  text-align: center;
+}
+
+.chart-details-btn {
+  height: 2rem;
+  padding: 0 0.7rem;
+  border-radius: 0.55rem;
+  border: 1px solid rgba(26, 86, 219, 0.35);
+  background: rgba(26, 86, 219, 0.12);
+  color: #BFDBFE;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chart-details-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.cold-start-note {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border-radius: 0.75rem;
+  font-size: 0.86rem;
+  color: #C8D5E8;
+  background: rgba(26, 86, 219, 0.10);
+  border: 1px solid rgba(26, 86, 219, 0.24);
+  text-align: center;
+}
 
 .breakdown { list-style: none; margin: 0; padding: 8px 16px; }
 .breakdown li {

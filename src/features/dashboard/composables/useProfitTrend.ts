@@ -2,7 +2,7 @@ import { ref } from 'vue'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 
-export interface ProfitTrendPoint { label: string; profitUsd: number }
+export interface ProfitTrendPoint { label: string; profitUsd: number; bucketKey?: string }
 
 // SQLite bucket expression per granularity. Sales/returns bucket on created_at
 // (local time); expenses on their expense_date (already a 'YYYY-MM-DD' string).
@@ -76,7 +76,7 @@ export function useProfitTrend() {
       const rev  = (salesMap.get(k) ?? 0) - (refundMap.get(k) ?? 0)
       const cogs = (cogsMap.get(k)  ?? 0) - (reversalMap.get(k) ?? 0)
       const exp  = expenseMap.get(k) ?? 0
-      return { label: dayLabel(k, bucket), profitUsd: rev - cogs - exp }   // no clamp — losses show negative
+      return { label: dayLabel(k, bucket), profitUsd: rev - cogs - exp, bucketKey: k }   // no clamp — losses show negative
     })
   }
 

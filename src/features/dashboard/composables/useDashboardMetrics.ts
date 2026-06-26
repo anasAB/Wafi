@@ -18,6 +18,7 @@ export function useDashboardMetrics() {
   // period being shown, so the profit caveat must be driven by this one.
   const costlessSalesInPeriod = ref(0)
 
+  const grossIncomeUsd = computed(() => revenueUsd.value + refundsUsd.value)
   const profitUsd = computed(() => revenueUsd.value - cogsUsd.value - expensesUsd.value)
 
   // The profit headline is only an estimate (real profit is lower) when the
@@ -126,7 +127,7 @@ export function useDashboardMetrics() {
   }
 
   return {
-    revenueUsd, cogsUsd, expensesUsd, refundsUsd, profitUsd,
+    revenueUsd, grossIncomeUsd, cogsUsd, expensesUsd, refundsUsd, profitUsd,
     missingCostCount, invoiceCount, costlessSalesInPeriod, profitIsEstimated, load, loadRange,
   }
 }
