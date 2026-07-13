@@ -81,7 +81,7 @@ const selectedMarker = computed(() => {
       fillColor: '#FCD34D',
       strokeColor: '#0B1220',
       size: 7,
-      shape: 'circle',
+      shape: 'circle' as const,
     },
   ]
 })
