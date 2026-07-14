@@ -15,7 +15,19 @@ function addPeriod(date: Date, frequency: TermFrequency): Date {
   if (frequency === 'weekly') {
     d.setDate(d.getDate() + 7)
   } else {
-    d.setMonth(d.getMonth() + 1)
+    // Handle end-of-month overflow: clamp day to max day of target month
+    const originalDay = d.getDate()
+    const currentYear = d.getFullYear()
+    const currentMonth = d.getMonth()
+    // Calculate target month and year
+    const targetMonth = currentMonth + 1
+    const targetYear = targetMonth === 12 ? currentYear + 1 : currentYear
+    const normalizedTargetMonth = targetMonth % 12
+    // Get max day in target month
+    const maxDayInTargetMonth = new Date(targetYear, normalizedTargetMonth + 1, 0).getDate()
+    // Clamp original day to max day in target month
+    const clampedDay = Math.min(originalDay, maxDayInTargetMonth)
+    d.setFullYear(targetYear, normalizedTargetMonth, clampedDay)
   }
   return d
 }
