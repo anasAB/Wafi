@@ -227,6 +227,45 @@ describe('eventLabel — security events (WAFI-014)', () => {
   })
 })
 
+describe('useAuditLog — installment events', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    vi.mocked(db.execute).mockResolvedValue({ rows: { _array: [] } } as any)
+  })
+
+  it('logInstallmentPlanCreated writes an installment_plan.created row', async () => {
+    const session = useSessionStore()
+    session.setActiveStaff(mockStaff)
+    const { logInstallmentPlanCreated } = useAuditLog()
+
+    await logInstallmentPlanCreated('plan-1', 'cust-1', 300, 60, 3)
+
+    expect(db.execute).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO audit_log'),
+      expect.arrayContaining(['installment_plan.created', 'installment_plan', 'plan-1']),
+    )
+  })
+
+  it('logInstallmentPaymentRecorded writes an installment_payment.recorded row', async () => {
+    const { logInstallmentPaymentRecorded } = useAuditLog()
+    await logInstallmentPaymentRecorded('due-1', 'plan-1', 100)
+    expect(db.execute).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO audit_log'),
+      expect.arrayContaining(['installment_payment.recorded', 'installment_plan', 'plan-1']),
+    )
+  })
+
+  it('logInstallmentPlanCancelled writes an installment_plan.cancelled row', async () => {
+    const { logInstallmentPlanCancelled } = useAuditLog()
+    await logInstallmentPlanCancelled('plan-1')
+    expect(db.execute).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO audit_log'),
+      expect.arrayContaining(['installment_plan.cancelled', 'installment_plan', 'plan-1']),
+    )
+  })
+})
+
 describe('useAuditLog — sensitive events surface write failures (WAFI-014)', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -255,5 +294,28 @@ describe('useAuditLog — sensitive events surface write failures (WAFI-014)', (
     await expect(logLoginFailed('staff-2', 'أحمد')).rejects.toThrow()
     vi.mocked(db.execute).mockRejectedValueOnce(new Error('DB error'))
     await expect(logLockedOut('staff-2', 'أحمد', 5)).rejects.toThrow()
+  })
+})
+
+describe('eventLabel — installment events', () => {
+  it('renders installment_plan.created with amounts and term count', () => {
+    const entry = {
+      event: 'installment_plan.created',
+      meta: { customerId: 'cust-1', totalUsd: 300, downPaymentUsd: 60, termCount: 3 },
+    } as unknown as AuditLog
+    const label = eventLabel(entry)
+    expect(label).toContain('$300.00')
+    expect(label).toContain('$60.00')
+    expect(label).toContain('3')
+  })
+
+  it('renders installment_payment.recorded with the amount', () => {
+    const entry = { event: 'installment_payment.recorded', meta: { dueId: 'due-1', amountUsd: 100 } } as unknown as AuditLog
+    expect(eventLabel(entry)).toContain('$100.00')
+  })
+
+  it('renders installment_plan.cancelled', () => {
+    const entry = { event: 'installment_plan.cancelled', meta: {} } as unknown as AuditLog
+    expect(eventLabel(entry)).toContain('ألغى خطة تقسيط')
   })
 })

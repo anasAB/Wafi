@@ -59,6 +59,12 @@ export function eventLabel(entry: AuditLog): string {
       return `سجّل حركة نقدية (${direction}) ${category}: ${formattedAmount}`
     }
     case 'cash_movement.voided':      return `ألغى حركة نقدية`
+    case 'installment_plan.created':
+      return `أنشأ خطة تقسيط بقيمة ${usd(m.totalUsd)} (دفعة أولى ${usd(m.downPaymentUsd)}, ${num(m.termCount)} دفعات)`
+    case 'installment_payment.recorded':
+      return `سجّل دفعة قسط ${usd(m.amountUsd)}`
+    case 'installment_plan.cancelled':
+      return `ألغى خطة تقسيط`
     case 'exchange_rate.changed':     return `غيّر سعر الصرف من ${num(m.old_rate)} إلى ${num(m.new_rate)}`
     case 'settings.receipt_updated':  return `عدّل إعدادات الفاتورة`
     case 'staff.created':             return `أضاف موظف: ${str(m.name)} (${str(m.role)})`
