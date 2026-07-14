@@ -106,6 +106,32 @@ const customer_payments = new Table({
   paid_at:                  column.text,
   created_at:               column.text,
   sync_status:              column.text,
+  due_id:                   column.text,   // tags a payment against a specific installment_dues row; null for the plan's down payment
+})
+
+const installment_plans = new Table({
+  shop_id:          column.text,
+  customer_id:      column.text,
+  sale_id:          column.text,
+  total_amount_usd: column.real,
+  down_payment_usd: column.real,
+  term_count:       column.integer,
+  term_frequency:   column.text,   // 'weekly' | 'monthly'
+  start_date:       column.text,   // YYYY-MM-DD
+  status:           column.text,   // 'active' | 'completed' | 'defaulted' | 'cancelled'
+  created_at:       column.text,
+  created_by:       column.text,
+  sync_status:      column.text,
+})
+
+const installment_dues = new Table({
+  plan_id:         column.text,
+  shop_id:         column.text,
+  due_date:        column.text,   // YYYY-MM-DD
+  amount_due_usd:  column.real,
+  amount_paid_usd: column.real,
+  status:          column.text,   // 'pending' | 'paid' | 'voided'
+  sync_status:     column.text,
 })
 
 const receipt_settings = new Table({
@@ -292,4 +318,6 @@ export const AppSchema = new Schema({
   suppliers,
   stock_receivings,
   stock_receiving_line_items,
+  installment_plans,
+  installment_dues,
 })

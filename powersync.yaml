@@ -47,6 +47,8 @@ streams:
       - SELECT * FROM public.expenses                   WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
       - SELECT * FROM public.customers                  WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
       - SELECT * FROM public.customer_payments          WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+      - SELECT * FROM public.installment_plans          WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+      - SELECT * FROM public.installment_dues           WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
       - SELECT * FROM public.receipt_settings           WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
       - SELECT * FROM public.sale_payments              WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
       - SELECT * FROM public.staff                      WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
