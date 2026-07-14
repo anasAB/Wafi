@@ -47,6 +47,7 @@ const sales = new Table({
   is_split:                 column.integer, // 0/1, default 0
   shift_id:                 column.text,   // FK → cashier_shifts.id, nullable
   staff_id:                 column.text,   // operator who completed the sale (nullable)
+  sync_status:              column.text,
 })
 
 const sale_line_items = new Table({

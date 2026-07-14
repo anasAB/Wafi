@@ -20,6 +20,10 @@ async function handleSave() {
     validationError.value = 'السعر يجب أن يكون أكبر من صفر'
     return
   }
+  if (!Number.isInteger(val)) {
+    validationError.value = 'السعر يجب أن يكون رقماً صحيحاً بدون كسور'
+    return
+  }
   validationError.value = null
   await saveRate(val)
   if (!needsConfirmation.value && !error.value) {
@@ -87,6 +91,7 @@ function formatRelative(isoDate: string): string {
           type="number"
           inputmode="numeric"
           min="1"
+          step="1"
           autofocus
           class="rate-input"
           dir="ltr"

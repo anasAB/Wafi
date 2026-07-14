@@ -163,3 +163,31 @@ describe('useStaff.createStaff limit (Task 8 / 5 active staff)', () => {
     expect(created.name).toBe('موظف جديد')
   })
 })
+
+describe('useStaff.loadStaff — double-encoded permissions (JSONB round-trip, migration 032)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  it('parses a double-encoded permissions column back into an object instead of silently reverting to role defaults', async () => {
+    // Simulates a manager row synced through the old JSONB column: the
+    // client's JSON string got wrapped in an extra layer of JSON encoding.
+    const doubleEncoded = JSON.stringify(JSON.stringify({ can_view_reports: true, can_view_expenses: true }))
+    vi.mocked(db.execute).mockResolvedValue({
+      rows: {
+        _array: [{
+          id: 'm-1', shop_id: 'shop-1', name: 'مدير', pin_hash: 'h1', pin_salt: null,
+          role: 'manager', permissions: doubleEncoded, is_active: 1,
+          created_at: '2026-01-01T00:00:00.000Z',
+        }],
+      },
+    } as any)
+
+    const { staff, loadStaff } = useStaff()
+    await loadStaff()
+
+    expect(staff.value[0].permissions.can_view_reports).toBe(true)
+    expect(staff.value[0].permissions.can_view_expenses).toBe(true)
+  })
+})

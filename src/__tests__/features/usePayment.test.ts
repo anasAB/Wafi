@@ -246,8 +246,8 @@ describe('usePayment', () => {
       (c[0] as string).includes('INSERT INTO sales') && (c[0] as string).includes('staff_id')
     )
     expect(salesInsert).toBeDefined()
-    // staff_id is the final column/param of the sales INSERT.
-    expect(salesInsert![1][salesInsert![1].length - 1]).toBe('op-7')
+    // staff_id is the second-to-last column/param of the sales INSERT (sync_status is last).
+    expect(salesInsert![1][salesInsert![1].length - 2]).toBe('op-7')
   })
 
   it('attributes the sale to the active shift (shift_id) at confirm (WAFI-064)', async () => {
@@ -284,8 +284,8 @@ describe('usePayment', () => {
       (c[0] as string).includes('INSERT INTO sales') && (c[0] as string).includes('staff_id')
     )
     expect(salesInsert).toBeDefined()
-    // staff_id (final param) is the COMPLETER, not the shift opener.
-    expect(salesInsert![1][salesInsert![1].length - 1]).toBe('completer')
+    // staff_id (second-to-last param; sync_status is last) is the COMPLETER, not the shift opener.
+    expect(salesInsert![1][salesInsert![1].length - 2]).toBe('completer')
   })
 
   it('confirm writes customer_id and is_credit=1 for credit sales', async () => {
