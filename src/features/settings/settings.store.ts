@@ -9,8 +9,21 @@ export const useSettingsStore = defineStore('settings', () => {
   const luxuryTheme     = ref<LuxuryTheme>('dark-luxury')
   // WAFI-062: idle minutes before PIN re-entry; default 15.
   const idleTimeout     = ref<IdleTimeout>(15)
+  // Task 13: prepared daily digest reminder settings.
+  const dailyDigestEnabled  = ref(false)
+  const dailyDigestPhone    = ref('')
+  const dailyDigestHour     = ref(20)
 
-  return { language, theme, textSize, luxuryTheme, idleTimeout }
+  return {
+    language,
+    theme,
+    textSize,
+    luxuryTheme,
+    idleTimeout,
+    dailyDigestEnabled,
+    dailyDigestPhone,
+    dailyDigestHour,
+  }
 }, {
   persist: true,
 })

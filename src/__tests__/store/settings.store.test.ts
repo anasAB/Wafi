@@ -28,6 +28,9 @@ describe('useSettingsStore', () => {
     expect(store.language).toBe('ar')
     expect(store.theme).toBe('auto')
     expect(store.textSize).toBe('default')
+    expect(store.dailyDigestEnabled).toBe(false)
+    expect(store.dailyDigestPhone).toBe('')
+    expect(store.dailyDigestHour).toBe(20)
   })
 
   it('language can be updated', () => {
@@ -60,6 +63,9 @@ describe('useSettingsStore', () => {
     store.language = 'en'
     store.theme = 'dark'
     store.textSize = 'xlarge'
+    store.dailyDigestEnabled = true
+    store.dailyDigestPhone = '0991234567'
+    store.dailyDigestHour = 21
 
     // Simulate app restart: new pinia, same localStorage
     setActivePinia(makePinia())
@@ -67,6 +73,9 @@ describe('useSettingsStore', () => {
     expect(restored.language).toBe('en')
     expect(restored.theme).toBe('dark')
     expect(restored.textSize).toBe('xlarge')
+    expect(restored.dailyDigestEnabled).toBe(true)
+    expect(restored.dailyDigestPhone).toBe('0991234567')
+    expect(restored.dailyDigestHour).toBe(21)
   })
 })
 

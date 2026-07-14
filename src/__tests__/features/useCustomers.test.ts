@@ -27,13 +27,14 @@ describe('useCustomers', () => {
     vi.mocked(db.getAll).mockResolvedValueOnce([{
       id: 'c1', shop_id: 's1', name: 'أبو خالد', phone: '0991234567',
       mobile: null, address: null, deleted: 0,
-      created_at: '2025-01-01T00:00:00Z', sync_status: 'synced',
+      created_at: '2025-01-01T00:00:00Z', sync_status: 'synced', pending_sync_count: 2,
     }])
     const { customers, load } = useCustomers()
     await load()
     expect(customers.value).toHaveLength(1)
     expect(customers.value[0].name).toBe('أبو خالد')
     expect(customers.value[0].deleted).toBe(false)
+    expect(customers.value[0].pendingSyncCount).toBe(2)
   })
 
   it('save calls INSERT INTO customers', async () => {

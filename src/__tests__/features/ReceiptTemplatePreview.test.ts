@@ -3,7 +3,13 @@ import { mount } from '@vue/test-utils'
 import ReceiptTemplatePreview from '@/features/receipt/components/ReceiptTemplatePreview.vue'
 import type { ReceiptSettings } from '@/features/receipt/receipt.types'
 
-const empty: ReceiptSettings = { shopName: '', taxNumber: '', headerText: '', footerText: '' }
+const empty: ReceiptSettings = {
+  shopName: '',
+  taxNumber: '',
+  headerText: '',
+  footerText: '',
+  showWhatsAppReceipt: true,
+}
 
 function mountPreview(settings: Partial<ReceiptSettings> = {}) {
   return mount(ReceiptTemplatePreview, {

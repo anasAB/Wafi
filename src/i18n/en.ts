@@ -48,6 +48,13 @@ export default {
     signOutConfirmTitle:   'Sign out',
     signOutConfirmMessage: 'Are you sure you want to sign out?',
     aboutVersionLabel: 'Version & support',
+    dailyDigestSection: 'Daily WhatsApp digest',
+    dailyDigestToggle: 'Daily reminder',
+    dailyDigestPhone: 'Owner WhatsApp number',
+    dailyDigestPhoneHint: 'Enter a local or international number',
+    dailyDigestHour: 'Reminder hour',
+    dailyDigestOn: 'On',
+    dailyDigestOff: 'Off',
   },
   theme: {
     light: 'Light',

@@ -3,6 +3,7 @@ export interface ReceiptSettings {
   taxNumber:  string
   headerText: string
   footerText: string
+  showWhatsAppReceipt: boolean
 }
 
 export interface ReceiptSettingsRow {
@@ -12,6 +13,7 @@ export interface ReceiptSettingsRow {
   tax_number:  string
   header_text: string
   footer_text: string
+  show_whatsapp_receipt: number | boolean | null
   updated_at:  string
   sync_status: string
 }

@@ -14,6 +14,7 @@ vi.mock('@/data/supabase/client', () => ({
 
 import { useStaff } from '../useStaff'
 import { db } from '@/data/powersync/db'
+import { DEFAULT_CASHIER_PERMISSIONS } from '../../staff.types'
 
 describe('useStaff.updateStaffPin (WAFI-014)', () => {
   beforeEach(() => {
@@ -42,5 +43,123 @@ describe('useStaff.updateStaffPin (WAFI-014)', () => {
       c => typeof c[0] === 'string' && c[0].includes('UPDATE staff SET pin_hash'),
     )
     expect(updateCall).toBeTruthy()
+  })
+})
+
+describe('useStaff.createStaff limit (Task 8 / 5 active staff)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  it('blocks creating a 6th active staff with clear Arabic message', async () => {
+    vi.mocked(db.getOptional).mockImplementation(async (query: string) => {
+      if (query.includes('COUNT(*) as count FROM staff WHERE shop_id = ? AND is_active = 1')) {
+        return { count: 5 } as any
+      }
+      return null as any
+    })
+    vi.mocked(db.execute).mockResolvedValue({ rows: { _array: [] } } as any)
+
+    const { createStaff } = useStaff()
+
+    await expect(
+      createStaff({
+        name: 'موظف سادس',
+        pin: '1234',
+        role: 'cashier',
+        permissions: DEFAULT_CASHIER_PERMISSIONS,
+      })
+    ).rejects.toThrow('وصلت إلى الحد الأقصى (5 موظفين) لباقتك')
+  })
+
+  it('allows creating after a deactivation frees a slot', async () => {
+    let activeCount = 5
+    const activeRows: Array<any> = [
+      {
+        id: 's-1', shop_id: 'shop-1', name: 'أحمد', pin_hash: 'h1', pin_salt: null,
+        role: 'cashier', permissions: JSON.stringify(DEFAULT_CASHIER_PERMISSIONS), is_active: 1,
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 's-2', shop_id: 'shop-1', name: 'سامي', pin_hash: 'h2', pin_salt: null,
+        role: 'cashier', permissions: JSON.stringify(DEFAULT_CASHIER_PERMISSIONS), is_active: 1,
+        created_at: '2026-01-02T00:00:00.000Z',
+      },
+      {
+        id: 's-3', shop_id: 'shop-1', name: 'ليلى', pin_hash: 'h3', pin_salt: null,
+        role: 'cashier', permissions: JSON.stringify(DEFAULT_CASHIER_PERMISSIONS), is_active: 1,
+        created_at: '2026-01-03T00:00:00.000Z',
+      },
+      {
+        id: 's-4', shop_id: 'shop-1', name: 'مها', pin_hash: 'h4', pin_salt: null,
+        role: 'cashier', permissions: JSON.stringify(DEFAULT_CASHIER_PERMISSIONS), is_active: 1,
+        created_at: '2026-01-04T00:00:00.000Z',
+      },
+      {
+        id: 's-5', shop_id: 'shop-1', name: 'نور', pin_hash: 'h5', pin_salt: null,
+        role: 'cashier', permissions: JSON.stringify(DEFAULT_CASHIER_PERMISSIONS), is_active: 1,
+        created_at: '2026-01-05T00:00:00.000Z',
+      },
+    ]
+
+    vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('s-6')
+
+    vi.mocked(db.getOptional).mockImplementation(async (query: string, params?: any[]) => {
+      if (query.includes('COUNT(*) as count FROM staff WHERE shop_id = ? AND is_active = 1')) {
+        return { count: activeCount } as any
+      }
+      if (query.includes('SELECT name FROM staff WHERE id = ?')) {
+        const id = params?.[0]
+        const row = activeRows.find(r => r.id === id)
+        return row ? { name: row.name } as any : ({ name: id } as any)
+      }
+      return null as any
+    })
+
+    vi.mocked(db.execute).mockImplementation(async (query: string, params?: any[]) => {
+      if (query.includes('UPDATE staff SET is_active = 0 WHERE id = ?')) {
+        const id = params?.[0]
+        const row = activeRows.find(r => r.id === id)
+        if (row && row.is_active === 1) {
+          row.is_active = 0
+          activeCount -= 1
+        }
+      }
+
+      if (query.includes('INSERT INTO staff')) {
+        activeRows.push({
+          id: params?.[0],
+          shop_id: params?.[1],
+          name: params?.[2],
+          pin_hash: params?.[3],
+          pin_salt: params?.[4],
+          role: params?.[5],
+          permissions: params?.[6],
+          is_active: 1,
+          created_at: params?.[7],
+        })
+        activeCount += 1
+      }
+
+      if (query.includes('SELECT * FROM staff WHERE shop_id = ? AND is_active = 1')) {
+        return { rows: { _array: activeRows.filter(r => r.is_active === 1) } } as any
+      }
+
+      return { rows: { _array: [] } } as any
+    })
+
+    const { deactivateStaff, createStaff } = useStaff()
+    await deactivateStaff('s-5')
+
+    const created = await createStaff({
+      name: 'موظف جديد',
+      pin: '1234',
+      role: 'cashier',
+      permissions: DEFAULT_CASHIER_PERMISSIONS,
+    })
+
+    expect(created.id).toBe('s-6')
+    expect(created.name).toBe('موظف جديد')
   })
 })

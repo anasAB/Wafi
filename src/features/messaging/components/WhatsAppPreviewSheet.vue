@@ -6,6 +6,7 @@ const props = defineProps<{
   text:  string
   phone: string | null
   title?: string
+  imageDataUrl?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -100,6 +101,11 @@ function handleSend() {
 
         <!-- Editable receipt preview -->
         <div class="sheet-scroll">
+          <div v-if="props.imageDataUrl" class="image-preview-wrap">
+            <p class="preview-label">معاينة صورة الكشف</p>
+            <img :src="props.imageDataUrl" alt="معاينة كشف الحساب" class="statement-image" />
+          </div>
+
           <label class="preview-label" for="wa-receipt-text">نص الفاتورة</label>
           <textarea
             id="wa-receipt-text"
@@ -312,6 +318,22 @@ function handleSend() {
   color: #637285;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.image-preview-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.statement-image {
+  width: 100%;
+  max-height: 260px;
+  object-fit: contain;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(26, 86, 219, 0.24);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .receipt-textarea {

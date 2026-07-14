@@ -30,6 +30,11 @@ const idleOptions: { value: IdleTimeout; label: string }[] = [
   { value: 'never', label: 'أبداً' },
 ]
 
+const digestHourLabel = computed(() => {
+  const hour = settings.dailyDigestHour
+  return `${String(hour).padStart(2, '0')}:00`
+})
+
 const textSizes = computed(() => [
   { value: 'small'   as TextSize, short: t('textSize.small'),   full: t('textSize.smallFull')   },
   { value: 'default' as TextSize, short: t('textSize.default'),  full: t('textSize.defaultFull') },
@@ -161,6 +166,54 @@ const textSizes = computed(() => [
         <span class="signout-label">{{ t('personal.signOut') }}</span>
         <span class="coming-soon-badge">{{ t('common.comingSoon') }}</span>
       </button>
+    </div>
+
+    <!-- Daily digest group -->
+    <p class="section-label">{{ t('personal.dailyDigestSection') }}</p>
+    <div class="settings-card">
+      <div class="settings-row settings-row--inner">
+        <p class="row-title row-title--spaced">{{ t('personal.dailyDigestToggle') }}</p>
+        <div class="option-grid option-grid--two">
+          <button
+            type="button"
+            class="option-btn"
+            :class="{ 'option-btn--active': settings.dailyDigestEnabled }"
+            @click="settings.dailyDigestEnabled = true"
+          >{{ t('personal.dailyDigestOn') }}</button>
+          <button
+            type="button"
+            class="option-btn"
+            :class="{ 'option-btn--active': !settings.dailyDigestEnabled }"
+            @click="settings.dailyDigestEnabled = false"
+          >{{ t('personal.dailyDigestOff') }}</button>
+        </div>
+      </div>
+
+      <div class="settings-row settings-row--inner">
+        <p class="row-title row-title--spaced">{{ t('personal.dailyDigestPhone') }}</p>
+        <input
+          v-model="settings.dailyDigestPhone"
+          type="tel"
+          class="field-input"
+          :placeholder="t('personal.dailyDigestPhoneHint')"
+          dir="ltr"
+        />
+      </div>
+
+      <div class="settings-row settings-row--last settings-row--inner">
+        <p class="row-title row-title--spaced">{{ t('personal.dailyDigestHour') }}</p>
+        <div class="digest-hour-row">
+          <input
+            :value="settings.dailyDigestHour"
+            type="number"
+            min="0"
+            max="23"
+            class="field-input field-input--hour"
+            @change="settings.dailyDigestHour = Math.max(0, Math.min(23, Number(($event.target as HTMLInputElement).value || 0)))"
+          />
+          <span class="digest-hour-preview">{{ digestHourLabel }}</span>
+        </div>
+      </div>
     </div>
 
   </div>
@@ -354,6 +407,43 @@ button.settings-row:hover:not(:disabled) {
   border-color: transparent;
   color: white;
   box-shadow: 0 4px 12px rgba(26, 86, 219, 0.30);
+}
+
+.field-input {
+  width: 100%;
+  min-height: 40px;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 0.75rem;
+  padding: 0.55rem 0.8rem;
+  color: #E8EDF5;
+  font-size: 0.85rem;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  font-family: 'Tajawal', system-ui, sans-serif;
+}
+
+.field-input::placeholder { color: #637285; }
+
+.field-input:focus {
+  border-color: rgba(26,86,219,0.8);
+  box-shadow: 0 0 0 3px rgba(26,86,219,0.25), 0 0 10px rgba(26,86,219,0.12);
+}
+
+.digest-hour-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.field-input--hour {
+  max-width: 6rem;
+}
+
+.digest-hour-preview {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #93C5FD;
 }
 
 .theme-picker-wrap :deep(button[data-testid="theme-swatch"]) {

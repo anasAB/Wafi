@@ -6,9 +6,12 @@ import ProductForm from './components/ProductForm.vue'
 import AppToast from '@/components/ui/AppToast.vue'
 import AuditHistory from '@/features/audit/components/AuditHistory.vue'
 import ProductActivitySheet from './components/ProductActivitySheet.vue'
+import { formatAuditRelativeTime } from '@/features/audit/audit.format'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 import { useProducts } from './composables/useProducts'
 import { db } from '@/data/powersync/db'
 import type { Product } from '@/features/pos/pos.types'
+import type { AuditLog } from '@/features/audit/audit.types'
 
 const router = useRouter()
 const route  = useRoute()
@@ -18,6 +21,16 @@ const toast   = ref<{ message: string; type: 'success' } | null>(null)
 const loaded  = ref(false)
 const showActivity = ref(false)
 const productSaleCount = ref<number | null>(null)
+const latestProductChange = ref<AuditLog | null>(null)
+
+const { loadEntityHistory } = useAuditLog()
+
+const lastChangedText = computed(() => {
+  if (!latestProductChange.value) return ''
+  const relativeTime = formatAuditRelativeTime(latestProductChange.value.createdAt)
+  const staffName = latestProductChange.value.staffName || 'النظام'
+  return `آخر تعديل: ${relativeTime} - ${staffName}`
+})
 
 const currentProductId = computed(() => route.params.id as string)
 const currentProductIndex = computed(() =>
@@ -42,11 +55,17 @@ async function loadProductSaleCount(productId: string) {
   productSaleCount.value = Number(rows[0]?.total ?? 0)
 }
 
+async function loadLatestProductChange(productId: string) {
+  const history = await loadEntityHistory('product', productId)
+  latestProductChange.value = history[0] ?? null
+}
+
 onMounted(async () => {
   await load()
   product.value = products.value.find(p => p.id === currentProductId.value)
   if (product.value) {
     await loadProductSaleCount(product.value.id)
+    await loadLatestProductChange(product.value.id)
   }
   loaded.value = true
 })
@@ -56,8 +75,10 @@ watch(currentProductId, async () => {
   showActivity.value = false
   if (product.value) {
     await loadProductSaleCount(product.value.id)
+    await loadLatestProductChange(product.value.id)
   } else {
     productSaleCount.value = null
+    latestProductChange.value = null
   }
 })
 
@@ -71,7 +92,8 @@ function goNextProduct() {
   router.push(`/products/${nextProductId.value}/edit`)
 }
 
-function handleSaved() {
+async function handleSaved() {
+  await loadLatestProductChange(currentProductId.value)
   toast.value = { message: 'تم حفظ التغييرات', type: 'success' }
   setTimeout(() => router.push('/products'), 800)
 }
@@ -160,6 +182,7 @@ function handleSaved() {
           @saved="handleSaved"
           @cancel="router.push('/products')"
         />
+        <p v-if="lastChangedText" class="product-last-change">{{ lastChangedText }}</p>
       <div id="product-edit-save-bar-anchor" />
       </template>
       <AuditHistory
@@ -284,6 +307,14 @@ function handleSaved() {
 .activity-btn:hover {
   background: rgba(26,86,219,0.18);
   border-color: rgba(26,86,219,0.45);
+}
+
+.product-last-change {
+  margin: -0.25rem 0 0.8rem;
+  padding: 0 0.15rem;
+  font-size: 0.8rem;
+  color: #93A3B8;
+  font-weight: 600;
 }
 
 .product-nav {

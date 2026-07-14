@@ -81,3 +81,16 @@ export function formatAuditTime(iso: string): string {
     hour: '2-digit', minute: '2-digit',
   }).format(new Date(iso))
 }
+
+/** Relative Arabic time for audit metadata, e.g. "قبل ساعتين". */
+export function formatAuditRelativeTime(iso: string): string {
+  const diffMinutes = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
+  if (diffMinutes < 1) return 'الآن'
+  if (diffMinutes < 60) return `قبل ${diffMinutes} دقيقة`
+
+  const diffHours = Math.floor(diffMinutes / 60)
+  if (diffHours < 24) return `قبل ${diffHours} ساعة`
+
+  const diffDays = Math.floor(diffHours / 24)
+  return `قبل ${diffDays} يوم`
+}

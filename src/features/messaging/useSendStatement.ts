@@ -12,7 +12,9 @@
 
 import type { OpenInvoice } from '@/features/customers/customer.types'
 import { formatStatementText } from './statementText'
+import type { StatementRow } from './statementText'
 import { resolvePhone, openWhatsApp } from './whatsapp'
+import { renderStatementImage } from './renderStatementImage'
 
 export interface PrepareStatementInput {
   customerName:  string
@@ -25,11 +27,52 @@ export interface PrepareStatementInput {
   openInvoices:  OpenInvoice[]
   /** Raw phone string (customer.phone || customer.mobile). Optional. */
   phoneRaw?:     string
+  /** Optional shop logo in data URL format for branded PNG rendering. */
+  logoDataUrl?:  string
 }
 
 export interface PreparedStatement {
   text:  string
   phone: string | null
+  imageDataUrl: string | null
+}
+
+function buildRows(openInvoices: OpenInvoice[], balanceUsd: number): StatementRow[] {
+  // Reverse to chronological order (oldest → newest).
+  const chronological = [...openInvoices].reverse()
+
+  // Compute cumulative running balance.
+  let running = 0
+  const rows = chronological.map(inv => {
+    running += inv.remainingUsd
+    // Use only the date portion (YYYY-MM-DD) for a compact display.
+    const date = inv.saleDate.slice(0, 10)
+    // Optionally append a short itemsSummary if present.
+    const label = inv.itemsSummary
+      ? `فاتورة ${inv.displayNumber} — ${inv.itemsSummary}`
+      : `فاتورة ${inv.displayNumber}`
+    return {
+      date,
+      label,
+      amountUsd:  inv.remainingUsd,
+      runningUsd: running,
+    }
+  })
+
+  // Reconcile: if store-credit refunds on cash sales (WAFI-026/027) mean
+  // balanceUsd < Σ remainingUsd, append one reconciling row so the running
+  // column ends exactly at the authoritative balance.
+  const runningTotal = rows.length ? rows[rows.length - 1].runningUsd : 0
+  if (Math.abs(balanceUsd - runningTotal) > 0.01) {
+    rows.push({
+      date:       '',
+      label:      'دفعات/إرجاع/رصيد لكم',
+      amountUsd:  balanceUsd - runningTotal,
+      runningUsd: balanceUsd,
+    })
+  }
+
+  return rows
 }
 
 export function useSendStatement() {
@@ -39,40 +82,7 @@ export function useSendStatement() {
    */
   function prepare(input: PrepareStatementInput): PreparedStatement {
     const { customerName, shopName, periodLabel, balanceUsd, openInvoices, phoneRaw } = input
-
-    // Reverse to chronological order (oldest → newest).
-    const chronological = [...openInvoices].reverse()
-
-    // Compute cumulative running balance.
-    let running = 0
-    const rows = chronological.map(inv => {
-      running += inv.remainingUsd
-      // Use only the date portion (YYYY-MM-DD) for a compact display.
-      const date = inv.saleDate.slice(0, 10)
-      // Optionally append a short itemsSummary if present.
-      const label = inv.itemsSummary
-        ? `فاتورة ${inv.displayNumber} — ${inv.itemsSummary}`
-        : `فاتورة ${inv.displayNumber}`
-      return {
-        date,
-        label,
-        amountUsd:  inv.remainingUsd,
-        runningUsd: running,
-      }
-    })
-
-    // Reconcile: if store-credit refunds on cash sales (WAFI-026/027) mean
-    // balanceUsd < Σ remainingUsd, append one reconciling row so the running
-    // column ends exactly at the authoritative balance.
-    const runningTotal = rows.length ? rows[rows.length - 1].runningUsd : 0
-    if (Math.abs(balanceUsd - runningTotal) > 0.01) {
-      rows.push({
-        date:       '',
-        label:      'دفعات/إرجاع/رصيد لكم',
-        amountUsd:  balanceUsd - runningTotal,
-        runningUsd: balanceUsd,
-      })
-    }
+    const rows = buildRows(openInvoices, balanceUsd)
 
     const text = formatStatementText({
       customerName,
@@ -86,7 +96,29 @@ export function useSendStatement() {
       ? resolvePhone(phoneRaw.trim(), '963')
       : null
 
-    return { text, phone }
+    return { text, phone, imageDataUrl: null }
+  }
+
+  /**
+   * Async variant that also renders a branded PNG preview for the statement.
+   * Falls back to text-only if image generation fails.
+   */
+  async function prepareWithImage(input: PrepareStatementInput): Promise<PreparedStatement> {
+    const base = prepare(input)
+    try {
+      const rows = buildRows(input.openInvoices, input.balanceUsd)
+      const imageDataUrl = await renderStatementImage({
+        shopName: input.shopName,
+        customerName: input.customerName,
+        periodLabel: input.periodLabel,
+        rows,
+        balanceUsd: input.balanceUsd,
+        logoDataUrl: input.logoDataUrl,
+      })
+      return { ...base, imageDataUrl }
+    } catch {
+      return base
+    }
   }
 
   /** Open WhatsApp with the resolved phone and the (possibly edited) text. */
@@ -94,5 +126,5 @@ export function useSendStatement() {
     openWhatsApp(phone, text)
   }
 
-  return { prepare, send }
+  return { prepare, prepareWithImage, send }
 }

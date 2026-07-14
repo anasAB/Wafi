@@ -20,6 +20,7 @@ describe('useReceiptSettings', () => {
     expect(settings.value.taxNumber).toBe('')
     expect(settings.value.headerText).toBe('')
     expect(settings.value.footerText).toBe('')
+    expect(settings.value.showWhatsAppReceipt).toBe(true)
   })
 
   it('load sets settings to empty defaults when no row exists', async () => {
@@ -32,7 +33,7 @@ describe('useReceiptSettings', () => {
   it('load maps row to settings', async () => {
     vi.mocked(db.getOptional).mockResolvedValueOnce({
       id: 's1', shop_id: 's1', shop_name: 'محل الإلكترونيات',
-      tax_number: '12345678', header_text: 'Accessories', footer_text: 'شكراً',
+      tax_number: '12345678', header_text: 'Accessories', footer_text: 'شكراً', show_whatsapp_receipt: 0,
       updated_at: '2025-01-01T00:00:00Z', sync_status: 'synced',
     } as any)
     const { settings, load } = useReceiptSettings()
@@ -40,11 +41,12 @@ describe('useReceiptSettings', () => {
     expect(settings.value.shopName).toBe('محل الإلكترونيات')
     expect(settings.value.taxNumber).toBe('12345678')
     expect(settings.value.footerText).toBe('شكراً')
+    expect(settings.value.showWhatsAppReceipt).toBe(false)
   })
 
   it('save calls INSERT OR REPLACE INTO receipt_settings', async () => {
     const { save } = useReceiptSettings()
-    await save({ shopName: 'محل', taxNumber: '999', headerText: '', footerText: 'شكراً' })
+    await save({ shopName: 'محل', taxNumber: '999', headerText: '', footerText: 'شكراً', showWhatsAppReceipt: true })
     expect(db.execute).toHaveBeenCalledWith(
       expect.stringContaining('INSERT OR REPLACE INTO receipt_settings'),
       expect.any(Array)
@@ -53,7 +55,8 @@ describe('useReceiptSettings', () => {
 
   it('save updates settings ref after saving', async () => {
     const { settings, save } = useReceiptSettings()
-    await save({ shopName: 'New Shop', taxNumber: '', headerText: '', footerText: '' })
+    await save({ shopName: 'New Shop', taxNumber: '', headerText: '', footerText: '', showWhatsAppReceipt: false })
     expect(settings.value.shopName).toBe('New Shop')
+    expect(settings.value.showWhatsAppReceipt).toBe(false)
   })
 })

@@ -9,7 +9,7 @@ import { matchesArabicQuery } from '@/shared/text/arabic'
 type CustomerRow = {
   id: string; shop_id: string; name: string; phone: string | null
   mobile: string | null; address: string | null; deleted: number
-  created_at: string; sync_status: string; balance_usd?: number
+  created_at: string; sync_status: string; balance_usd?: number; pending_sync_count?: number
 }
 
 function rowToCustomer(r: CustomerRow): Customer {
@@ -21,6 +21,7 @@ function rowToCustomer(r: CustomerRow): Customer {
     deleted:  r.deleted === 1,
     createdAt: r.created_at, syncStatus: r.sync_status,
     balanceUsd: r.balance_usd,
+    pendingSyncCount: r.pending_sync_count,
   }
 }
 
@@ -37,11 +38,13 @@ export function useCustomers() {
       `SELECT c.*,
          (COALESCE((SELECT SUM(total_usd)  FROM sales            WHERE customer_id = c.id AND is_credit = 1 AND shop_id = ?), 0)
         - COALESCE((SELECT SUM(amount_usd) FROM customer_payments WHERE customer_id = c.id                   AND shop_id = ?), 0)
-        - COALESCE((SELECT SUM(r.refund_amount_usd) FROM returns r JOIN sales s ON s.id = r.original_sale_id WHERE s.customer_id = c.id AND s.is_credit = 1 AND r.shop_id = ?), 0)) AS balance_usd
+        - COALESCE((SELECT SUM(r.refund_amount_usd) FROM returns r JOIN sales s ON s.id = r.original_sale_id WHERE s.customer_id = c.id AND s.is_credit = 1 AND r.shop_id = ?), 0)) AS balance_usd,
+         (COALESCE((SELECT COUNT(*) FROM sales            WHERE customer_id = c.id AND is_credit = 1 AND sync_status = 'pending' AND shop_id = ?), 0)
+        + COALESCE((SELECT COUNT(*) FROM customer_payments WHERE customer_id = c.id AND sync_status = 'pending' AND shop_id = ?), 0)) AS pending_sync_count
        FROM customers c
        WHERE c.shop_id = ? AND (c.deleted = 0 OR c.deleted IS NULL)
        ORDER BY c.name ASC`,
-      [s, s, s, s]
+      [s, s, s, s, s, s]
     )
     customers.value = rows.map(rowToCustomer)
   }

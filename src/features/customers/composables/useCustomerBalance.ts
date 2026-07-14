@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
@@ -36,6 +36,14 @@ const BALANCE_USD_SQL = `SELECT
           WHERE s.customer_id = ? AND s.is_credit = 0 AND r.refund_method = 'store_credit' AND r.shop_id = ?)
         AS balance_usd`
 
+const PENDING_SYNC_COUNT_SQL = `SELECT
+        (SELECT COALESCE(COUNT(*), 0) FROM sales
+          WHERE customer_id = ? AND is_credit = 1 AND sync_status = 'pending' AND shop_id = ?)
+        +
+        (SELECT COALESCE(COUNT(*), 0) FROM customer_payments
+          WHERE customer_id = ? AND sync_status = 'pending' AND shop_id = ?)
+        AS pending_sync_count`
+
 async function fetchOutstandingBalanceUsd(customerId: string, shopId: string): Promise<number> {
   const row = await db.getOptional<{ balance_usd: number }>(
     BALANCE_USD_SQL,
@@ -46,6 +54,8 @@ async function fetchOutstandingBalanceUsd(customerId: string, shopId: string): P
 
 export function useCustomerBalance(customerId: string) {
   const balanceUsd   = ref(0)
+  const pendingSyncCount = ref(0)
+  const hasPendingSync = computed(() => pendingSyncCount.value > 0)
   const openInvoices = ref<OpenInvoice[]>([])
   const payments     = ref<CustomerPayment[]>([])
   const { logCustomerPaymentRecorded } = useAuditLog()
@@ -55,6 +65,11 @@ export function useCustomerBalance(customerId: string) {
     const shopId = device.shopId
 
     balanceUsd.value = await fetchOutstandingBalanceUsd(customerId, shopId)
+    const pendingRow = await db.getOptional<{ pending_sync_count: number }>(
+      PENDING_SYNC_COUNT_SQL,
+      [customerId, shopId, customerId, shopId]
+    )
+    pendingSyncCount.value = Number(pendingRow?.pending_sync_count ?? 0)
 
     const invoiceRows = await db.getAll<InvoiceRow>(
       `SELECT s.id, s.display_sale_number, s.created_at, s.total_usd,
@@ -174,5 +189,13 @@ export function useCustomerBalance(customerId: string) {
     await load()
   }
 
-  return { balanceUsd, openInvoices, payments, load, recordPayment }
+  return {
+    balanceUsd,
+    pendingSyncCount,
+    hasPendingSync,
+    openInvoices,
+    payments,
+    load,
+    recordPayment,
+  }
 }

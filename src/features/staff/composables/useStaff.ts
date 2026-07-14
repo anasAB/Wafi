@@ -9,11 +9,22 @@ import { permissionsForRole } from '../staff.types'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 import { canResetPin } from '@/router/permissions'
 
+const STAFF_ACTIVE_LIMIT = 5
+const STAFF_LIMIT_MESSAGE = `وصلت إلى الحد الأقصى (${STAFF_ACTIVE_LIMIT} موظفين) لباقتك`
+
 /** Thrown when a PIN reset is attempted by an actor the role rule forbids. */
 export class PinResetNotAllowedError extends Error {
   constructor() {
     super('Not authorised to reset this staff member’s PIN')
     this.name = 'PinResetNotAllowedError'
+  }
+}
+
+/** Thrown when creating an active staff member above the current plan cap. */
+export class StaffLimitReachedError extends Error {
+  constructor() {
+    super(STAFF_LIMIT_MESSAGE)
+    this.name = 'StaffLimitReachedError'
   }
 }
 
@@ -117,6 +128,15 @@ export function useStaff() {
         await logStaffUpdated(updated.id, updated.name)
         return updated
       }
+    }
+
+    // TODO: drive this limit from the customer's pack entitlement once per-tenant flags exist.
+    const activeCountRow = await db.getOptional<{ count: number }>(
+      `SELECT COUNT(*) as count FROM staff WHERE shop_id = ? AND is_active = 1`,
+      [device.shopId]
+    )
+    if ((activeCountRow?.count ?? 0) >= STAFF_ACTIVE_LIMIT) {
+      throw new StaffLimitReachedError()
     }
 
     const id = crypto.randomUUID()

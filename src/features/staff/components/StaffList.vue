@@ -17,6 +17,7 @@ const editStaff = ref<Staff | undefined>()
 const deactivateTarget = ref<Staff | null>(null)
 
 const activeStaffCount = computed(() => staff.value.length)
+const canAddStaff = computed(() => activeStaffCount.value < 5)
 
 onMounted(() => loadStaff())
 
@@ -64,13 +65,14 @@ async function onFormDone() {
     </div>
 
     <div class="actions-row">
-      <button type="button" class="btn-primary" @click="startAdd">
+      <button type="button" class="btn-primary" :disabled="!canAddStaff" @click="startAdd">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
         </svg>
         إضافة موظف
       </button>
     </div>
+    <p v-if="!canAddStaff" class="limit-hint">وصلت إلى الحد الأقصى (5 موظفين) لباقتك</p>
 
     <p class="section-label">الفريق</p>
     <div class="settings-card" v-if="staff.length">
@@ -117,7 +119,8 @@ async function onFormDone() {
       </div>
       <p class="empty-title">لا يوجد موظفون بعد</p>
       <p class="empty-sub">أضف أول موظف لمنحه صلاحيات الوصول</p>
-      <button type="button" class="btn-primary" @click="startAdd">إضافة موظف</button>
+      <button type="button" class="btn-primary" :disabled="!canAddStaff" @click="startAdd">إضافة موظف</button>
+      <p v-if="!canAddStaff" class="limit-hint">وصلت إلى الحد الأقصى (5 موظفين) لباقتك</p>
     </div>
   </div>
 
@@ -220,6 +223,19 @@ async function onFormDone() {
   cursor: pointer;
   box-shadow: 0 4px 16px rgba(26,86,219,0.35);
   font-family: inherit;
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.limit-hint {
+  margin: -2px 0 8px;
+  color: #F59E0B;
+  font-size: 0.78rem;
+  font-weight: 700;
 }
 
 .section-label {

@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { storeToRefs } from 'pinia'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import AppToast from '@/components/ui/AppToast.vue'
 import CustomerForm from './components/CustomerForm.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { useCustomers } from './composables/useCustomers'
+import { useSyncStore } from '@/store/sync.store'
 
 const router = useRouter()
 const route  = useRoute()
@@ -13,11 +15,17 @@ const { customers, load } = useCustomers()
 const showAddForm = ref(false)
 const query = ref('')
 const toast = ref<{ message: string; type: 'success' | 'error' } | null>(null)
+const syncStore = useSyncStore()
+const { pendingCount } = storeToRefs(syncStore)
 
 // Arrived from the dashboard "زبائن بفواتير آجلة" signal → show only debtors.
 const onlyDebtors = computed(() => route.query.filter === 'debtors')
 
 onMounted(load)
+
+watch(pendingCount, async () => {
+  await load()
+})
 
 const filtered = computed(() => {
   let list = customers.value
@@ -120,8 +128,11 @@ async function handleSaved() {
               <td class="td td-muted">{{ c.phone || '—' }}</td>
               <td class="td td-muted truncate" style="max-width: 200px">{{ c.address || '—' }}</td>
               <td class="td">
-                <span v-if="(c.balanceUsd ?? 0) > 0.001" class="balance-owing" dir="ltr">${{ (c.balanceUsd ?? 0).toFixed(2) }}</span>
-                <span v-else class="balance-clear">مسوّى</span>
+                <div class="balance-cell">
+                  <span v-if="(c.balanceUsd ?? 0) > 0.001" class="balance-owing" dir="ltr">${{ (c.balanceUsd ?? 0).toFixed(2) }}</span>
+                  <span v-else class="balance-clear">مسوّى</span>
+                  <span v-if="(c.pendingSyncCount ?? 0) > 0" class="pending-sync-chip">بانتظار المزامنة</span>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -143,8 +154,11 @@ async function handleSaved() {
             <p v-if="c.phone" class="card-phone">{{ c.phone }}</p>
           </div>
           <div class="card-right">
-            <span v-if="(c.balanceUsd ?? 0) > 0.001" class="balance-owing" dir="ltr">${{ (c.balanceUsd ?? 0).toFixed(2) }}</span>
-            <span v-else class="balance-clear">مسوّى</span>
+            <div class="balance-cell">
+              <span v-if="(c.balanceUsd ?? 0) > 0.001" class="balance-owing" dir="ltr">${{ (c.balanceUsd ?? 0).toFixed(2) }}</span>
+              <span v-else class="balance-clear">مسوّى</span>
+              <span v-if="(c.pendingSyncCount ?? 0) > 0" class="pending-sync-chip">بانتظار المزامنة</span>
+            </div>
           </div>
         </button>
 
@@ -353,6 +367,24 @@ async function handleSaved() {
   font-size: 0.75rem;
   font-weight: 600;
   color: #22C55E;
+}
+
+.balance-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.pending-sync-chip {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #F59E0B;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 999px;
+  padding: 2px 8px;
+  line-height: 1.3;
 }
 
 .card-right {

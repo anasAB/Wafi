@@ -5,3 +5,6 @@ export type LuxuryTheme  = 'dark-luxury' | 'light-ivory' | 'deep-jewel' | 'sapph
 // WAFI-062: minutes of inactivity before the app locks and requires PIN re-entry;
 // 'never' disables auto-lock. Default 15.
 export type IdleTimeout  = 5 | 15 | 30 | 60 | 'never'
+
+// Task 13: prepared daily digest reminder preferences.
+export type DailyDigestHour = number

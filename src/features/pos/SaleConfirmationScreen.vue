@@ -21,11 +21,14 @@ const toast   = ref<{ message: string; type: 'success' | 'error' } | null>(null)
 // or app-kill that state is gone (WAFI-030), so fall back to loading the sale by
 // id from the route — the sale is persisted, so confirmation + reprint still work.
 const sale = ref<CompletedSale | null>((history.state as any)?.sale ?? null)
+const { settings: receiptSettings, load: loadReceiptSettings } = useReceiptSettings()
 
 onMounted(async () => {
-  if (sale.value) return
-  const id = route.query.id as string | undefined
-  if (id) sale.value = await loadCompletedSale(id)
+  if (!sale.value) {
+    const id = route.query.id as string | undefined
+    if (id) sale.value = await loadCompletedSale(id)
+  }
+  await loadReceiptSettings()
 })
 
 const methodLabels: Record<string, string> = {
@@ -40,12 +43,11 @@ const methodLabels: Record<string, string> = {
 async function buildReceipt(): Promise<ReceiptData | null> {
   if (!sale.value) return null
   const s = sale.value
-  const { settings, load } = useReceiptSettings()
-  await load()
+  await loadReceiptSettings()
   return {
     saleId:                 s.saleId,
     displaySaleNumber:      s.displaySaleNumber,
-    shopName:               settings.value.shopName || device.shopId,
+    shopName:               receiptSettings.value.shopName || device.shopId,
     createdAt:              s.createdAt,
     lines:                  s.lines,
     totalUsd:               s.totalUsd,
@@ -55,9 +57,9 @@ async function buildReceipt(): Promise<ReceiptData | null> {
     amountReceived:         s.amountReceived,
     amountReceivedCurrency: s.amountReceivedCurrency,
     changeDue:              s.changeDue,
-    taxNumber:              settings.value.taxNumber  || undefined,
-    headerText:             settings.value.headerText || undefined,
-    footerText:             settings.value.footerText || undefined,
+    taxNumber:              receiptSettings.value.taxNumber  || undefined,
+    headerText:             receiptSettings.value.headerText || undefined,
+    footerText:             receiptSettings.value.footerText || undefined,
     splitPayments:          s.splitPayments?.map(p => ({ method: p.method, amountUsd: p.amountUsd })),
   }
 }
@@ -175,6 +177,7 @@ function onWaSend(payload: { phone: string; text: string }) {
       </button>
 
       <button
+        v-if="receiptSettings.showWhatsAppReceipt"
         type="button"
         class="btn-whatsapp"
         @click="handleWhatsApp"

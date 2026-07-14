@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useExchangeRate } from '@/features/exchange-rate'
 import { useExpenses } from '@/features/expenses/composables/useExpenses'
 import ExpenseCategoryChips from './ExpenseCategoryChips.vue'
+import ProductPhotoUpload from '@/features/products/components/ProductPhotoUpload.vue'
 import AuditHistory from '@/features/audit/components/AuditHistory.vue'
 import BaseModal from '@/components/ui/BaseModal.vue'
 import AppDatePicker from '@/components/ui/AppDatePicker.vue'
@@ -26,6 +27,8 @@ const isRecurringMonthly = ref(!!props.initialExpense?.isRecurringMonthly)
 const recurringStartDate = ref(props.initialExpense?.recurringStartDate ?? '')
 const recurringEndDate   = ref(props.initialExpense?.recurringEndDate ?? '')
 const notes       = ref(props.initialExpense?.notes ?? '')
+const photoUrl    = ref<string | null>(props.initialExpense?.photoUrl ?? null)
+const photoError  = ref<string | null>(null)
 const paidInCash  = ref(props.initialExpense?.paidInCash ?? true)
 const saving      = ref(false)
 const errors      = ref<Record<string, string>>({})
@@ -87,6 +90,10 @@ function validate(): boolean {
   return Object.keys(e).length === 0
 }
 
+function showPhotoError(message: string) {
+  photoError.value = message
+}
+
 async function handleSave(addAnother = false) {
   if (!validate()) return
   saving.value = true
@@ -103,6 +110,7 @@ async function handleSave(addAnother = false) {
       category:    category.value.trim(),
       expenseDate: isRecurringMonthly.value ? (recurringStartDate.value || expenseDate.value) : expenseDate.value,
       notes:       notes.value.trim() || undefined,
+      photoUrl:    photoUrl.value ?? undefined,
       paidInCash:  paidInCash.value,
       isRecurringMonthly: isRecurringMonthly.value,
       recurringStartDate: isRecurringMonthly.value ? recurringStartDate.value : undefined,
@@ -120,6 +128,8 @@ async function handleSave(addAnother = false) {
       amount.value   = ''
       category.value = ''
       notes.value    = ''
+      photoUrl.value = null
+      photoError.value = null
       isRecurringMonthly.value = false
       recurringStartDate.value = ''
       recurringEndDate.value = ''
@@ -292,6 +302,20 @@ async function handleSave(addAnother = false) {
             @focus="($event.target as HTMLTextAreaElement).style.borderColor = 'rgba(26,86,219,0.8)'"
             @blur="($event.target as HTMLTextAreaElement).style.borderColor = 'rgba(255,255,255,0.18)'"
           />
+        </div>
+
+        <!-- Receipt photo (optional) -->
+        <div class="field-group">
+          <label class="field-label">
+            صورة الإيصال
+            <span class="label-optional">(اختياري)</span>
+          </label>
+          <ProductPhotoUpload
+            :model-value="photoUrl"
+            @change="(v) => { photoUrl = v; photoError = null }"
+            @error="showPhotoError"
+          />
+          <p v-if="photoError" class="field-error">{{ photoError }}</p>
         </div>
 
         <AuditHistory

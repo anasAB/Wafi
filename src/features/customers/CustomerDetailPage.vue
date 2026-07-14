@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { storeToRefs } from 'pinia'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import AppToast from '@/components/ui/AppToast.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
@@ -13,14 +14,24 @@ import { WhatsAppPreviewSheet, useSendStatement } from '@/features/messaging'
 import { useCustomers } from './composables/useCustomers'
 import { useCustomerBalance } from './composables/useCustomerBalance'
 import { useReceiptSettings } from '@/features/receipt/composables/useReceiptSettings'
+import { useSyncStore } from '@/store/sync.store'
 import type { Customer, OpenInvoice } from './customer.types'
 
 const router = useRouter()
 const route  = useRoute()
 const customerId = route.params.id as string
+const syncStore = useSyncStore()
+const { pendingCount } = storeToRefs(syncStore)
 
 const { customers, load: loadCustomers, softDelete } = useCustomers()
-const { balanceUsd, openInvoices, payments, load: loadBalance } = useCustomerBalance(customerId)
+const {
+  balanceUsd,
+  pendingSyncCount,
+  hasPendingSync,
+  openInvoices,
+  payments,
+  load: loadBalance,
+} = useCustomerBalance(customerId)
 const { settings: receiptSettings, load: loadReceiptSettings } = useReceiptSettings()
 const sendStatement = useSendStatement()
 
@@ -29,12 +40,18 @@ const showPayment = ref(false)
 const showEdit    = ref(false)
 const showDelete  = ref(false)
 const showStatement = ref(false)
+const statementPreparing = ref(false)
 const selectedInvoice = ref<OpenInvoice | null>(null)
 const toast       = ref<{ message: string; type: 'success' | 'error' } | null>(null)
-const statementPreview = ref<{ text: string; phone: string | null } | null>(null)
+const statementPreview = ref<{ text: string; phone: string | null; imageDataUrl: string | null } | null>(null)
 
 onMounted(async () => {
   await Promise.all([loadCustomers(), loadBalance(), loadReceiptSettings()])
+  customer.value = customers.value.find(c => c.id === customerId)
+})
+
+watch(pendingCount, async () => {
+  await Promise.all([loadCustomers(), loadBalance()])
   customer.value = customers.value.find(c => c.id === customerId)
 })
 
@@ -54,18 +71,25 @@ function buildPeriodLabel(): string {
   return `كشف حساب حتى ${today}`
 }
 
-function openStatementSheet() {
+async function openStatementSheet() {
   if (!customer.value) return
-  const preview = sendStatement.prepare({
-    customerName: customer.value.name,
-    shopName:     receiptSettings.value.shopName || 'المحل',
-    periodLabel:  buildPeriodLabel(),
-    balanceUsd:   balanceUsd.value,
-    openInvoices: openInvoices.value,
-    phoneRaw:     customer.value.phone || customer.value.mobile,
-  })
-  statementPreview.value = preview
-  showStatement.value = true
+  statementPreparing.value = true
+  try {
+    const preview = await sendStatement.prepareWithImage({
+      customerName: customer.value.name,
+      shopName:     receiptSettings.value.shopName || 'المحل',
+      periodLabel:  buildPeriodLabel(),
+      balanceUsd:   balanceUsd.value,
+      openInvoices: openInvoices.value,
+      phoneRaw:     customer.value.phone || customer.value.mobile,
+    })
+    statementPreview.value = preview
+    showStatement.value = true
+  } catch {
+    toast.value = { message: 'تعذر تحضير صورة كشف الحساب', type: 'error' }
+  } finally {
+    statementPreparing.value = false
+  }
 }
 
 async function handlePaymentSaved() {
@@ -150,6 +174,9 @@ function handleStatementCancel() {
                 <p class="balance-amount" dir="ltr">${{ balanceUsd.toFixed(2) }}</p>
                 <p class="balance-label">إجمالي المديونية</p>
               </template>
+              <p v-if="hasPendingSync" class="pending-sync-chip">
+                بانتظار المزامنة ({{ pendingSyncCount }})
+              </p>
             </div>
 
             <!-- Pay button -->
@@ -169,13 +196,14 @@ function handleStatementCancel() {
                 type="button"
                 data-testid="send-statement-btn"
                 class="btn-statement"
+                :disabled="statementPreparing"
                 @click="openStatementSheet"
               >
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
                   <path d="M11.953 2C6.465 2 2 6.465 2 11.953c0 1.821.497 3.53 1.359 4.997L2 22l5.218-1.328A9.912 9.912 0 0011.953 22c5.488 0 9.953-4.465 9.953-9.953S17.441 2 11.953 2zm0 18.12a8.16 8.16 0 01-4.159-1.139l-.298-.177-3.098.789.812-3.006-.196-.31A8.12 8.12 0 013.84 11.953c0-4.476 3.638-8.12 8.113-8.12 4.476 0 8.12 3.644 8.12 8.12s-3.644 8.167-8.12 8.167z"/>
                 </svg>
-                إرسال كشف الحساب عبر واتساب
+                {{ statementPreparing ? 'جاري التحضير...' : 'إرسال كشف الحساب عبر واتساب' }}
               </button>
             </div>
           </div>
@@ -281,6 +309,7 @@ function handleStatementCancel() {
     title="كشف الحساب"
     :text="statementPreview.text"
     :phone="statementPreview.phone"
+    :image-data-url="statementPreview.imageDataUrl"
     @send="handleStatementSent"
     @cancel="handleStatementCancel"
   />
@@ -405,6 +434,20 @@ function handleStatementCancel() {
   font-size: 1.125rem;
   font-weight: 700;
   color: #22C55E;
+}
+
+.pending-sync-chip {
+  margin-top: 0.45rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #F59E0B;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 999px;
+  padding: 4px 10px;
 }
 
 /* Customer credit (shop owes them) — a positive thing, shown green not red. */

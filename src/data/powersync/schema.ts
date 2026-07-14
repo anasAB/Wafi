@@ -113,6 +113,7 @@ const receipt_settings = new Table({
   tax_number:  column.text,
   header_text: column.text,
   footer_text: column.text,
+  show_whatsapp_receipt: column.integer,
   updated_at:  column.text,
   sync_status: column.text,
 })

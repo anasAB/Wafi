@@ -8,7 +8,7 @@ export function useReceiptSettings() {
   const { logReceiptSettingsUpdated } = useAuditLog()
 
   const settings = ref<ReceiptSettings>({
-    shopName: '', taxNumber: '', headerText: '', footerText: '',
+    shopName: '', taxNumber: '', headerText: '', footerText: '', showWhatsAppReceipt: true,
   })
 
   async function load(): Promise<void> {
@@ -19,10 +19,13 @@ export function useReceiptSettings() {
     )
     if (row) {
       settings.value = {
-        shopName:   row.shop_name   ?? '',
-        taxNumber:  row.tax_number  ?? '',
-        headerText: row.header_text ?? '',
-        footerText: row.footer_text ?? '',
+        shopName:            row.shop_name   ?? '',
+        taxNumber:           row.tax_number  ?? '',
+        headerText:          row.header_text ?? '',
+        footerText:          row.footer_text ?? '',
+        showWhatsAppReceipt: row.show_whatsapp_receipt == null
+          ? true
+          : row.show_whatsapp_receipt === true || Number(row.show_whatsapp_receipt) === 1,
       }
     }
   }
@@ -32,10 +35,10 @@ export function useReceiptSettings() {
     const now    = new Date().toISOString()
     await db.execute(
       `INSERT OR REPLACE INTO receipt_settings
-         (id, shop_id, shop_name, tax_number, header_text, footer_text, updated_at, sync_status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
+         (id, shop_id, shop_name, tax_number, header_text, footer_text, show_whatsapp_receipt, updated_at, sync_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
       [device.shopId, device.shopId, data.shopName, data.taxNumber,
-       data.headerText, data.footerText, now]
+       data.headerText, data.footerText, data.showWhatsAppReceipt ? 1 : 0, now]
     )
     settings.value = { ...data }
     await logReceiptSettingsUpdated()

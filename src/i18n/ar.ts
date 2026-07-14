@@ -48,6 +48,13 @@ export default {
     signOutConfirmTitle:   'تسجيل الخروج',
     signOutConfirmMessage: 'هل تريد تسجيل الخروج؟',
     aboutVersionLabel: 'الإصدار والدعم',
+    dailyDigestSection: 'ملخص واتساب اليومي',
+    dailyDigestToggle: 'تذكير يومي',
+    dailyDigestPhone: 'رقم واتساب المالك',
+    dailyDigestPhoneHint: 'اكتب الرقم بصيغة محلية أو دولية',
+    dailyDigestHour: 'ساعة التذكير',
+    dailyDigestOn: 'مفعّل',
+    dailyDigestOff: 'متوقف',
   },
   theme: {
     light: 'فاتح',

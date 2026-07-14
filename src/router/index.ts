@@ -1,7 +1,10 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useSessionStore } from '@/store/session.store'
+import { useShiftStore } from '@/features/shifts/shift.store'
 import { isRouteAllowed, resolveLanding } from './permissions'
 import type { StaffPermissions } from '@/features/staff/staff.types'
+
+const SHIFT_OPEN_REDIRECT = '/shifts/history'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -9,8 +12,8 @@ const router = createRouter({
     // The home dashboard is the business-health financial roll-up — owner-only
     // by default, owner-grantable to a manager via can_view_reports (WAFI-058).
     { path: '/',                  component: () => import('@/pages/HomePage.vue'), meta: { permission: 'can_view_reports' } },
-    { path: '/pos',               component: () => import('@/pages/PosPage.vue') },
-    { path: '/pos/confirmation',  component: () => import('@/features/pos/SaleConfirmationScreen.vue') },
+    { path: '/pos',               component: () => import('@/pages/PosPage.vue'), meta: { requiresOpenShift: true } },
+    { path: '/pos/confirmation',  component: () => import('@/features/pos/SaleConfirmationScreen.vue'), meta: { requiresOpenShift: true } },
     { path: '/history',           component: () => import('@/pages/SaleHistoryPage.vue') },
     { path: '/back-office',       component: () => import('@/features/products/BackOfficePage.vue') },
     { path: '/products',          component: () => import('@/features/products/ProductsPage.vue'),     meta: { permission: 'can_manage_products' } },
@@ -38,6 +41,7 @@ const router = createRouter({
       ],
     },
     { path: '/reports',         component: () => import('@/features/dashboard/components/ReportsPage.vue'),      meta: { permission: 'can_view_reports' } },
+    { path: '/onboarding',      component: () => import('@/pages/OnboardingPage.vue') },
     { path: '/shifts/history',  component: () => import('@/features/shifts/components/ShiftHistoryScreen.vue') },
     { path: '/shifts/:id',      component: () => import('@/features/shifts/components/ShiftDetailScreen.vue') },
     { path: '/setup-owner',     component: () => import('@/features/shifts/components/OwnerSetupScreen.vue') },
@@ -54,14 +58,24 @@ const router = createRouter({
 // route fails closed onto the POS instead of bouncing (WAFI-058).
 router.beforeEach((to) => {
   const required = to.meta.permission as keyof StaffPermissions | undefined
+  const requiresOpenShift = Boolean(to.meta.requiresOpenShift)
   // Active operator lives in the session store (WAFI-011) — the same store a
   // "switch operator" updates, so guards re-scope on switch.
   const staff = useSessionStore().activeStaff
-  if (isRouteAllowed(required, staff)) return true
-  const landing = resolveLanding(staff)
-  // Guard against any self-redirect (defensive — resolveLanding never returns a
-  // gated route for a staffer who lacks it).
-  return to.path === landing ? true : landing
+  if (!isRouteAllowed(required, staff)) {
+    const landing = resolveLanding(staff)
+    // Guard against any self-redirect (defensive — resolveLanding never returns a
+    // gated route for a staffer who lacks it).
+    return to.path === landing ? true : landing
+  }
+
+  // Ring-a-sale routes require an active open shift. Redirect to a non-POS route
+  // so the global LockScreen open-shift flow can take over without URL loops.
+  if (requiresOpenShift && !useShiftStore().isShiftOpen) {
+    return to.path === SHIFT_OPEN_REDIRECT ? true : SHIFT_OPEN_REDIRECT
+  }
+
+  return true
 })
 
 export default router

@@ -21,7 +21,9 @@ describe('useCustomerBalance', () => {
   })
 
   it('load queries balance using two subqueries', async () => {
-    vi.mocked(db.getOptional).mockResolvedValueOnce({ balance_usd: 240 } as any)
+    vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({ balance_usd: 240 } as any)
+      .mockResolvedValueOnce({ pending_sync_count: 0 } as any)
     const { balanceUsd, load } = useCustomerBalance('c1')
     await load()
     expect(balanceUsd.value).toBe(240)
@@ -32,7 +34,9 @@ describe('useCustomerBalance', () => {
   })
 
   it('openInvoices is empty when all invoices are paid', async () => {
-    vi.mocked(db.getOptional).mockResolvedValueOnce({ balance_usd: 0 } as any)
+    vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({ balance_usd: 0 } as any)
+      .mockResolvedValueOnce({ pending_sync_count: 0 } as any)
     vi.mocked(db.getAll).mockResolvedValue([])
     const { openInvoices, load } = useCustomerBalance('c1')
     await load()
@@ -40,7 +44,9 @@ describe('useCustomerBalance', () => {
   })
 
   it('balance query subtracts returns on credit sales', async () => {
-    vi.mocked(db.getOptional).mockResolvedValueOnce({ balance_usd: -25 } as any)
+    vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({ balance_usd: -25 } as any)
+      .mockResolvedValueOnce({ pending_sync_count: 0 } as any)
     const { load } = useCustomerBalance('c1')
     await load()
     // Outstanding must net off returned goods, not just payments.
@@ -51,7 +57,9 @@ describe('useCustomerBalance', () => {
   })
 
   it('balance credits the customer for store_credit refunds on cash sales (WAFI-026/027)', async () => {
-    vi.mocked(db.getOptional).mockResolvedValueOnce({ balance_usd: -25 } as any)
+    vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({ balance_usd: -25 } as any)
+      .mockResolvedValueOnce({ pending_sync_count: 0 } as any)
     const { balanceUsd, load } = useCustomerBalance('c1')
     await load()
     // A store-credit refund on a cash sale must push the balance negative (shop owes
@@ -65,7 +73,9 @@ describe('useCustomerBalance', () => {
   })
 
   it('open invoice remaining subtracts returns for the sale', async () => {
-    vi.mocked(db.getOptional).mockResolvedValueOnce({ balance_usd: 0 } as any)
+    vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({ balance_usd: 0 } as any)
+      .mockResolvedValueOnce({ pending_sync_count: 0 } as any)
     const { load } = useCustomerBalance('c1')
     await load()
     // The open-invoices query must reduce each invoice's remaining by its returns.
@@ -76,7 +86,9 @@ describe('useCustomerBalance', () => {
   })
 
   it('load maps open invoice rows correctly', async () => {
-    vi.mocked(db.getOptional).mockResolvedValueOnce({ balance_usd: 160 } as any)
+    vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({ balance_usd: 160 } as any)
+      .mockResolvedValueOnce({ pending_sync_count: 0 } as any)
     vi.mocked(db.getAll)
       .mockResolvedValueOnce([{
         id: 's1', display_sale_number: '#231', created_at: '2025-06-02T10:00:00Z',
@@ -89,6 +101,23 @@ describe('useCustomerBalance', () => {
     expect(openInvoices.value).toHaveLength(1)
     expect(openInvoices.value[0].remainingUsd).toBe(160)
     expect(openInvoices.value[0].itemsSummary).toContain('Samsung A55')
+  })
+
+  it('exposes pending sync count and flag for unsynced credit rows', async () => {
+    vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({ balance_usd: 120 } as any)
+      .mockResolvedValueOnce({ pending_sync_count: 2 } as any)
+    vi.mocked(db.getAll).mockResolvedValue([])
+
+    const { pendingSyncCount, hasPendingSync, load } = useCustomerBalance('c1')
+    await load()
+
+    expect(pendingSyncCount.value).toBe(2)
+    expect(hasPendingSync.value).toBe(true)
+    expect(db.getOptional).toHaveBeenCalledWith(
+      expect.stringContaining("pending_sync_count"),
+      expect.any(Array)
+    )
   })
 
   it('recordPayment inserts one customer_payment row per allocation in a transaction', async () => {

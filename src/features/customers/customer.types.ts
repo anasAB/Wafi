@@ -11,6 +11,8 @@ export interface Customer {
   /** Outstanding credit (credit sales − payments − returns). Populated by the
    *  list query; undefined when not computed. */
   balanceUsd?: number
+  /** Unsynced credit rows for this customer (credit sales + payments). */
+  pendingSyncCount?: number
 }
 
 export interface NewCustomer {

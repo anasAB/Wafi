@@ -9,9 +9,11 @@ import AppToast    from '@/components/ui/AppToast.vue'
 import ExpenseForm from '@/features/expenses/components/ExpenseForm.vue'
 import ProfitSheet from '@/features/dashboard/components/ProfitSheet.vue'
 import CashDrawerSheet from '@/features/dashboard/components/CashDrawerSheet.vue'
+import ExchangeRateWidget from '@/features/exchange-rate/ExchangeRateWidget.vue'
 import ExchangeRateEditor from '@/features/exchange-rate/ExchangeRateEditor.vue'
 import ConnectionPill from '@/components/ui/ConnectionPill.vue'
 import OperatorSwitchAction from '@/features/staff/components/OperatorSwitchAction.vue'
+import { useDailyDigest } from '@/features/messaging'
 
 import { useExchangeRate }     from '@/features/exchange-rate'
 import { useSaleDraft }        from '@/composables/useSaleDraft'
@@ -39,6 +41,7 @@ const sellers    = useBestSellers()
 const drawer     = useCashDrawer()
 const chart      = useSalesChart()
 const history    = useSaleHistory()
+const dailyDigest = useDailyDigest()
 
 const showDraftDialog    = ref(false)
 const showExpenseForm    = ref(false)
@@ -46,6 +49,8 @@ const showProfitSheet    = ref(false)
 const showCashDrawer     = ref(false)
 const showRateEditor     = ref(false)
 const toast              = ref<{ message: string; type: 'success' | 'error' } | null>(null)
+const showDigestDialog   = ref(false)
+const digestText         = ref('')
 
 const isOnline     = ref(db.currentStatus?.connected ?? false)
 const lastSyncedAt = ref<string | null>(localStorage.getItem('wafi_last_synced'))
@@ -80,6 +85,11 @@ onMounted(async () => {
       history.loadHistory(getDateRange(period.value)),
       loadOpenCreditCount(),
     ])
+    const digest = await dailyDigest.prepareIfReady()
+    if (digest.ready && digest.text) {
+      digestText.value = digest.text
+      showDigestDialog.value = true
+    }
   } catch { /* errors shown via toast */ }
 
   // Keep the selected-period chart fresh while the dashboard stays mounted.
@@ -156,6 +166,20 @@ async function handleExpenseSaved() {
   await Promise.all([metrics.load(period.value), drawer.load(period.value)])
 }
 
+async function handleSendDailyDigest() {
+  const ok = await dailyDigest.openPreparedDigest(digestText.value)
+  showDigestDialog.value = false
+  if (!ok) {
+    toast.value = { message: 'أدخل رقم واتساب المالك في الإعدادات أولاً', type: 'error' }
+    return
+  }
+  toast.value = { message: 'تم فتح واتساب مع ملخص اليوم', type: 'success' }
+}
+
+function handleDismissDailyDigest() {
+  showDigestDialog.value = false
+}
+
 // WAFI-054: tap-through from the profit caveat → the products list filtered to
 // the products missing a cost, so the owner can fix the source of the estimate.
 function goToMissingCostProducts() {
@@ -190,12 +214,6 @@ const avgPerInvoice = computed(() => {
 
 const hasAlerts = computed(() =>
   !allClear.value || openCreditCount.value > 0
-)
-
-const ratePillText = computed(() =>
-  currentRate.value
-    ? `$١ = ${currentRate.value.toLocaleString('ar-SY')} ل.س`
-    : 'حدد سعر الصرف'
 )
 
 const recentActivity = computed(() =>
@@ -304,12 +322,6 @@ const ACTIVITY_HEADING: Record<string, string> = { today: 'اليوم', week: '�
       <div class="hp-header-actions">
         <OperatorSwitchAction variant="compact" />
         <ConnectionPill />
-        <button class="rate-pill" @click="showRateEditor = true">
-          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/>
-          </svg>
-          {{ ratePillText }}
-        </button>
         <button class="icon-btn" :class="{ 'has-alert': hasAlerts }" aria-label="التنبيهات">
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
@@ -326,6 +338,11 @@ const ACTIVITY_HEADING: Record<string, string> = { today: 'اليوم', week: '�
       <div class="hp-m hp-greeting-mobile">
         <p class="gm-date">{{ arabicDate }}</p>
         <h1 class="gm-name">{{ greeting }} 👋</h1>
+      </div>
+
+      <!-- Exchange rate must be a prominent first action on Home (Task 2 / Epic 1.5). -->
+      <div class="hp-rate-row">
+        <ExchangeRateWidget @open-editor="showRateEditor = true" />
       </div>
 
       <!-- Period + sell row -->
@@ -601,6 +618,15 @@ const ACTIVITY_HEADING: Record<string, string> = { today: 'اليوم', week: '�
     @confirm="handleRestoreDraft"
     @cancel="handleDiscardDraft"
   />
+  <AppDialog
+    v-if="showDigestDialog"
+    title="ملخص اليوم جاهز"
+    message="يمكنك إرسال الملخص اليومي إلى واتساب المالك بضغطة واحدة."
+    confirm-label="إرسال عبر واتساب"
+    cancel-label="لاحقاً"
+    @confirm="handleSendDailyDigest"
+    @cancel="handleDismissDailyDigest"
+  />
   <ExpenseForm v-if="showExpenseForm" @saved="handleExpenseSaved" @cancel="showExpenseForm = false" />
   <ProfitSheet
     v-if="showProfitSheet"
@@ -677,21 +703,6 @@ const ACTIVITY_HEADING: Record<string, string> = { today: 'اليوم', week: '�
 
 .hp-header-actions { display: flex; align-items: center; gap: 8px; }
 
-.rate-pill {
-  display: flex; align-items: center; gap: 6px;
-  background: rgba(26,86,219,.12); border: 1px solid rgba(26,86,219,.35);
-  border-radius: 20px; padding: 5px 12px;
-  font-family: 'Tajawal', sans-serif;
-  font-size: 12px; font-weight: 700; color: #60A5FA; cursor: pointer;
-  box-shadow: 0 2px 10px rgba(26,86,219,0.15);
-  transition: border-color .2s, background .2s, box-shadow .2s;
-}
-.rate-pill:hover {
-  border-color: rgba(26,86,219,.60);
-  background: rgba(26,86,219,.18);
-  box-shadow: 0 2px 16px rgba(26,86,219,0.25);
-}
-
 .icon-btn {
   width: 36px; height: 36px;
   background: rgba(255,255,255,.05);
@@ -721,6 +732,12 @@ const ACTIVITY_HEADING: Record<string, string> = { today: 'اليوم', week: '�
 .hp-greeting-mobile { margin-bottom: 16px; }
 .gm-date { font-size: 11px; color: #637285; margin-bottom: 2px; }
 .gm-name { font-size: 21px; font-weight: 800; color: #E8EDF5; }
+
+.hp-rate-row {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 14px;
+}
 
 /* ─── PERIOD ROW ─────────────────────────────────────── */
 .hp-period-row {

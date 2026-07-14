@@ -13,11 +13,12 @@ const shopName   = ref('')
 const taxNumber  = ref('')
 const headerText = ref('')
 const footerText = ref('')
+const showWhatsAppReceipt = ref(true)
 const saving     = ref(false)
 const toast      = ref<{ message: string; type: 'success' | 'error' } | null>(null)
 
 const preview = ref({
-  shopName: '', taxNumber: '', headerText: '', footerText: '',
+  shopName: '', taxNumber: '', headerText: '', footerText: '', showWhatsAppReceipt: true,
 })
 
 onMounted(async () => {
@@ -26,15 +27,17 @@ onMounted(async () => {
   taxNumber.value  = settings.value.taxNumber
   headerText.value = settings.value.headerText
   footerText.value = settings.value.footerText
+  showWhatsAppReceipt.value = settings.value.showWhatsAppReceipt
   syncPreview()
 })
 
 function syncPreview() {
   preview.value = {
-    shopName:   shopName.value,
-    taxNumber:  taxNumber.value,
-    headerText: headerText.value,
-    footerText: footerText.value,
+    shopName:            shopName.value,
+    taxNumber:           taxNumber.value,
+    headerText:          headerText.value,
+    footerText:          footerText.value,
+    showWhatsAppReceipt: showWhatsAppReceipt.value,
   }
 }
 
@@ -42,10 +45,11 @@ async function handleSave() {
   saving.value = true
   try {
     await save({
-      shopName:   shopName.value.trim(),
-      taxNumber:  taxNumber.value.trim(),
-      headerText: headerText.value.trim(),
-      footerText: footerText.value.trim(),
+      shopName:            shopName.value.trim(),
+      taxNumber:           taxNumber.value.trim(),
+      headerText:          headerText.value.trim(),
+      footerText:          footerText.value.trim(),
+      showWhatsAppReceipt: showWhatsAppReceipt.value,
     })
     toast.value = { message: 'تم حفظ إعدادات الفاتورة', type: 'success' }
   } catch {
@@ -114,7 +118,7 @@ async function handleSave() {
       </div>
 
       <!-- Footer text -->
-      <div class="form-row form-row--last">
+      <div class="form-row">
         <label class="form-label">نص ذيل الفاتورة</label>
         <input
           v-model="footerText"
@@ -124,6 +128,22 @@ async function handleSave() {
           class="form-input"
           @input="syncPreview"
         />
+      </div>
+
+      <div class="form-row form-row--last">
+        <label class="toggle-row" for="toggle-whatsapp-receipt">
+          <div>
+            <p class="form-label toggle-label">عرض إرسال الإيصال عبر واتساب</p>
+            <p class="toggle-hint">إظهار زر واتساب في شاشة تأكيد البيع.</p>
+          </div>
+          <input
+            id="toggle-whatsapp-receipt"
+            v-model="showWhatsAppReceipt"
+            data-testid="toggle-whatsapp-receipt"
+            type="checkbox"
+            class="toggle-input"
+          />
+        </label>
       </div>
     </div>
 
@@ -205,6 +225,30 @@ async function handleSave() {
   font-weight: 600;
   color: #637285;
   margin-bottom: 6px;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.toggle-label {
+  margin-bottom: 2px;
+}
+
+.toggle-hint {
+  margin: 0;
+  color: #8FA2BB;
+  font-size: 12px;
+}
+
+.toggle-input {
+  width: 22px;
+  height: 22px;
+  accent-color: #1A56DB;
 }
 
 /* ─── Form input ──────────────────────────────────────────── */

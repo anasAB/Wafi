@@ -20,6 +20,7 @@ const role      = ref<StaffRole>(props.forceRole ?? props.editStaff?.role ?? 'ca
 const firstPin  = ref('')
 const nameError = ref('')
 const pinError  = ref('')
+const submitError = ref('')
 const pinPadRef = ref<InstanceType<typeof PinPad> | null>(null)
 const saving    = ref(false)
 const perms     = reactive<StaffPermissions>({
@@ -53,6 +54,7 @@ const MANAGER_FINANCIAL_LABELS: Array<[keyof StaffPermissions, string]> = [
 function submitInfo() {
   if (!name.value.trim()) { nameError.value = 'يرجى إدخال الاسم'; return }
   nameError.value = ''
+  submitError.value = ''
   step.value = 'pin'
 }
 
@@ -75,6 +77,7 @@ async function saveEdits() {
 }
 
 function onPin(pin: string) {
+  submitError.value = ''
   if (step.value === 'pin') {
     firstPin.value = pin
     step.value     = 'confirm'
@@ -99,6 +102,11 @@ async function saveStaff(pin: string) {
       await createStaff({ name: name.value, pin, role: role.value, permissions: { ...perms } })
     }
     emit('done')
+  } catch (err) {
+    submitError.value = err instanceof Error
+      ? err.message
+      : 'تعذر حفظ الموظف. حاول مرة أخرى.'
+    pinPadRef.value?.shake()
   } finally {
     saving.value = false
   }
@@ -216,6 +224,7 @@ async function saveStaff(pin: string) {
         <p class="pin-step-sub">لحماية الحساب، أدخل الرقم السري ثم أكده</p>
       </div>
       <p v-if="pinError" class="pin-error">{{ pinError }}</p>
+      <p v-if="submitError" class="pin-error">{{ submitError }}</p>
       <PinPad ref="pinPadRef" @complete="onPin" />
 
       <button

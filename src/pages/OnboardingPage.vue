@@ -1,79 +1,83 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { store } from '../store'
+import { useDeviceStore } from '@/store/device.store'
+import {
+  ONBOARDING_CARD_CONFIG,
+  loadOnboardingProgress,
+  type OnboardingProgress,
+} from '@/features/onboarding/useOnboardingProgress'
 
 const router = useRouter()
+const route = useRoute()
+const device = useDeviceStore()
 
 const sidebarOpen = ref(false)
 
 const userName     = computed(() => store.userName    || 'أحمد')
 const businessName = computed(() => store.businessName || 'عملك التجاري')
 
-const setupCards = ref([
-  {
-    id: 'products',
-    icon: '📦',
-    title: 'أضف منتجاتك الأولى',
-    desc: 'أضف ٥ منتجات وستكون جاهزاً للبيع في دقيقتين. الأسرع طريقاً للمبيعة الأولى.',
-    cta: 'ابدأ بإضافة منتج',
-    time: '~٣ دقائق',
-    primary: true,
-    done: false,
-  },
-  {
-    id: 'pos',
-    icon: '🏪',
-    title: 'افتح نقطة البيع',
-    desc: 'اكتشف شاشة البيع وجرّب تسجيل معاملة تجريبية قبل البدء الفعلي.',
-    cta: 'افتح نقطة البيع',
-    time: '~٢ دقائق',
-    primary: false,
-    done: false,
-  },
-  {
-    id: 'team',
-    icon: '👥',
-    title: 'أضف موظفيك',
-    desc: 'دعوة موظفيك وتحديد صلاحيات كل شخص — من يبيع، من يدير المخزون.',
-    cta: 'أضف موظفاً',
-    time: '~١ دقيقة',
-    primary: false,
-    done: false,
-  },
-  {
-    id: 'profile',
-    icon: '🏢',
-    title: 'أكمل بيانات نشاطك',
-    desc: 'أضف شعارك وعنوانك ورقمك الضريبي — تظهر على كل فاتورة تُصدرها.',
-    cta: 'أكمل البيانات',
-    time: '~٢ دقائق',
-    primary: false,
-    done: false,
-  },
-])
+const onboardingProgress = ref<OnboardingProgress>({
+  productsDone: false,
+  posDone: false,
+  teamDone: false,
+  profileDone: false,
+})
+
+const setupCards = computed(() =>
+  ONBOARDING_CARD_CONFIG.map((card) => ({
+    ...card,
+    done:
+      card.id === 'products'
+        ? onboardingProgress.value.productsDone
+        : card.id === 'pos'
+          ? onboardingProgress.value.posDone
+          : card.id === 'team'
+            ? onboardingProgress.value.teamDone
+            : onboardingProgress.value.profileDone,
+  })),
+)
 
 const doneCount  = computed(() => setupCards.value.filter(c => c.done).length)
 const progress   = computed(() => Math.round((doneCount.value / setupCards.value.length) * 100))
 const allDone    = computed(() => doneCount.value === setupCards.value.length)
 
-function markDone(id: string) {
-  const c = setupCards.value.find(c => c.id === id)
-  if (c) c.done = !c.done
+async function refreshOnboarding() {
+  onboardingProgress.value = await loadOnboardingProgress(device.shopId)
 }
 
-const navItems = [
-  { icon: '🏠', label: 'لوحة التحكم', active: true,  to: '/dashboard' },
-  { icon: '🏪', label: 'نقطة البيع',  active: false, to: null },
-  { icon: '📦', label: 'المخزون',     active: false, to: null },
-  { icon: '📊', label: 'المحاسبة',    active: false, to: null },
-  { icon: '📈', label: 'التقارير',    active: false, to: null },
-  { icon: '👥', label: 'العملاء',     active: false, to: null },
-]
+onMounted(() => {
+  void refreshOnboarding()
+})
 
-function goTo(item: typeof navItems[0]) {
+function isActivePath(path: string): boolean {
+  return route.path === path || route.path.startsWith(`${path}/`)
+}
+
+const navItems = computed(() => [
+  { icon: '🏠', label: 'لوحة التحكم', active: route.path === '/', to: '/' },
+  { icon: '🏪', label: 'نقطة البيع', active: isActivePath('/pos'), to: '/pos' },
+  { icon: '📦', label: 'المخزون', active: isActivePath('/products'), to: '/products' },
+  { icon: '📈', label: 'التقارير', active: isActivePath('/reports'), to: '/reports' },
+  { icon: '👥', label: 'العملاء', active: isActivePath('/customers'), to: '/customers' },
+])
+
+const settingsNavItem = computed(() => ({
+  icon: '⚙️',
+  label: 'الإعدادات',
+  active: isActivePath('/settings'),
+  to: '/settings/personal',
+}))
+
+function goTo(item: { to: string }) {
   sidebarOpen.value = false
-  if (item.to) router.push(item.to)
+  router.push(item.to)
+}
+
+function openCard(path: string) {
+  sidebarOpen.value = false
+  router.push(path)
 }
 </script>
 
@@ -125,9 +129,9 @@ function goTo(item: typeof navItems[0]) {
         </nav>
 
         <div class="sidebar-bottom">
-          <a href="#" class="sidebar-item">
-            <span class="sidebar-icon">⚙️</span>
-            <span class="sidebar-label">الإعدادات</span>
+          <a href="#" class="sidebar-item" :class="{ active: settingsNavItem.active }" @click.prevent="goTo(settingsNavItem)">
+            <span class="sidebar-icon">{{ settingsNavItem.icon }}</span>
+            <span class="sidebar-label">{{ settingsNavItem.label }}</span>
           </a>
           <div class="sidebar-user">
             <div class="sidebar-av">{{ userName.charAt(0) }}</div>
@@ -188,19 +192,11 @@ function goTo(item: typeof navItems[0]) {
               <div class="card-time">⏱ {{ card.time }}</div>
               <div class="card-actions">
                 <button
-                  v-if="!card.done"
                   class="card-cta"
                   :class="{ 'card-cta-primary': card.primary }"
-                  @click="markDone(card.id)"
+                  @click="openCard(card.to)"
                 >
-                  {{ card.cta }} →
-                </button>
-                <button
-                  v-else
-                  class="card-undo"
-                  @click="markDone(card.id)"
-                >
-                  تراجع
+                  {{ card.done ? 'فتح الصفحة' : card.cta }} →
                 </button>
               </div>
             </div>
@@ -215,7 +211,7 @@ function goTo(item: typeof navItems[0]) {
               <div class="done-title">أنت جاهز تماماً!</div>
               <div class="done-sub">متجرك مُعدّ ويمكنك الآن إدارة أعمالك من لوحة التحكم.</div>
             </div>
-            <button class="done-cta" @click="router.push('/dashboard')">
+              <button class="done-cta" @click="router.push('/')">
               انتقل للوحة التحكم ←
             </button>
           </div>

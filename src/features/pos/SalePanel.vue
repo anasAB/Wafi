@@ -38,6 +38,88 @@ const previewOpen = ref(false)
 const previewLoading = ref(false)
 const previewData = ref<PreviewData | null>(null)
 
+const SWIPE_REMOVE_THRESHOLD_PX = 72
+const SWIPE_MAX_OFFSET_PX = 120
+const SWIPE_MAX_VERTICAL_DRIFT_PX = 26
+
+const lineOffsets = ref<Record<string, number>>({})
+const activeSwipe = ref<{
+  productId: string
+  pointerId: number
+  startX: number
+  startY: number
+} | null>(null)
+
+function isInteractiveTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  return Boolean(target.closest('button, input, textarea, select, a, label'))
+}
+
+function onLinePointerDown(productId: string, event: PointerEvent) {
+  if (event.pointerType === 'mouse' && event.button !== 0) return
+  if (isInteractiveTarget(event.target)) return
+  activeSwipe.value = {
+    productId,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+  }
+  lineOffsets.value = { ...lineOffsets.value, [productId]: 0 }
+  ;(event.currentTarget as HTMLElement | null)?.setPointerCapture?.(event.pointerId)
+}
+
+function onLinePointerMove(productId: string, event: PointerEvent) {
+  const swipe = activeSwipe.value
+  if (!swipe || swipe.productId !== productId || swipe.pointerId !== event.pointerId) return
+
+  const deltaX = event.clientX - swipe.startX
+  const deltaY = Math.abs(event.clientY - swipe.startY)
+
+  if (deltaY > SWIPE_MAX_VERTICAL_DRIFT_PX && deltaY > Math.abs(deltaX)) {
+    lineOffsets.value = { ...lineOffsets.value, [productId]: 0 }
+    activeSwipe.value = null
+    return
+  }
+
+  const offset = Math.max(-SWIPE_MAX_OFFSET_PX, Math.min(0, deltaX))
+  lineOffsets.value = { ...lineOffsets.value, [productId]: offset }
+}
+
+function resetLineOffset(productId: string) {
+  lineOffsets.value = { ...lineOffsets.value, [productId]: 0 }
+}
+
+function onLinePointerUp(productId: string, event: PointerEvent) {
+  const swipe = activeSwipe.value
+  if (!swipe || swipe.productId !== productId || swipe.pointerId !== event.pointerId) return
+
+  const offset = lineOffsets.value[productId] ?? 0
+  ;(event.currentTarget as HTMLElement | null)?.releasePointerCapture?.(event.pointerId)
+  activeSwipe.value = null
+  resetLineOffset(productId)
+
+  if (offset <= -SWIPE_REMOVE_THRESHOLD_PX) {
+    store.removeLine(productId)
+  }
+}
+
+function onLinePointerCancel(productId: string, event: PointerEvent) {
+  const swipe = activeSwipe.value
+  if (!swipe || swipe.productId !== productId || swipe.pointerId !== event.pointerId) return
+  ;(event.currentTarget as HTMLElement | null)?.releasePointerCapture?.(event.pointerId)
+  activeSwipe.value = null
+  resetLineOffset(productId)
+}
+
+function lineRowStyle(productId: string) {
+  const offset = lineOffsets.value[productId] ?? 0
+  const swiping = activeSwipe.value?.productId === productId
+  return {
+    transform: `translateX(${offset}px)`,
+    transition: swiping ? 'none' : 'transform 0.16s ease-out, background 0.12s, border-color 0.12s',
+  }
+}
+
 async function openProductPreview(line: (typeof store.lines)[number]) {
   previewOpen.value = true
   previewLoading.value = true
@@ -127,7 +209,17 @@ function handleClearSale() {
       </div>
 
       <!-- Line rows -->
-      <div v-for="line in store.lines" :key="line.productId" class="line-row">
+      <div
+        v-for="line in store.lines"
+        :key="line.productId"
+        :data-testid="`sale-line-${line.productId}`"
+        class="line-row"
+        :style="lineRowStyle(line.productId)"
+        @pointerdown="onLinePointerDown(line.productId, $event)"
+        @pointermove="onLinePointerMove(line.productId, $event)"
+        @pointerup="onLinePointerUp(line.productId, $event)"
+        @pointercancel="onLinePointerCancel(line.productId, $event)"
+      >
         <!-- Product info -->
         <div class="line-info">
           <p class="line-name">{{ line.nameAr }}</p>
@@ -186,6 +278,7 @@ function handleClearSale() {
           <button
             type="button"
             class="line-delete"
+            :data-testid="`line-delete-${line.productId}`"
             aria-label="حذف"
             @click="store.removeLine(line.productId)"
           >
@@ -431,6 +524,7 @@ function handleClearSale() {
   border: 1px solid rgba(26,86,219,0.22);
   box-shadow: 0 2px 10px rgba(26,86,219,0.08), inset 0 1px 0 rgba(255,255,255,0.06);
   transition: background 0.12s, border-color 0.12s;
+  touch-action: pan-y;
 }
 
 .line-row:hover {
