@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
@@ -38,5 +38,51 @@ export function useStockTake() {
     return sessionId
   }
 
-  return { currentSession, lines, startSession }
+  async function loadSession(sessionId: string): Promise<void> {
+    const sessionRow = await db.getOptional<StockTakeSessionRow>(
+      `SELECT * FROM stock_take_sessions WHERE id = ?`, [sessionId]
+    )
+    if (sessionRow) {
+      currentSession.value = {
+        id: sessionRow.id, shopId: sessionRow.shop_id, startedAt: sessionRow.started_at,
+        completedAt: sessionRow.completed_at, status: sessionRow.status,
+        createdBy: sessionRow.created_by, scope: sessionRow.scope,
+      }
+    }
+
+    const rows = await db.getAll<StockTakeLineRow>(
+      `SELECT stl.id, stl.session_id, stl.product_id, p.name_ar,
+              stl.expected_stock, stl.counted_stock, stl.variance, stl.variance_value_usd
+       FROM stock_take_lines stl
+       JOIN products p ON p.id = stl.product_id
+       WHERE stl.session_id = ?`,
+      [sessionId]
+    )
+    lines.value = rows.map(r => ({
+      id: r.id, sessionId: r.session_id, productId: r.product_id, productNameAr: r.name_ar,
+      expectedStock: r.expected_stock, countedStock: r.counted_stock,
+      variance: r.variance, varianceValueUsd: r.variance_value_usd,
+    }))
+  }
+
+  async function recordCount(lineId: string, countedStock: number): Promise<void> {
+    const line = lines.value.find(l => l.id === lineId)
+    if (!line) return
+    const variance = countedStock - line.expectedStock
+
+    await db.execute(
+      `UPDATE stock_take_lines SET counted_stock = ?, variance = ?, sync_status = 'pending' WHERE id = ?`,
+      [countedStock, variance, lineId]
+    )
+
+    line.countedStock = countedStock
+    line.variance = variance
+  }
+
+  const progress = computed(() => ({
+    counted: lines.value.filter(l => l.countedStock !== null).length,
+    total: lines.value.length,
+  }))
+
+  return { currentSession, lines, startSession, loadSession, recordCount, progress }
 }

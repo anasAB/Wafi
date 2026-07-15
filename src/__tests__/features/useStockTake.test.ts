@@ -38,4 +38,26 @@ describe('useStockTake — startSession', () => {
     expect(lineInserts[0][1]).toContain(10)
     expect(lineInserts[1][1]).toContain(3)
   })
+
+  it('loadSession populates session + lines, recordCount updates a line and counted progress', async () => {
+    vi.mocked(db.getOptional).mockResolvedValue({
+      id: 's1', shop_id: 'shop1', started_at: '2026-07-14T00:00:00Z',
+      completed_at: null, status: 'in_progress', created_by: 'dev1', scope: null,
+    } as any)
+    vi.mocked(db.getAll).mockResolvedValue([
+      { id: 'l1', session_id: 's1', product_id: 'p1', name_ar: 'منتج ١', expected_stock: 10, counted_stock: null, variance: null, variance_value_usd: null },
+      { id: 'l2', session_id: 's1', product_id: 'p2', name_ar: 'منتج ٢', expected_stock: 3, counted_stock: null, variance: null, variance_value_usd: null },
+    ] as any)
+
+    const { loadSession, lines, recordCount, progress } = useStockTake()
+    await loadSession('s1')
+
+    expect(lines.value).toHaveLength(2)
+    expect(progress.value).toEqual({ counted: 0, total: 2 })
+
+    await recordCount('l1', 9)
+
+    const updateCall = vi.mocked(db.execute).mock.calls.find(([sql]) => /UPDATE stock_take_lines/.test(sql))
+    expect(updateCall![1]).toEqual(expect.arrayContaining([9, -1]))
+  })
 })
