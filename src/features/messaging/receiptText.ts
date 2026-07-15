@@ -16,6 +16,7 @@ const PAYMENT_LABEL: Record<PaymentMethod, string> = {
   card:     'بطاقة',
   credit:   'على الحساب (آجل)',
   split:    'دفع مقسّم',
+  installment: 'تقسيط',
 }
 
 function formatDate(iso: string): string {

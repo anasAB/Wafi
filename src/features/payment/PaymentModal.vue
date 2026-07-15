@@ -2,6 +2,8 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import NumericKeypad from '@/components/ui/NumericKeypad.vue'
 import CustomerPickerModal from '@/features/customers/components/CustomerPickerModal.vue'
+import InstallmentPlanForm from './components/InstallmentPlanForm.vue'
+import { useInstallmentPlan } from '@/features/installments/composables/useInstallmentPlan'
 import { usePayment } from './usePayment'
 import { useSaleStore } from '@/store/sale.store'
 import type { CompletedSale } from './payment.types'
@@ -82,6 +84,37 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
 function handleSelectCredit() {
   selectMethod('credit')
   showPicker.value = true
+}
+
+function handleSelectInstallment() {
+  selectMethod('installment')
+  showPicker.value = true
+}
+
+const { createPlan } = useInstallmentPlan()
+
+async function handleInstallmentConfirm(terms: {
+  downPaymentUsd: number; termCount: number; termFrequency: 'weekly' | 'monthly'; startDate: string
+}) {
+  if (!selectedCustomer.value) {
+    showPicker.value = true
+    return
+  }
+  try {
+    const sale = await confirm(selectedCustomer.value.id)
+    await createPlan({
+      customerId: selectedCustomer.value.id,
+      saleId: sale.saleId,
+      totalAmountUsd: sale.totalUsd,
+      downPaymentUsd: terms.downPaymentUsd,
+      termCount: terms.termCount,
+      termFrequency: terms.termFrequency,
+      startDate: terms.startDate,
+    })
+    emit('confirmed', sale)
+  } catch {
+    // error is set in usePayment; the sale wasn't created, so no plan is created either
+  }
 }
 
 function handleCustomerSelected(customer: Customer) {
@@ -241,6 +274,17 @@ async function confirmAsHigherPrice() {
             >
               <span class="method-tile-icon">📋</span>
               <span class="method-tile-label">آجل</span>
+            </button>
+
+            <button
+              v-if="pendingPayments.length === 0"
+              type="button"
+              data-testid="installment-method-btn"
+              class="method-tile method-tile-credit"
+              @click="handleSelectInstallment"
+            >
+              <span class="method-tile-icon">🗓️</span>
+              <span class="method-tile-label">تقسيط</span>
             </button>
           </div>
 
@@ -412,6 +456,44 @@ async function confirmAsHigherPrice() {
           :disabled="!selectedCustomer"
           @click="handleConfirm()"
         >تأكيد البيع الآجل</button>
+      </div>
+
+      <!-- ── Installment confirm ── -->
+      <div v-else-if="state === 'installment-confirm'" class="state-pad">
+        <div class="modal-top-bar">
+          <button type="button" class="modal-back-btn" @click="handleBack">رجوع</button>
+          <button type="button" class="modal-cancel-btn" @click="handleCancel">إلغاء</button>
+        </div>
+
+        <h2 id="payment-modal-title" class="modal-heading">إجمالي البيع</h2>
+
+        <div class="total-block">
+          <p class="total-usd">${{ totalUsd.toFixed(2) }}</p>
+          <p class="total-syp">{{ totalSyp.toLocaleString() }} ل.س</p>
+        </div>
+
+        <div v-if="selectedCustomer" class="customer-chip">
+          <div>
+            <p class="customer-chip-name">{{ selectedCustomer.name }}</p>
+            <p v-if="selectedCustomer.phone" class="customer-chip-phone">{{ selectedCustomer.phone }}</p>
+          </div>
+          <button type="button" class="customer-chip-change" @click="showPicker = true">تغيير</button>
+        </div>
+
+        <button
+          v-else
+          type="button"
+          class="confirm-btn confirm-btn-amber"
+          @click="showPicker = true"
+        >اختر الزبون</button>
+
+        <InstallmentPlanForm
+          v-if="selectedCustomer"
+          :total-usd="totalUsd"
+          @confirm="handleInstallmentConfirm"
+        />
+
+        <p v-if="error" class="modal-error">{{ error }}</p>
       </div>
 
       <!-- ── Confirming spinner ── -->
