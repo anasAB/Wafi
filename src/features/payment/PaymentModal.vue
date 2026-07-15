@@ -12,6 +12,11 @@ import type { Customer } from '@/features/customers/customer.types'
 const emit = defineEmits<{
   (e: 'confirmed', sale: CompletedSale): void
   (e: 'close'):                          void
+  // The sale itself was persisted successfully, but the installment plan that
+  // was supposed to accompany it failed to save — the cashier still proceeds
+  // with the completed sale, but this needs a distinct surfaced warning so the
+  // missing schedule can be created manually afterward.
+  (e: 'installment-plan-failed', sale: CompletedSale, message: string): void
 }>()
 
 const { state, method, amountReceived, totalUsd, totalSyp, changeDue, error, enteredUsd,
@@ -100,8 +105,15 @@ async function handleInstallmentConfirm(terms: {
     showPicker.value = true
     return
   }
+  let sale: CompletedSale
   try {
-    const sale = await confirm(selectedCustomer.value.id)
+    sale = await confirm(selectedCustomer.value.id)
+  } catch {
+    // confirm() itself threw — the sale was never created, so no plan is
+    // created either. error is already set in usePayment; stay on this modal.
+    return
+  }
+  try {
     await createPlan({
       customerId: selectedCustomer.value.id,
       saleId: sale.saleId,
@@ -111,10 +123,17 @@ async function handleInstallmentConfirm(terms: {
       termFrequency: terms.termFrequency,
       startDate: terms.startDate,
     })
+  } catch (err) {
+    // The sale DID succeed and is already persisted — it must not be hidden
+    // from the cashier. Only the installment schedule failed, so surface that
+    // as a distinct warning (the parent toasts it) and still hand off the
+    // completed sale so the cashier proceeds to the receipt/confirmation screen.
+    const message = err instanceof Error ? err.message : 'فشل إنشاء خطة التقسيط'
+    emit('installment-plan-failed', sale, message)
     emit('confirmed', sale)
-  } catch {
-    // error is set in usePayment; the sale wasn't created, so no plan is created either
+    return
   }
+  emit('confirmed', sale)
 }
 
 function handleCustomerSelected(customer: Customer) {

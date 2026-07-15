@@ -29,6 +29,14 @@ onMounted(async () => {
     if (id) sale.value = await loadCompletedSale(id)
   }
   await loadReceiptSettings()
+
+  // The sale itself succeeded, but the payment modal flagged that an
+  // installment plan failed to save alongside it — surface that now so the
+  // cashier knows the schedule needs to be created manually (WAFI: task-11 fix).
+  const installmentPlanError = (history.state as any)?.installmentPlanError as string | undefined
+  if (installmentPlanError) {
+    toast.value = { message: `تم تسجيل البيع، لكن فشل إنشاء خطة التقسيط: ${installmentPlanError}`, type: 'error' }
+  }
 })
 
 const methodLabels: Record<string, string> = {
