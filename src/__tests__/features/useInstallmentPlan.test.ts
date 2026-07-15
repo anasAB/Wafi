@@ -154,3 +154,75 @@ describe('useInstallmentPlan.recordDuePayment', () => {
     await expect(recordDuePayment('missing', 10)).rejects.toThrow()
   })
 })
+
+describe('useInstallmentPlan.cancelPlan', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  it('voids every still-pending due and cancels the plan', async () => {
+    const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [] } })
+    vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => { await fn({ execute: txExecute }) })
+
+    const { cancelPlan } = useInstallmentPlan()
+    await cancelPlan('plan-1')
+
+    const calls = txExecute.mock.calls.map((c: any[]) => c[0] as string)
+    expect(calls.some(sql => sql.includes('UPDATE installment_dues') && sql.includes(`'voided'`))).toBe(true)
+    expect(calls.some(sql => sql.includes('UPDATE installment_plans') && sql.includes(`'cancelled'`))).toBe(true)
+  })
+
+  it('writes an installment_plan.cancelled audit row', async () => {
+    vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => { await fn({ execute: vi.fn().mockResolvedValue({ rows: { _array: [] } }) }) })
+    vi.mocked(db.execute).mockResolvedValue({ rows: { _array: [] } } as any)
+
+    const { cancelPlan } = useInstallmentPlan()
+    await cancelPlan('plan-1')
+
+    expect(db.execute).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO audit_log'),
+      expect.arrayContaining(['installment_plan.cancelled', 'installment_plan', 'plan-1']),
+    )
+  })
+})
+
+describe('useInstallmentPlan.loadActivePlanForCustomer / loadPlan', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  it('returns null when the customer has no active plan', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce(null)
+    const { loadActivePlanForCustomer } = useInstallmentPlan()
+    const result = await loadActivePlanForCustomer('cust-1')
+    expect(result).toBeNull()
+  })
+
+  it('returns the active plan and its dues ordered by due_date', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce({
+      plan_id: 'plan-1', shop_id: 'shop-1', customer_id: 'cust-1', sale_id: 'sale-1',
+      total_amount_usd: 300, down_payment_usd: 60, term_count: 3, term_frequency: 'monthly',
+      start_date: '2026-08-01', status: 'active', created_at: '2026-07-14T00:00:00.000Z', created_by: 'أحمد',
+    } as any)
+    vi.mocked(db.getAll).mockResolvedValueOnce([
+      { due_id: 'd1', plan_id: 'plan-1', shop_id: 'shop-1', due_date: '2026-08-01', amount_due_usd: 100, amount_paid_usd: 100, status: 'paid' },
+      { due_id: 'd2', plan_id: 'plan-1', shop_id: 'shop-1', due_date: '2026-09-01', amount_due_usd: 100, amount_paid_usd: 0, status: 'pending' },
+    ] as any)
+
+    const { loadActivePlanForCustomer } = useInstallmentPlan()
+    const result = await loadActivePlanForCustomer('cust-1')
+
+    expect(result?.plan.planId).toBe('plan-1')
+    expect(result?.plan.termFrequency).toBe('monthly')
+    expect(result?.dues).toHaveLength(2)
+    expect(result?.dues[0].dueId).toBe('d1')
+  })
+
+  it('loadPlan returns null for an unknown plan id', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce(null)
+    const { loadPlan } = useInstallmentPlan()
+    expect(await loadPlan('missing')).toBeNull()
+  })
+})

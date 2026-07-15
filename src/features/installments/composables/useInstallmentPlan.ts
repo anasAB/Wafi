@@ -6,6 +6,34 @@ import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 import { generateInstallmentSchedule } from '@/features/installments/installmentSchedule'
 import type { InstallmentPlan, InstallmentDue, NewInstallmentPlanInput } from '@/features/installments/installment.types'
 
+type PlanRow = {
+  plan_id: string; shop_id: string; customer_id: string; sale_id: string;
+  total_amount_usd: number; down_payment_usd: number; term_count: number;
+  term_frequency: 'weekly' | 'monthly'; start_date: string;
+  status: 'active' | 'completed' | 'defaulted' | 'cancelled';
+  created_at: string; created_by: string;
+}
+type DueRow = {
+  due_id: string; plan_id: string; shop_id: string; due_date: string;
+  amount_due_usd: number; amount_paid_usd: number; status: 'pending' | 'paid' | 'voided';
+}
+
+function rowToPlan(r: PlanRow): InstallmentPlan {
+  return {
+    planId: r.plan_id, shopId: r.shop_id, customerId: r.customer_id, saleId: r.sale_id,
+    totalAmountUsd: r.total_amount_usd, downPaymentUsd: r.down_payment_usd,
+    termCount: r.term_count, termFrequency: r.term_frequency, startDate: r.start_date,
+    status: r.status, createdAt: r.created_at, createdBy: r.created_by,
+  }
+}
+
+function rowToDue(r: DueRow): InstallmentDue {
+  return {
+    dueId: r.due_id, planId: r.plan_id, shopId: r.shop_id, dueDate: r.due_date,
+    amountDueUsd: r.amount_due_usd, amountPaidUsd: r.amount_paid_usd, status: r.status,
+  }
+}
+
 export function useInstallmentPlan() {
   const device  = useDeviceStore()
   const session = useSessionStore()
@@ -127,18 +155,50 @@ export function useInstallmentPlan() {
     await logInstallmentPaymentRecorded(dueId, due.plan_id, amountUsd)
   }
 
-  async function cancelPlan(_planId: string): Promise<void> {
-    throw new Error('not implemented — see Task 7')
+  async function cancelPlan(planId: string): Promise<void> {
+    await db.writeTransaction(async (tx) => {
+      await tx.execute(
+        `UPDATE installment_dues SET status = 'voided' WHERE plan_id = ? AND status = 'pending'`,
+        [planId],
+      )
+      await tx.execute(
+        `UPDATE installment_plans SET status = 'cancelled' WHERE plan_id = ?`,
+        [planId],
+      )
+    })
+    await logInstallmentPlanCancelled(planId)
   }
 
   async function loadActivePlanForCustomer(
-    _customerId: string,
+    customerId: string,
   ): Promise<{ plan: InstallmentPlan; dues: InstallmentDue[] } | null> {
-    throw new Error('not implemented — see Task 7')
+    const planRow = await db.getOptional<PlanRow>(
+      `SELECT * FROM installment_plans
+       WHERE customer_id = ? AND status = 'active'
+       ORDER BY created_at DESC LIMIT 1`,
+      [customerId],
+    )
+    if (!planRow) return null
+
+    const dueRows = await db.getAll<DueRow>(
+      `SELECT * FROM installment_dues WHERE plan_id = ? ORDER BY due_date ASC`,
+      [planRow.plan_id],
+    )
+    return { plan: rowToPlan(planRow), dues: dueRows.map(rowToDue) }
   }
 
-  async function loadPlan(_planId: string): Promise<{ plan: InstallmentPlan; dues: InstallmentDue[] } | null> {
-    throw new Error('not implemented — see Task 7')
+  async function loadPlan(planId: string): Promise<{ plan: InstallmentPlan; dues: InstallmentDue[] } | null> {
+    const planRow = await db.getOptional<PlanRow>(
+      `SELECT * FROM installment_plans WHERE plan_id = ?`,
+      [planId],
+    )
+    if (!planRow) return null
+
+    const dueRows = await db.getAll<DueRow>(
+      `SELECT * FROM installment_dues WHERE plan_id = ? ORDER BY due_date ASC`,
+      [planId],
+    )
+    return { plan: rowToPlan(planRow), dues: dueRows.map(rowToDue) }
   }
 
   return { createPlan, recordDuePayment, cancelPlan, loadActivePlanForCustomer, loadPlan }
