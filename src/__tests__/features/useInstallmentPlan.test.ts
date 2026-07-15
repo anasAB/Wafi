@@ -81,3 +81,76 @@ describe('useInstallmentPlan.createPlan', () => {
     )
   })
 })
+
+describe('useInstallmentPlan.recordDuePayment', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    const session = useSessionStore()
+    session.setActiveStaff(mockStaff)
+  })
+
+  it('inserts a customer_payments row tagged with due_id and updates amount_paid_usd/status to paid when fully covered', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce({
+      due_id: 'due-1', plan_id: 'plan-1', sale_id: 'sale-1', shop_id: 'shop-1',
+      amount_due_usd: 100, amount_paid_usd: 0, customer_id: 'cust-1',
+    } as any)
+
+    const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [{ count: 0 }] } })
+    vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => { await fn({ execute: txExecute }) })
+
+    const { recordDuePayment } = useInstallmentPlan()
+    await recordDuePayment('due-1', 100)
+
+    const calls = txExecute.mock.calls.map((c: any[]) => ({ sql: c[0] as string, params: c[1] }))
+    const paymentInsert = calls.find(c => c.sql.includes('INSERT INTO customer_payments'))
+    expect(paymentInsert).toBeTruthy()
+    expect(paymentInsert!.params).toEqual(expect.arrayContaining(['due-1']))
+
+    const dueUpdate = calls.find(c => c.sql.includes('UPDATE installment_dues'))
+    expect(dueUpdate!.sql).toContain(`status = 'paid'`)
+
+    // "are there any other unpaid/unvoided dues left on this plan?" check —
+    // performed atomically inside the same transaction via tx.execute, not a
+    // second db.getOptional call.
+    const remainingCheck = calls.find(c => c.sql.includes('SELECT COUNT(*)') && c.sql.includes('installment_dues'))
+    expect(remainingCheck).toBeTruthy()
+
+    const planUpdate = calls.find(c => c.sql.includes('UPDATE installment_plans'))
+    expect(planUpdate).toBeTruthy() // no other unpaid dues -> plan completes
+  })
+
+  it('leaves the due pending on a partial payment and does not touch the plan status', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce({
+      due_id: 'due-1', plan_id: 'plan-1', sale_id: 'sale-1', shop_id: 'shop-1',
+      amount_due_usd: 100, amount_paid_usd: 0, customer_id: 'cust-1',
+    } as any)
+
+    const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [] } })
+    vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => { await fn({ execute: txExecute }) })
+
+    const { recordDuePayment } = useInstallmentPlan()
+    await recordDuePayment('due-1', 40)
+
+    const calls = txExecute.mock.calls.map((c: any[]) => c[0] as string)
+    const dueUpdate = calls.find(sql => sql.includes('UPDATE installment_dues'))!
+    expect(dueUpdate).toContain(`status = 'pending'`)
+    expect(calls.some(sql => sql.includes('UPDATE installment_plans'))).toBe(false)
+  })
+
+  it('rejects a payment exceeding the remaining amount on the due', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce({
+      due_id: 'due-1', plan_id: 'plan-1', sale_id: 'sale-1', shop_id: 'shop-1',
+      amount_due_usd: 100, amount_paid_usd: 80, customer_id: 'cust-1',
+    } as any)
+
+    const { recordDuePayment } = useInstallmentPlan()
+    await expect(recordDuePayment('due-1', 30)).rejects.toThrow('يتجاوز')
+  })
+
+  it('rejects when the due is not found', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce(null)
+    const { recordDuePayment } = useInstallmentPlan()
+    await expect(recordDuePayment('missing', 10)).rejects.toThrow()
+  })
+})

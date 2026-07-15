@@ -72,8 +72,59 @@ export function useInstallmentPlan() {
     }
   }
 
-  async function recordDuePayment(_dueId: string, _amountUsd: number): Promise<void> {
-    throw new Error('not implemented — see Task 6')
+  async function recordDuePayment(dueId: string, amountUsd: number): Promise<void> {
+    const due = await db.getOptional<{
+      due_id: string; plan_id: string; sale_id: string; shop_id: string;
+      amount_due_usd: number; amount_paid_usd: number; customer_id: string;
+    }>(
+      `SELECT d.due_id, d.plan_id, p.sale_id, d.shop_id, d.amount_due_usd, d.amount_paid_usd, p.customer_id
+       FROM installment_dues d
+       JOIN installment_plans p ON p.plan_id = d.plan_id
+       WHERE d.due_id = ?`,
+      [dueId],
+    )
+    if (!due) throw new Error('لم يتم العثور على القسط')
+
+    const newPaid = due.amount_paid_usd + amountUsd
+    if (newPaid - due.amount_due_usd > 0.01) {
+      throw new Error('المبلغ المدخل يتجاوز المبلغ المتبقي لهذا القسط')
+    }
+
+    const now = new Date().toISOString()
+    const today = now.slice(0, 10)
+    const newStatus: 'pending' | 'paid' = newPaid >= due.amount_due_usd - 0.01 ? 'paid' : 'pending'
+
+    await db.writeTransaction(async (tx) => {
+      await tx.execute(
+        `INSERT INTO customer_payments
+           (id, shop_id, customer_id, sale_id, due_id, amount_usd, currency, amount_raw,
+            method, exchange_rate_at_payment, notes, paid_at, created_at, sync_status)
+         VALUES (?, ?, ?, ?, ?, ?, 'USD', ?, 'cash', NULL, NULL, ?, ?, 'pending')`,
+        [uuidv4(), due.shop_id, due.customer_id, due.sale_id, dueId, amountUsd, amountUsd, today, now],
+      )
+
+      await tx.execute(
+        `UPDATE installment_dues SET amount_paid_usd = ?, status = '${newStatus}' WHERE due_id = ?`,
+        [newPaid, dueId],
+      )
+
+      if (newStatus === 'paid') {
+        const remaining = await tx.execute(
+          `SELECT COUNT(*) as count FROM installment_dues
+           WHERE plan_id = ? AND due_id != ? AND status = 'pending'`,
+          [due.plan_id, dueId],
+        )
+        const remainingCount = (remaining as any).rows?._array?.[0]?.count ?? 0
+        if (remainingCount === 0) {
+          await tx.execute(
+            `UPDATE installment_plans SET status = 'completed' WHERE plan_id = ?`,
+            [due.plan_id],
+          )
+        }
+      }
+    })
+
+    await logInstallmentPaymentRecorded(dueId, due.plan_id, amountUsd)
   }
 
   async function cancelPlan(_planId: string): Promise<void> {
