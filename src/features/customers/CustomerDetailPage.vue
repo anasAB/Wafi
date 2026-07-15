@@ -10,6 +10,7 @@ import CustomerForm from './components/CustomerForm.vue'
 import RecordPaymentSheet from './components/RecordPaymentSheet.vue'
 import InvoiceDetailSheet from './components/InvoiceDetailSheet.vue'
 import AuditHistory from '@/features/audit/components/AuditHistory.vue'
+import InstallmentPlanSection from './components/InstallmentPlanSection.vue'
 import { WhatsAppPreviewSheet, useSendStatement } from '@/features/messaging'
 import { useCustomers } from './composables/useCustomers'
 import { useCustomerBalance } from './composables/useCustomerBalance'
@@ -257,6 +258,13 @@ function handleStatementCancel() {
 
         </div>
       </div>
+      <InstallmentPlanSection
+        v-if="customer"
+        :customer-id="route.params.id as string"
+        :customer-name="customer.name"
+        :customer-phone="customer.phone || customer.mobile || null"
+        :shop-name="receiptSettings.shopName || 'المحل'"
+      />
       <AuditHistory entity-type="customer" :entity-id="route.params.id as string" />
     </main>
 
