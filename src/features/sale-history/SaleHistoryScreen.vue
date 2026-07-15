@@ -332,6 +332,49 @@ function onWaSend(payload: { phone: string; text: string }) {
 
       <div class="filter-row">
         <PeriodToggle v-if="canViewReports" class="filter-period" />
+
+        <template v-if="canViewReports && period === 'month'">
+          <div class="month-date-field">
+            <label class="month-date-label">من</label>
+            <AppDatePicker
+              v-model="filterStartModel"
+              date-format="yy-mm-dd"
+              placeholder="اختر التاريخ"
+              show-icon
+              icon-display="input"
+              append-to="self"
+              class="month-filter-date-picker"
+              :input-class="'form-input date-input prime-date-input'"
+              @update:model-value="refreshHistoryForCurrentPeriod"
+            />
+          </div>
+
+          <div class="month-date-field">
+            <label class="month-date-label">إلى</label>
+            <AppDatePicker
+              v-model="filterEndModel"
+              date-format="yy-mm-dd"
+              placeholder="اختر التاريخ"
+              show-icon
+              icon-display="input"
+              append-to="self"
+              :min-date="isoToDate(filterStart) ?? undefined"
+              class="month-filter-date-picker"
+              :input-class="'form-input date-input prime-date-input'"
+              @update:model-value="refreshHistoryForCurrentPeriod"
+            />
+          </div>
+
+          <button
+            v-if="hasDateFilters"
+            type="button"
+            class="month-date-clear"
+            @click="clearDateFilters"
+          >
+            مسح
+          </button>
+        </template>
+
         <div class="search-wrap">
           <svg class="search-icon" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
@@ -624,7 +667,7 @@ function onWaSend(payload: { phone: string; text: string }) {
 .filter-row {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
 }
 
