@@ -14,6 +14,7 @@ import ExchangeRateEditor from '@/features/exchange-rate/ExchangeRateEditor.vue'
 import ConnectionPill from '@/components/ui/ConnectionPill.vue'
 import OperatorSwitchAction from '@/features/staff/components/OperatorSwitchAction.vue'
 import { useDailyDigest } from '@/features/messaging'
+import { useInstallmentsDueAlert } from '@/features/installments/composables/useInstallmentsDueAlert'
 
 import { useExchangeRate }     from '@/features/exchange-rate'
 import { useSaleDraft }        from '@/composables/useSaleDraft'
@@ -35,6 +36,7 @@ const { t } = useI18n()
 const { currentRate, loadRate } = useExchangeRate()
 const { hasDraft, loadDraft, restoreDraft, clearDraft } = useSaleDraft()
 const { count: lowStockCount, top3: lowStockTop3, allClear, load: loadAlerts } = useLowStockAlerts()
+const { count: installmentsDueCount, totalDueUsd: installmentsDueTotalUsd, allClear: installmentsAllClear, load: loadInstallmentsDue } = useInstallmentsDueAlert()
 const { period, setPeriod } = usePeriodToggle()
 const metrics    = useDashboardMetrics()
 const sellers    = useBestSellers()
@@ -75,7 +77,7 @@ function handleVisibilityChange() {
 
 onMounted(async () => {
   try {
-    await Promise.all([loadRate(), loadDraft(), loadAlerts()])
+    await Promise.all([loadRate(), loadDraft(), loadAlerts(), loadInstallmentsDue()])
     if (hasDraft.value) showDraftDialog.value = true
     await Promise.all([
       metrics.load(period.value),
@@ -541,6 +543,25 @@ const ACTIVITY_HEADING: Record<string, string> = { today: 'اليوم', week: '�
                 <div class="sig-body">
                   <div class="sig-main">
                     {{ openCreditCount > 0 ? `${openCreditCount} زبون بفواتير آجل` : 'لا ديون مفتوحة' }}
+                  </div>
+                </div>
+                <svg class="sig-arr" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path d="M9 18l6-6-6-6"/>
+                </svg>
+              </RouterLink>
+
+              <RouterLink
+                to="/installments"
+                class="signal-row"
+                :class="installmentsAllClear ? 'sig-green' : 'sig-yellow'"
+              >
+                <span class="sig-dot" :class="installmentsAllClear ? 'dot-green' : 'dot-yellow'"></span>
+                <div class="sig-body">
+                  <div class="sig-main">
+                    {{ installmentsAllClear ? 'لا أقساط مستحقة' : `${installmentsDueCount} أقساط مستحقة` }}
+                  </div>
+                  <div v-if="!installmentsAllClear" class="sig-sub">
+                    ${{ installmentsDueTotalUsd.toFixed(2) }} إجمالي المستحق
                   </div>
                 </div>
                 <svg class="sig-arr" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
