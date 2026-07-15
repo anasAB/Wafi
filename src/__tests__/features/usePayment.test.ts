@@ -320,6 +320,49 @@ describe('usePayment', () => {
     expect(salesInsert![1][10]).toBe(0) // amount_received column = 0 (unpaid)
   })
 
+  describe('usePayment — installment method', () => {
+    beforeEach(() => {
+      setActivePinia(createPinia())
+      const store = useSaleStore()
+      store.clear()
+      store.addLine({ productId: 'p1', nameAr: 'منتج', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10, availableStock: 99 })
+      store.setLockedRate(14500)
+      vi.clearAllMocks()
+    })
+
+    it('selectMethod("installment") moves to installment-confirm state', () => {
+      const { selectMethod, state, method } = usePayment()
+      selectMethod('installment')
+      expect(state.value).toBe('installment-confirm')
+      expect(method.value).toBe('installment')
+    })
+
+    it('confirm() with method installment writes is_credit=1 and payment_method=installment, with no tendered payment', async () => {
+      const tx = setupTx({ cost_price_usd: 0, current_stock: 10 })
+
+      const { selectMethod, confirm } = usePayment()
+      selectMethod('installment')
+      const sale = await confirm('cust-1')
+
+      expect(sale.paymentMethod).toBe('installment')
+      expect(sale.customerId).toBe('cust-1')
+
+      const salesInsert = tx.mock.calls.find(c => (c[0] as string).includes('INSERT INTO sales'))!
+      expect(salesInsert[1]).toContain('installment')
+      expect(salesInsert[1]).toContain(1) // is_credit = 1
+
+      const paymentInserts = tx.mock.calls.filter(c => (c[0] as string).includes('INSERT INTO sale_payments'))
+      expect(paymentInserts).toHaveLength(0) // unpaid at sale time, same as credit
+    })
+
+    it('back() from installment-confirm returns to method-selection', () => {
+      const { selectMethod, back, state } = usePayment()
+      selectMethod('installment')
+      back()
+      expect(state.value).toBe('method-selection')
+    })
+  })
+
   describe('split payments', () => {
     beforeEach(() => {
       setActivePinia(createPinia())
