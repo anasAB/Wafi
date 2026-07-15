@@ -111,13 +111,17 @@ export function usePayment() {
 
   function selectMethod(m: PaymentMethod) {
     method.value = m
-    state.value  = m === 'card'   ? 'card-confirm'
-                 : m === 'credit' ? 'credit-confirm'
+    state.value  = m === 'card'        ? 'card-confirm'
+                 : m === 'credit'      ? 'credit-confirm'
+                 : m === 'installment' ? 'installment-confirm'
                  : 'amount-entry'
   }
 
   function back() {
-    if (state.value === 'amount-entry' || state.value === 'card-confirm' || state.value === 'credit-confirm') {
+    if (
+      state.value === 'amount-entry' || state.value === 'card-confirm' ||
+      state.value === 'credit-confirm' || state.value === 'installment-confirm'
+    ) {
       amountReceived.value = null
       method.value         = null
       state.value          = 'method-selection'
@@ -162,8 +166,11 @@ export function usePayment() {
     const saleSeq    = saleStore.deviceSequence + 1
     const displayNum = formatNumber(deviceStore.deviceCode, saleStore.deviceSequence)
 
-    // A credit (آجل) sale is unpaid — it must NOT record any tendered payment.
-    const isCredit = method.value === 'credit' && pendingPayments.value.length === 0
+    // A credit (آجل) or installment sale is unpaid at sale time — it must NOT
+    // record any tendered payment. (Installment's down payment posts separately
+    // through customer_payments — see useInstallmentPlan.createPlan, called by
+    // the caller after this sale commits.)
+    const isCredit = (method.value === 'credit' || method.value === 'installment') && pendingPayments.value.length === 0
 
     // Build entries list
     let entries: SplitPaymentEntry[]
@@ -180,7 +187,10 @@ export function usePayment() {
 
     const isSplit       = entries.length > 1
     const primaryMethod: PaymentMethod =
-      isCredit ? 'credit' : isSplit ? 'split' : entries[0].method
+      method.value === 'installment' ? 'installment'
+      : isCredit ? 'credit'
+      : isSplit  ? 'split'
+      : entries[0].method
     const totalReceived = entries.reduce((s, e) => s + e.amountUsd, 0)
     const lastChange    = entries.length > 0 ? entries[entries.length - 1].changeDue : 0
 
@@ -289,8 +299,9 @@ export function usePayment() {
       return sale
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Payment failed'
-      state.value = method.value === 'card'   ? 'card-confirm'
-                  : method.value === 'credit' ? 'credit-confirm'
+      state.value = method.value === 'card'        ? 'card-confirm'
+                  : method.value === 'credit'      ? 'credit-confirm'
+                  : method.value === 'installment' ? 'installment-confirm'
                   : 'amount-entry'
       throw err
     }

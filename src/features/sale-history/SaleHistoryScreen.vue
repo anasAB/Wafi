@@ -238,6 +238,7 @@ const methodLabel: Record<string, string> = {
   card:     '💳',
   credit:   '📋',
   split:    '💵+',
+  installment: '📅',
 }
 
 async function handleReprint(saleId: string) {
@@ -287,6 +288,48 @@ function onWaSend(payload: { phone: string; text: string }) {
          All controls live on one wrapping row so they read as one group and
          stay aligned instead of drifting to opposite edges (BUG-011 new list). -->
     <div class="filter-bar" dir="rtl">
+      <div v-if="canViewReports && period === 'month'" class="month-date-bar">
+        <div class="month-date-field">
+          <label class="month-date-label">من</label>
+          <AppDatePicker
+            v-model="filterStartModel"
+            date-format="yy-mm-dd"
+            placeholder="اختر التاريخ"
+            show-icon
+            icon-display="input"
+            append-to="self"
+            class="month-filter-date-picker"
+            :input-class="'form-input date-input prime-date-input'"
+            @update:model-value="refreshHistoryForCurrentPeriod"
+          />
+        </div>
+
+        <div class="month-date-field">
+          <label class="month-date-label">إلى</label>
+          <AppDatePicker
+            v-model="filterEndModel"
+            date-format="yy-mm-dd"
+            placeholder="اختر التاريخ"
+            show-icon
+            icon-display="input"
+            append-to="self"
+            :min-date="isoToDate(filterStart) ?? undefined"
+            class="month-filter-date-picker"
+            :input-class="'form-input date-input prime-date-input'"
+            @update:model-value="refreshHistoryForCurrentPeriod"
+          />
+        </div>
+
+        <button
+          v-if="hasDateFilters"
+          type="button"
+          class="month-date-clear"
+          @click="clearDateFilters"
+        >
+          مسح
+        </button>
+      </div>
+
       <div class="filter-row">
         <PeriodToggle v-if="canViewReports" class="filter-period" />
 
@@ -629,6 +672,13 @@ function onWaSend(payload: { phone: string; text: string }) {
 }
 
 /* ── Custom month date-range (mirrors ExpenseListPage.vue) ─── */
+.month-date-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
 .month-date-field {
   display: flex;
   flex-direction: column;
@@ -808,6 +858,7 @@ function onWaSend(payload: { phone: string; text: string }) {
 }
 
 @media (max-width: 768px) {
+  .month-date-bar { flex-wrap: wrap; }
   .month-date-field { flex: 1 1 145px; }
   .month-date-clear { width: fit-content; height: 38px; }
 }

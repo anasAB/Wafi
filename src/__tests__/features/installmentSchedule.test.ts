@@ -35,4 +35,14 @@ describe('generateInstallmentSchedule', () => {
   it('throws for a non-positive term_count', () => {
     expect(() => generateInstallmentSchedule(100, 0, 0, 'monthly', '2026-08-01')).toThrow()
   })
+
+  it('clamps end-of-month dates to avoid overflow', () => {
+    // Plan starting Jan 31 should not skip months via setMonth overflow.
+    // Each due date is clamped to the max day of that month, carrying forward the clamped day.
+    const schedule = generateInstallmentSchedule(300, 0, 3, 'monthly', '2026-01-31')
+    expect(schedule).toHaveLength(3)
+    expect(schedule[0].dueDate).toBe('2026-01-31')
+    expect(schedule[1].dueDate).toBe('2026-02-28') // Clamped: Feb has only 28 days
+    expect(schedule[2].dueDate).toBe('2026-03-28') // Carried forward from Feb's clamped day 28
+  })
 })

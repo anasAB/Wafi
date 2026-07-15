@@ -156,6 +156,16 @@ onUnmounted(() => {
   document.removeEventListener('click', onDocumentClick)
 })
 
+// The sale was persisted, but the installment plan that was supposed to go with
+// it failed to save. Don't hide the completed sale (handlePaymentConfirmed still
+// runs right after and navigates to the confirmation screen) — just remember the
+// message so it can be handed over and shown there, since this screen unmounts
+// before a locally-set toast would ever be seen.
+let installmentPlanErrorMessage: string | null = null
+function handleInstallmentPlanFailed(_sale: CompletedSale, message: string) {
+  installmentPlanErrorMessage = message
+}
+
 function handlePaymentConfirmed(completedSale: CompletedSale) {
   // Sale is done (cart already cleared in usePayment) — skip the leave guard.
   confirmedLeave = true
@@ -167,8 +177,9 @@ function handlePaymentConfirmed(completedSale: CompletedSale) {
   router.push({
     path: '/pos/confirmation',
     query: { id: completedSale.saleId },
-    state: { sale: completedSale } as any,
+    state: { sale: completedSale, installmentPlanError: installmentPlanErrorMessage } as any,
   })
+  installmentPlanErrorMessage = null
 }
 </script>
 
@@ -294,6 +305,7 @@ function handlePaymentConfirmed(completedSale: CompletedSale) {
   <PaymentModal
     v-if="payOpen"
     @confirmed="handlePaymentConfirmed"
+    @installment-plan-failed="handleInstallmentPlanFailed"
     @close="payOpen = false"
   />
 

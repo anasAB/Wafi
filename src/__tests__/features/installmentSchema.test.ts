@@ -4,9 +4,9 @@ import { AppSchema } from '@/data/powersync/schema'
 
 describe('AppSchema — installment tables', () => {
   it('registers installment_plans with the expected columns', () => {
-    const table = (AppSchema as any).tables.find((t: any) => t.name === 'installment_plans')
+    const table = AppSchema.tables.find(t => t.name === 'installment_plans')
     expect(table).toBeTruthy()
-    const cols = (table.options.columns as any[]).map((c: any) => c.options.name)
+    const cols = table!.columns.map(c => c.name)
     expect(cols).toEqual(expect.arrayContaining([
       'shop_id', 'customer_id', 'sale_id', 'total_amount_usd', 'down_payment_usd',
       'term_count', 'term_frequency', 'start_date', 'status', 'created_at', 'created_by', 'sync_status',
@@ -14,17 +14,17 @@ describe('AppSchema — installment tables', () => {
   })
 
   it('registers installment_dues with the expected columns', () => {
-    const table = (AppSchema as any).tables.find((t: any) => t.name === 'installment_dues')
+    const table = AppSchema.tables.find(t => t.name === 'installment_dues')
     expect(table).toBeTruthy()
-    const cols = (table.options.columns as any[]).map((c: any) => c.options.name)
+    const cols = table!.columns.map(c => c.name)
     expect(cols).toEqual(expect.arrayContaining([
       'plan_id', 'shop_id', 'due_date', 'amount_due_usd', 'amount_paid_usd', 'status', 'sync_status',
     ]))
   })
 
   it('adds due_id to customer_payments', () => {
-    const table = (AppSchema as any).tables.find((t: any) => t.name === 'customer_payments')
-    const cols = (table.options.columns as any[]).map((c: any) => c.options.name)
+    const table = AppSchema.tables.find(t => t.name === 'customer_payments')
+    const cols = table!.columns.map(c => c.name)
     expect(cols).toContain('due_id')
   })
 })

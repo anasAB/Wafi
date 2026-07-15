@@ -420,6 +420,17 @@ export function useAuditLog() {
             { from_staff_id: fromStaffId, from_name: fromName,
               to_staff_id: toStaffId, to_name: toName })
 
+  const logInstallmentPlanCreated = (
+    planId: string, customerId: string, totalUsd: number, downPaymentUsd: number, termCount: number,
+  ) => _log('installment_plan.created', 'installment_plan', planId,
+            { customerId, totalUsd, downPaymentUsd, termCount })
+
+  const logInstallmentPaymentRecorded = (dueId: string, planId: string, amountUsd: number) =>
+    _log('installment_payment.recorded', 'installment_plan', planId, { dueId, amountUsd })
+
+  const logInstallmentPlanCancelled = (planId: string) =>
+    _log('installment_plan.cancelled', 'installment_plan', planId, {})
+
   return {
     entries,
     loadLog,
@@ -459,5 +470,8 @@ export function useAuditLog() {
     logSupplierUpdated,
     logReceivingCreated,
     logOperatorSwitched,
+    logInstallmentPlanCreated,
+    logInstallmentPaymentRecorded,
+    logInstallmentPlanCancelled,
   }
 }

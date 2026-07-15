@@ -34,12 +34,16 @@ export type AuditEvent =
   | 'operator.switched'
   | 'cash_movement.recorded'
   | 'cash_movement.voided'
+  | 'installment_plan.created'
+  | 'installment_payment.recorded'
+  | 'installment_plan.cancelled'
 
 export type AuditEntityType =
   | 'sale' | 'return' | 'product' | 'expense'
   | 'customer' | 'stock' | 'shift'
   | 'exchange_rate' | 'settings' | 'staff'
   | 'supplier' | 'receiving' | 'cash_movement'
+  | 'installment_plan'
 
 export interface AuditLog {
   id:         string

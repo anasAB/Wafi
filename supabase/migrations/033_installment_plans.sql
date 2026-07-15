@@ -27,7 +27,7 @@
 --     status/amount_paid_usd are meant to be updated as dues get paid/voided.
 
 CREATE TABLE IF NOT EXISTS public.installment_plans (
-  plan_id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   shop_id           uuid NOT NULL,
   customer_id       uuid NOT NULL REFERENCES public.customers(id) ON DELETE CASCADE,
   sale_id           uuid NOT NULL REFERENCES public.sales(id) ON DELETE CASCADE,
@@ -47,8 +47,8 @@ CREATE INDEX IF NOT EXISTS idx_installment_plans_shop_customer
   ON public.installment_plans (shop_id, customer_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS public.installment_dues (
-  due_id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  plan_id         uuid NOT NULL REFERENCES public.installment_plans(plan_id) ON DELETE CASCADE,
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  plan_id         uuid NOT NULL REFERENCES public.installment_plans(id) ON DELETE CASCADE,
   shop_id         uuid NOT NULL,
   due_date        date NOT NULL,
   amount_due_usd  numeric(12,2) NOT NULL CHECK (amount_due_usd > 0),
@@ -66,7 +66,7 @@ CREATE INDEX IF NOT EXISTS idx_installment_dues_shop_status_date
 -- down payment recorded at plan creation has no due_id; only subsequent
 -- per-due collections set it).
 ALTER TABLE public.customer_payments
-  ADD COLUMN IF NOT EXISTS due_id uuid REFERENCES public.installment_dues(due_id) ON DELETE SET NULL;
+  ADD COLUMN IF NOT EXISTS due_id uuid REFERENCES public.installment_dues(id) ON DELETE SET NULL;
 
 -- Widen sales.payment_method to allow 'installment' (mirrors migration 011,
 -- which widened the same CHECK for 'credit'/'split').
