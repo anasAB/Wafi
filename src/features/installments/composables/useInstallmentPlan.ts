@@ -7,20 +7,20 @@ import { generateInstallmentSchedule } from '@/features/installments/installment
 import type { InstallmentPlan, InstallmentDue, NewInstallmentPlanInput } from '@/features/installments/installment.types'
 
 type PlanRow = {
-  plan_id: string; shop_id: string; customer_id: string; sale_id: string;
+  id: string; shop_id: string; customer_id: string; sale_id: string;
   total_amount_usd: number; down_payment_usd: number; term_count: number;
   term_frequency: 'weekly' | 'monthly'; start_date: string;
   status: 'active' | 'completed' | 'defaulted' | 'cancelled';
   created_at: string; created_by: string;
 }
 type DueRow = {
-  due_id: string; plan_id: string; shop_id: string; due_date: string;
+  id: string; plan_id: string; shop_id: string; due_date: string;
   amount_due_usd: number; amount_paid_usd: number; status: 'pending' | 'paid' | 'voided';
 }
 
 function rowToPlan(r: PlanRow): InstallmentPlan {
   return {
-    planId: r.plan_id, shopId: r.shop_id, customerId: r.customer_id, saleId: r.sale_id,
+    planId: r.id, shopId: r.shop_id, customerId: r.customer_id, saleId: r.sale_id,
     totalAmountUsd: r.total_amount_usd, downPaymentUsd: r.down_payment_usd,
     termCount: r.term_count, termFrequency: r.term_frequency, startDate: r.start_date,
     status: r.status, createdAt: r.created_at, createdBy: r.created_by,
@@ -29,7 +29,7 @@ function rowToPlan(r: PlanRow): InstallmentPlan {
 
 function rowToDue(r: DueRow): InstallmentDue {
   return {
-    dueId: r.due_id, planId: r.plan_id, shopId: r.shop_id, dueDate: r.due_date,
+    dueId: r.id, planId: r.plan_id, shopId: r.shop_id, dueDate: r.due_date,
     amountDueUsd: r.amount_due_usd, amountPaidUsd: r.amount_paid_usd, status: r.status,
   }
 }
@@ -52,7 +52,7 @@ export function useInstallmentPlan() {
     await db.writeTransaction(async (tx) => {
       await tx.execute(
         `INSERT INTO installment_plans
-           (plan_id, shop_id, customer_id, sale_id, total_amount_usd, down_payment_usd,
+           (id, shop_id, customer_id, sale_id, total_amount_usd, down_payment_usd,
             term_count, term_frequency, start_date, status, created_at, created_by, sync_status)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, 'pending')`,
         [
@@ -65,7 +65,7 @@ export function useInstallmentPlan() {
       for (const due of schedule) {
         await tx.execute(
           `INSERT INTO installment_dues
-             (due_id, plan_id, shop_id, due_date, amount_due_usd, amount_paid_usd, status, sync_status)
+             (id, plan_id, shop_id, due_date, amount_due_usd, amount_paid_usd, status, sync_status)
            VALUES (?, ?, ?, ?, ?, 0, 'pending', 'pending')`,
           [uuidv4(), planId, device.shopId, due.dueDate, due.amountDueUsd],
         )
@@ -102,13 +102,13 @@ export function useInstallmentPlan() {
 
   async function recordDuePayment(dueId: string, amountUsd: number): Promise<void> {
     const due = await db.getOptional<{
-      due_id: string; plan_id: string; sale_id: string; shop_id: string;
+      id: string; plan_id: string; sale_id: string; shop_id: string;
       amount_due_usd: number; amount_paid_usd: number; customer_id: string;
     }>(
-      `SELECT d.due_id, d.plan_id, p.sale_id, d.shop_id, d.amount_due_usd, d.amount_paid_usd, p.customer_id
+      `SELECT d.id, d.plan_id, p.sale_id, d.shop_id, d.amount_due_usd, d.amount_paid_usd, p.customer_id
        FROM installment_dues d
-       JOIN installment_plans p ON p.plan_id = d.plan_id
-       WHERE d.due_id = ?`,
+       JOIN installment_plans p ON p.id = d.plan_id
+       WHERE d.id = ?`,
       [dueId],
     )
     if (!due) throw new Error('لم يتم العثور على القسط')
@@ -132,20 +132,20 @@ export function useInstallmentPlan() {
       )
 
       await tx.execute(
-        `UPDATE installment_dues SET amount_paid_usd = ?, status = '${newStatus}' WHERE due_id = ?`,
+        `UPDATE installment_dues SET amount_paid_usd = ?, status = '${newStatus}' WHERE id = ?`,
         [newPaid, dueId],
       )
 
       if (newStatus === 'paid') {
         const remaining = await tx.execute(
           `SELECT COUNT(*) as count FROM installment_dues
-           WHERE plan_id = ? AND due_id != ? AND status = 'pending'`,
+           WHERE plan_id = ? AND id != ? AND status = 'pending'`,
           [due.plan_id, dueId],
         )
         const remainingCount = (remaining as any).rows?._array?.[0]?.count ?? 0
         if (remainingCount === 0) {
           await tx.execute(
-            `UPDATE installment_plans SET status = 'completed' WHERE plan_id = ?`,
+            `UPDATE installment_plans SET status = 'completed' WHERE id = ?`,
             [due.plan_id],
           )
         }
@@ -162,7 +162,7 @@ export function useInstallmentPlan() {
         [planId],
       )
       await tx.execute(
-        `UPDATE installment_plans SET status = 'cancelled' WHERE plan_id = ?`,
+        `UPDATE installment_plans SET status = 'cancelled' WHERE id = ?`,
         [planId],
       )
     })
@@ -182,14 +182,14 @@ export function useInstallmentPlan() {
 
     const dueRows = await db.getAll<DueRow>(
       `SELECT * FROM installment_dues WHERE plan_id = ? ORDER BY due_date ASC`,
-      [planRow.plan_id],
+      [planRow.id],
     )
     return { plan: rowToPlan(planRow), dues: dueRows.map(rowToDue) }
   }
 
   async function loadPlan(planId: string): Promise<{ plan: InstallmentPlan; dues: InstallmentDue[] } | null> {
     const planRow = await db.getOptional<PlanRow>(
-      `SELECT * FROM installment_plans WHERE plan_id = ?`,
+      `SELECT * FROM installment_plans WHERE id = ?`,
       [planId],
     )
     if (!planRow) return null

@@ -38,10 +38,10 @@ export function useInstallmentsDueAlert() {
     const today = new Date().toISOString().slice(0, 10)
 
     const rows = await db.getAll<DueAlertRow>(
-      `SELECT d.due_id, d.plan_id, p.customer_id, c.name as customer_name,
+      `SELECT d.id AS due_id, d.plan_id, p.customer_id, c.name as customer_name,
               d.due_date, d.amount_due_usd, d.amount_paid_usd, d.status
        FROM installment_dues d
-       JOIN installment_plans p ON p.plan_id = d.plan_id
+       JOIN installment_plans p ON p.id = d.plan_id
        JOIN customers c ON c.id = p.customer_id
        WHERE d.shop_id = ? AND d.status = 'pending' AND p.status = 'active'
        ORDER BY d.due_date ASC`,

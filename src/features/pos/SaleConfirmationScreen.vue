@@ -45,6 +45,7 @@ const methodLabels: Record<string, string> = {
   card:     'بطاقة',
   credit:   'آجل',
   split:    'متعدد',
+  installment: 'تقسيط',
 }
 
 /** Build ReceiptData from the current sale — shared by print and WhatsApp paths. */

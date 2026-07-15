@@ -92,7 +92,7 @@ describe('useInstallmentPlan.recordDuePayment', () => {
 
   it('inserts a customer_payments row tagged with due_id and updates amount_paid_usd/status to paid when fully covered', async () => {
     vi.mocked(db.getOptional).mockResolvedValueOnce({
-      due_id: 'due-1', plan_id: 'plan-1', sale_id: 'sale-1', shop_id: 'shop-1',
+      id: 'due-1', plan_id: 'plan-1', sale_id: 'sale-1', shop_id: 'shop-1',
       amount_due_usd: 100, amount_paid_usd: 0, customer_id: 'cust-1',
     } as any)
 
@@ -122,7 +122,7 @@ describe('useInstallmentPlan.recordDuePayment', () => {
 
   it('leaves the due pending on a partial payment and does not touch the plan status', async () => {
     vi.mocked(db.getOptional).mockResolvedValueOnce({
-      due_id: 'due-1', plan_id: 'plan-1', sale_id: 'sale-1', shop_id: 'shop-1',
+      id: 'due-1', plan_id: 'plan-1', sale_id: 'sale-1', shop_id: 'shop-1',
       amount_due_usd: 100, amount_paid_usd: 0, customer_id: 'cust-1',
     } as any)
 
@@ -140,7 +140,7 @@ describe('useInstallmentPlan.recordDuePayment', () => {
 
   it('rejects a payment exceeding the remaining amount on the due', async () => {
     vi.mocked(db.getOptional).mockResolvedValueOnce({
-      due_id: 'due-1', plan_id: 'plan-1', sale_id: 'sale-1', shop_id: 'shop-1',
+      id: 'due-1', plan_id: 'plan-1', sale_id: 'sale-1', shop_id: 'shop-1',
       amount_due_usd: 100, amount_paid_usd: 80, customer_id: 'cust-1',
     } as any)
 
@@ -202,13 +202,13 @@ describe('useInstallmentPlan.loadActivePlanForCustomer / loadPlan', () => {
 
   it('returns the active plan and its dues ordered by due_date', async () => {
     vi.mocked(db.getOptional).mockResolvedValueOnce({
-      plan_id: 'plan-1', shop_id: 'shop-1', customer_id: 'cust-1', sale_id: 'sale-1',
+      id: 'plan-1', shop_id: 'shop-1', customer_id: 'cust-1', sale_id: 'sale-1',
       total_amount_usd: 300, down_payment_usd: 60, term_count: 3, term_frequency: 'monthly',
       start_date: '2026-08-01', status: 'active', created_at: '2026-07-14T00:00:00.000Z', created_by: 'أحمد',
     } as any)
     vi.mocked(db.getAll).mockResolvedValueOnce([
-      { due_id: 'd1', plan_id: 'plan-1', shop_id: 'shop-1', due_date: '2026-08-01', amount_due_usd: 100, amount_paid_usd: 100, status: 'paid' },
-      { due_id: 'd2', plan_id: 'plan-1', shop_id: 'shop-1', due_date: '2026-09-01', amount_due_usd: 100, amount_paid_usd: 0, status: 'pending' },
+      { id: 'd1', plan_id: 'plan-1', shop_id: 'shop-1', due_date: '2026-08-01', amount_due_usd: 100, amount_paid_usd: 100, status: 'paid' },
+      { id: 'd2', plan_id: 'plan-1', shop_id: 'shop-1', due_date: '2026-09-01', amount_due_usd: 100, amount_paid_usd: 0, status: 'pending' },
     ] as any)
 
     const { loadActivePlanForCustomer } = useInstallmentPlan()

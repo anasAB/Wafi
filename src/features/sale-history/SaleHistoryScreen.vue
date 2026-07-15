@@ -238,6 +238,7 @@ const methodLabel: Record<string, string> = {
   card:     '💳',
   credit:   '📋',
   split:    '💵+',
+  installment: '📅',
 }
 
 async function handleReprint(saleId: string) {
