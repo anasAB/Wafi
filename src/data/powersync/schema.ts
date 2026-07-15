@@ -296,6 +296,27 @@ const stock_receiving_line_items = new Table({
   sync_status:   column.text,
 })
 
+const stock_take_sessions = new Table({
+  shop_id:      column.text,
+  started_at:   column.text,
+  completed_at: column.text,
+  status:       column.text,   // 'in_progress' | 'completed' | 'cancelled'
+  created_by:   column.text,
+  scope:        column.text,
+  sync_status:  column.text,
+})
+
+const stock_take_lines = new Table({
+  session_id:         column.text,
+  shop_id:            column.text,
+  product_id:         column.text,
+  expected_stock:     column.integer,
+  counted_stock:      column.integer,
+  variance:           column.integer,
+  variance_value_usd: column.real,
+  sync_status:        column.text,
+})
+
 export const AppSchema = new Schema({
   products,
   stock_adjustments,
@@ -318,6 +339,8 @@ export const AppSchema = new Schema({
   suppliers,
   stock_receivings,
   stock_receiving_line_items,
+  stock_take_sessions,
+  stock_take_lines,
   installment_plans,
   installment_dues,
 })
