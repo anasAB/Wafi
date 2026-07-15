@@ -33,6 +33,11 @@ describe('useExchangeRate', () => {
     await expect(saveRate(0)).rejects.toThrow('Rate must be greater than zero')
   })
 
+  it('saveRate rejects a non-integer value', async () => {
+    const { saveRate } = useExchangeRate()
+    await expect(saveRate(14500.5)).rejects.toThrow('Rate must be a whole number')
+  })
+
   it('saveRate sets needsConfirmation when > 50% change', async () => {
     vi.mocked(db.execute).mockResolvedValueOnce({
       rows: { _array: [{ rate: 14500, set_at: new Date().toISOString() }] },

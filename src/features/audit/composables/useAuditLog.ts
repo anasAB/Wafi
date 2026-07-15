@@ -10,13 +10,24 @@ type AuditRow = {
   meta: string; created_at: string
 }
 
+// audit_log.meta was JSONB in Postgres against a TEXT column on the client
+// (migration 031 fixed this), which double-encoded the JSON string on every
+// sync round-trip: JSON.parse would yield a *string* holding the JSON text
+// instead of the parsed object. Parse twice when that happens so any row
+// synced before a device picks up 031's backfill still renders correctly.
+function parseMeta(raw: string | null): Record<string, unknown> {
+  let value: unknown = JSON.parse(raw ?? '{}')
+  if (typeof value === 'string') value = JSON.parse(value)
+  return (value && typeof value === 'object' ? value : {}) as Record<string, unknown>
+}
+
 function rowToAuditLog(r: AuditRow): AuditLog {
   return {
     id: r.id, shopId: r.shop_id, staffId: r.staff_id,
     staffName: r.staff_name, event: r.event as AuditEvent,
     entityType: r.entity_type as AuditEntityType,
     entityId: r.entity_id,
-    meta: JSON.parse(r.meta ?? '{}'),
+    meta: parseMeta(r.meta),
     createdAt: r.created_at,
   }
 }

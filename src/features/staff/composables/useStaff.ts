@@ -28,6 +28,17 @@ export class StaffLimitReachedError extends Error {
   }
 }
 
+// staff.permissions was JSONB in Postgres against a TEXT column on the client
+// (migration 032 fixed this), which double-encoded the JSON string on every
+// sync round-trip: JSON.parse would yield a *string* holding the JSON text
+// instead of the parsed object. Parse twice when that happens so any row
+// synced before a device picks up 032's backfill still applies correctly.
+function parsePermissions(raw: string | null): Partial<StaffPermissions> {
+  let value: unknown = JSON.parse(raw ?? '{}')
+  if (typeof value === 'string') value = JSON.parse(value)
+  return (value && typeof value === 'object' ? value : {}) as Partial<StaffPermissions>
+}
+
 function rowToStaff(r: any): Staff {
   return {
     id: r.id,
@@ -36,7 +47,7 @@ function rowToStaff(r: any): Staff {
     pinHash: r.pin_hash,
     role: r.role,
     pinSalt: r.pin_salt ?? null,
-    permissions: permissionsForRole(r.role, JSON.parse(r.permissions ?? '{}')),
+    permissions: permissionsForRole(r.role, parsePermissions(r.permissions)),
     isActive: r.is_active === 1,
     createdAt: r.created_at,
   }

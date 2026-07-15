@@ -35,6 +35,7 @@ export function useExchangeRate() {
 
   async function saveRate(newRate: number, confirmed = false): Promise<void> {
     if (newRate <= 0) throw new Error('Rate must be greater than zero')
+    if (!Number.isInteger(newRate)) throw new Error('Rate must be a whole number (SYP has no fractional unit)')
 
     if (currentRate.value !== null && !confirmed) {
       const change = Math.abs(newRate - currentRate.value) / currentRate.value

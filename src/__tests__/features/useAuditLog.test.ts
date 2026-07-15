@@ -94,6 +94,23 @@ describe('useAuditLog', () => {
       expect.arrayContaining(['sale', 'sale-1'])
     )
   })
+
+  it('loadLog parses a double-encoded meta (JSONB round-trip, migration 031) back into an object', async () => {
+    // Simulates a row synced through the old JSONB column: the client's JSON
+    // string got wrapped in an extra layer of JSON encoding.
+    const doubleEncoded = JSON.stringify(JSON.stringify({ name: 'أحمد', role: 'cashier' }))
+    vi.mocked(db.getAll).mockResolvedValueOnce([
+      {
+        id: 'a1', shop_id: 'shop-1', staff_id: 's1', staff_name: 'system',
+        event: 'staff.created', entity_type: 'staff', entity_id: 's2',
+        meta: doubleEncoded, created_at: '2026-01-01T00:00:00Z',
+      },
+    ] as any)
+    const { entries, loadLog } = useAuditLog()
+    await loadLog({ startDate: '2026-01-01', endDate: '2026-01-01' })
+    expect(entries.value[0].meta).toEqual({ name: 'أحمد', role: 'cashier' })
+    expect(eventLabel(entries.value[0])).toBe('أضاف موظف: أحمد (cashier)')
+  })
 })
 
 describe('useAuditLog — supplier & receiving helpers', () => {
@@ -133,6 +150,22 @@ describe('useAuditLog — supplier & receiving helpers', () => {
     expect(meta).toMatchObject({
       from_staff_id: 's1', from_name: 'سامي', to_staff_id: 's2', to_name: 'أحمد',
     })
+  })
+})
+
+describe('eventLabel — missing/legacy meta never renders literal "undefined"', () => {
+  it('staff.created falls back to em-dash when name/role are missing', () => {
+    const entry = { event: 'staff.created', meta: {} } as unknown as AuditLog
+    const label = eventLabel(entry)
+    expect(label).not.toContain('undefined')
+    expect(label).toContain('أضاف موظف')
+  })
+
+  it('exchange_rate.changed falls back to em-dash when old_rate/new_rate are missing', () => {
+    const entry = { event: 'exchange_rate.changed', meta: {} } as unknown as AuditLog
+    const label = eventLabel(entry)
+    expect(label).not.toContain('undefined')
+    expect(label).toContain('غيّر سعر الصرف')
   })
 })
 
