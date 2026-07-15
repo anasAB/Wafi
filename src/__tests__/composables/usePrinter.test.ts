@@ -29,6 +29,24 @@ describe('SimulatedDriver', () => {
       expect.anything()
     )
   })
+
+  it('logs a DUPLICATE COPY marker when isReprint is true', async () => {
+    const consoleSpy = vi.spyOn(console, 'log')
+    const driver = new SimulatedDriver()
+    await driver.print({ ...sampleReceipt, isReprint: true })
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[SimulatedPrinter]'),
+      expect.objectContaining({ isReprint: true, marker: 'نسخة مكررة / Duplicate Copy' })
+    )
+  })
+
+  it('omits the marker key when isReprint is not set', async () => {
+    const consoleSpy = vi.spyOn(console, 'log')
+    const driver = new SimulatedDriver()
+    await driver.print(sampleReceipt)
+    const call = consoleSpy.mock.calls.find(c => c[0] === '[SimulatedPrinter]')
+    expect(call?.[1]).not.toHaveProperty('marker')
+  })
 })
 
 describe('usePrinter', () => {

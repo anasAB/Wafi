@@ -5,7 +5,10 @@ import { usePrinter } from '@/composables/usePrinter'
 import type { ReceiptData } from '@/composables/usePrinter'
 import type { SaleRecord } from './sale-history.types'
 
-export async function buildReceiptData(saleId: string): Promise<ReceiptData> {
+export async function buildReceiptData(
+  saleId: string,
+  opts?: { isReprint?: boolean },
+): Promise<ReceiptData> {
   const device = useDeviceStore()
   const [saleRes, linesRes, settingsRes, paymentsRes, fullyReturnedRes] = await Promise.all([
     db.execute(`SELECT * FROM sales WHERE id = ?`, [saleId]),
@@ -61,6 +64,7 @@ export async function buildReceiptData(saleId: string): Promise<ReceiptData> {
       ? paymentRows.map((p: any) => ({ method: p.method, amountUsd: p.amount_usd }))
       : undefined,
     isFullyReturned,
+    isReprint: opts?.isReprint ?? false,
   }
 }
 
@@ -196,7 +200,7 @@ export function useSaleHistory() {
   }
 
   async function reprint(saleId: string): Promise<void> {
-    const receipt = await buildReceiptData(saleId)
+    const receipt = await buildReceiptData(saleId, { isReprint: true })
     await printer.print(receipt)
   }
 

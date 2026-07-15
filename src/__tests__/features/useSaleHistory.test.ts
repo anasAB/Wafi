@@ -7,7 +7,7 @@ vi.mock('@/composables/usePrinter', () => ({
   usePrinter: () => ({ print: printSpy, error: { value: null } }),
 }))
 
-import { useSaleHistory } from '@/features/sale-history/useSaleHistory'
+import { useSaleHistory, buildReceiptData } from '@/features/sale-history/useSaleHistory'
 import { db } from '@/data/powersync/db'
 
 describe('useSaleHistory', () => {
@@ -188,5 +188,41 @@ describe('useSaleHistory', () => {
     expect(receipt.splitPayments).toHaveLength(2)
     expect(receipt.splitPayments[1].method).toBe('card')
     expect(receipt.isFullyReturned).toBe(true)
+  })
+
+  // ── isReprint ────────────────────────────────────────────────────────────
+
+  function mockSaleQueries() {
+    vi.mocked(db.execute).mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM sales WHERE id')) return { rows: { _array: [{
+        id: 'sale-001', display_sale_number: 'A-000001', total_usd: 20, total_syp: 290000,
+        exchange_rate_at_sale: 14500, payment_method: 'cash_usd', amount_received: 20,
+        amount_received_currency: 'USD', change_due: 0, created_at: new Date().toISOString(), is_split: 0,
+      }] } } as any
+      if (sql.includes('FROM sale_line_items')) return { rows: { _array: [
+        { name_ar: 'منتج', quantity: 2, unit_price_usd: 10, line_total_usd: 20 },
+      ] } } as any
+      if (sql.includes('FROM receipt_settings')) return { rows: { _array: [{ shop_name: 'محل تجريبي' }] } } as any
+      return { rows: { _array: [] } } as any
+    })
+  }
+
+  it('buildReceiptData defaults isReprint to false when no options are passed', async () => {
+    mockSaleQueries()
+    const receipt = await buildReceiptData('sale-001')
+    expect(receipt.isReprint).toBe(false)
+  })
+
+  it('buildReceiptData sets isReprint to true when requested', async () => {
+    mockSaleQueries()
+    const receipt = await buildReceiptData('sale-001', { isReprint: true })
+    expect(receipt.isReprint).toBe(true)
+  })
+
+  it('reprint() builds the receipt with isReprint: true', async () => {
+    mockSaleQueries()
+    const { reprint } = useSaleHistory()
+    await reprint('sale-001')
+    expect(printSpy).toHaveBeenCalledWith(expect.objectContaining({ isReprint: true }))
   })
 })

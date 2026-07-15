@@ -27,6 +27,10 @@ export interface ReceiptData {
   splitPayments?: Array<{ method: PaymentMethod; amountUsd: number }>
   /** Marks a reprint of a fully-returned sale so it isn't mistaken for a live sale. */
   isFullyReturned?:         boolean
+  /** True when this print is a reprint (from sale history), not the original at-sale print.
+   *  Anti-fraud requirement: a reprinted receipt must be visually distinguishable from the
+   *  original so a customer cannot use it twice to claim two separate returns. */
+  isReprint?:               boolean
 }
 
 export interface IPrinterDriver {
@@ -40,6 +44,7 @@ export class SimulatedDriver implements IPrinterDriver {
       saleNumber: receipt.displaySaleNumber,
       total:      `$${receipt.totalUsd.toFixed(2)} / ${receipt.totalSyp.toLocaleString()} ل.س`,
       lines:      receipt.lines.map(l => `${l.nameAr} × ${l.quantity} = $${l.lineTotalUsd.toFixed(2)}`),
+      ...(receipt.isReprint ? { isReprint: true, marker: 'نسخة مكررة / Duplicate Copy' } : {}),
     })
   }
 }
