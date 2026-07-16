@@ -7,6 +7,8 @@ export interface Product {
   costPriceUsd:       number
   barcode?:           string
   category?:          string
+  categoryId?:        string
+  subcategoryId?:     string
   photoUrl?:          string
   currentStock:       number
   lowStockThreshold:  number

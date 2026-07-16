@@ -36,10 +36,15 @@ export function useProducts() {
     data: Partial<Product> & {
       shopId: string; nameAr: string; salePriceUsd: number; costPriceUsd: number
       currentStock: number; lowStockThreshold: number; isActive: boolean
+      categoryId?: string; subcategoryId?: string
     }
   ) {
     // Stock floors at zero — never persist a negative on-hand count.
     const currentStock = Math.max(0, data.currentStock)
+    // subcategory_id may never be persisted without its parent category_id (spec:
+    // "subcategory-without-category" edge case) — defensive backstop in case a caller
+    // bypasses the product form's own guard that disables the subcategory dropdown.
+    const effectiveSubcategoryId = data.categoryId ? data.subcategoryId : undefined
     const normalizedBarcode = (data.barcode ?? '').trim()
     if (normalizedBarcode) {
       const duplicate = await db.getOptional<{ id: string }>(
@@ -62,10 +67,11 @@ export function useProducts() {
         `SELECT price_usd FROM products WHERE id = ?`, [data.id]
       )
       await db.execute(
-        `UPDATE products SET name_ar=?, name_en=?, barcode=?, category=?,
+        `UPDATE products SET name_ar=?, name_en=?, barcode=?, category_id=?, subcategory_id=?,
          price_usd=?, cost_price_usd=?, current_stock=?, low_stock_threshold=?,
          photo_url=?, is_active=?, updated_at=?, sync_status='pending' WHERE id=?`,
-        [data.nameAr, data.nameEn ?? null, normalizedBarcode || null, data.category ?? null,
+        [data.nameAr, data.nameEn ?? null, normalizedBarcode || null,
+         data.categoryId ?? null, effectiveSubcategoryId ?? null,
          data.salePriceUsd, data.costPriceUsd, currentStock, data.lowStockThreshold,
          data.photoUrl ?? null, data.isActive ? 1 : 0, now, data.id]
       )
@@ -80,12 +86,13 @@ export function useProducts() {
       const id = uuidv4()
       await db.execute(
         `INSERT INTO products
-         (id, shop_id, name_ar, name_en, barcode, category, price_usd, cost_price_usd,
-          current_stock, low_stock_threshold, photo_url, is_active, deleted,
-          sync_status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'pending', ?, ?)`,
+         (id, shop_id, name_ar, name_en, barcode, category, category_id, subcategory_id,
+          price_usd, cost_price_usd, current_stock, low_stock_threshold, photo_url,
+          is_active, deleted, sync_status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'pending', ?, ?)`,
         [id, data.shopId, data.nameAr, data.nameEn ?? null, normalizedBarcode || null,
-         data.category ?? null, data.salePriceUsd, data.costPriceUsd,
+         null, data.categoryId ?? null, effectiveSubcategoryId ?? null,
+         data.salePriceUsd, data.costPriceUsd,
          currentStock, data.lowStockThreshold, data.photoUrl ?? null,
          data.isActive ? 1 : 0, now, now]
       )

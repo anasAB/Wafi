@@ -71,6 +71,32 @@ describe('useProducts', () => {
     )
   })
 
+  it('save() persists categoryId and subcategoryId on create', async () => {
+    vi.mocked(db.getAll).mockResolvedValue([])
+    const { save } = useProducts()
+    await save({
+      shopId: 's1', nameAr: 'منتج جديد', salePriceUsd: 10, costPriceUsd: 5,
+      currentStock: 4, lowStockThreshold: 2, isActive: true,
+      categoryId: 'c1', subcategoryId: 's1',
+    } as any)
+
+    const insertCall = vi.mocked(db.execute).mock.calls.find(([sql]) => /INSERT INTO products/.test(sql))
+    expect(insertCall![1]).toEqual(expect.arrayContaining(['c1', 's1']))
+  })
+
+  it('save() clears subcategoryId when no categoryId is provided (spec: subcategory-requires-category)', async () => {
+    vi.mocked(db.getAll).mockResolvedValue([])
+    const { save } = useProducts()
+    await save({
+      shopId: 's1', nameAr: 'منتج جديد', salePriceUsd: 10, costPriceUsd: 5,
+      currentStock: 4, lowStockThreshold: 2, isActive: true,
+      subcategoryId: 'sub1',
+    } as any)
+
+    const insertCall = vi.mocked(db.execute).mock.calls.find(([sql]) => /INSERT INTO products/.test(sql))
+    expect(insertCall![1]).not.toContain('sub1')
+  })
+
   it('softDelete sets deleted = 1', async () => {
     vi.mocked(db.getAll).mockResolvedValue([])
     const { softDelete } = useProducts()
