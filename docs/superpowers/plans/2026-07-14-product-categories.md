@@ -31,6 +31,7 @@
 | `src/features/categories/components/CategoriesManagementScreen.vue` | Inline add/rename/delete screen |
 | `src/features/categories/components/CategoryQuickAdd.vue` | Reusable quick-add modal (product form + POS) |
 | `src/features/products/product.types.ts` (modify) | Add `categoryId`/`subcategoryId` to relevant types |
+| `src/features/products/components/*Form*.vue` (modify) | Disable subcategory dropdown until a category is chosen (Task 6a) |
 | `src/features/products/product.utils.ts` (modify) | Map new columns in `rowToProduct` |
 | `src/features/products/composables/useProducts.ts` (modify) | `save()` writes `category_id`/`subcategory_id` |
 | `src/features/products/components/ProductList.vue` (modify) | Category dropdown reads real categories, adds subcategory narrowing |
@@ -349,7 +350,8 @@ git commit -m "feat: add category/subcategory types"
 
 **Interfaces:**
 - Consumes: `db` from `@/data/powersync/db`; `useDeviceStore()`; `uuidv4` from `uuid`.
-- Produces: `categoriesWithSubcategories: Ref<CategoryWithSubcategories[]>`, `load(): Promise<void>`, `createCategory(name: string): Promise<string>`, `renameCategory(id: string, name: string): Promise<void>`, `createSubcategory(categoryId: string, name: string): Promise<string>`, `renameSubcategory(id: string, name: string): Promise<void>`.
+- Produces: `categoriesWithSubcategories: Ref<CategoryWithSubcategories[]>`, `load(): Promise<void>`, `createCategory(name: string): Promise<{ id: string | null; error: 'duplicate' | null }>`, `renameCategory(id: string, name: string): Promise<{ error: 'duplicate' | null }>`, `createSubcategory(categoryId: string, name: string): Promise<{ id: string | null; error: 'duplicate' | null }>`, `renameSubcategory(id: string, name: string): Promise<{ error: 'duplicate' | null }>`.
+- Duplicate-name handling (spec: "Duplicate name handling"): before any insert/rename, check for an existing case-insensitive match (categories: shop-scoped; subcategories: scoped to their parent category) and short-circuit with `{ error: 'duplicate' }` instead of attempting the write — the caller shows "هذه الفئة موجودة بالفعل" and never sees a raw DB unique-violation.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -387,19 +389,35 @@ describe('useCategories — load/create/rename', () => {
     expect(categoriesWithSubcategories.value[0].subcategories[0].name).toBe('إكسسوارات')
   })
 
-  it('createCategory inserts a row and returns its id', async () => {
-    const { createCategory } = useCategories()
-    const id = await createCategory('أجهزة منزلية')
+  it('createCategory inserts a row and returns its id when the name is not taken', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce(null)
 
-    expect(typeof id).toBe('string')
+    const { createCategory } = useCategories()
+    const result = await createCategory('أجهزة منزلية')
+
+    expect(result.error).toBeNull()
+    expect(typeof result.id).toBe('string')
     const insertCall = vi.mocked(db.execute).mock.calls.find(([sql]) => /INSERT INTO categories/.test(sql))
     expect(insertCall![1]).toContain('أجهزة منزلية')
   })
 
-  it('renameCategory updates the name', async () => {
-    const { renameCategory } = useCategories()
-    await renameCategory('c1', 'هواتف ذكية')
+  it('createCategory returns a duplicate error and does not insert when the name already exists (case-insensitive)', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce({ id: 'c1' } as any)
 
+    const { createCategory } = useCategories()
+    const result = await createCategory('هواتف')
+
+    expect(result).toEqual({ id: null, error: 'duplicate' })
+    expect(vi.mocked(db.execute).mock.calls.some(([sql]) => /INSERT INTO categories/.test(sql))).toBe(false)
+  })
+
+  it('renameCategory updates the name when not taken by another category', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce(null)
+
+    const { renameCategory } = useCategories()
+    const result = await renameCategory('c1', 'هواتف ذكية')
+
+    expect(result.error).toBeNull()
     const updateCall = vi.mocked(db.execute).mock.calls.find(([sql]) => /UPDATE categories/.test(sql))
     expect(updateCall![1]).toEqual(expect.arrayContaining(['هواتف ذكية', 'c1']))
   })
@@ -442,42 +460,77 @@ export function useCategories() {
     }))
   }
 
-  async function createCategory(name: string): Promise<string> {
+  async function createCategory(name: string): Promise<{ id: string | null; error: 'duplicate' | null }> {
     const device = useDeviceStore()
+    const trimmed = name.trim()
+    const existing = await db.getOptional<{ id: string }>(
+      `SELECT id FROM categories WHERE shop_id = ? AND lower(name) = lower(?)`,
+      [device.shopId, trimmed]
+    )
+    if (existing) return { id: null, error: 'duplicate' }
+
     const id = uuidv4()
     await db.execute(
       `INSERT INTO categories (id, shop_id, name, created_at, sync_status) VALUES (?, ?, ?, ?, 'pending')`,
-      [id, device.shopId, name.trim(), new Date().toISOString()]
+      [id, device.shopId, trimmed, new Date().toISOString()]
     )
     await load()
-    return id
+    return { id, error: null }
   }
 
-  async function renameCategory(id: string, name: string): Promise<void> {
+  async function renameCategory(id: string, name: string): Promise<{ error: 'duplicate' | null }> {
+    const device = useDeviceStore()
+    const trimmed = name.trim()
+    const existing = await db.getOptional<{ id: string }>(
+      `SELECT id FROM categories WHERE shop_id = ? AND lower(name) = lower(?) AND id != ?`,
+      [device.shopId, trimmed, id]
+    )
+    if (existing) return { error: 'duplicate' }
+
     await db.execute(
       `UPDATE categories SET name = ?, sync_status = 'pending' WHERE id = ?`,
-      [name.trim(), id]
+      [trimmed, id]
     )
     await load()
+    return { error: null }
   }
 
-  async function createSubcategory(categoryId: string, name: string): Promise<string> {
+  async function createSubcategory(categoryId: string, name: string): Promise<{ id: string | null; error: 'duplicate' | null }> {
     const device = useDeviceStore()
+    const trimmed = name.trim()
+    const existing = await db.getOptional<{ id: string }>(
+      `SELECT id FROM subcategories WHERE category_id = ? AND lower(name) = lower(?)`,
+      [categoryId, trimmed]
+    )
+    if (existing) return { id: null, error: 'duplicate' }
+
     const id = uuidv4()
     await db.execute(
       `INSERT INTO subcategories (id, category_id, shop_id, name, created_at, sync_status) VALUES (?, ?, ?, ?, ?, 'pending')`,
-      [id, categoryId, device.shopId, name.trim(), new Date().toISOString()]
+      [id, categoryId, device.shopId, trimmed, new Date().toISOString()]
     )
     await load()
-    return id
+    return { id, error: null }
   }
 
-  async function renameSubcategory(id: string, name: string): Promise<void> {
+  async function renameSubcategory(id: string, name: string): Promise<{ error: 'duplicate' | null }> {
+    const trimmed = name.trim()
+    const row = await db.getOptional<{ category_id: string }>(
+      `SELECT category_id FROM subcategories WHERE id = ?`, [id]
+    )
+    if (!row) return { error: null }
+    const existing = await db.getOptional<{ id: string }>(
+      `SELECT id FROM subcategories WHERE category_id = ? AND lower(name) = lower(?) AND id != ?`,
+      [row.category_id, trimmed, id]
+    )
+    if (existing) return { error: 'duplicate' }
+
     await db.execute(
       `UPDATE subcategories SET name = ?, sync_status = 'pending' WHERE id = ?`,
-      [name.trim(), id]
+      [trimmed, id]
     )
     await load()
+    return { error: null }
   }
 
   return {
@@ -490,13 +543,13 @@ export function useCategories() {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/__tests__/features/useCategories.test.ts`
-Expected: PASS (all 3 tests)
+Expected: PASS (all 4 tests)
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add src/features/categories/composables/useCategories.ts src/__tests__/features/useCategories.test.ts
-git commit -m "feat: useCategories load/create/rename for categories and subcategories"
+git commit -m "feat: useCategories load/create/rename with case-insensitive duplicate-name guard"
 ```
 
 ---
@@ -508,13 +561,16 @@ git commit -m "feat: useCategories load/create/rename for categories and subcate
 - Test: `src/__tests__/features/useCategories.test.ts`
 
 **Interfaces:**
-- Produces: `deleteCategory(id: string): Promise<{ deleted: boolean; productCount: number }>`, `deleteSubcategory(id: string): Promise<{ deleted: boolean; productCount: number }>`.
+- Produces: `deleteCategory(id: string): Promise<{ deleted: boolean; productCount: number; blockedReason?: 'in_use' | 'fallback' }>`, `deleteSubcategory(id: string): Promise<{ deleted: boolean; productCount: number }>`.
+- "غير مصنف" protection (spec: "'غير مصنف' is a protected fallback"): `deleteCategory` looks up the shop's fallback category **by name** (`lower(name) = lower('غير مصنف')`), not by a cached/hardcoded id, and refuses to delete it — returning `blockedReason: 'fallback'` — regardless of its current product count.
 
 - [ ] **Step 1: Write the failing test**
 
 ```ts
   it('deleteCategory blocks deletion when products are still assigned, with a count', async () => {
-    vi.mocked(db.getOptional).mockResolvedValueOnce({ count: 3 } as any)
+    vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({ id: 'c1', name: 'هواتف' } as any) // fallback-name lookup: not this category
+      .mockResolvedValueOnce({ count: 3 } as any)
 
     const { deleteCategory } = useCategories()
     const result = await deleteCategory('c1')
@@ -524,13 +580,25 @@ git commit -m "feat: useCategories load/create/rename for categories and subcate
   })
 
   it('deleteCategory deletes when no products are assigned', async () => {
-    vi.mocked(db.getOptional).mockResolvedValueOnce({ count: 0 } as any)
+    vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({ id: 'other', name: 'غير مصنف' } as any) // fallback is a different row than c1
+      .mockResolvedValueOnce({ count: 0 } as any)
 
     const { deleteCategory } = useCategories()
     const result = await deleteCategory('c1')
 
     expect(result).toEqual({ deleted: true, productCount: 0 })
     expect(vi.mocked(db.execute).mock.calls.some(([sql]) => /DELETE FROM categories/.test(sql))).toBe(true)
+  })
+
+  it('deleteCategory refuses to delete the "غير مصنف" fallback category even with zero products', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce({ id: 'c1', name: 'غير مصنف' } as any)
+
+    const { deleteCategory } = useCategories()
+    const result = await deleteCategory('c1')
+
+    expect(result).toEqual({ deleted: false, productCount: 0, blockedReason: 'fallback' })
+    expect(vi.mocked(db.execute).mock.calls.some(([sql]) => /DELETE FROM categories/.test(sql))).toBe(false)
   })
 ```
 
@@ -544,13 +612,22 @@ Expected: FAIL — `deleteCategory is not a function`
 Add to `useCategories.ts`, before the final `return`:
 
 ```ts
-  async function deleteCategory(id: string): Promise<{ deleted: boolean; productCount: number }> {
+  async function deleteCategory(id: string): Promise<{ deleted: boolean; productCount: number; blockedReason?: 'in_use' | 'fallback' }> {
+    const device = useDeviceStore()
+    const fallback = await db.getOptional<{ id: string; name: string }>(
+      `SELECT id, name FROM categories WHERE shop_id = ? AND lower(name) = lower('غير مصنف')`,
+      [device.shopId]
+    )
+    if (fallback && fallback.id === id) {
+      return { deleted: false, productCount: 0, blockedReason: 'fallback' }
+    }
+
     const row = await db.getOptional<{ count: number }>(
       `SELECT COUNT(*) as count FROM products WHERE category_id = ? AND (deleted = 0 OR deleted IS NULL)`,
       [id]
     )
     const productCount = row?.count ?? 0
-    if (productCount > 0) return { deleted: false, productCount }
+    if (productCount > 0) return { deleted: false, productCount, blockedReason: 'in_use' }
 
     await db.execute(`DELETE FROM categories WHERE id = ?`, [id])
     await load()
@@ -576,13 +653,13 @@ Add `deleteCategory, deleteSubcategory` to the returned object.
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/__tests__/features/useCategories.test.ts`
-Expected: PASS (all 5 tests)
+Expected: PASS (all 6 tests)
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add src/features/categories/composables/useCategories.ts src/__tests__/features/useCategories.test.ts
-git commit -m "feat: block category/subcategory deletion when products are still assigned"
+git commit -m "feat: block category deletion when in-use or when it is the protected غير مصنف fallback"
 ```
 
 ---
@@ -597,6 +674,7 @@ git commit -m "feat: block category/subcategory deletion when products are still
 
 **Interfaces:**
 - Produces: `Product.categoryId?: string`, `Product.subcategoryId?: string`; `useProducts().save()` accepts and persists `categoryId`/`subcategoryId` (no longer writes the legacy `category` column).
+- Dependency rule (spec: "subcategory-without-category"): `save()` clears `subcategoryId` to `undefined` whenever `categoryId` is not also provided — a defensive backstop in case a caller bypasses the product form's own guard (Task 6a below) that keeps the subcategory dropdown disabled until a category is chosen.
 
 - [ ] **Step 1: Add fields to the `Product` type**
 
@@ -657,6 +735,18 @@ describe('useProducts — categoryId/subcategoryId', () => {
     const insertCall = vi.mocked(db.execute).mock.calls.find(([sql]) => /INSERT INTO products/.test(sql))
     expect(insertCall![1]).toEqual(expect.arrayContaining(['c1', 's1']))
   })
+
+  it('save() clears subcategoryId when no categoryId is provided (spec: subcategory-requires-category)', async () => {
+    const { save } = useProducts()
+    await save({
+      shopId: 'shop1', nameAr: 'منتج جديد', salePriceUsd: 10, costPriceUsd: 5,
+      currentStock: 4, lowStockThreshold: 2, isActive: true,
+      subcategoryId: 's1',
+    } as any)
+
+    const insertCall = vi.mocked(db.execute).mock.calls.find(([sql]) => /INSERT INTO products/.test(sql))
+    expect(insertCall![1]).not.toContain('s1')
+  })
 })
 ```
 
@@ -667,7 +757,20 @@ Expected: FAIL — `insertCall![1]` does not contain `'c1'`/`'s1'`
 
 - [ ] **Step 5: Update `useProducts.ts`'s `save()`**
 
-Modify the INSERT branch of `save()` (currently lines 79-95) to add the two new columns:
+At the top of `save()`, before either branch, enforce the subcategory-requires-category dependency rule (spec: "subcategory-without-category" edge case) so a caller that bypasses the product form's own guard still can't persist an orphaned subcategory:
+
+```ts
+  async function save(
+    data: Partial<Product> & {
+      shopId: string; nameAr: string; salePriceUsd: number; costPriceUsd: number
+      currentStock: number; lowStockThreshold: number; isActive: boolean
+      categoryId?: string; subcategoryId?: string
+    }
+  ) {
+    const effectiveSubcategoryId = data.categoryId ? data.subcategoryId : undefined
+```
+
+Modify the INSERT branch of `save()` (currently lines 79-95) to add the two new columns, using `effectiveSubcategoryId` instead of `data.subcategoryId`:
 
 ```ts
     } else {
@@ -679,7 +782,7 @@ Modify the INSERT branch of `save()` (currently lines 79-95) to add the two new 
           is_active, deleted, sync_status, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'pending', ?, ?)`,
         [id, data.shopId, data.nameAr, data.nameEn ?? null, normalizedBarcode || null,
-         null, data.categoryId ?? null, data.subcategoryId ?? null,
+         null, data.categoryId ?? null, effectiveSubcategoryId ?? null,
          data.salePriceUsd, data.costPriceUsd,
          currentStock, data.lowStockThreshold, data.photoUrl ?? null,
          data.isActive ? 1 : 0, now, now]
@@ -690,7 +793,7 @@ Modify the INSERT branch of `save()` (currently lines 79-95) to add the two new 
     }
 ```
 
-And the UPDATE branch (currently lines 60-78):
+And the UPDATE branch (currently lines 60-78), also using `effectiveSubcategoryId`:
 
 ```ts
     if (data.id) {
@@ -702,7 +805,7 @@ And the UPDATE branch (currently lines 60-78):
          price_usd=?, cost_price_usd=?, current_stock=?, low_stock_threshold=?,
          photo_url=?, is_active=?, updated_at=?, sync_status='pending' WHERE id=?`,
         [data.nameAr, data.nameEn ?? null, normalizedBarcode || null,
-         data.categoryId ?? null, data.subcategoryId ?? null,
+         data.categoryId ?? null, effectiveSubcategoryId ?? null,
          data.salePriceUsd, data.costPriceUsd, currentStock, data.lowStockThreshold,
          data.photoUrl ?? null, data.isActive ? 1 : 0, now, data.id]
       )
@@ -716,18 +819,6 @@ And the UPDATE branch (currently lines 60-78):
     }
 ```
 
-Also widen the `save()` parameter type to accept the new optional fields:
-
-```ts
-  async function save(
-    data: Partial<Product> & {
-      shopId: string; nameAr: string; salePriceUsd: number; costPriceUsd: number
-      currentStock: number; lowStockThreshold: number; isActive: boolean
-      categoryId?: string; subcategoryId?: string
-    }
-  ) {
-```
-
 - [ ] **Step 6: Run test to verify it passes**
 
 Run: `npx vitest run src/__tests__/features/useProducts.test.ts`
@@ -737,7 +828,34 @@ Expected: PASS
 
 ```bash
 git add src/features/pos/pos.types.ts src/features/products/product.utils.ts src/features/products/composables/useProducts.ts src/__tests__/features/useProducts.test.ts
-git commit -m "feat: useProducts.save() persists category_id/subcategory_id, stops writing legacy category"
+git commit -m "feat: useProducts.save() persists category_id/subcategory_id, enforces subcategory-requires-category"
+```
+
+---
+
+### Task 6a: Product form UI — disable subcategory until a category is chosen
+
+**Files:**
+- Modify: the product add/edit form component (same file located and read in Task 8's Step 5 below — locate now with `Glob 'src/features/products/components/*Form*.vue'` if not already open).
+
+**Interfaces:**
+- Produces: the subcategory `<select>`/dropdown in the product form is disabled (and its bound value cleared) whenever no category is selected, matching the spec's UI-layer half of the subcategory-requires-category rule (the `useProducts().save()` defensive backstop is Task 6's `effectiveSubcategoryId`).
+
+- [ ] **Step 1: Read the product form component in full** to find its existing category field and local form-state pattern (`ref`/`reactive`).
+
+- [ ] **Step 2: Add the guard**
+
+Bind the subcategory control's `:disabled` to `!form.categoryId` (or the equivalent local state name found in Step 1), and add a `watch`/handler that clears `form.subcategoryId` to `undefined` whenever `form.categoryId` changes to a falsy value or to a category that isn't the subcategory's parent. Filter the subcategory options list to only the subcategories belonging to the currently selected category (via `useCategories().categoriesWithSubcategories`).
+
+- [ ] **Step 3: Manual verification**
+
+Run: `npm run dev`, open the product add form, confirm the subcategory field is disabled/empty until a category is picked, and that switching category clears any previously selected subcategory.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/features/products/components/
+git commit -m "feat: disable subcategory selection in the product form until a category is chosen"
 ```
 
 ---
@@ -788,8 +906,10 @@ describe('CategoriesManagementScreen', () => {
     expect(insertCall![1]).toContain('أجهزة منزلية')
   })
 
-  it('blocks delete and shows the product count when a category is in use', async () => {
-    vi.mocked(db.getOptional).mockResolvedValueOnce({ count: 4 } as any)
+  it('blocks delete and shows the product count and reassignment guidance when a category is in use', async () => {
+    vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({ id: 'other', name: 'غير مصنف' } as any) // fallback lookup: not c1
+      .mockResolvedValueOnce({ count: 4 } as any)
     const wrapper = mount(CategoriesManagementScreen)
     await new Promise((r) => setTimeout(r, 0))
 
@@ -797,6 +917,18 @@ describe('CategoriesManagementScreen', () => {
     await new Promise((r) => setTimeout(r, 0))
 
     expect(wrapper.text()).toContain('4')
+    expect(wrapper.text()).toContain('قائمة المنتجات')
+  })
+
+  it('blocks delete of the غير مصنف fallback category with a distinct message, even with zero products', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce({ id: 'c1', name: 'غير مصنف' } as any)
+    const wrapper = mount(CategoriesManagementScreen)
+    await new Promise((r) => setTimeout(r, 0))
+
+    await wrapper.get('[data-testid="delete-category-c1"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(wrapper.get('[data-testid="blocked-message"]').text()).toContain('غير مصنف')
   })
 })
 ```
@@ -825,22 +957,39 @@ onMounted(load)
 async function addCategory() {
   const name = newCategoryName.value.trim()
   if (!name) return
-  await createCategory(name)
+  const result = await createCategory(name)
+  if (result.error === 'duplicate') {
+    blockedMessage.value = 'هذه الفئة موجودة بالفعل'
+    return
+  }
   newCategoryName.value = ''
 }
 
 async function addSubcategory(categoryId: string) {
   const name = (newSubcategoryName.value[categoryId] ?? '').trim()
   if (!name) return
-  await createSubcategory(categoryId, name)
+  const result = await createSubcategory(categoryId, name)
+  if (result.error === 'duplicate') {
+    blockedMessage.value = 'هذه الفئة الفرعية موجودة بالفعل'
+    return
+  }
   newSubcategoryName.value[categoryId] = ''
 }
 
 async function removeCategory(id: string) {
   const result = await deleteCategory(id)
-  blockedMessage.value = result.deleted
-    ? null
-    : `لا يمكن حذف هذه الفئة، ${result.productCount} منتج مرتبط بها. أعد تصنيف هذه المنتجات أولاً.`
+  if (result.deleted) {
+    blockedMessage.value = null
+  } else if (result.blockedReason === 'fallback') {
+    // "غير مصنف" is the shop's protected fallback for uncategorized products (spec:
+    // "غير مصنف" sanctity) — it can be renamed but never deleted while it serves that role.
+    blockedMessage.value = 'لا يمكن حذف فئة "غير مصنف" لأنها الفئة الاحتياطية للمنتجات غير المصنفة.'
+  } else {
+    // No bulk-reassignment UI in v1 (spec: Category management — out of scope) — point
+    // the owner at the Product List's own category filter instead of promising a path
+    // that doesn't exist here.
+    blockedMessage.value = `لا يمكن حذف هذه الفئة، ${result.productCount} منتج مرتبط بها. أعد تصنيف هذه المنتجات من قائمة المنتجات أولاً.`
+  }
 }
 
 async function removeSubcategory(id: string) {
@@ -893,7 +1042,7 @@ Expected: PASS
 
 ```bash
 git add src/features/categories/components/CategoriesManagementScreen.vue src/__tests__/features/CategoriesManagementScreen.test.ts
-git commit -m "feat: categories management screen with inline add/rename/delete and in-use guard"
+git commit -m "feat: categories management screen with in-use/fallback delete guards and duplicate-name messaging"
 ```
 
 ---
@@ -928,6 +1077,7 @@ describe('CategoryQuickAdd', () => {
   })
 
   it('creates a category and emits created with its id', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce(null)
     const wrapper = mount(CategoryQuickAdd)
 
     await wrapper.get('[data-testid="quick-add-category-input"]').setValue('إلكترونيات')
@@ -936,6 +1086,18 @@ describe('CategoryQuickAdd', () => {
 
     expect(wrapper.emitted('created')).toBeTruthy()
     expect(typeof wrapper.emitted('created')![0][0]).toBe('string')
+  })
+
+  it('shows a duplicate-name error and does not emit created when the name already exists', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce({ id: 'c1' } as any)
+    const wrapper = mount(CategoryQuickAdd)
+
+    await wrapper.get('[data-testid="quick-add-category-input"]').setValue('هواتف')
+    await wrapper.get('[data-testid="quick-add-category-submit"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(wrapper.emitted('created')).toBeFalsy()
+    expect(wrapper.text()).toContain('موجودة بالفعل')
   })
 })
 ```
@@ -956,13 +1118,19 @@ const emit = defineEmits<{ (e: 'created', categoryId: string): void }>()
 
 const { createCategory } = useCategories()
 const name = ref('')
+const errorMessage = ref<string | null>(null)
 
 async function submit() {
   const trimmed = name.value.trim()
   if (!trimmed) return
-  const id = await createCategory(trimmed)
+  const result = await createCategory(trimmed)
+  if (result.error === 'duplicate') {
+    errorMessage.value = 'هذه الفئة موجودة بالفعل'
+    return
+  }
+  errorMessage.value = null
   name.value = ''
-  emit('created', id)
+  emit('created', result.id!)
 }
 </script>
 
@@ -970,6 +1138,7 @@ async function submit() {
   <div dir="rtl" class="category-quick-add">
     <input v-model="name" data-testid="quick-add-category-input" placeholder="اسم الفئة" />
     <button data-testid="quick-add-category-submit" @click="submit">حفظ واستخدام</button>
+    <p v-if="errorMessage" data-testid="quick-add-category-error">{{ errorMessage }}</p>
   </div>
 </template>
 ```
@@ -1391,9 +1560,9 @@ Expected: PASS
 
 - [ ] **Step 5: Add the "By category" tab to `ReportsPage.vue`**
 
-Read `src/features/dashboard/components/ReportsPage.vue` in full first. It already has `activeTab = ref<'profitability' | 'expenses'>('profitability')` (line ~35). Widen this union to include `'category'`, add a third tab button alongside the existing profitability/expenses tabs (matching that file's existing tab-button markup), and add a tab panel that:
+Read `src/features/dashboard/components/ReportsPage.vue` in full first. It already has `activeTab = ref<'profitability' | 'expenses'>('profitability')` (line ~35), and its existing missing-cost caveat is `<p v-if="metrics.profitIsEstimated.value" class="caveat">{{ t('reports.estimated') }}</p>`, using the `reports.estimated` i18n key (`src/i18n/ar.ts` / `en.ts`: "بعض المنتجات بلا تكلفة — الربح تقديري وقد يكون أقل" / "Some products have no cost — profit is estimated and may be lower"). Widen the tab union to include `'category'`, add a third tab button alongside the existing profitability/expenses tabs (matching that file's existing tab-button markup), and add a tab panel that:
 - imports and calls `useCategoryBreakdown()`, loading it with the same `start`/`end` the page already computes for the active period (reuse `getReportRange`/`period`/`customStart`/`customEnd` already in scope in that file — do not add a second period selector);
-- renders `rows.value` as a simple list (category name, revenue, COGS, profit, and a "—" or estimated-caveat marker when `hasMissingCost` is true, consistent with the file's existing profit-caveat pattern);
+- renders `rows.value` as a simple list (category name, revenue, COGS, profit), and for any row where `hasMissingCost` is true, renders the exact same `<p class="caveat">{{ t('reports.estimated') }}</p>` markup and i18n key already used by the profitability tab — not new wording, not a new class (spec DoD: same visual caveat styling as the main profitability tab);
 - on tapping a row, calls `loadSubcategoryRows(categoryId, start, end)` and renders the result inline beneath that row (drill-down, not a route navigation) — this is unstyled functionally-complete markup; visual polish should follow this file's existing Tailwind/PrimeVue conventions once read.
 
 - [ ] **Step 6: Commit**
@@ -1441,6 +1610,7 @@ git commit -m "feat: register categories management route and add entry point fr
 
 ## Self-Review Notes
 
-- **Spec coverage:** data model + migration + backfill (Task 1), management screen (Task 7), quick-add (Task 8), deletion guard (Task 5), product list filter/sort (Task 9), POS chip filter with subcategory drill-down (Task 10), Profit Report "By category" view with subcategory drill-down and غير مصنف row (Task 11), routing/entry points (Task 12). Not in this plan (per spec's explicit out-of-scope): automated category-merge tooling, home-screen dashboard category breakdown, more than two nesting levels.
-- **Type consistency checked:** `Category`/`Subcategory`/`CategoryWithSubcategories` (Task 3) used identically across Tasks 4-11; `Product.categoryId`/`subcategoryId` (Task 6) match the column names (`category_id`/`subcategory_id`) used in Tasks 1-2's schema and every query in Tasks 9-11.
-- **No placeholders:** every step contains complete, runnable code; the two "read this file first, then wire in" steps (Task 8 Step 5, Task 10 Step 5, Task 11 Step 5, Task 12 Step 2) name the exact file, the exact prop/emit/state to add, and the exact existing pattern to mirror — they defer to files not yet read in this planning pass, not to vague follow-up work.
+- **Spec coverage:** data model + migration + backfill (Task 1), management screen (Task 7), quick-add (Task 8), deletion guard incl. "غير مصنف" fallback protection (Task 5), subcategory-requires-category dependency at both the composable/UI layers (Task 6, Task 6a), case-insensitive duplicate-name guard on create/rename (Task 4), product list filter/sort (Task 9), POS chip filter with subcategory drill-down (Task 10), Profit Report "By category" view with subcategory drill-down, غير مصنف row, and the shared missing-cost caveat styling (Task 11), routing/entry points (Task 12). Not in this plan (per spec's explicit out-of-scope): automated category-merge tooling, bulk category-reassignment UI (documented as a v1 non-goal — the blocked-delete message points to the Product List filter instead), home-screen dashboard category breakdown, more than two nesting levels.
+- **Review-driven hardening (post-spec-review addition):** four edge cases flagged in review are now covered — (1) the deletion-blocked message no longer promises an in-app "reassignment path" that doesn't exist; it names the Product List filter instead, and Option B (documented out-of-scope) was chosen over building a bulk-move dropdown to keep this plan's scope lean; (2) "غير مصنف" is looked up dynamically by name and `deleteCategory` refuses to delete it regardless of product count; (3) `createCategory`/`renameCategory`/`createSubcategory`/`renameSubcategory` all pre-check for a case-insensitive name collision and return a typed `{ error: 'duplicate' }` instead of letting a raw Postgres unique-violation reach the UI; (4) `subcategoryId` can never be persisted without a `categoryId` — enforced defensively in `useProducts().save()` (Task 6) and proactively in the product form UI (Task 6a).
+- **Type consistency checked:** `Category`/`Subcategory`/`CategoryWithSubcategories` (Task 3) used identically across Tasks 4-11; `Product.categoryId`/`subcategoryId` (Task 6) match the column names (`category_id`/`subcategory_id`) used in Tasks 1-2's schema and every query in Tasks 9-11; the `{ id, error }`/`{ error }` return shapes introduced in Task 4 are threaded consistently through every caller in Tasks 7 and 8 (no caller still assumes the old bare-string/void return).
+- **No placeholders:** every step contains complete, runnable code; the "read this file first, then wire in" steps (Task 6a Step 1, Task 8 Step 5, Task 10 Step 5, Task 11 Step 5, Task 12 Step 2) name the exact file, the exact prop/emit/state to add, and the exact existing pattern to mirror — they defer to files not yet read in this planning pass, not to vague follow-up work.
