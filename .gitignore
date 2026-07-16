@@ -25,3 +25,4 @@ dist-ssr
 
 # Subagent-driven-development scratch (reports, briefs, diffs, ledger)
 .superpowers/sdd/
+.worktrees/
