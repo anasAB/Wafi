@@ -141,6 +141,7 @@ export default {
     week: 'Week', month: 'Month', quarter: '3 Months', custom: 'Custom',
     tabProfitability: 'Profitability',
     tabExpenses: 'Expenses',
+    tabCategory: 'By Category',
     topExpensesTitle: 'Top expenses',
     clearFilter: 'Clear filter',
     expenseAnomaly: '⚠️ Your expenses are unusually high this period.',

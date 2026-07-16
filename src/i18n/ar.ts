@@ -142,6 +142,7 @@ export default {
     week: 'أسبوع', month: 'شهر', quarter: '٣ أشهر', custom: 'مخصص',
     tabProfitability: 'الربحية',
     tabExpenses: 'المصاريف',
+    tabCategory: 'حسب الفئة',
     topExpensesTitle: 'أعلى المصاريف',
     clearFilter: 'مسح الفلتر',
     expenseAnomaly: '⚠️ مصاريفك مرتفعة بشكل غير معتاد هذه الفترة.',

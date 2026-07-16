@@ -12,6 +12,7 @@ import { useDashboardMetrics } from '../composables/useDashboardMetrics'
 import { useProfitTrend } from '../composables/useProfitTrend'
 import { useBucketBreakdown } from '../composables/useBucketBreakdown'
 import { useExpenseBreakdown } from '../composables/useExpenseBreakdown'
+import { useCategoryBreakdown, type CategoryBreakdownRow } from '../composables/useCategoryBreakdown'
 import { evaluateReportAnomalies } from '../composables/useReportAnomalies'
 import ProfitCumulativeChart from './ProfitCumulativeChart.vue'
 import ReportDrilldownSheet from './ReportDrilldownSheet.vue'
@@ -24,6 +25,7 @@ const previousMetrics = useDashboardMetrics()
 const trend   = useProfitTrend()
 const drilldown = useBucketBreakdown()
 const expenseBreakdown = useExpenseBreakdown()
+const categoryBreakdown = useCategoryBreakdown()
 
 const period      = ref<ReportPeriod>('month')
 const customStart = ref('')
@@ -36,8 +38,10 @@ const drilldownTitle = ref('')
 const drilldownOpen = ref(false)
 const drilldownLoading = ref(false)
 const selectedTrendPointIndex = ref<number | null>(null)
-const activeTab = ref<'profitability' | 'expenses'>('profitability')
+const activeTab = ref<'profitability' | 'expenses' | 'category'>('profitability')
 const selectedExpenseCategory = ref<string | null>(null)
+const expandedCategoryId = ref<string | null>(null)
+const expandedCategorySubrows = ref<CategoryBreakdownRow[]>([])
 
 function isoToDate(value: string): Date | null {
   if (!value) return null
@@ -108,12 +112,15 @@ async function reload() {
   showProfitInfo.value = false
   chartBucket.value = bucket
   selectedTrendPointIndex.value = null
+  expandedCategoryId.value = null
+  expandedCategorySubrows.value = []
 
   await Promise.all([
     metrics.loadRange(start, end),
     trend.load(start, end, bucket),
     expenseBreakdown.load(start, end),
     expenseBreakdown.loadEntries(start, end, selectedExpenseCategory.value ?? undefined),
+    categoryBreakdown.load(start, end),
     previousRange
       ? previousMetrics.loadRange(previousRange.start, previousRange.end)
       : Promise.resolve(),
@@ -147,6 +154,18 @@ async function clearExpenseCategoryFilter() {
   const { start, end } = getReportRange(period.value, customStart.value, customEnd.value)
   if (!start || !end) return
   await expenseBreakdown.loadEntries(start, end)
+}
+
+async function toggleCategoryRow(categoryId: string) {
+  if (expandedCategoryId.value === categoryId) {
+    expandedCategoryId.value = null
+    expandedCategorySubrows.value = []
+    return
+  }
+  const { start, end } = getReportRange(period.value, customStart.value, customEnd.value)
+  if (!start || !end) return
+  expandedCategoryId.value = categoryId
+  expandedCategorySubrows.value = await categoryBreakdown.loadSubcategoryRows(categoryId, start, end)
 }
 
 function monthWindow(monthKey: string): { start: string; end: string } | null {
@@ -221,6 +240,13 @@ onMounted(reload)
         :class="{ active: activeTab === 'expenses' }"
         @click="activeTab = 'expenses'"
       >{{ t('reports.tabExpenses') }}</button>
+      <button
+        type="button"
+        data-test="tab-category"
+        class="reports-tab"
+        :class="{ active: activeTab === 'category' }"
+        @click="activeTab = 'category'"
+      >{{ t('reports.tabCategory') }}</button>
     </div>
 
     <div v-if="period === 'custom'" class="custom-range">
@@ -323,6 +349,39 @@ onMounted(reload)
           :selected-category="selectedExpenseCategory"
           @clear-filter="clearExpenseCategoryFilter"
         />
+      </section>
+
+      <section v-else-if="activeTab === 'category'" class="report-body" data-test="category-tab-panel">
+        <ul v-if="categoryBreakdown.rows.value.length" class="category-list card">
+          <li v-for="row in categoryBreakdown.rows.value" :key="row.categoryId" class="category-row-wrap">
+            <button
+              type="button"
+              class="category-row"
+              :data-test="`category-row-${row.categoryId}`"
+              @click="toggleCategoryRow(row.categoryId)"
+            >
+              <span class="category-name">{{ row.categoryName }}</span>
+              <span class="category-figures">
+                <span dir="ltr">${{ row.revenueUsd.toFixed(2) }}</span>
+                <span dir="ltr">${{ row.cogsUsd.toFixed(2) }}</span>
+                <span dir="ltr" :class="row.profitUsd >= 0 ? 'pos-text' : 'neg-text'">${{ row.profitUsd.toFixed(2) }}</span>
+              </span>
+            </button>
+            <p v-if="row.hasMissingCost" class="caveat">{{ t('reports.estimated') }}</p>
+
+            <ul v-if="expandedCategoryId === row.categoryId && expandedCategorySubrows.length" class="subcategory-list">
+              <li v-for="sub in expandedCategorySubrows" :key="sub.categoryId" class="subcategory-row">
+                <span class="category-name">{{ sub.categoryName }}</span>
+                <span class="category-figures">
+                  <span dir="ltr">${{ sub.revenueUsd.toFixed(2) }}</span>
+                  <span dir="ltr">${{ sub.cogsUsd.toFixed(2) }}</span>
+                  <span dir="ltr" :class="sub.profitUsd >= 0 ? 'pos-text' : 'neg-text'">${{ sub.profitUsd.toFixed(2) }}</span>
+                </span>
+              </li>
+            </ul>
+          </li>
+        </ul>
+        <p v-else class="cold-start-note">{{ t('reports.empty') }}</p>
       </section>
 
       <p v-else data-test="empty" class="empty">{{ t('reports.empty') }}</p>
@@ -725,4 +784,43 @@ onMounted(reload)
 .breakdown .total { font-weight: 800; color: #E8EDF5; padding-top: 12px; }
 
 .empty { text-align: center; padding: 40px 0; color: #637285; }
+
+/* ── By-category tab ─────────────────────────────── */
+.category-list { list-style: none; margin: 0; padding: 8px 16px; }
+.category-row-wrap { border-bottom: 1px solid rgba(255, 255, 255, 0.05); padding: 4px 0; }
+.category-row-wrap:last-child { border-bottom: none; }
+.category-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  color: #C8D5E8;
+  font-size: 0.9rem;
+}
+.category-name { font-weight: 700; color: #E8EDF5; }
+.category-figures { display: flex; gap: 12px; font-variant-numeric: tabular-nums; font-size: 0.85rem; }
+.pos-text { color: #22C55E; }
+.neg-text { color: #EF4444; }
+.subcategory-list {
+  list-style: none;
+  margin: 4px 0 6px;
+  padding: 6px 10px;
+  border-radius: 0.6rem;
+  background: rgba(255, 255, 255, 0.03);
+}
+.subcategory-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 0.83rem;
+  color: #93A3B8;
+}
 </style>
