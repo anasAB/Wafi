@@ -48,6 +48,8 @@ The existing free-text `category` field is replaced by:
 | category_id | UUID | yes | FK → `category` |
 | subcategory_id | UUID | no | FK → `subcategory`; optional |
 
+**Dependency rule:** `subcategory_id` may only be set when `category_id` is also set, and must belong to that same category. `useProducts().save()` rejects (or silently clears `subcategory_id`, per implementation task) any attempt to set a subcategory without its parent category. The product form UI enforces this earlier by keeping the subcategory dropdown disabled/empty until a category is selected.
+
 ---
 
 ## Category management
@@ -56,7 +58,11 @@ The existing free-text `category` field is replaced by:
 
 **Quick-add:** reachable inline from the product-add/edit flow (same pattern as Epic 4's "+ زبون جديد" quick-add from the payment screen) so creating a missing category doesn't interrupt adding a product.
 
-**Deletion rule:** deleting a category or subcategory that still has products assigned is blocked, with a message showing how many products are affected and a path to reassign them first. No cascading deletes, no orphaning.
+**Deletion rule:** deleting a category or subcategory that still has products assigned is blocked, with a message showing how many products are affected. **Bulk reassignment is out of scope for v1** — no in-modal "move products to..." UI is built. The blocked-deletion message directs the owner to the Product List's category filter to find and manually reassign the affected products before deleting the category. (Candidate for a future "move N products" bulk action if this creates real support friction.)
+
+**Duplicate name handling:** `categories.name` and `subcategories.name` (scoped to their parent category) are unique case-insensitively at the database level. Before inserting, `createCategory`/`createSubcategory` first check for an existing case-insensitive match and return a friendly, localized conflict result (e.g. "هذه الفئة موجودة بالفعل" / "This category already exists") instead of attempting the insert — so a raw database unique-violation error never reaches the UI.
+
+**"غير مصنف" (Uncategorized) is a protected fallback**, not an ordinary category: it can be renamed, but `deleteCategory` refuses to delete the row currently serving as the shop's uncategorized fallback (looked up dynamically by its role, not hardcoded to a fixed UUID) as long as it is the active fallback for uncategorized products. This prevents a shop from losing its fallback destination and later ending up with duplicate/fragmented "uncategorized" rows when a new blank-category product is created.
 
 ---
 
@@ -87,12 +93,15 @@ Extends the existing Profit Report screen:
 
 ## Edge cases
 
-1. **Deleting a category/subcategory with products assigned** — blocked, with a count and reassignment path.
+1. **Deleting a category/subcategory with products assigned** — blocked, with a count shown; no in-app reassignment UI (out of scope for v1 — see Category management above). Owner reassigns manually via the Product List filter, then deletes.
 2. **Renaming a category** — free; historical reports aggregate by `category_id`, not by name string, so past periods are unaffected.
 3. **Duplicate categories created separately** (e.g. "Phones" and "الهواتف") — no automated merge tool; owner manually reassigns products from one to the other, then deletes the now-empty one. Candidate for a future "merge categories" action if this comes up often.
 4. **Subcategory deleted while its parent category remains** — affected products fall back to category-only (`subcategory_id` cleared), not blocked, since subcategory was always optional.
 5. **Very small catalogs** — categories are entirely optional to use meaningfully; "غير مصنف" holds everything until the owner organizes, with no forced setup step.
 6. **Offline** — category/subcategory CRUD and product reassignment follow the standard offline/sync model (additive updates, standard soft-delete pattern for conflicts).
+7. **Creating a category/subcategory with a name that already exists (case-insensitive)** — rejected before the insert is attempted, with a friendly Arabic message ("هذه الفئة موجودة بالفعل") rather than a raw database unique-violation error surfacing in the UI.
+8. **Deleting the shop's "غير مصنف" fallback category** — blocked unconditionally while it is the active fallback (regardless of whether it currently has 0 products assigned), since new blank-category products must always have a home. It may still be renamed.
+9. **Assigning a subcategory without a parent category** — rejected at both the UI layer (subcategory dropdown disabled until a category is chosen) and the `useProducts().save()` layer (defensive check in case a caller bypasses the form).
 
 ---
 
@@ -100,10 +109,13 @@ Extends the existing Profit Report screen:
 
 - [ ] Owner can create, rename, and delete categories and subcategories from the management screen
 - [ ] Migration correctly converts all existing distinct free-text category values into real category records with products correctly re-pointed; blank values land in "غير مصنف"
-- [ ] Deleting a category/subcategory in use is blocked with a clear count and reassignment path
+- [ ] Deleting a category/subcategory in use is blocked with a clear count; the message directs the owner to the Product List filter to reassign manually (no bulk-reassignment UI in v1)
 - [ ] Product list/Back Office filter and sort correctly by category and subcategory
 - [ ] POS product picker's category chips correctly narrow visible products, including subcategory drill-down
 - [ ] Quick-add category from the product-add flow works without losing in-progress form data
-- [ ] Profit Report's "By category" view (Reporting Pack) correctly sums revenue/COGS/profit per category for the selected period, drills into subcategories, and includes "غير مصنف" as its own row
+- [ ] Profit Report's "By category" view (Reporting Pack) correctly sums revenue/COGS/profit per category for the selected period, drills into subcategories, and includes "غير مصنف" as its own row, using the same visual "estimated — missing cost" caveat styling as the main Profit Report tab
 - [ ] Category renames do not affect historical report aggregation
+- [ ] Attempting to create a category/subcategory with a name that already exists (case-insensitive) shows a friendly Arabic error message, not a raw database error
+- [ ] The "غير مصنف" (Uncategorized) category cannot be deleted while it is the shop's active fallback for uncategorized products
+- [ ] The product form prevents selecting a subcategory unless its parent category is already selected; `useProducts().save()` defensively enforces the same rule
 - [ ] Tested on phone, tablet, desktop, online and offline
