@@ -93,16 +93,23 @@ async function confirmDelete() {
       <!-- Toolbar -->
       <div class="toolbar">
         <p class="product-count">{{ products.length }} منتج</p>
-        <button
-          type="button"
-          class="btn-primary"
-          @click="openAdd()"
-        >
-          <svg class="btn-icon" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-          </svg>
-          إضافة منتج
-        </button>
+        <div class="toolbar-actions">
+          <button
+            type="button"
+            class="btn-secondary"
+            @click="router.push('/stock-take')"
+          >بدء جرد</button>
+          <button
+            type="button"
+            class="btn-primary"
+            @click="openAdd()"
+          >
+            <svg class="btn-icon" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+            إضافة منتج
+          </button>
+        </div>
       </div>
 
       <!-- Missed barcode banner -->
@@ -216,6 +223,28 @@ async function confirmDelete() {
 .product-count {
   font-size: 0.875rem;
   color: #637285;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-secondary {
+  min-height: 40px;
+  padding-inline: 0.9rem;
+  background: transparent;
+  color: #60A5FA;
+  border: 1px dashed rgba(26,86,219,0.45);
+  border-radius: 0.75rem;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.875rem;
+}
+
+.btn-secondary:hover {
+  background: rgba(26,86,219,0.08);
 }
 
 /* Primary button */

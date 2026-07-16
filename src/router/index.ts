@@ -26,6 +26,10 @@ const router = createRouter({
     { path: '/suppliers',         component: () => import('@/features/suppliers/SuppliersPage.vue'),       meta: { permission: 'can_manage_products' } },
     { path: '/suppliers/:id',     component: () => import('@/features/suppliers/SupplierDetailPage.vue'),  meta: { permission: 'can_manage_products' } },
     { path: '/receivings',        component: () => import('@/features/suppliers/ReceivingsPage.vue'),      meta: { permission: 'can_manage_products' } },
+    { path: '/stock-take',            component: () => import('@/features/stock-take/components/StockTakeStartScreen.vue'), meta: { permission: 'can_manage_products' } },
+    { path: '/stock-take/history',     component: () => import('@/features/stock-take/components/StockTakeHistoryScreen.vue'), meta: { permission: 'can_manage_products' } },
+    { path: '/stock-take/:id',         component: () => import('@/features/stock-take/components/StockTakeSessionScreen.vue'), meta: { permission: 'can_manage_products' } },
+    { path: '/stock-take/:id/review',  component: () => import('@/features/stock-take/components/StockTakeReviewScreen.vue'), meta: { permission: 'can_manage_products' } },
     {
       // Parent meta is merged into child route meta, so all settings screens inherit this guard.
       path: '/settings',
