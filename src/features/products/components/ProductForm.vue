@@ -7,6 +7,7 @@ import { useCategories } from '@/features/categories/composables/useCategories'
 import { useBarcodeScan } from '@/composables/useBarcodeScan'
 import ProductPhotoUpload from './ProductPhotoUpload.vue'
 import StockAdjustmentDialog from './StockAdjustmentDialog.vue'
+import CategoryQuickAdd from '@/features/categories/components/CategoryQuickAdd.vue'
 import type { Product } from '@/features/pos/pos.types'
 
 const props = defineProps<{
@@ -36,6 +37,7 @@ const nameEn        = ref(props.product?.nameEn       ?? '')
 const barcode       = ref(props.product?.barcode ?? props.initialBarcode ?? '')
 const categoryId    = ref(props.product?.categoryId    ?? '')
 const subcategoryId = ref(props.product?.subcategoryId ?? '')
+const showQuickAddCategory = ref(false)
 const costPrice = ref<number | ''>(props.product?.costPriceUsd ?? '')
 const salePrice = ref<number | ''>(props.product?.salePriceUsd ?? '')
 const stock     = ref<number | ''>(props.product?.currentStock ?? '')
@@ -68,6 +70,11 @@ function onCategoryChange() {
   if (!availableSubcategories.value.some(s => s.id === subcategoryId.value)) {
     subcategoryId.value = ''
   }
+}
+
+function onCategoryCreated(id: string) {
+  categoryId.value = id
+  showQuickAddCategory.value = false
 }
 
 function validate(): boolean {
@@ -186,6 +193,11 @@ onUnmounted(() => {
             {{ cat.name }}
           </option>
         </select>
+        <button type="button" data-testid="quick-add-category-toggle" class="expand-btn"
+          @click="showQuickAddCategory = !showQuickAddCategory">
+          + فئة جديدة
+        </button>
+        <CategoryQuickAdd v-if="showQuickAddCategory" @created="onCategoryCreated" />
       </div>
 
       <div class="field">
