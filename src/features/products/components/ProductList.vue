@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import Paginator from 'primevue/paginator'
 import ProductAvatar from '@/components/ui/ProductAvatar.vue'
 import { matchesArabicQuery } from '@/shared/text/arabic'
+import { useCategories } from '@/features/categories/composables/useCategories'
 import type { Product } from '@/features/pos/pos.types'
 
 const props = defineProps<{
@@ -21,22 +22,32 @@ const search    = ref('')
 const openKebab = ref<string | null>(null)
 const isCategoryMenuOpen = ref(false)
 const categoryMenuRef = ref<HTMLElement | null>(null)
+const isSubcategoryMenuOpen = ref(false)
+const subcategoryMenuRef = ref<HTMLElement | null>(null)
 
-// ── Category filter (#9) — dropdown, scales to many categories ──
-const selectedCategory = ref<string | null>(null)   // null = all categories
-const categories = computed(() => {
-  const set = new Set<string>()
-  for (const p of props.products) {
-    const c = p.category?.trim()
-    if (c) set.add(c)
-  }
-  return [...set].sort((a, b) => a.localeCompare(b, 'ar'))
-})
+// ── Category filter (#9) — real categories table, not derived from products ──
+const { categoriesWithSubcategories, load: loadCategories } = useCategories()
+
+const selectedCategoryId    = ref<string | null>(null)   // null = all categories
+const selectedSubcategoryId = ref<string | null>(null)    // null = all subcategories in the selected category
+
 const categoryOptions = computed(() => [
   { label: 'كل الفئات', value: null },
-  ...categories.value.map(c => ({ label: c, value: c })),
+  ...categoriesWithSubcategories.value.map(c => ({ label: c.name, value: c.id })),
 ])
-const selectedCategoryLabel = computed(() => selectedCategory.value ?? 'كل الفئات')
+const selectedCategoryLabel = computed(() => {
+  if (!selectedCategoryId.value) return 'كل الفئات'
+  return categoriesWithSubcategories.value.find(c => c.id === selectedCategoryId.value)?.name ?? 'كل الفئات'
+})
+const subcategoryOptions = computed(() => {
+  const cat = categoriesWithSubcategories.value.find(c => c.id === selectedCategoryId.value)
+  if (!cat) return []
+  return [{ label: 'كل الفئات الفرعية', value: null }, ...cat.subcategories.map(s => ({ label: s.name, value: s.id }))]
+})
+const selectedSubcategoryLabel = computed(() => {
+  if (!selectedSubcategoryId.value) return 'كل الفئات الفرعية'
+  return subcategoryOptions.value.find(s => s.value === selectedSubcategoryId.value)?.label ?? 'كل الفئات الفرعية'
+})
 
 // ── Column sorting (#9) ──
 type SortKey = 'nameAr' | 'category' | 'costPriceUsd' | 'salePriceUsd' | 'currentStock'
@@ -63,15 +74,18 @@ const displayed = computed(() => {
     list = list.filter(p => !p.costPriceUsd || p.costPriceUsd <= 0)
   }
 
-  if (selectedCategory.value) {
-    list = list.filter(p => (p.category ?? '').trim() === selectedCategory.value)
+  if (selectedCategoryId.value) {
+    list = list.filter(p => p.categoryId === selectedCategoryId.value)
+  }
+  if (selectedSubcategoryId.value) {
+    list = list.filter(p => p.subcategoryId === selectedSubcategoryId.value)
   }
 
   if (search.value.trim()) {
     // Search across every product field, folded for Arabic (WAFI-018) so a query
     // without harakat / with alef variants still matches.
     list = list.filter(p => matchesArabicQuery(
-      [p.nameAr, p.nameEn, p.barcode, p.category,
+      [p.nameAr, p.nameEn, p.barcode, categoryNameFor(p),
        p.costPriceUsd, p.salePriceUsd, p.currentStock].join(' '),
       search.value,
     ))
@@ -82,7 +96,10 @@ const displayed = computed(() => {
     const dir = sortDir.value === 'asc' ? 1 : -1
     // Copy before sorting so we never mutate the incoming products prop.
     list = [...list].sort((a, b) => {
-      const av = a[key], bv = b[key]
+      // 'category' sorts by the resolved real-category name, not the (now
+      // unwritten) free-text column — see categoryNameFor below.
+      const av = key === 'category' ? categoryNameFor(a) : a[key]
+      const bv = key === 'category' ? categoryNameFor(b) : b[key]
       if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir
       return String(av ?? '').localeCompare(String(bv ?? ''), 'ar') * dir
     })
@@ -104,23 +121,34 @@ function onPage(e: { first: number; rows: number }) {
 // Jump back to the first page whenever the result set changes (filter, search,
 // category, or a product removed), so we never land on an empty page.
 watch(
-  () => [search.value, selectedCategory.value, props.filterLowStock, props.filterMissingCost, displayed.value.length],
+  () => [search.value, selectedCategoryId.value, selectedSubcategoryId.value, props.filterLowStock, props.filterMissingCost, displayed.value.length],
   () => { if (first.value >= displayed.value.length) first.value = 0 },
 )
-watch([search, selectedCategory], () => { first.value = 0 })
-watch(categories, (next) => {
-  if (selectedCategory.value && !next.includes(selectedCategory.value)) {
-    selectedCategory.value = null
+watch([search, selectedCategoryId, selectedSubcategoryId], () => { first.value = 0 })
+watch(categoriesWithSubcategories, (next) => {
+  if (selectedCategoryId.value && !next.some(c => c.id === selectedCategoryId.value)) {
+    selectedCategoryId.value = null
+    selectedSubcategoryId.value = null
   }
 })
 
-function chooseCategory(category: string | null) {
-  selectedCategory.value = category
+function chooseCategory(categoryId: string | null) {
+  selectedCategoryId.value = categoryId
+  selectedSubcategoryId.value = null
   isCategoryMenuOpen.value = false
+}
+
+function chooseSubcategory(subcategoryId: string | null) {
+  selectedSubcategoryId.value = subcategoryId
+  isSubcategoryMenuOpen.value = false
 }
 
 function toggleCategoryMenu() {
   isCategoryMenuOpen.value = !isCategoryMenuOpen.value
+}
+
+function toggleSubcategoryMenu() {
+  isSubcategoryMenuOpen.value = !isSubcategoryMenuOpen.value
 }
 
 function onDocumentClick(event: MouseEvent) {
@@ -129,9 +157,13 @@ function onDocumentClick(event: MouseEvent) {
   if (!categoryMenuRef.value?.contains(target)) {
     isCategoryMenuOpen.value = false
   }
+  if (!subcategoryMenuRef.value?.contains(target)) {
+    isSubcategoryMenuOpen.value = false
+  }
 }
 
 onMounted(() => {
+  loadCategories()
   document.addEventListener('click', onDocumentClick)
 })
 
@@ -141,6 +173,10 @@ onUnmounted(() => {
 
 function isLowStock(p: Product): boolean {
   return p.currentStock <= p.lowStockThreshold
+}
+
+function categoryNameFor(p: Product): string {
+  return categoriesWithSubcategories.value.find(c => c.id === p.categoryId)?.name ?? ''
 }
 
 function toggleKebab(id: string) {
@@ -188,9 +224,10 @@ function handleAdjustStock(id: string) {
         />
       </div>
 
-      <div v-if="categories.length" ref="categoryMenuRef" class="search-filter-wrap">
+      <div v-if="categoriesWithSubcategories.length" ref="categoryMenuRef" class="search-filter-wrap">
         <button
           type="button"
+          data-testid="category-filter-btn"
           class="search-filter-btn"
           :aria-expanded="isCategoryMenuOpen"
           aria-haspopup="listbox"
@@ -216,9 +253,47 @@ function handleAdjustStock(id: string) {
             v-for="option in categoryOptions"
             :key="option.label"
             type="button"
+            :data-testid="`category-option-${option.value ?? 'all'}`"
             class="search-filter-item"
-            :class="{ 'search-filter-item-active': selectedCategory === option.value }"
+            :class="{ 'search-filter-item-active': selectedCategoryId === option.value }"
             @click="chooseCategory(option.value)"
+          >{{ option.label }}</button>
+        </div>
+      </div>
+
+      <div v-if="subcategoryOptions.length > 1" ref="subcategoryMenuRef" class="search-filter-wrap">
+        <button
+          type="button"
+          data-testid="subcategory-filter-btn"
+          class="search-filter-btn"
+          :aria-expanded="isSubcategoryMenuOpen"
+          aria-haspopup="listbox"
+          @click="toggleSubcategoryMenu"
+        >
+          <span class="search-filter-text">{{ selectedSubcategoryLabel }}</span>
+          <svg
+            class="search-filter-chevron"
+            :class="{ 'search-filter-chevron-open': isSubcategoryMenuOpen }"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        <div v-if="isSubcategoryMenuOpen" class="search-filter-menu" role="listbox" aria-label="تصفية حسب الفئة الفرعية">
+          <button
+            v-for="option in subcategoryOptions"
+            :key="option.label"
+            type="button"
+            :data-testid="`subcategory-option-${option.value ?? 'all'}`"
+            class="search-filter-item"
+            :class="{ 'search-filter-item-active': selectedSubcategoryId === option.value }"
+            @click="chooseSubcategory(option.value)"
           >{{ option.label }}</button>
         </div>
       </div>
@@ -294,7 +369,7 @@ function handleAdjustStock(id: string) {
             </td>
             <!-- Category -->
             <td class="td">
-              <span class="text-muted text-xs">{{ p.category || '—' }}</span>
+              <span class="text-muted text-xs">{{ categoryNameFor(p) || '—' }}</span>
             </td>
             <!-- Cost -->
             <td class="td">
