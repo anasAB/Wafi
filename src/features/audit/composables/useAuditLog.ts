@@ -308,6 +308,11 @@ export function useAuditLog() {
   ) => _log('stock.adjusted', 'stock', productId,
             { name, old_qty: oldQty, new_qty: newQty })
 
+  const logStockTakeCompleted = (
+    sessionId: string, linesAdjusted: number, totalShrinkageUsd: number,
+  ) => _log('stock_take.completed', 'stock_take', sessionId,
+            { linesAdjusted, totalShrinkageUsd })
+
   const logShiftOpened = (shiftId: string) =>
     _log('shift.opened', 'shift', shiftId, {})
 
@@ -450,6 +455,7 @@ export function useAuditLog() {
     logCustomerDeleted,
     logCustomerPaymentRecorded,
     logStockAdjusted,
+    logStockTakeCompleted,
     logShiftOpened,
     logShiftClosed,
     logShiftForceClosed,

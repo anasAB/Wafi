@@ -60,4 +60,27 @@ describe('useStockTake — startSession', () => {
     const updateCall = vi.mocked(db.execute).mock.calls.find(([sql]) => /UPDATE stock_take_lines/.test(sql))
     expect(updateCall![1]).toEqual(expect.arrayContaining([9, -1]))
   })
+
+  it('reviewLines excludes zero-variance and confirmSession applies adjustments + completes the session', async () => {
+    vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({
+        id: 's1', shop_id: 'shop1', started_at: '2026-07-14T00:00:00Z',
+        completed_at: null, status: 'in_progress', created_by: 'dev1', scope: null,
+      } as any)
+    vi.mocked(db.getAll).mockResolvedValueOnce([
+      { id: 'l1', session_id: 's1', product_id: 'p1', name_ar: 'منتج ١', expected_stock: 10, counted_stock: 9, variance: -1, variance_value_usd: null },
+      { id: 'l2', session_id: 's1', product_id: 'p2', name_ar: 'منتج ٢', expected_stock: 3,  counted_stock: 3, variance: 0,  variance_value_usd: null },
+    ] as any)
+
+    const { loadSession, reviewLines, confirmSession } = useStockTake()
+    await loadSession('s1')
+
+    expect(reviewLines.value).toHaveLength(1)
+    expect(reviewLines.value[0].id).toBe('l1')
+
+    await confirmSession()
+
+    const sessionUpdate = vi.mocked(db.execute).mock.calls.find(([sql]) => /UPDATE stock_take_sessions/.test(sql))
+    expect(sessionUpdate![1]).toContain('completed')
+  })
 })

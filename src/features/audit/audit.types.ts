@@ -34,6 +34,7 @@ export type AuditEvent =
   | 'operator.switched'
   | 'cash_movement.recorded'
   | 'cash_movement.voided'
+  | 'stock_take.completed'
   | 'installment_plan.created'
   | 'installment_payment.recorded'
   | 'installment_plan.cancelled'
@@ -43,7 +44,7 @@ export type AuditEntityType =
   | 'customer' | 'stock' | 'shift'
   | 'exchange_rate' | 'settings' | 'staff'
   | 'supplier' | 'receiving' | 'cash_movement'
-  | 'installment_plan'
+  | 'installment_plan' | 'stock_take'
 
 export interface AuditLog {
   id:         string

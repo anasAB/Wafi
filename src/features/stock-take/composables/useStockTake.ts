@@ -3,6 +3,8 @@ import { v4 as uuidv4 } from 'uuid'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import type { StockTakeSession, StockTakeLine, StockTakeSessionRow, StockTakeLineRow } from '@/features/stock-take/stock-take.types'
+import { useProducts } from '@/features/products/composables/useProducts'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 
 export function useStockTake() {
   const currentSession = ref<StockTakeSession | null>(null)
@@ -84,5 +86,39 @@ export function useStockTake() {
     total: lines.value.length,
   }))
 
-  return { currentSession, lines, startSession, loadSession, recordCount, progress }
+  const reviewLines = computed(() =>
+    lines.value
+      .filter(l => (l.variance ?? 0) !== 0)
+      .sort((a, b) => Math.abs(b.varianceValueUsd ?? b.variance ?? 0) - Math.abs(a.varianceValueUsd ?? a.variance ?? 0))
+  )
+
+  const totalShrinkageValueUsd = computed(() =>
+    lines.value.reduce((sum, l) => sum + (l.varianceValueUsd ?? 0), 0)
+  )
+
+  async function confirmSession(): Promise<void> {
+    if (!currentSession.value) return
+    const { adjustStock } = useProducts()
+    const { logStockTakeCompleted } = useAuditLog()
+
+    for (const line of reviewLines.value) {
+      if (line.countedStock === null) continue
+      await adjustStock(line.productId, line.countedStock, 'stocktake', `جرد #${currentSession.value.id}`)
+    }
+
+    const now = new Date().toISOString()
+    await db.execute(
+      `UPDATE stock_take_sessions SET status = ?, completed_at = ?, sync_status = 'pending' WHERE id = ?`,
+      ['completed', now, currentSession.value.id]
+    )
+    currentSession.value.status = 'completed'
+    currentSession.value.completedAt = now
+
+    await logStockTakeCompleted(currentSession.value.id, reviewLines.value.length, totalShrinkageValueUsd.value)
+  }
+
+  return {
+    currentSession, lines, startSession, loadSession, recordCount, progress,
+    reviewLines, totalShrinkageValueUsd, confirmSession,
+  }
 }
