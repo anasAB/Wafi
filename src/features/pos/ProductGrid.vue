@@ -1,38 +1,35 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { rowToProduct } from '@/features/products/product.utils'
 import { matchesArabicQuery } from '@/shared/text/arabic'
 import type { Product } from './pos.types'
 
-const props = defineProps<{ searchQuery: string; selectedCategory: string | null }>()
+const props = defineProps<{
+  searchQuery: string
+  selectedCategoryId: string | null
+  selectedSubcategoryId: string | null
+}>()
 const emit  = defineEmits<{
   (e: 'product-tap', productId: string): void
-  (e: 'categories-change', categories: string[]): void
 }>()
 
 const device     = useDeviceStore()
 const products   = ref<Product[]>([])
 const flashId    = ref<string | null>(null)
 const flashTimer = ref<ReturnType<typeof setTimeout> | null>(null)
-// Parent owns the category selection so the filter can sit beside search input.
-const categories = computed(() => {
-  const set = new Set<string>()
-  for (const p of products.value) {
-    const c = p.category?.trim()
-    if (c) set.add(c)
-  }
-  return [...set].sort((a, b) => a.localeCompare(b, 'ar'))
-})
 // Filter client-side (WAFI-018): SQL LIKE can't fold Arabic harakat / alef
 // variants. Fetch the shop's active products once, then fold + match the search
 // query and category in memory — fast enough for a single shop's catalog and the
 // only way diacritic-insensitive search works.
 const visibleProducts = computed(() => {
-  let list = props.selectedCategory
-    ? products.value.filter(p => (p.category ?? '').trim() === props.selectedCategory)
+  let list = props.selectedCategoryId
+    ? products.value.filter(p => p.categoryId === props.selectedCategoryId)
     : products.value
+  if (props.selectedSubcategoryId) {
+    list = list.filter(p => p.subcategoryId === props.selectedSubcategoryId)
+  }
   if (props.searchQuery.trim()) {
     list = list.filter(p => matchesArabicQuery(
       [p.nameAr, p.nameEn, p.barcode].join(' '),
@@ -44,7 +41,7 @@ const visibleProducts = computed(() => {
 
 async function loadProducts() {
   const result = await db.execute(
-    `SELECT id, shop_id, name_ar, name_en, price_usd, cost_price_usd, barcode, category, photo_url, current_stock, low_stock_threshold, is_active, created_at, updated_at FROM products WHERE shop_id = ? AND is_active = 1`,
+    `SELECT id, shop_id, name_ar, name_en, price_usd, cost_price_usd, barcode, category, category_id, subcategory_id, photo_url, current_stock, low_stock_threshold, is_active, created_at, updated_at FROM products WHERE shop_id = ? AND is_active = 1`,
     [device.shopId]
   )
   products.value = ((result as any).rows._array as any[]).map(rowToProduct)
@@ -53,10 +50,6 @@ async function loadProducts() {
 onMounted(() => {
   loadProducts()
 })
-
-watch(categories, (next) => {
-  emit('categories-change', next)
-}, { immediate: true })
 
 function handleTap(productId: string) {
   if (flashTimer.value) clearTimeout(flashTimer.value)

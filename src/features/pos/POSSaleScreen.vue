@@ -4,6 +4,7 @@ import { useRouter, onBeforeRouteLeave } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import AppToast from '@/components/ui/AppToast.vue'
 import ProductGrid from './ProductGrid.vue'
+import ProductPickerCategoryChips from './components/ProductPickerCategoryChips.vue'
 import SalePanel from './SalePanel.vue'
 import { useSale, ExchangeRateNotSetError } from './useSale'
 import { useExchangeRate } from '@/features/exchange-rate'
@@ -49,11 +50,8 @@ function cancelLeave() {
 }
 
 const searchQuery   = ref('')
-const selectedCategory = ref<string | null>(null)
-const categoryOptions = ref<string[]>([])
-const isCategoryMenuOpen = ref(false)
-const categoryMenuRef = ref<HTMLElement | null>(null)
-const selectedCategoryLabel = computed(() => selectedCategory.value ?? 'الكل')
+const selectedCategoryId    = ref<string | null>(null)
+const selectedSubcategoryId = ref<string | null>(null)
 const payOpen       = ref(false)
 const toast         = ref<{ message: string; type: 'error' | 'success' | 'info' } | null>(null)
 
@@ -65,7 +63,6 @@ let   stopCamera: (() => void) | null = null
 onMounted(async () => {
   await loadRate()
   scanner.onScan(handleBarcode)
-  document.addEventListener('click', onDocumentClick)
 })
 
 watch(currentRate, () => {
@@ -75,28 +72,9 @@ watch(currentRate, () => {
   sale.checkRateChanged()
 })
 
-function handleCategoriesChange(categories: string[]) {
-  categoryOptions.value = categories
-  if (selectedCategory.value && !categories.includes(selectedCategory.value)) {
-    selectedCategory.value = null
-  }
-}
-
-function chooseCategory(category: string | null) {
-  selectedCategory.value = category
-  isCategoryMenuOpen.value = false
-}
-
-function toggleCategoryMenu() {
-  isCategoryMenuOpen.value = !isCategoryMenuOpen.value
-}
-
-function onDocumentClick(event: MouseEvent) {
-  const target = event.target as Node | null
-  if (!target) return
-  if (!categoryMenuRef.value?.contains(target)) {
-    isCategoryMenuOpen.value = false
-  }
+function onCategorySelect(categoryId: string | null, subcategoryId: string | null) {
+  selectedCategoryId.value = categoryId
+  selectedSubcategoryId.value = subcategoryId
 }
 
 async function handleProductTap(productId: string) {
@@ -153,7 +131,6 @@ function closeCamera() {
 onUnmounted(() => {
   closeCamera()
   scanner.destroy()   // detach the scanner's global keydown listener (WAFI-032)
-  document.removeEventListener('click', onDocumentClick)
 })
 
 // The sale was persisted, but the installment plan that was supposed to go with
@@ -212,47 +189,6 @@ function handlePaymentConfirmed(completedSale: CompletedSale) {
             />
           </div>
 
-          <div v-if="categoryOptions.length" ref="categoryMenuRef" class="search-filter-wrap">
-            <button
-              type="button"
-              class="search-filter-btn"
-              :aria-expanded="isCategoryMenuOpen"
-              aria-haspopup="listbox"
-              @click="toggleCategoryMenu"
-            >
-              <span class="search-filter-text">{{ selectedCategoryLabel }}</span>
-              <svg
-                class="search-filter-chevron"
-                :class="{ 'search-filter-chevron-open': isCategoryMenuOpen }"
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            <div v-if="isCategoryMenuOpen" class="search-filter-menu" role="listbox" aria-label="تصفية حسب الفئة">
-              <button
-                type="button"
-                class="search-filter-item"
-                :class="{ 'search-filter-item-active': selectedCategory === null }"
-                @click="chooseCategory(null)"
-              >الكل</button>
-              <button
-                v-for="cat in categoryOptions"
-                :key="cat"
-                type="button"
-                class="search-filter-item"
-                :class="{ 'search-filter-item-active': selectedCategory === cat }"
-                @click="chooseCategory(cat)"
-              >{{ cat }}</button>
-            </div>
-          </div>
-
           <button
             v-if="scanner.cameraAvailable.value"
             type="button"
@@ -267,12 +203,14 @@ function handlePaymentConfirmed(completedSale: CompletedSale) {
           </button>
         </div>
 
+        <ProductPickerCategoryChips @select="onCategorySelect" />
+
         <div class="products-scroll">
           <ProductGrid
             :search-query="searchQuery"
-            :selected-category="selectedCategory"
+            :selected-category-id="selectedCategoryId"
+            :selected-subcategory-id="selectedSubcategoryId"
             @product-tap="handleProductTap"
-            @categories-change="handleCategoriesChange"
           />
         </div>
       </div>
