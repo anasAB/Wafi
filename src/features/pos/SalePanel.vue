@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useSaleStore } from '@/store/sale.store'
+import { useSaleDraft } from '@/composables/useSaleDraft'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import BaseModal from '@/components/ui/BaseModal.vue'
 import { db } from '@/data/powersync/db'
 
 const emit = defineEmits<{ (e: 'pay'): void }>()
 const store = useSaleStore()
+const { clearDraft } = useSaleDraft()
 
 const totalSyp = computed(() => {
   const rate = store.lockedExchangeRate
@@ -162,8 +164,9 @@ function closeProductPreview() {
   previewOpen.value = false
 }
 
-function handleClearSale() {
+async function handleClearSale() {
   store.clear()
+  await clearDraft()
   showClearDialog.value = false
 }
 </script>
