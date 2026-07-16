@@ -1,6 +1,6 @@
 # Product Categories & Subcategories Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Replace the free-text `products.category` string with a structured, owner-managed `categories`/`subcategories` model, migrate existing free-text values automatically, wire it into product filtering/sorting, the POS product picker, and add a "By category" breakdown to the Profit Report (Reporting Pack).
 
@@ -50,7 +50,7 @@
 **Interfaces:**
 - Produces: `public.categories(id, shop_id, name, created_at, sync_status)`, `public.subcategories(id, category_id, shop_id, name, created_at, sync_status)`, `products.category_id`, `products.subcategory_id`.
 
-- [ ] **Step 1: Write the migration file**
+- [x] **Step 1: Write the migration file**
 
 ```sql
 -- Wafi POS — Product categories & subcategories (الفئات).
@@ -191,7 +191,7 @@ BEGIN
 END $$;
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add supabase/migrations/036_product_categories.sql
@@ -208,7 +208,7 @@ git commit -m "feat: add categories/subcategories tables, product FKs, and free-
 **Interfaces:**
 - Produces: local tables `categories`, `subcategories`; `products` table gains `category_id`/`subcategory_id` columns.
 
-- [ ] **Step 1: Add `category_id`/`subcategory_id` to the `products` table definition**
+- [x] **Step 1: Add `category_id`/`subcategory_id` to the `products` table definition**
 
 In `src/data/powersync/schema.ts`, modify the `products` table (currently lines 3-19) to add two columns after `category`:
 
@@ -234,7 +234,7 @@ const products = new Table({
 })
 ```
 
-- [ ] **Step 2: Add the two new tables**
+- [x] **Step 2: Add the two new tables**
 
 Add above `export const AppSchema`:
 
@@ -255,7 +255,7 @@ const subcategories = new Table({
 })
 ```
 
-- [ ] **Step 3: Register both tables in `AppSchema`**
+- [x] **Step 3: Register both tables in `AppSchema`**
 
 ```ts
 export const AppSchema = new Schema({
@@ -285,7 +285,7 @@ export const AppSchema = new Schema({
 })
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/data/powersync/schema.ts
@@ -302,7 +302,7 @@ git commit -m "feat: register categories/subcategories tables and product FK col
 **Interfaces:**
 - Produces: `Category`, `Subcategory`, `CategoryWithSubcategories`, row types — consumed by Tasks 4-10.
 
-- [ ] **Step 1: Write the types file**
+- [x] **Step 1: Write the types file**
 
 ```ts
 export interface Category {
@@ -333,7 +333,7 @@ export type SubcategoryRow = {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add src/features/categories/category.types.ts
@@ -353,7 +353,7 @@ git commit -m "feat: add category/subcategory types"
 - Produces: `categoriesWithSubcategories: Ref<CategoryWithSubcategories[]>`, `load(): Promise<void>`, `createCategory(name: string): Promise<{ id: string | null; error: 'duplicate' | null }>`, `renameCategory(id: string, name: string): Promise<{ error: 'duplicate' | null }>`, `createSubcategory(categoryId: string, name: string): Promise<{ id: string | null; error: 'duplicate' | null }>`, `renameSubcategory(id: string, name: string): Promise<{ error: 'duplicate' | null }>`.
 - Duplicate-name handling (spec: "Duplicate name handling"): before any insert/rename, check for an existing case-insensitive match (categories: shop-scoped; subcategories: scoped to their parent category) and short-circuit with `{ error: 'duplicate' }` instead of attempting the write — the caller shows "هذه الفئة موجودة بالفعل" and never sees a raw DB unique-violation.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -424,12 +424,12 @@ describe('useCategories — load/create/rename', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/__tests__/features/useCategories.test.ts`
 Expected: FAIL — module not found
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 import { ref } from 'vue'
@@ -540,12 +540,12 @@ export function useCategories() {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/__tests__/features/useCategories.test.ts`
 Expected: PASS (all 4 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/features/categories/composables/useCategories.ts src/__tests__/features/useCategories.test.ts
@@ -564,7 +564,7 @@ git commit -m "feat: useCategories load/create/rename with case-insensitive dupl
 - Produces: `deleteCategory(id: string): Promise<{ deleted: boolean; productCount: number; blockedReason?: 'in_use' | 'fallback' }>`, `deleteSubcategory(id: string): Promise<{ deleted: boolean; productCount: number }>`.
 - "غير مصنف" protection (spec: "'غير مصنف' is a protected fallback"): `deleteCategory` looks up the shop's fallback category **by name** (`lower(name) = lower('غير مصنف')`), not by a cached/hardcoded id, and refuses to delete it — returning `blockedReason: 'fallback'` — regardless of its current product count.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
   it('deleteCategory blocks deletion when products are still assigned, with a count', async () => {
@@ -602,12 +602,12 @@ git commit -m "feat: useCategories load/create/rename with case-insensitive dupl
   })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/__tests__/features/useCategories.test.ts`
 Expected: FAIL — `deleteCategory is not a function`
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Add to `useCategories.ts`, before the final `return`:
 
@@ -650,12 +650,12 @@ Add to `useCategories.ts`, before the final `return`:
 
 Add `deleteCategory, deleteSubcategory` to the returned object.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/__tests__/features/useCategories.test.ts`
 Expected: PASS (all 6 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/features/categories/composables/useCategories.ts src/__tests__/features/useCategories.test.ts
@@ -676,7 +676,7 @@ git commit -m "feat: block category deletion when in-use or when it is the prote
 - Produces: `Product.categoryId?: string`, `Product.subcategoryId?: string`; `useProducts().save()` accepts and persists `categoryId`/`subcategoryId` (no longer writes the legacy `category` column).
 - Dependency rule (spec: "subcategory-without-category"): `save()` clears `subcategoryId` to `undefined` whenever `categoryId` is not also provided — a defensive backstop in case a caller bypasses the product form's own guard (Task 6a below) that keeps the subcategory dropdown disabled until a category is chosen.
 
-- [ ] **Step 1: Add fields to the `Product` type**
+- [x] **Step 1: Add fields to the `Product` type**
 
 In `src/features/pos/pos.types.ts`, add after the existing `category?: string` line:
 
@@ -685,7 +685,7 @@ In `src/features/pos/pos.types.ts`, add after the existing `category?: string` l
   subcategoryId?:     string
 ```
 
-- [ ] **Step 2: Update `product.utils.ts`'s row mapping**
+- [x] **Step 2: Update `product.utils.ts`'s row mapping**
 
 Modify the `ProductRow` type and `rowToProduct` function to include the new columns:
 
@@ -707,7 +707,7 @@ export function rowToProduct(r: ProductRow): Product {
 
 (Apply this as a targeted edit alongside the existing fields already in that file — read the file first to match exact surrounding syntax before editing.)
 
-- [ ] **Step 3: Write the failing test**
+- [x] **Step 3: Write the failing test**
 
 ```ts
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -750,12 +750,12 @@ describe('useProducts — categoryId/subcategoryId', () => {
 })
 ```
 
-- [ ] **Step 4: Run test to verify it fails**
+- [x] **Step 4: Run test to verify it fails**
 
 Run: `npx vitest run src/__tests__/features/useProducts.test.ts`
 Expected: FAIL — `insertCall![1]` does not contain `'c1'`/`'s1'`
 
-- [ ] **Step 5: Update `useProducts.ts`'s `save()`**
+- [x] **Step 5: Update `useProducts.ts`'s `save()`**
 
 At the top of `save()`, before either branch, enforce the subcategory-requires-category dependency rule (spec: "subcategory-without-category" edge case) so a caller that bypasses the product form's own guard still can't persist an orphaned subcategory:
 
@@ -819,12 +819,12 @@ And the UPDATE branch (currently lines 60-78), also using `effectiveSubcategoryI
     }
 ```
 
-- [ ] **Step 6: Run test to verify it passes**
+- [x] **Step 6: Run test to verify it passes**
 
 Run: `npx vitest run src/__tests__/features/useProducts.test.ts`
 Expected: PASS
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/features/pos/pos.types.ts src/features/products/product.utils.ts src/features/products/composables/useProducts.ts src/__tests__/features/useProducts.test.ts
@@ -841,17 +841,17 @@ git commit -m "feat: useProducts.save() persists category_id/subcategory_id, enf
 **Interfaces:**
 - Produces: the subcategory `<select>`/dropdown in the product form is disabled (and its bound value cleared) whenever no category is selected, matching the spec's UI-layer half of the subcategory-requires-category rule (the `useProducts().save()` defensive backstop is Task 6's `effectiveSubcategoryId`).
 
-- [ ] **Step 1: Read the product form component in full** to find its existing category field and local form-state pattern (`ref`/`reactive`).
+- [x] **Step 1: Read the product form component in full** to find its existing category field and local form-state pattern (`ref`/`reactive`).
 
-- [ ] **Step 2: Add the guard**
+- [x] **Step 2: Add the guard**
 
 Bind the subcategory control's `:disabled` to `!form.categoryId` (or the equivalent local state name found in Step 1), and add a `watch`/handler that clears `form.subcategoryId` to `undefined` whenever `form.categoryId` changes to a falsy value or to a category that isn't the subcategory's parent. Filter the subcategory options list to only the subcategories belonging to the currently selected category (via `useCategories().categoriesWithSubcategories`).
 
-- [ ] **Step 3: Manual verification**
+- [x] **Step 3: Manual verification**
 
 Run: `npm run dev`, open the product add form, confirm the subcategory field is disabled/empty until a category is picked, and that switching category clears any previously selected subcategory.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/features/products/components/
@@ -869,7 +869,7 @@ git commit -m "feat: disable subcategory selection in the product form until a c
 **Interfaces:**
 - Consumes: `useCategories()` (Tasks 4-5).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -937,12 +937,12 @@ describe('CategoriesManagementScreen', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/__tests__/features/CategoriesManagementScreen.test.ts`
 Expected: FAIL — component file not found
 
-- [ ] **Step 3: Write the component**
+- [x] **Step 3: Write the component**
 
 ```vue
 <script setup lang="ts">
@@ -1037,12 +1037,12 @@ async function removeSubcategory(id: string) {
 </template>
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/__tests__/features/CategoriesManagementScreen.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/features/categories/components/CategoriesManagementScreen.vue src/__tests__/features/CategoriesManagementScreen.test.ts
@@ -1062,7 +1062,7 @@ git commit -m "feat: categories management screen with in-use/fallback delete gu
 - Consumes: `useCategories()`.
 - Produces: emits `(e: 'created', categoryId: string): void` so the parent form can select the newly created category immediately (mirrors Epic 4's customer quick-add "Save and use" pattern).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -1106,12 +1106,12 @@ describe('CategoryQuickAdd', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/__tests__/features/CategoryQuickAdd.test.ts`
 Expected: FAIL — component file not found
 
-- [ ] **Step 3: Write the component**
+- [x] **Step 3: Write the component**
 
 ```vue
 <script setup lang="ts">
@@ -1147,16 +1147,16 @@ async function submit() {
 </template>
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/__tests__/features/CategoryQuickAdd.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Wire into the product form**
+- [x] **Step 5: Wire into the product form**
 
 Read the product add/edit form component in full, then add `<CategoryQuickAdd @created="onCategoryCreated" />` behind a "+ فئة جديدة" toggle button near the existing category field, where `onCategoryCreated(id: string)` sets the form's `categoryId` to the new id — mirror whatever local form-state pattern (`ref`/`reactive`) that file already uses.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/features/categories/components/CategoryQuickAdd.vue src/__tests__/features/CategoryQuickAdd.test.ts src/features/products/components/
@@ -1175,7 +1175,7 @@ git commit -m "feat: quick-add category from the product form without losing in-
 - Consumes: `useCategories().categoriesWithSubcategories`.
 - Produces: `ProductList.vue` filters/sorts by `categoryId`/`subcategoryId` instead of deriving categories from the `products` prop's free-text strings.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -1216,12 +1216,12 @@ describe('ProductList — category filter (real categories)', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/__tests__/features/ProductList.test.ts`
 Expected: FAIL — `data-testid="category-filter-btn"` not found (current markup uses `search-filter-btn`) or filter has no effect (current logic filters on `p.category` string, not `categoryId`)
 
-- [ ] **Step 3: Replace the category-derivation logic**
+- [x] **Step 3: Replace the category-derivation logic**
 
 In `ProductList.vue`, replace the block currently at lines 25-39 (`// ── Category filter (#9) ──` through `selectedCategoryLabel`) with:
 
@@ -1251,7 +1251,7 @@ const subcategoryOptions = computed(() => {
 
 (`onMounted` is already imported at line 2; add the new `import { useCategories } ...` line near the top with the other imports rather than inline as shown here — this snippet groups them for clarity.)
 
-- [ ] **Step 4: Update `displayed` to filter on ids**
+- [x] **Step 4: Update `displayed` to filter on ids**
 
 Replace the category-filtering line inside `displayed` (currently `if (selectedCategory.value) { list = list.filter(p => (p.category ?? '').trim() === selectedCategory.value) }`) with:
 
@@ -1264,11 +1264,11 @@ Replace the category-filtering line inside `displayed` (currently `if (selectedC
   }
 ```
 
-- [ ] **Step 5: Update the template's category dropdown**
+- [x] **Step 5: Update the template's category dropdown**
 
 Replace `data-testid`-bearing markup at lines 191-224 to use `category-filter-btn` / `category-option-${option.value}` and drive off `categoryOptions`/`chooseCategory` operating on `selectedCategoryId` (rename the existing `chooseCategory(category)` function's parameter/body to set `selectedCategoryId.value = category; selectedSubcategoryId.value = null` — clearing subcategory whenever the category selection changes). Add a second, conditionally-rendered dropdown below it for `subcategoryOptions` when `subcategoryOptions.value.length > 1`, following the same markup pattern (button + `role="listbox"` menu) already used for the category dropdown.
 
-- [ ] **Step 6: Update the `categories`-derivation `watch` that resets stale selections**
+- [x] **Step 6: Update the `categories`-derivation `watch` that resets stale selections**
 
 Replace the `watch(categories, ...)` block (currently lines 111-115) with:
 
@@ -1281,12 +1281,12 @@ watch(categoriesWithSubcategories, (next) => {
 })
 ```
 
-- [ ] **Step 7: Run test to verify it passes**
+- [x] **Step 7: Run test to verify it passes**
 
 Run: `npx vitest run src/__tests__/features/ProductList.test.ts`
 Expected: PASS
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/features/products/components/ProductList.vue src/__tests__/features/ProductList.test.ts
@@ -1305,7 +1305,7 @@ git commit -m "feat: ProductList filters/sorts by real category/subcategory ids 
 **Interfaces:**
 - Produces: emits `(e: 'select', categoryId: string | null, subcategoryId: string | null): void`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -1340,12 +1340,12 @@ describe('ProductPickerCategoryChips', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/__tests__/features/ProductPickerCategoryChips.test.ts`
 Expected: FAIL — component file not found
 
-- [ ] **Step 3: Write the component**
+- [x] **Step 3: Write the component**
 
 ```vue
 <script setup lang="ts">
@@ -1406,16 +1406,16 @@ function chooseSubcategory(id: string | null) {
 </style>
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/__tests__/features/ProductPickerCategoryChips.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Wire into the POS product picker**
+- [x] **Step 5: Wire into the POS product picker**
 
 Read the POS product-picker component (e.g. `SalePanel.vue`) in full, then add `<ProductPickerCategoryChips @select="onCategorySelect" />` above the product results, where `onCategorySelect(categoryId, subcategoryId)` narrows the existing sellable-products list by `categoryId`/`subcategoryId` the same way `ProductList.vue`'s `displayed` computed does (Task 9, Step 4) — additive to, not replacing, existing barcode/name search.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/features/pos/components/ProductPickerCategoryChips.vue src/__tests__/features/ProductPickerCategoryChips.test.ts src/features/pos/SalePanel.vue
@@ -1435,7 +1435,7 @@ git commit -m "feat: POS category chip filter with subcategory drill-down"
 - Consumes: `db.getAll` from `@/data/powersync/db`; `useDeviceStore()`.
 - Produces: `useCategoryBreakdown().load(start: string, end: string): Promise<void>`, `rows: Ref<{ categoryId: string; categoryName: string; revenueUsd: number; cogsUsd: number; profitUsd: number; hasMissingCost: boolean }[]>` sorted by `profitUsd` descending, `loadSubcategoryRows(categoryId: string, start: string, end: string): Promise<{...}[]>` for the drill-down.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -1468,12 +1468,12 @@ describe('useCategoryBreakdown', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/__tests__/features/useCategoryBreakdown.test.ts`
 Expected: FAIL — module not found
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 import { ref } from 'vue'
@@ -1557,19 +1557,19 @@ export function useCategoryBreakdown() {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/__tests__/features/useCategoryBreakdown.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Add the "By category" tab to `ReportsPage.vue`**
+- [x] **Step 5: Add the "By category" tab to `ReportsPage.vue`**
 
 Read `src/features/dashboard/components/ReportsPage.vue` in full first. It already has `activeTab = ref<'profitability' | 'expenses'>('profitability')` (line ~35), and its existing missing-cost caveat is `<p v-if="metrics.profitIsEstimated.value" class="caveat">{{ t('reports.estimated') }}</p>`, using the `reports.estimated` i18n key (`src/i18n/ar.ts` / `en.ts`: "بعض المنتجات بلا تكلفة — الربح تقديري وقد يكون أقل" / "Some products have no cost — profit is estimated and may be lower"). Widen the tab union to include `'category'`, add a third tab button alongside the existing profitability/expenses tabs (matching that file's existing tab-button markup), and add a tab panel that:
 - imports and calls `useCategoryBreakdown()`, loading it with the same `start`/`end` the page already computes for the active period (reuse `getReportRange`/`period`/`customStart`/`customEnd` already in scope in that file — do not add a second period selector);
 - renders `rows.value` as a simple list (category name, revenue, COGS, profit), and for any row where `hasMissingCost` is true, renders the exact same `<p class="caveat">{{ t('reports.estimated') }}</p>` markup and i18n key already used by the profitability tab — not new wording, not a new class (spec DoD: same visual caveat styling as the main profitability tab);
 - on tapping a row, calls `loadSubcategoryRows(categoryId, start, end)` and renders the result inline beneath that row (drill-down, not a route navigation) — this is unstyled functionally-complete markup; visual polish should follow this file's existing Tailwind/PrimeVue conventions once read.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/features/dashboard/composables/useCategoryBreakdown.ts src/__tests__/features/useCategoryBreakdown.test.ts src/features/dashboard/components/ReportsPage.vue
@@ -1586,7 +1586,7 @@ git commit -m "feat: add By-category breakdown tab to the Profit Report with sub
 **Interfaces:**
 - Produces: route `/categories`.
 
-- [ ] **Step 1: Add the route**
+- [x] **Step 1: Add the route**
 
 In `src/router/index.ts`, add after the `/products/:id/edit` route:
 
@@ -1594,16 +1594,16 @@ In `src/router/index.ts`, add after the `/products/:id/edit` route:
     { path: '/categories', component: () => import('@/features/categories/components/CategoriesManagementScreen.vue'), meta: { permission: 'can_manage_products' } },
 ```
 
-- [ ] **Step 2: Add an entry point from the product list**
+- [x] **Step 2: Add an entry point from the product list**
 
 In `src/features/products/ProductsPage.vue` (read it first to match existing button style), add a link/button to `/categories` near the existing "Add product"/"Import from Excel" actions, e.g. `<router-link to="/categories">إدارة الفئات</router-link>`.
 
-- [ ] **Step 3: Manual verification**
+- [x] **Step 3: Manual verification**
 
 Run: `npm run dev`
 Navigate to `/categories`, confirm existing free-text category values appear as real categories (post-migration) with a "غير مصنف" bucket present; create/rename/delete a category and subcategory; confirm the product list's category filter and the POS category chips reflect the same data; confirm the Profit Report's "By category" tab sums correctly for a period with test sales.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/router/index.ts src/features/products/ProductsPage.vue

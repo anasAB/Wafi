@@ -1,6 +1,6 @@
 # Product Categories & Subcategories (الفئات) — Design Spec
 
-**Status:** Approved design, ready for planning
+**Status:** Implemented — merged to main (2026-07-16)
 **Pack:** Core (management/sorting/filtering) + Reporting Pack (category breakdown in Profit Report)
 **Depends on:** Epic 2 (Manage Products & Track Stock) — replaces the existing free-text `category` field on products; Profit Report screen (`specs/2026-06-23-profit-report-design.md`) for the reporting extension.
 
@@ -107,15 +107,15 @@ Extends the existing Profit Report screen:
 
 ## Definition of Done
 
-- [ ] Owner can create, rename, and delete categories and subcategories from the management screen
-- [ ] Migration correctly converts all existing distinct free-text category values into real category records with products correctly re-pointed; blank values land in "غير مصنف"
-- [ ] Deleting a category/subcategory in use is blocked with a clear count; the message directs the owner to the Product List filter to reassign manually (no bulk-reassignment UI in v1)
-- [ ] Product list/Back Office filter and sort correctly by category and subcategory
-- [ ] POS product picker's category chips correctly narrow visible products, including subcategory drill-down
-- [ ] Quick-add category from the product-add flow works without losing in-progress form data
-- [ ] Profit Report's "By category" view (Reporting Pack) correctly sums revenue/COGS/profit per category for the selected period, drills into subcategories, and includes "غير مصنف" as its own row, using the same visual "estimated — missing cost" caveat styling as the main Profit Report tab
-- [ ] Category renames do not affect historical report aggregation
-- [ ] Attempting to create a category/subcategory with a name that already exists (case-insensitive) shows a friendly Arabic error message, not a raw database error
-- [ ] The "غير مصنف" (Uncategorized) category cannot be deleted while it is the shop's active fallback for uncategorized products
-- [ ] The product form prevents selecting a subcategory unless its parent category is already selected; `useProducts().save()` defensively enforces the same rule
+- [x] Owner can create, rename, and delete categories and subcategories from the management screen
+- [x] Migration correctly converts all existing distinct free-text category values into real category records with products correctly re-pointed; blank values land in "غير مصنف"
+- [x] Deleting a category/subcategory in use is blocked with a clear count; the message directs the owner to the Product List filter to reassign manually (no bulk-reassignment UI in v1)
+- [x] Product list/Back Office filter and sort correctly by category and subcategory
+- [x] POS product picker's category chips correctly narrow visible products, including subcategory drill-down
+- [x] Quick-add category from the product-add flow works without losing in-progress form data
+- [x] Profit Report's "By category" view (Reporting Pack) correctly sums revenue/COGS/profit per category for the selected period, drills into subcategories, and includes "غير مصنف" as its own row, using the same visual "estimated — missing cost" caveat styling as the main Profit Report tab
+- [x] Category renames do not affect historical report aggregation
+- [x] Attempting to create a category/subcategory with a name that already exists (case-insensitive) shows a friendly Arabic error message, not a raw database error
+- [x] The "غير مصنف" (Uncategorized) category cannot be deleted while it is the shop's active fallback for uncategorized products
+- [x] The product form prevents selecting a subcategory unless its parent category is already selected; `useProducts().save()` defensively enforces the same rule
 - [ ] Tested on phone, tablet, desktop, online and offline
