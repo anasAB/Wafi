@@ -72,13 +72,21 @@ export function useStockTake() {
     if (!line) return
     const variance = countedStock - line.expectedStock
 
+    const productRow = await db.getOptional<{ cost_price_usd: number | null }>(
+      `SELECT cost_price_usd FROM products WHERE id = ?`, [line.productId]
+    )
+    const varianceValueUsd = productRow?.cost_price_usd != null
+      ? variance * productRow.cost_price_usd
+      : null
+
     await db.execute(
-      `UPDATE stock_take_lines SET counted_stock = ?, variance = ?, sync_status = 'pending' WHERE id = ?`,
-      [countedStock, variance, lineId]
+      `UPDATE stock_take_lines SET counted_stock = ?, variance = ?, variance_value_usd = ?, sync_status = 'pending' WHERE id = ?`,
+      [countedStock, variance, varianceValueUsd, lineId]
     )
 
     line.countedStock = countedStock
     line.variance = variance
+    line.varianceValueUsd = varianceValueUsd
   }
 
   const progress = computed(() => ({

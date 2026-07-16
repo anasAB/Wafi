@@ -83,4 +83,22 @@ describe('useStockTake — startSession', () => {
     const sessionUpdate = vi.mocked(db.execute).mock.calls.find(([sql]) => /UPDATE stock_take_sessions/.test(sql))
     expect(sessionUpdate![1]).toContain('completed')
   })
+
+  it('recordCount computes variance_value_usd from the product cost_price_usd, or null if missing', async () => {
+    vi.mocked(db.getOptional).mockImplementation(async (sql: string) => {
+      if (/cost_price_usd/.test(sql)) return { cost_price_usd: 5 } as any
+      return null
+    })
+    vi.mocked(db.getAll).mockResolvedValueOnce([
+      { id: 'l1', session_id: 's1', product_id: 'p1', name_ar: 'منتج ١', expected_stock: 10, counted_stock: null, variance: null, variance_value_usd: null },
+    ] as any)
+
+    const { loadSession, recordCount } = useStockTake()
+    await loadSession('s1')
+    await recordCount('l1', 8)
+
+    const updateCall = vi.mocked(db.execute).mock.calls.find(([sql]) => /UPDATE stock_take_lines/.test(sql))
+    // variance = 8 - 10 = -2, variance_value_usd = -2 * 5 = -10
+    expect(updateCall![1]).toEqual(expect.arrayContaining([8, -2, -10]))
+  })
 })
