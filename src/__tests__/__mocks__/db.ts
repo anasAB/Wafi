@@ -9,7 +9,7 @@ export const db = {
     }),
   }),
   writeTransaction: vi.fn().mockImplementation(async (fn: (tx: any) => Promise<void>) => {
-    await fn({ execute: vi.fn().mockResolvedValue({}) })
+    await fn({ execute: vi.fn().mockResolvedValue({ rows: { _array: [] } }) })
   }),
   getAll: vi.fn().mockResolvedValue([]),
   getOptional: vi.fn().mockResolvedValue(null),
