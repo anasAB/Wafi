@@ -893,10 +893,14 @@ describe('CategoriesManagementScreen', () => {
   })
 
   it('lists categories and creates a new one from the input', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce(null) // createCategory's duplicate-name check
     const wrapper = mount(CategoriesManagementScreen)
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(wrapper.text()).toContain('هواتف')
+    // Category names render as the value of an inline-rename <input>, not as
+    // plain text — wrapper.text() only sees element textContent, so check the
+    // input's bound value instead.
+    expect((wrapper.get('.category-row input').element as HTMLInputElement).value).toBe('هواتف')
 
     await wrapper.get('[data-testid="new-category-input"]').setValue('أجهزة منزلية')
     await wrapper.get('[data-testid="new-category-submit"]').trigger('click')
