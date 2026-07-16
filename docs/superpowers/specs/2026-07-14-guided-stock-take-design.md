@@ -1,6 +1,6 @@
 # Guided Stock-Take / Inventory Reconciliation (الجرد) — Design Spec
 
-**Status:** Approved design, ready for planning
+**Status:** Implemented — merged to main (2026-07-16)
 **Pack:** Staff Pack (+$5/month)
 **Depends on:** Epic 2 (Manage Products & Track Stock) — existing `current_stock` field and `stock_adjustment` record (which already has a "جرد" / Stocktake reason today).
 **Build order:** Second of the two 2026-07-14 candidate features (after Installment Plans).

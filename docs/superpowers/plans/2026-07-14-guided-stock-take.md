@@ -1,6 +1,6 @@
 # Guided Stock-Take Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Build a guided physical inventory count session (`stock_take_sessions` + `stock_take_lines`) that snapshots expected stock, lets a counter enter quantities per product (with barcode-scan jump), reviews variance/shrinkage on finish, applies the results as real `stock_adjustments`, and shows a shrinkage-trend history.
 
@@ -46,7 +46,7 @@
 **Interfaces:**
 - Produces: tables `public.stock_take_sessions` (columns: `id, shop_id, started_at, completed_at, status, created_by, scope, sync_status`) and `public.stock_take_lines` (columns: `id, session_id, shop_id, product_id, expected_stock, counted_stock, variance, variance_value_usd, sync_status`).
 
-- [ ] **Step 1: Write the migration file**
+- [x] **Step 1: Write the migration file**
 
 ```sql
 -- Wafi POS — Guided stock-take / inventory reconciliation (الجرد).
@@ -140,7 +140,7 @@ BEGIN
 END $$;
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add supabase/migrations/035_stock_take_sessions.sql
@@ -158,7 +158,7 @@ git commit -m "feat: add stock_take_sessions and stock_take_lines tables"
 - Consumes: `column`, `Table` from `@powersync/web` (already imported at line 1).
 - Produces: local tables `stock_take_sessions`, `stock_take_lines`, registered in `AppSchema`.
 
-- [ ] **Step 1: Add the two table definitions above `export const AppSchema`**
+- [x] **Step 1: Add the two table definitions above `export const AppSchema`**
 
 ```ts
 const stock_take_sessions = new Table({
@@ -183,7 +183,7 @@ const stock_take_lines = new Table({
 })
 ```
 
-- [ ] **Step 2: Register both tables in `AppSchema`**
+- [x] **Step 2: Register both tables in `AppSchema`**
 
 Modify the `export const AppSchema = new Schema({...})` block (currently ends `stock_receiving_line_items,\n})`) to add:
 
@@ -215,7 +215,7 @@ export const AppSchema = new Schema({
 })
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/data/powersync/schema.ts
@@ -232,7 +232,7 @@ git commit -m "feat: register stock_take tables in PowerSync schema"
 **Interfaces:**
 - Produces: `SessionStatus`, `StockTakeSession`, `StockTakeLine`, `StockTakeLineRow`, `StockTakeSessionRow` — consumed by Task 4-8.
 
-- [ ] **Step 1: Write the types file**
+- [x] **Step 1: Write the types file**
 
 ```ts
 export type SessionStatus = 'in_progress' | 'completed' | 'cancelled'
@@ -270,7 +270,7 @@ export type StockTakeLineRow = {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add src/features/stock-take/stock-take.types.ts
@@ -289,7 +289,7 @@ git commit -m "feat: add stock-take types"
 - Consumes: `db` from `@/data/powersync/db`; `useDeviceStore()` from `@/store/device.store` (`.shopId`); `uuidv4` from `uuid`.
 - Produces: `startSession(scope?: string | null): Promise<string>` returning the new `session_id`. Snapshots `expected_stock` from `products.current_stock` for every active, non-deleted product (optionally filtered by `scope` matched against `category`), inserting one `stock_take_lines` row per product.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -335,12 +335,12 @@ describe('useStockTake — startSession', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/__tests__/features/useStockTake.test.ts`
 Expected: FAIL — `Cannot find module '@/features/stock-take/composables/useStockTake'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```ts
 import { ref } from 'vue'
@@ -387,12 +387,12 @@ export function useStockTake() {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/__tests__/features/useStockTake.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/features/stock-take/composables/useStockTake.ts src/__tests__/features/useStockTake.test.ts
@@ -411,7 +411,7 @@ git commit -m "feat: useStockTake.startSession snapshots expected_stock per prod
 - Consumes: same as Task 4.
 - Produces: `loadSession(sessionId: string): Promise<void>` (populates `currentSession`, `lines`), `recordCount(lineId: string, countedStock: number): Promise<void>`, `progress: ComputedRef<{ counted: number; total: number }>`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
   it('loadSession populates session + lines, recordCount updates a line and counted progress', async () => {
@@ -437,12 +437,12 @@ git commit -m "feat: useStockTake.startSession snapshots expected_stock per prod
   })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/__tests__/features/useStockTake.test.ts`
 Expected: FAIL — `loadSession is not a function`
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Add to `useStockTake.ts`, replacing the `return` statement:
 
@@ -498,12 +498,12 @@ Add to `useStockTake.ts`, replacing the `return` statement:
 
 Add `computed` to the `vue` import at the top: `import { ref, computed } from 'vue'`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/__tests__/features/useStockTake.test.ts`
 Expected: PASS (both tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/features/stock-take/composables/useStockTake.ts src/__tests__/features/useStockTake.test.ts
@@ -524,11 +524,11 @@ git commit -m "feat: useStockTake.loadSession/recordCount + progress tracking"
 - Consumes: `useProducts().adjustStock` from `@/features/products/composables/useProducts`; `useAuditLog().logStockTakeCompleted` (new).
 - Produces: `reviewLines: ComputedRef<StockTakeLine[]>` (non-zero variance, sorted by `|varianceValueUsd|` desc), `totalShrinkageValueUsd: ComputedRef<number>`, `confirmSession(): Promise<void>`.
 
-- [ ] **Step 1: Add the audit event type**
+- [x] **Step 1: Add the audit event type**
 
 Modify `src/features/audit/audit.types.ts` — add `| 'stock_take.completed'` to the `AuditEvent` union (after `'cash_movement.voided'`), and add `'stock_take'` to the `AuditEntityType` union.
 
-- [ ] **Step 2: Add the audit helper**
+- [x] **Step 2: Add the audit helper**
 
 Modify `src/features/audit/composables/useAuditLog.ts` — add near `logStockAdjusted`:
 
@@ -541,7 +541,7 @@ Modify `src/features/audit/composables/useAuditLog.ts` — add near `logStockAdj
 
 Add `logStockTakeCompleted` to the returned object at the bottom of the file.
 
-- [ ] **Step 3: Write the failing test**
+- [x] **Step 3: Write the failing test**
 
 ```ts
   it('reviewLines excludes zero-variance and confirmSession applies adjustments + completes the session', async () => {
@@ -568,12 +568,12 @@ Add `logStockTakeCompleted` to the returned object at the bottom of the file.
   })
 ```
 
-- [ ] **Step 4: Run test to verify it fails**
+- [x] **Step 4: Run test to verify it fails**
 
 Run: `npx vitest run src/__tests__/features/useStockTake.test.ts`
 Expected: FAIL — `reviewLines is not defined` / `confirmSession is not a function`
 
-- [ ] **Step 5: Write the implementation**
+- [x] **Step 5: Write the implementation**
 
 Add to `useStockTake.ts`, importing `useProducts` and `useAuditLog` at the top:
 
@@ -622,12 +622,12 @@ Replace the final `return` with:
   }
 ```
 
-- [ ] **Step 6: Run test to verify it passes**
+- [x] **Step 6: Run test to verify it passes**
 
 Run: `npx vitest run src/__tests__/features/useStockTake.test.ts`
 Expected: PASS (all 3 tests)
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/features/stock-take/composables/useStockTake.ts src/features/audit/audit.types.ts src/features/audit/composables/useAuditLog.ts src/__tests__/features/useStockTake.test.ts
@@ -646,7 +646,7 @@ git commit -m "feat: useStockTake.confirmSession applies adjustments via adjustS
 - Consumes: `products.cost_price_usd` column (already exists — `src/data/powersync/schema.ts:8`).
 - Produces: `recordCount` now also computes and persists `variance_value_usd = variance * cost_price_usd` (null if the product has no `cost_price_usd`).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
   it('recordCount computes variance_value_usd from the product cost_price_usd, or null if missing', async () => {
@@ -668,12 +668,12 @@ git commit -m "feat: useStockTake.confirmSession applies adjustments via adjustS
   })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/__tests__/features/useStockTake.test.ts`
 Expected: FAIL — assertion mismatch (no `-10` in params)
 
-- [ ] **Step 3: Update `recordCount`**
+- [x] **Step 3: Update `recordCount`**
 
 Replace the `recordCount` body in `useStockTake.ts`:
 
@@ -701,12 +701,12 @@ Replace the `recordCount` body in `useStockTake.ts`:
   }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/__tests__/features/useStockTake.test.ts`
 Expected: PASS (all 4 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/features/stock-take/composables/useStockTake.ts src/__tests__/features/useStockTake.test.ts
@@ -725,7 +725,7 @@ git commit -m "feat: compute variance_value_usd from product cost price, null wh
 - Consumes: `db.getAll` from `@/data/powersync/db`; `useDeviceStore()`.
 - Produces: `sessions: Ref<{ id: string; startedAt: string; createdBy: string; productsCounted: number; totalShrinkageUsd: number }[]>`, `load(): Promise<void>`, `lastThreeTrendUsd: ComputedRef<number>` (sum of `totalShrinkageUsd` across up to the 3 most recent completed sessions).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -760,12 +760,12 @@ describe('useStockTakeHistory', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/__tests__/features/useStockTakeHistory.test.ts`
 Expected: FAIL — module not found
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 import { ref, computed } from 'vue'
@@ -815,12 +815,12 @@ export function useStockTakeHistory() {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/__tests__/features/useStockTakeHistory.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/features/stock-take/composables/useStockTakeHistory.ts src/__tests__/features/useStockTakeHistory.test.ts
@@ -839,7 +839,7 @@ git commit -m "feat: useStockTakeHistory lists completed sessions and a last-3 s
 - Consumes: `useStockTake()` (Tasks 4-7), `useBarcodeScan()` from `@/composables/useBarcodeScan` (`onScan`, `offScan`).
 - Produces: a routable screen mounted at `/stock-take/:id`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -889,12 +889,12 @@ async function flushPromisesLoop() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/__tests__/features/StockTakeSessionScreen.test.ts`
 Expected: FAIL — component file not found
 
-- [ ] **Step 3: Write the component**
+- [x] **Step 3: Write the component**
 
 ```vue
 <script setup lang="ts">
@@ -970,12 +970,12 @@ onUnmounted(() => offScan(handleScan))
 </style>
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/__tests__/features/StockTakeSessionScreen.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/features/stock-take/components/StockTakeSessionScreen.vue src/__tests__/features/StockTakeSessionScreen.test.ts
@@ -993,7 +993,7 @@ git commit -m "feat: guided stock-take counting screen with barcode-scan jump"
 **Interfaces:**
 - Consumes: `useStockTake()` — `loadSession`, `reviewLines`, `totalShrinkageValueUsd`, `confirmSession`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -1037,12 +1037,12 @@ describe('StockTakeReviewScreen', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/__tests__/features/StockTakeReviewScreen.test.ts`
 Expected: FAIL — component file not found
 
-- [ ] **Step 3: Write the component**
+- [x] **Step 3: Write the component**
 
 ```vue
 <script setup lang="ts">
@@ -1082,12 +1082,12 @@ async function onConfirm() {
 </template>
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/__tests__/features/StockTakeReviewScreen.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/features/stock-take/components/StockTakeReviewScreen.vue src/__tests__/features/StockTakeReviewScreen.test.ts
@@ -1105,7 +1105,7 @@ git commit -m "feat: stock-take review screen with total shrinkage and confirm-t
 **Interfaces:**
 - Consumes: `useStockTakeHistory()` (Task 8).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -1138,12 +1138,12 @@ describe('StockTakeHistoryScreen', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/__tests__/features/StockTakeHistoryScreen.test.ts`
 Expected: FAIL — component file not found
 
-- [ ] **Step 3: Write the component**
+- [x] **Step 3: Write the component**
 
 ```vue
 <script setup lang="ts">
@@ -1183,12 +1183,12 @@ onMounted(load)
 </style>
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/__tests__/features/StockTakeHistoryScreen.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/features/stock-take/components/StockTakeHistoryScreen.vue src/__tests__/features/StockTakeHistoryScreen.test.ts
@@ -1206,7 +1206,7 @@ git commit -m "feat: stock-take history screen with last-3 shrinkage trend"
 **Interfaces:**
 - Produces: routes `/stock-take` (starts a session and redirects into it), `/stock-take/:id` (counting), `/stock-take/:id/review`, `/stock-take/history`.
 
-- [ ] **Step 1: Add routes**
+- [x] **Step 1: Add routes**
 
 In `src/router/index.ts`, add after the `/receivings` route:
 
@@ -1217,7 +1217,7 @@ In `src/router/index.ts`, add after the `/receivings` route:
     { path: '/stock-take/:id/review',  component: () => import('@/features/stock-take/components/StockTakeReviewScreen.vue'), meta: { permission: 'can_manage_products' } },
 ```
 
-- [ ] **Step 2: Create the missing start screen**
+- [x] **Step 2: Create the missing start screen**
 
 `/stock-take` needs a small screen to kick off `startSession` and redirect — create `src/features/stock-take/components/StockTakeStartScreen.vue`:
 
@@ -1247,16 +1247,16 @@ async function start() {
 </template>
 ```
 
-- [ ] **Step 3: Add an entry point from the product list**
+- [x] **Step 3: Add an entry point from the product list**
 
 Read `src/features/products/ProductsPage.vue` in full first to match its existing button markup/style, then add a button/link to `/stock-take` near the existing "Add product"/"Import from Excel" actions (per epic_02's Screen 1 layout, e.g. `<router-link to="/stock-take">بدء جرد</router-link>` styled consistently with neighboring action buttons in that file).
 
-- [ ] **Step 4: Manual verification**
+- [x] **Step 4: Manual verification**
 
 Run: `npm run dev`
 Navigate to `/products`, confirm a "بدء جرد" entry point is visible and navigates to `/stock-take`; complete a full session end-to-end (start → count 2-3 products → review → confirm) and confirm `current_stock` updates on the product list.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/router/index.ts src/features/stock-take/components/StockTakeStartScreen.vue src/features/products/ProductsPage.vue
