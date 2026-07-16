@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useDeviceStore } from '@/store/device.store'
 import { useProducts } from '@/features/products/composables/useProducts'
 import { useStockAdjustment } from '@/features/products/composables/useStockAdjustment'
+import { useCategories } from '@/features/categories/composables/useCategories'
 import { useBarcodeScan } from '@/composables/useBarcodeScan'
 import ProductPhotoUpload from './ProductPhotoUpload.vue'
 import StockAdjustmentDialog from './StockAdjustmentDialog.vue'
@@ -24,15 +25,17 @@ const emit = defineEmits<{
   (e: 'cancel'):  void
 }>()
 
-const device   = useDeviceStore()
-const products = useProducts()
-const adj      = useStockAdjustment()
-const scanner  = useBarcodeScan()
+const device     = useDeviceStore()
+const products   = useProducts()
+const adj        = useStockAdjustment()
+const scanner    = useBarcodeScan()
+const categories = useCategories()
 
-const nameAr    = ref(props.product?.nameAr       ?? '')
-const nameEn    = ref(props.product?.nameEn       ?? '')
-const barcode   = ref(props.product?.barcode ?? props.initialBarcode ?? '')
-const category  = ref(props.product?.category     ?? '')
+const nameAr        = ref(props.product?.nameAr       ?? '')
+const nameEn        = ref(props.product?.nameEn       ?? '')
+const barcode       = ref(props.product?.barcode ?? props.initialBarcode ?? '')
+const categoryId    = ref(props.product?.categoryId    ?? '')
+const subcategoryId = ref(props.product?.subcategoryId ?? '')
 const costPrice = ref<number | ''>(props.product?.costPriceUsd ?? '')
 const salePrice = ref<number | ''>(props.product?.salePriceUsd ?? '')
 const stock     = ref<number | ''>(props.product?.currentStock ?? '')
@@ -53,6 +56,19 @@ const margin = computed(() => {
   if (!cost || !sale || cost <= 0 || sale <= 0) return null
   return Math.round(((sale - cost) / cost) * 100)
 })
+
+// The subcategory dropdown is disabled until a category is chosen, and only
+// ever offers subcategories that belong to it (spec: subcategory-requires-category).
+const availableSubcategories = computed(() => {
+  const cat = categories.categoriesWithSubcategories.value.find(c => c.id === categoryId.value)
+  return cat?.subcategories ?? []
+})
+
+function onCategoryChange() {
+  if (!availableSubcategories.value.some(s => s.id === subcategoryId.value)) {
+    subcategoryId.value = ''
+  }
+}
 
 function validate(): boolean {
   const e: Record<string, string> = {}
@@ -86,7 +102,8 @@ async function commitSave(newStock: number, addAnother = false) {
       nameAr:            nameAr.value.trim(),
       nameEn:            nameEn.value.trim() || undefined,
       barcode:           barcode.value.trim() || undefined,
-      category:          category.value.trim() || undefined,
+      categoryId:        categoryId.value || undefined,
+      subcategoryId:     subcategoryId.value || undefined,
       costPriceUsd:      Number(costPrice.value),
       salePriceUsd:      Number(salePrice.value),
       currentStock:      newStock,
@@ -97,7 +114,8 @@ async function commitSave(newStock: number, addAnother = false) {
       updatedAt:         '',
     })
     if (addAnother) {
-      nameAr.value = ''; nameEn.value = ''; barcode.value = ''; category.value = ''
+      nameAr.value = ''; nameEn.value = ''; barcode.value = ''
+      categoryId.value = ''; subcategoryId.value = ''
       costPrice.value = ''; salePrice.value = ''; stock.value = ''
       threshold.value = 5; photoUrl.value = null
       errors.value = {}; priceWarning.value = false
@@ -122,6 +140,7 @@ async function handleAdjConfirm() {
 
 onMounted(() => {
   products.load()
+  categories.load()
   scanner.onScan((code: string) => { barcode.value = code })
 })
 
@@ -158,14 +177,26 @@ onUnmounted(() => {
         </p>
       </div>
 
-      <!-- Category (moved here from optional details) -->
+      <!-- Category / Subcategory (moved here from optional details) -->
       <div class="field">
         <label class="field-label">الفئة <span class="optional">(اختياري)</span></label>
-        <input v-model="category" data-testid="category" type="text"
-          class="form-input"
-          placeholder="مثال: إلكترونيات، شواحن..."
-          @focus="($event.target as HTMLInputElement).style.borderColor = 'rgba(26,86,219,0.8)'"
-          @blur="($event.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.18)'" />
+        <select v-model="categoryId" data-testid="category-select" class="form-input" @change="onCategoryChange">
+          <option value="">بدون فئة</option>
+          <option v-for="cat in categories.categoriesWithSubcategories.value" :key="cat.id" :value="cat.id">
+            {{ cat.name }}
+          </option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label class="field-label">الفئة الفرعية <span class="optional">(اختياري)</span></label>
+        <select v-model="subcategoryId" data-testid="subcategory-select" class="form-input"
+          :disabled="!categoryId">
+          <option value="">بدون فئة فرعية</option>
+          <option v-for="sub in availableSubcategories" :key="sub.id" :value="sub.id">
+            {{ sub.name }}
+          </option>
+        </select>
       </div>
     </div>
 
