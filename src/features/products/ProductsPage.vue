@@ -97,6 +97,11 @@ async function confirmDelete() {
           <button
             type="button"
             class="btn-secondary"
+            @click="router.push('/categories')"
+          >إدارة الفئات</button>
+          <button
+            type="button"
+            class="btn-secondary"
             @click="router.push('/stock-take')"
           >بدء جرد</button>
           <button
