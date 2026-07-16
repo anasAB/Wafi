@@ -151,3 +151,47 @@ describe('useBarcodeScan lifecycle + terminators (WAFI-032)', () => {
     expect(cb).not.toHaveBeenCalled()
   })
 })
+
+describe('useBarcodeScan does not block a real search input\'s Enter-to-submit', () => {
+  it('a human typing a search term and pressing Enter still submits the search', async () => {
+    const scanCb = vi.fn()
+    const { onScan, destroy } = useBarcodeScan()
+    onScan(scanCb)
+
+    // A real <input> with its own local Enter handler, mirroring POSSaleScreen.vue's
+    // search bar: v-model + a submit handler bound to the Enter key.
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    input.focus()
+
+    const submitHandler = vi.fn()
+    input.addEventListener('keyup', (e) => {
+      if (e.key === 'Enter') submitHandler()
+    })
+
+    // Human typing speed: ~150ms between keystrokes (far above the 33ms scanner threshold).
+    const term = 'قهوة'
+    let t = 0
+    for (const ch of term) {
+      const down = new KeyboardEvent('keydown', { key: ch, bubbles: true, cancelable: true })
+      Object.defineProperty(down, 'timeStamp', { value: t })
+      input.dispatchEvent(down)
+      const up = new KeyboardEvent('keyup', { key: ch, bubbles: true, cancelable: true })
+      input.dispatchEvent(up)
+      t += 150
+    }
+    const enterDown = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    Object.defineProperty(enterDown, 'timeStamp', { value: t })
+    input.dispatchEvent(enterDown)
+    const enterUp = new KeyboardEvent('keyup', { key: 'Enter', bubbles: true, cancelable: true })
+    input.dispatchEvent(enterUp)
+
+    // The global scanner handler must NOT have treated this as a scan...
+    expect(scanCb).not.toHaveBeenCalled()
+    // ...and the input's own local Enter-to-submit handler must still have fired.
+    expect(submitHandler).toHaveBeenCalledTimes(1)
+
+    document.body.removeChild(input)
+    destroy()
+  })
+})
