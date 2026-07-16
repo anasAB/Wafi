@@ -7,7 +7,9 @@ const products = new Table({
   price_usd:           column.real,
   cost_price_usd:      column.real,
   barcode:             column.text,
-  category:            column.text,
+  category:            column.text,   // deprecated free-text; kept for rollback safety, no longer written to
+  category_id:         column.text,
+  subcategory_id:      column.text,
   photo_url:           column.text,
   current_stock:       column.integer,
   low_stock_threshold: column.integer,
@@ -317,6 +319,21 @@ const stock_take_lines = new Table({
   sync_status:        column.text,
 })
 
+const categories = new Table({
+  shop_id:     column.text,
+  name:        column.text,
+  created_at:  column.text,
+  sync_status: column.text,
+})
+
+const subcategories = new Table({
+  category_id: column.text,
+  shop_id:     column.text,
+  name:        column.text,
+  created_at:  column.text,
+  sync_status: column.text,
+})
+
 export const AppSchema = new Schema({
   products,
   stock_adjustments,
@@ -343,4 +360,6 @@ export const AppSchema = new Schema({
   stock_take_lines,
   installment_plans,
   installment_dues,
+  categories,
+  subcategories,
 })
