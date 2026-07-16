@@ -99,8 +99,44 @@ export function useCategories() {
     return { error: null }
   }
 
+  async function deleteCategory(id: string): Promise<{ deleted: boolean; productCount: number; blockedReason?: 'in_use' | 'fallback' }> {
+    const device = useDeviceStore()
+    const fallback = await db.getOptional<{ id: string; name: string }>(
+      `SELECT id, name FROM categories WHERE shop_id = ? AND lower(name) = lower('غير مصنف')`,
+      [device.shopId]
+    )
+    if (fallback && fallback.id === id) {
+      return { deleted: false, productCount: 0, blockedReason: 'fallback' }
+    }
+
+    const row = await db.getOptional<{ count: number }>(
+      `SELECT COUNT(*) as count FROM products WHERE category_id = ? AND (deleted = 0 OR deleted IS NULL)`,
+      [id]
+    )
+    const productCount = row?.count ?? 0
+    if (productCount > 0) return { deleted: false, productCount, blockedReason: 'in_use' }
+
+    await db.execute(`DELETE FROM categories WHERE id = ?`, [id])
+    await load()
+    return { deleted: true, productCount: 0 }
+  }
+
+  async function deleteSubcategory(id: string): Promise<{ deleted: boolean; productCount: number }> {
+    const row = await db.getOptional<{ count: number }>(
+      `SELECT COUNT(*) as count FROM products WHERE subcategory_id = ? AND (deleted = 0 OR deleted IS NULL)`,
+      [id]
+    )
+    const productCount = row?.count ?? 0
+    if (productCount > 0) return { deleted: false, productCount }
+
+    await db.execute(`DELETE FROM subcategories WHERE id = ?`, [id])
+    await load()
+    return { deleted: true, productCount: 0 }
+  }
+
   return {
     categoriesWithSubcategories, load,
     createCategory, renameCategory, createSubcategory, renameSubcategory,
+    deleteCategory, deleteSubcategory,
   }
 }

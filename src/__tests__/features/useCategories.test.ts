@@ -63,4 +63,38 @@ describe('useCategories — load/create/rename', () => {
     const updateCall = vi.mocked(db.execute).mock.calls.find(([sql]) => /UPDATE categories/.test(sql))
     expect(updateCall![1]).toEqual(expect.arrayContaining(['هواتف ذكية', 'c1']))
   })
+
+  it('deleteCategory blocks deletion when products are still assigned, with a count', async () => {
+    vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({ id: 'other-cat', name: 'هواتف' } as any) // fallback-name lookup: not this category
+      .mockResolvedValueOnce({ count: 3 } as any)
+
+    const { deleteCategory } = useCategories()
+    const result = await deleteCategory('c1')
+
+    expect(result).toEqual({ deleted: false, productCount: 3, blockedReason: 'in_use' })
+    expect(vi.mocked(db.execute).mock.calls.some(([sql]) => /DELETE FROM categories/.test(sql))).toBe(false)
+  })
+
+  it('deleteCategory deletes when no products are assigned', async () => {
+    vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({ id: 'other', name: 'غير مصنف' } as any) // fallback is a different row than c1
+      .mockResolvedValueOnce({ count: 0 } as any)
+
+    const { deleteCategory } = useCategories()
+    const result = await deleteCategory('c1')
+
+    expect(result).toEqual({ deleted: true, productCount: 0 })
+    expect(vi.mocked(db.execute).mock.calls.some(([sql]) => /DELETE FROM categories/.test(sql))).toBe(true)
+  })
+
+  it('deleteCategory refuses to delete the "غير مصنف" fallback category even with zero products', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce({ id: 'c1', name: 'غير مصنف' } as any)
+
+    const { deleteCategory } = useCategories()
+    const result = await deleteCategory('c1')
+
+    expect(result).toEqual({ deleted: false, productCount: 0, blockedReason: 'fallback' })
+    expect(vi.mocked(db.execute).mock.calls.some(([sql]) => /DELETE FROM categories/.test(sql))).toBe(false)
+  })
 })

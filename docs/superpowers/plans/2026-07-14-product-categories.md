@@ -569,7 +569,7 @@ git commit -m "feat: useCategories load/create/rename with case-insensitive dupl
 ```ts
   it('deleteCategory blocks deletion when products are still assigned, with a count', async () => {
     vi.mocked(db.getOptional)
-      .mockResolvedValueOnce({ id: 'c1', name: 'هواتف' } as any) // fallback-name lookup: not this category
+      .mockResolvedValueOnce({ id: 'other-cat', name: 'هواتف' } as any) // fallback-name lookup: not this category
       .mockResolvedValueOnce({ count: 3 } as any)
 
     const { deleteCategory } = useCategories()
