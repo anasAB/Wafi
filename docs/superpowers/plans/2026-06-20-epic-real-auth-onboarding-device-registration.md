@@ -1,10 +1,16 @@
 # Epic — Real Auth, Self-Serve Onboarding & Device Registration
 
 > Date: 2026-06-20
-> Status: Drafted (next epic after the trip)
+> Status: **Next epic — sequencing confirmed 2026-07-16, before any further premium-pack feature work** (see `2026-07-16-platform-gaps-followups.md` WAFI-068). No new billable features should start until this and the Server-Side Role Enforcement epic ship.
 > Pack: **Core** — foundational, not a billable add-on.
 > Owner: CTO (dev)
 > Sacred Rules touched: Offline-first (1), Arabic + dual currency (2).
+
+> **Reconciliation note (2026-07-16), 4 weeks after drafting:** most of the epic's assumptions still hold, but three things shipped since that change the "surfaces the dev will touch" list below:
+> - **Migration `021_provision_shop_on_signup.sql` already implements Decision 2's atomic shop-provisioning trigger** (fires on `auth.users` insert: creates the `shops` row + `owner_user_id` link + default Owner `staff` record). The remaining work is wiring `SignupPage.vue` to real `supabase.auth.signUp` so the trigger actually fires from a UI flow — not building the trigger itself.
+> - **`src/data/supabase/devAuth.ts` already calls real `supabase.auth.signInWithPassword`/`signUp`**, gated behind `VITE_DEV_AUTO_SIGNIN`/`VITE_DEV_AUTO_SIGNUP` dev-only flags. The auth-method spike (Decision 1) may be substantially settled already — verify phone-vs-email-as-identifier against what's there before re-spiking from scratch.
+> - **Bug to fix as part of this epic, not a new discovery:** `shops` is queried directly via `db.getOptional('SELECT id FROM shops WHERE owner_user_id = ?')` in `device.store.ts:38`, but `shops` is **not declared in the PowerSync client `AppSchema`** (`src/data/powersync/schema.ts`). Confirm this table is actually reachable through PowerSync's local SQLite (it may only work today because of a stub/dev fallback) before building signup on top of it — this could be silently broken for any non-stub account.
+> - `staff.pin_hash`/`staff.pin_salt` still sync to every client verbatim (`schema.ts:162-166`) — the epic's stated problem (device stub, no real login) is unchanged, but this specific PIN-hash-exposure detail is really the Server-Side Role Enforcement epic's problem (its A2) — don't duplicate the fix here.
 
 ---
 

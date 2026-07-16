@@ -1,11 +1,13 @@
 # Epic — Server-Side Role Enforcement
 
 > Date: 2026-06-20
-> Status: Drafted (post-trip; **depends on** the Real Auth epic)
+> Status: **Next epic after Real Auth — sequencing confirmed 2026-07-16** (see `2026-07-16-platform-gaps-followups.md` WAFI-068). **Depends on** the Real Auth epic.
 > Pack: Core / Staff (foundational security)
 > Owner: CTO (dev)
 > Origin: audit ticket **WAFI-010** (PO decision 2026-06-20: build server-side enforcement).
 > Sacred Rules touched: Offline-first (1) — *in tension, see Key Decision 2*.
+
+> **Reconciliation note (2026-07-16):** `2026-06-24-owner-only-financial-visibility.md` (WAFI-058, shipped) already built the **client-side** half of this epic's B1/B2 — `can_view_reports` route gating (`router/permissions.ts:23-24`) plus a per-manager financial-visibility flag (`staff.types.ts:56,65-70`, migration `023_staff_manager_financials_default_off.sql`). That doc explicitly defers its own server-side enforcement here: "**Add to WAFI-010's scope:** financial + per-cashier/reporting reads enforced server-side per the [gating] flags" (line ~100) and leaves an open checklist item "WAFI-010 scope updated to enforce these flags server-side" (line ~148). **Add explicitly to this epic's "what is sensitive" set (below):** the per-manager `can_view_reports`/financial-visibility flag from WAFI-058 must be enforced by the same server-side mechanism (KD-1 staff token + KD-2 sync-time gating) as the Cashier/Owner distinction — it is a third gating axis (per-manager flag on top of role), not just the three hardcoded roles as currently scoped.
 
 ---
 
@@ -95,6 +97,13 @@ cost / margin data and reports, shop settings, expense detail (owner/manager).
 **Always available to cashier (synced, offline):** products, current sale, sales they
 ring, customers, exchange rate, their own shift/Z-report.
 *(Final list confirmed with the Manager matrix from WAFI-013.)*
+
+**Manager sub-gating (WAFI-058, already shipped client-side):** within the Manager
+role, a per-staff boolean (`can_view_reports`/financial-visibility flag, owner-
+grantable) further restricts profit/reports access — a Manager does not automatically
+see financials just by being a Manager. The server-side check for this epic's B1/B2
+must read that same flag, not just the three hardcoded roles — this is one additional
+boolean per staff row, not the general permission framework ruled out below.
 
 ---
 
