@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { v4 as uuidv4 } from 'uuid'
 import { supabase } from '@/data/supabase/client'
 import { db } from '@/data/powersync/db'
+import { SupabaseConnector } from '@/data/powersync/connector'
 import { useDeviceRegistration } from '@/features/devices/composables/useDeviceRegistration'
 
 // Dev/transition fallback: until the owner's shop row has synced locally, fall
@@ -75,6 +76,7 @@ export const useDeviceStore = defineStore('device', () => {
     const { data } = await supabase.auth.getSession()
     const userId = data.session?.user?.id
     if (!userId) return  // not signed in — keep current; sign-out clears it
+    lastUserId = userId
     try {
       // Scope the lookup to the signed-in account's own shop, mirroring the
       // server's `shops.owner_user_id → auth.uid()` mapping. Filtering by
@@ -92,10 +94,16 @@ export const useDeviceStore = defineStore('device', () => {
     }
   }
 
+  // Tracks which account last completed a SIGNED_IN resolution on this device,
+  // so a different account signing in on the same device can be detected and
+  // the previous account's synced local rows cleared before the new one reads.
+  let lastUserId: string | null = null
+
   // Keep shopId in sync with sign-in / sign-out.
   supabase.auth.onAuthStateChange((event) => {
     if (event === 'SIGNED_OUT') {
       shopId.value = FALLBACK_SHOP_ID
+      lastUserId = null
       return
     }
     if (event === 'SIGNED_IN') {
@@ -103,6 +111,19 @@ export const useDeviceStore = defineStore('device', () => {
       // before re-resolving, so the new session can't briefly read the prior
       // account's shop while its own data is still syncing.
       shopId.value = FALLBACK_SHOP_ID
+      void (async () => {
+        const { data } = await supabase.auth.getSession()
+        const userId = data.session?.user?.id ?? null
+        if (lastUserId !== null && userId !== null && userId !== lastUserId) {
+          // A different account signed in on this device — the previous
+          // account's synced rows must not bleed into the new one.
+          await db.disconnectAndClear()
+          await db.connect(new SupabaseConnector())
+        }
+        lastUserId = userId
+        await refreshShopId()
+      })()
+      return
     }
     void refreshShopId()
   })

@@ -106,6 +106,34 @@ describe('useDeviceStore', () => {
     expect(store.shopId).toBe(FALLBACK)  // stays cleared — no foreign row adopted
   })
 
+  it('clears local data when a different account signs in on the same device', async () => {
+    session.value = { access_token: 'tok', user: { id: 'user-a' } }
+    vi.mocked(db.getOptional).mockResolvedValue({ id: 'shop-a' } as any)
+    const { useDeviceStore } = await import('@/store/device.store')
+    const store = useDeviceStore()
+    await store.refreshShopId()
+
+    session.value = { access_token: 'tok2', user: { id: 'user-b' } }
+    authCb?.('SIGNED_IN')
+    await flush()
+
+    expect(db.disconnectAndClear).toHaveBeenCalled()
+  })
+
+  it('does not clear local data when the same account re-authenticates (token refresh)', async () => {
+    session.value = { access_token: 'tok', user: { id: 'user-a' } }
+    vi.mocked(db.getOptional).mockResolvedValue({ id: 'shop-a' } as any)
+    const { useDeviceStore } = await import('@/store/device.store')
+    const store = useDeviceStore()
+    await store.refreshShopId()
+
+    vi.mocked(db.disconnectAndClear).mockClear()
+    authCb?.('SIGNED_IN')  // same user-a session
+    await flush()
+
+    expect(db.disconnectAndClear).not.toHaveBeenCalled()
+  })
+
   it('only registers once when ensureDeviceRegistered is called concurrently', async () => {
     let resolveRegister: (v: { code: string; isTemporary: boolean }) => void
     registerDeviceMock.mockImplementation(() => new Promise(resolve => { resolveRegister = resolve }))

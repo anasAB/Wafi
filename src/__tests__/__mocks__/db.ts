@@ -16,6 +16,7 @@ export const db = {
   getOptional: vi.fn().mockResolvedValue(null),
   get: vi.fn().mockResolvedValue({}),
   connect: vi.fn(),
+  disconnectAndClear: vi.fn(),
   status: {
     connected: false,
     dataFlowStatus: { downloading: false, uploading: false },
