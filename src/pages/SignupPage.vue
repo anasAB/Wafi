@@ -129,12 +129,14 @@ const selectedGoal = ref('')
 
 const loading = ref(false)
 const errorMessage = ref<string | null>(null)
+const isDuplicateError = ref(false)
 
 async function finish() {
   if (!selectedGoal.value) return
   store.startGoal = selectedGoal.value as typeof store.startGoal
   loading.value = true
   errorMessage.value = null
+  isDuplicateError.value = false
 
   const result = await signUpOwner({
     phone:        store.phone,
@@ -147,7 +149,8 @@ async function finish() {
   loading.value = false
 
   if (!result.ok) {
-    errorMessage.value = result.reason === 'duplicate'
+    isDuplicateError.value = result.reason === 'duplicate'
+    errorMessage.value = isDuplicateError.value
       ? 'هذا الحساب موجود بالفعل. سجّل دخولك بدلاً من ذلك.'
       : result.message
     return
@@ -308,7 +311,10 @@ async function finish() {
               </button>
             </div>
 
-            <p v-if="errorMessage" data-testid="signup-error" class="sp-error">{{ errorMessage }}</p>
+            <p v-if="errorMessage" data-testid="signup-error" class="sp-error">
+              {{ errorMessage }}
+              <router-link v-if="isDuplicateError" to="/login" data-testid="signup-error-login-link">سجّل الدخول</router-link>
+            </p>
 
             <div class="step-btns">
               <button class="sp-btn-outline" @click="goPrev">→ رجوع</button>
