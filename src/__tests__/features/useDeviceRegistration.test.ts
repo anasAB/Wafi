@@ -34,4 +34,16 @@ describe('useDeviceRegistration', () => {
     const insertCall = vi.mocked(db.execute).mock.calls.find(([sql]) => /INSERT INTO devices/.test(sql))
     expect(insertCall![1]).toEqual(expect.arrayContaining(['shop1', result.code, 1]))
   })
+
+  it('propagates an error when the permanent-code INSERT fails after a successful allocation, without falling back to a temp code', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce({ code: 'B' } as any)
+    vi.mocked(db.execute).mockRejectedValueOnce(new Error('insert failed'))
+
+    const { registerDevice } = useDeviceRegistration()
+
+    await expect(registerDevice('shop1')).rejects.toThrow('insert failed')
+    // Only the one (failed) INSERT attempt — no second temp-code fallback insert.
+    const insertCalls = vi.mocked(db.execute).mock.calls.filter(([sql]) => /INSERT INTO devices/.test(sql))
+    expect(insertCalls).toHaveLength(1)
+  })
 })

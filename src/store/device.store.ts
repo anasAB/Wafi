@@ -28,6 +28,15 @@ export const useDeviceStore = defineStore('device', () => {
   const deviceId   = ref<string>((import.meta.env.VITE_STUB_DEVICE_ID   ?? '') as string)
   const deviceCode = ref<string>((import.meta.env.VITE_STUB_DEVICE_CODE ?? '') as string)
 
+  // In-flight guard: ensureDeviceRegistered() is called from two uncoordinated
+  // places (this store's own onAuthStateChange handler, and useSync on
+  // connect/reconnect). Without this, two overlapping calls could both pass
+  // the `deviceCode.value` check below before the first `await registerDevice`
+  // resolves, registering the same physical device twice. Tracking the
+  // in-progress promise here means a concurrent call reuses it instead of
+  // starting a second registration.
+  let registrationInFlight: Promise<void> | null = null
+
   /**
    * Claims a device code for this browser/device the first time a shop is
    * known. Guards against re-registering once a code exists (whether from a
@@ -38,11 +47,21 @@ export const useDeviceStore = defineStore('device', () => {
   async function ensureDeviceRegistered(): Promise<void> {
     if (deviceCode.value) return  // already registered (or stubbed) on this device
     if (!shopId.value) return     // no shop resolved yet — retry after refreshShopId()
-    const { registerDevice } = useDeviceRegistration()
-    const id = uuidv4()
-    const { code } = await registerDevice(shopId.value)
-    deviceId.value = id
-    deviceCode.value = code
+    if (registrationInFlight) return registrationInFlight  // a registration is already in progress
+
+    registrationInFlight = (async () => {
+      const { registerDevice } = useDeviceRegistration()
+      const id = uuidv4()
+      const { code } = await registerDevice(shopId.value)
+      deviceId.value = id
+      deviceCode.value = code
+    })()
+
+    try {
+      await registrationInFlight
+    } finally {
+      registrationInFlight = null
+    }
   }
 
   /**

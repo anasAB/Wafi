@@ -11,20 +11,27 @@ import { db } from '@/data/powersync/db'
  */
 export function useDeviceRegistration() {
   async function registerDevice(shopId: string): Promise<{ code: string; isTemporary: boolean }> {
+    let allocatedCode: string | undefined
     try {
       const row = await db.getOptional<{ code: string }>(
         `SELECT public.allocate_device_code(?) AS code`, [shopId]
       )
-      if (row?.code) {
-        await db.execute(
-          `INSERT INTO devices (id, shop_id, code, is_temporary, registered_at, sync_status)
-           VALUES (?, ?, ?, ?, ?, 'pending')`,
-          [uuidv4(), shopId, row.code, 0, new Date().toISOString()]
-        )
-        return { code: row.code, isTemporary: false }
-      }
+      allocatedCode = row?.code
     } catch {
       // Offline or the allocator RPC is unreachable — fall through to a temp code.
+    }
+
+    if (allocatedCode) {
+      // A permanent code was successfully allocated — the INSERT is NOT
+      // wrapped in the try/catch above. If it fails here, that's a real bug
+      // (not an offline/unreachable-allocator condition) and must propagate
+      // rather than being silently swallowed into a second, temp-code row.
+      await db.execute(
+        `INSERT INTO devices (id, shop_id, code, is_temporary, registered_at, sync_status)
+         VALUES (?, ?, ?, ?, ?, 'pending')`,
+        [uuidv4(), shopId, allocatedCode, 0, new Date().toISOString()]
+      )
+      return { code: allocatedCode, isTemporary: false }
     }
 
     const tempCode = `T-${Math.random().toString(36).slice(2, 8).toUpperCase()}`

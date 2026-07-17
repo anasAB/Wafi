@@ -16,6 +16,11 @@ vi.mock('@/data/supabase/client', () => ({
 
 vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
 
+const registerDeviceMock = vi.fn()
+vi.mock('@/features/devices/composables/useDeviceRegistration', () => ({
+  useDeviceRegistration: () => ({ registerDevice: registerDeviceMock }),
+}))
+
 import { db } from '@/data/powersync/db'
 
 // shopId persists via pinia-plugin-persistedstate in the app, but the test pinia
@@ -32,6 +37,7 @@ describe('useDeviceStore', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     vi.mocked(db.getOptional).mockResolvedValue(null)
+    registerDeviceMock.mockReset()
   })
 
   it('uses the configured fallback shop before any shop has synced', async () => {
@@ -98,5 +104,27 @@ describe('useDeviceStore', () => {
     expect(store.shopId).toBe(FALLBACK)  // cleared synchronously on sign-in
     await flush()
     expect(store.shopId).toBe(FALLBACK)  // stays cleared — no foreign row adopted
+  })
+
+  it('only registers once when ensureDeviceRegistered is called concurrently', async () => {
+    let resolveRegister: (v: { code: string; isTemporary: boolean }) => void
+    registerDeviceMock.mockImplementation(() => new Promise(resolve => { resolveRegister = resolve }))
+
+    const { useDeviceStore } = await import('@/store/device.store')
+    const store = useDeviceStore()
+    store.shopId = 'shop-a'
+    store.deviceCode = ''  // override the env-stub default so registration actually runs
+
+    // Two concurrent calls before the first registration resolves.
+    const p1 = store.ensureDeviceRegistered()
+    const p2 = store.ensureDeviceRegistered()
+
+    expect(registerDeviceMock).toHaveBeenCalledTimes(1)
+
+    resolveRegister!({ code: 'B', isTemporary: false })
+    await Promise.all([p1, p2])
+
+    expect(registerDeviceMock).toHaveBeenCalledTimes(1)
+    expect(store.deviceCode).toBe('B')
   })
 })
