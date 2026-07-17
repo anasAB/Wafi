@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { store } from '../store'
+import { signUpOwner } from '@/data/supabase/auth'
 
 const router = useRouter()
 
@@ -127,14 +128,32 @@ const goals = [
 const selectedGoal = ref('')
 
 const loading = ref(false)
+const errorMessage = ref<string | null>(null)
 
 async function finish() {
   if (!selectedGoal.value) return
   store.startGoal = selectedGoal.value as typeof store.startGoal
   loading.value = true
-  await new Promise(r => setTimeout(r, 900))
+  errorMessage.value = null
+
+  const result = await signUpOwner({
+    phone:        store.phone,
+    password:     password.value,
+    shopName:     store.businessName,
+    businessType: store.businessType,
+    country:      store.country,
+  })
+
   loading.value = false
-  router.push('/onboarding')
+
+  if (!result.ok) {
+    errorMessage.value = result.reason === 'duplicate'
+      ? 'هذا الحساب موجود بالفعل. سجّل دخولك بدلاً من ذلك.'
+      : result.message
+    return
+  }
+
+  router.push('/setup-owner')
 }
 </script>
 
@@ -288,6 +307,8 @@ async function finish() {
                 <div class="goal-radio" :class="{ checked: selectedGoal === g.id }"></div>
               </button>
             </div>
+
+            <p v-if="errorMessage" data-testid="signup-error" class="sp-error">{{ errorMessage }}</p>
 
             <div class="step-btns">
               <button class="sp-btn-outline" @click="goPrev">→ رجوع</button>
@@ -704,6 +725,14 @@ async function finish() {
 }
 .alt-link a { color: #00CC88; font-weight: 700; text-decoration: none; }
 .alt-link a:hover { text-decoration: underline; }
+
+.sp-error {
+  font-size: 13px;
+  font-weight: 600;
+  color: #FF6B6B;
+  text-align: center;
+  margin: -8px 0 16px;
+}
 
 /* ── Footer ─────────────────────────────────────────────── */
 .sp-foot {
