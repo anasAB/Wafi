@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '@/data/powersync/db'
+import { supabase } from '@/data/supabase/client'
 
 /**
  * Claims a device row for the current shop. Tries the server-allocated
@@ -13,10 +14,9 @@ export function useDeviceRegistration() {
   async function registerDevice(shopId: string): Promise<{ code: string; isTemporary: boolean }> {
     let allocatedCode: string | undefined
     try {
-      const row = await db.getOptional<{ code: string }>(
-        `SELECT public.allocate_device_code(?) AS code`, [shopId]
-      )
-      allocatedCode = row?.code
+      const { data, error } = await supabase.rpc('allocate_device_code', { p_shop_id: shopId })
+      if (error) throw error
+      allocatedCode = data ?? undefined
     } catch {
       // Offline or the allocator RPC is unreachable — fall through to a temp code.
     }
