@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useCategories } from '@/features/categories/composables/useCategories'
 
 const { categoriesWithSubcategories, load, createCategory, renameCategory,
-        createSubcategory, deleteCategory, deleteSubcategory } = useCategories()
+        createSubcategory, renameSubcategory, deleteCategory, deleteSubcategory } = useCategories()
 
 const newCategoryName = ref('')
 const newSubcategoryName = ref<Record<string, string>>({})

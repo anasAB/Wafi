@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter, onBeforeRouteLeave } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import AppToast from '@/components/ui/AppToast.vue'

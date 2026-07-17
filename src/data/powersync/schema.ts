@@ -205,6 +205,14 @@ const cash_movements = new Table({
   created_at:         column.text,
 })
 
+const devices = new Table({
+  shop_id:       column.text,
+  code:          column.text,
+  is_temporary:  column.integer,
+  registered_at: column.text,
+  sync_status:   column.text,
+})
+
 const returns = new Table({
   shop_id:                 column.text,
   original_sale_id:        column.text,
@@ -348,6 +356,7 @@ export const AppSchema = new Schema({
   staff,
   cashier_shifts,
   cash_movements,
+  devices,
   returns,
   return_line_items,
   return_reasons,
