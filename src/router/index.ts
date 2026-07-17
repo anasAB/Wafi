@@ -3,6 +3,7 @@ import { useSessionStore } from '@/store/session.store'
 import { useShiftStore } from '@/features/shifts/shift.store'
 import { isRouteAllowed, resolveLanding } from './permissions'
 import type { StaffPermissions } from '@/features/staff/staff.types'
+import { supabase } from '@/data/supabase/client'
 
 const SHIFT_OPEN_REDIRECT = '/shifts/history'
 
@@ -51,6 +52,8 @@ const router = createRouter({
     { path: '/shifts/history',  component: () => import('@/features/shifts/components/ShiftHistoryScreen.vue') },
     { path: '/shifts/:id',      component: () => import('@/features/shifts/components/ShiftDetailScreen.vue') },
     { path: '/setup-owner',     component: () => import('@/features/shifts/components/OwnerSetupScreen.vue') },
+    { path: '/login',  component: () => import('@/pages/LoginPage.vue') },
+    { path: '/signup', component: () => import('@/pages/SignupPage.vue') },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
   scrollBehavior: () => ({ top: 0 }),
@@ -62,7 +65,21 @@ const router = createRouter({
 // by can_view_reports and would loop. resolveLanding() returns '/pos' (always
 // reachable) for anyone lacking reports, so a deep-link to a denied financial
 // route fails closed onto the POS instead of bouncing (WAFI-058).
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
+  const PUBLIC_PATHS = ['/login', '/signup']
+  const { data } = await supabase.auth.getSession()
+  const isAuthenticated = !!data.session
+
+  if (!isAuthenticated && !PUBLIC_PATHS.includes(to.path)) {
+    return '/login'
+  }
+  if (isAuthenticated && PUBLIC_PATHS.includes(to.path)) {
+    return '/'
+  }
+  if (PUBLIC_PATHS.includes(to.path)) {
+    return true
+  }
+
   const required = to.meta.permission as keyof StaffPermissions | undefined
   const requiresOpenShift = Boolean(to.meta.requiresOpenShift)
   // Active operator lives in the session store (WAFI-011) — the same store a
