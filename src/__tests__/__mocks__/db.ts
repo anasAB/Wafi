@@ -11,6 +11,7 @@ export const db = {
   writeTransaction: vi.fn().mockImplementation(async (fn: (tx: any) => Promise<void>) => {
     await fn({ execute: vi.fn().mockResolvedValue({ rows: { _array: [] } }) })
   }),
+  getUploadQueueStats: vi.fn().mockResolvedValue({ count: 0, size: 0 }),
   getAll: vi.fn().mockResolvedValue([]),
   getOptional: vi.fn().mockResolvedValue(null),
   get: vi.fn().mockResolvedValue({}),
