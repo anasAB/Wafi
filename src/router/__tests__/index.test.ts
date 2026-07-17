@@ -23,6 +23,14 @@ vi.mock('@/features/shifts/shift.store', () => ({
   }),
 }))
 
+vi.mock('@/data/supabase/client', () => ({
+  supabase: {
+    auth: {
+      getSession: vi.fn(async () => ({ data: { session: { user: { id: 'owner-1' } } } })),
+    },
+  },
+}))
+
 import router from '../index'
 
 const owner: Staff = {
