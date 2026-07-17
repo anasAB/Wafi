@@ -1,7 +1,7 @@
 # Epic — Real Auth, Self-Serve Onboarding & Device Registration
 
 > Date: 2026-06-20
-> Status: **Next epic — sequencing confirmed 2026-07-16, before any further premium-pack feature work** (see `2026-07-16-platform-gaps-followups.md` WAFI-068). No new billable features should start until this and the Server-Side Role Enforcement epic ship.
+> Status: **Wiring shipped 2026-07-17 on branch `worktree-real-auth-wiring`** (`docs/superpowers/plans/2026-07-16-real-auth-wiring.md`, Tasks 1-9 complete, task-reviewed, full automated suite green). SMS/OTP remains explicitly out of scope per Decision 1. **Not yet done:** end-to-end verification against a real second pilot account (DoD's last item) — this requires a live Supabase session and browser interaction that wasn't performed in this pass; do this before closing the epic. No new billable features should start until this (pending manual verification) and the Server-Side Role Enforcement epic ship.
 > Pack: **Core** — foundational, not a billable add-on.
 > Owner: CTO (dev)
 > Sacred Rules touched: Offline-first (1), Arabic + dual currency (2).
@@ -189,18 +189,40 @@ device or browser.**
 
 ## Definition of Done
 
-- [ ] A brand-new owner can sign up, gets an isolated shop, and rings a sale —
-      with **zero** manual provisioning (A1–A3).
-- [ ] No signup path can leave an account without a shop (A2 + edge cases).
+- [x] A brand-new owner can sign up, gets an isolated shop, and rings a sale —
+      with **zero** manual provisioning (A1–A3). *(SignupPage wired to
+      `signUpOwner()`, routes to `/setup-owner`; migration 021's trigger
+      already provisions the shop atomically. Verified by automated tests,
+      not yet by a live signup.)*
+- [x] No signup path can leave an account without a shop (A2 + edge cases).
+      *(Duplicate-account path shows a clear message with a link to
+      `/login`, per migration 021 + `auth.ts`'s existing classification;
+      unit-tested.)*
 - [ ] Returning owner signs in on a fresh device/browser and syncs (B1–B2).
-- [ ] Sign-out works and protects unsynced data (B3).
-- [ ] Auth guard blocks unauthenticated access; authenticated users skip login
-      (B5).
-- [ ] Two devices on one shop ring sales with distinct codes, including one
+      *(LoginPage wired to `signIn()`, routes to `/`; unit-tested only —
+      not yet verified against a live second device/browser.)*
+- [x] Sign-out works and protects unsynced data (B3). *(Enabled with an
+      unsynced-writes warning via `getUploadQueueStats()`; unit-tested.)*
+- [x] Auth guard blocks unauthenticated access; authenticated users skip login
+      (B5). *(Session-based `router.beforeEach` guard; unit-tested.)*
+- [x] Two devices on one shop ring sales with distinct codes, including one
       registered offline, with no sale-number collision (C1–C4).
-- [ ] Account switch on one browser shows no data bleed between shops.
+      *(`useDeviceRegistration()` + `devices` table/migration 037; permanent
+      letter codes via `allocate_device_code`, temp `T-xxxx` fallback offline;
+      unit-tested including the concurrent-registration guard. Not yet
+      verified with two simultaneous real devices.)*
+- [x] Account switch on one browser shows no data bleed between shops.
+      *(`device.store.ts`'s `SIGNED_IN` handler calls `disconnectAndClear()` +
+      reconnects on a genuine account change; a TOCTOU race between this and
+      concurrent `refreshShopId()` calls was found in review and fixed with
+      an in-flight guard, plus a discriminating regression test. One
+      disclosed, narrower residual gap remains: a `SIGNED_OUT` event racing
+      an in-flight `SIGNED_IN` could still reset the switch-detection state
+      — recommend a follow-up ticket, not blocking.)*
 - [ ] Verified end-to-end against a real second pilot account (not just the
-      brother's).
+      brother's). **Not done in this pass** — requires `npm run dev` and a
+      real throwaway phone number/Supabase session; see Task 10 Step 3 of
+      the wiring plan for the exact walkthrough.
 
 ---
 

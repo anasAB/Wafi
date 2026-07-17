@@ -45,6 +45,7 @@ const emit = defineEmits<{
 
         <button
           type="button"
+          data-testid="dialog-confirm"
           class="btn-confirm"
           :class="danger ? 'btn-danger' : 'btn-primary'"
           @click="emit('confirm')"

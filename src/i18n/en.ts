@@ -47,6 +47,8 @@ export default {
     signOut:  'Sign out',
     signOutConfirmTitle:   'Sign out',
     signOutConfirmMessage: 'Are you sure you want to sign out?',
+    signOutUnsyncedMessage: 'You have {count} unsynced changes. Signing out now may lose them. Continue anyway?',
+    signOutError: 'Could not sign out. Please try again.',
     aboutVersionLabel: 'Version & support',
     dailyDigestSection: 'Daily WhatsApp digest',
     dailyDigestToggle: 'Daily reminder',

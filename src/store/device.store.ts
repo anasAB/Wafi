@@ -1,7 +1,10 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { v4 as uuidv4 } from 'uuid'
 import { supabase } from '@/data/supabase/client'
 import { db } from '@/data/powersync/db'
+import { SupabaseConnector } from '@/data/powersync/connector'
+import { useDeviceRegistration } from '@/features/devices/composables/useDeviceRegistration'
 
 // Dev/transition fallback: until the owner's shop row has synced locally, fall
 // back to a configured shop so the app stays usable. In production (no
@@ -18,9 +21,49 @@ export const useDeviceStore = defineStore('device', () => {
   // whenever a sync connects (see useSync) and on sign-in.
   const shopId = ref<string>(FALLBACK_SHOP_ID)
 
-  // deviceId/deviceCode remain stubbed — real device registration is Sub-project 3.
-  const deviceId   = (import.meta.env.VITE_STUB_DEVICE_ID   ?? '00000000-0000-0000-0000-000000000002') as string
-  const deviceCode = (import.meta.env.VITE_STUB_DEVICE_CODE ?? 'A') as string
+  // deviceId/deviceCode are real, persisted registration values (see
+  // ensureDeviceRegistered below). The env vars remain as a dev/test seam —
+  // when set, they act as a pre-registered device and ensureDeviceRegistered
+  // is a no-op; when unset (production default), the device registers itself
+  // for real the first time its shop resolves.
+  const deviceId   = ref<string>((import.meta.env.VITE_STUB_DEVICE_ID   ?? '') as string)
+  const deviceCode = ref<string>((import.meta.env.VITE_STUB_DEVICE_CODE ?? '') as string)
+
+  // In-flight guard: ensureDeviceRegistered() is called from two uncoordinated
+  // places (this store's own onAuthStateChange handler, and useSync on
+  // connect/reconnect). Without this, two overlapping calls could both pass
+  // the `deviceCode.value` check below before the first `await registerDevice`
+  // resolves, registering the same physical device twice. Tracking the
+  // in-progress promise here means a concurrent call reuses it instead of
+  // starting a second registration.
+  let registrationInFlight: Promise<void> | null = null
+
+  /**
+   * Claims a device code for this browser/device the first time a shop is
+   * known. Guards against re-registering once a code exists (whether from a
+   * prior registration or the dev/test env stub), and against registering
+   * before a shop has resolved (there's nothing to register the device
+   * under yet — refreshShopId() calls this again once shopId is set).
+   */
+  async function ensureDeviceRegistered(): Promise<void> {
+    if (deviceCode.value) return  // already registered (or stubbed) on this device
+    if (!shopId.value) return     // no shop resolved yet — retry after refreshShopId()
+    if (registrationInFlight) return registrationInFlight  // a registration is already in progress
+
+    registrationInFlight = (async () => {
+      const { registerDevice } = useDeviceRegistration()
+      const id = uuidv4()
+      const { code } = await registerDevice(shopId.value)
+      deviceId.value = id
+      deviceCode.value = code
+    })()
+
+    try {
+      await registrationInFlight
+    } finally {
+      registrationInFlight = null
+    }
+  }
 
   /**
    * Resolve shopId from the locally-synced `shops` table. The sync rules only
@@ -41,16 +84,41 @@ export const useDeviceStore = defineStore('device', () => {
       const row = await db.getOptional<{ id: string }>(
         'SELECT id FROM shops WHERE owner_user_id = ? LIMIT 1', [userId]
       )
-      if (row?.id) shopId.value = row.id
+      if (row?.id) {
+        shopId.value = row.id
+        await ensureDeviceRegistered()
+      }
     } catch {
       // DB not ready yet (pre-connect) — keep persisted/fallback value.
     }
   }
 
+  // Tracks which account last completed a SIGNED_IN/SIGNED_OUT resolution on
+  // this device, so a different account signing in on the same device can be
+  // detected and the previous account's synced local rows cleared before the
+  // new one reads. Only the SIGNED_IN/SIGNED_OUT branches below may read or
+  // write this — refreshShopId() itself must NOT touch it. refreshShopId() is
+  // also invoked from unrelated code paths (e.g. useSync on PowerSync
+  // reconnect), and if it set lastUserId too, a reconnect call interleaved
+  // during the SIGNED_IN IIFE's own `await getSession()` could overwrite
+  // lastUserId before the IIFE's compare ran, silently defeating the
+  // clear-and-reconnect guard (TOCTOU race).
+  let lastUserId: string | null = null
+
+  // In-flight guard for the SIGNED_IN clear-and-reconnect block, mirroring
+  // registrationInFlight above: two rapid SIGNED_IN events (e.g. a token
+  // refresh racing a real sign-in) would otherwise both read lastUserId and
+  // compare against it before either had a chance to write the new value,
+  // letting a second clear-and-reconnect run against a stale comparison or
+  // be skipped entirely. Serializing on this promise makes the read-compare-
+  // write of lastUserId atomic relative to other SIGNED_IN invocations.
+  let signInInFlight: Promise<void> | null = null
+
   // Keep shopId in sync with sign-in / sign-out.
   supabase.auth.onAuthStateChange((event) => {
     if (event === 'SIGNED_OUT') {
       shopId.value = FALLBACK_SHOP_ID
+      lastUserId = null
       return
     }
     if (event === 'SIGNED_IN') {
@@ -58,12 +126,40 @@ export const useDeviceStore = defineStore('device', () => {
       // before re-resolving, so the new session can't briefly read the prior
       // account's shop while its own data is still syncing.
       shopId.value = FALLBACK_SHOP_ID
+      void (async () => {
+        if (signInInFlight) {
+          // A SIGNED_IN resolution is already in progress — wait for it
+          // instead of running a second, overlapping compare-and-clear.
+          await signInInFlight
+          return
+        }
+        signInInFlight = (async () => {
+          const { data } = await supabase.auth.getSession()
+          const userId = data.session?.user?.id ?? null
+          const previousUserId = lastUserId
+          if (previousUserId !== null && userId !== null && userId !== previousUserId) {
+            // A different account signed in on this device — the previous
+            // account's synced rows must not bleed into the new one.
+            await db.disconnectAndClear()
+            await db.connect(new SupabaseConnector())
+          }
+          lastUserId = userId
+          await refreshShopId()
+        })()
+        try {
+          await signInInFlight
+        } finally {
+          signInInFlight = null
+        }
+      })()
+      return
     }
     void refreshShopId()
   })
 
-  return { shopId, deviceId, deviceCode, refreshShopId }
+  return { shopId, deviceId, deviceCode, refreshShopId, ensureDeviceRegistered }
 }, {
-  // Persist only shopId — deviceId/deviceCode are env-derived constants.
-  persist: { pick: ['shopId'] },
+  // Persist shopId plus the claimed device identity, so an offline cold-start
+  // reuses this device's registered code instead of re-registering.
+  persist: { pick: ['shopId', 'deviceId', 'deviceCode'] },
 })

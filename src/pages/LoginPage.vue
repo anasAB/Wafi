@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { store } from '../store'
+import { signIn } from '@/data/supabase/auth'
 
 const router = useRouter()
 
@@ -36,9 +37,19 @@ async function submit() {
   error.value = ''
   loading.value = true
   store.phone = dialCode.value + phone.value
-  await new Promise(r => setTimeout(r, 700))
+
+  const result = await signIn({ phone: store.phone, password: password.value })
+
   loading.value = false
-  router.push('/onboarding')
+
+  if (!result.ok) {
+    error.value = result.reason === 'invalid_credentials'
+      ? 'رقم الهاتف أو كلمة المرور غير صحيحة'
+      : result.message
+    return
+  }
+
+  router.push('/')
 }
 </script>
 
@@ -77,6 +88,7 @@ async function submit() {
                 dir="ltr"
                 inputmode="tel"
                 autocomplete="tel-national"
+                data-testid="login-phone"
               />
             </div>
           </div>
@@ -84,7 +96,7 @@ async function submit() {
           <div class="field">
             <div class="label-row">
               <label class="label">كلمة المرور</label>
-              <RouterLink to="/forgot" class="forgot-link" tabindex="-1">نسيت كلمة المرور؟</RouterLink>
+              <RouterLink to="/forgot-password" class="forgot-link" tabindex="-1">نسيت كلمة المرور؟</RouterLink>
             </div>
             <div class="pass-row">
               <input
@@ -94,6 +106,7 @@ async function submit() {
                 placeholder="••••••••"
                 dir="ltr"
                 autocomplete="current-password"
+                data-testid="login-password"
               />
               <button type="button" class="eye-btn" @click="showPass = !showPass" :aria-label="showPass ? 'إخفاء' : 'إظهار'">
                 <span v-if="showPass">🙈</span>
@@ -102,9 +115,9 @@ async function submit() {
             </div>
           </div>
 
-          <p v-if="error" class="err-msg">{{ error }}</p>
+          <p v-if="error" class="err-msg" data-testid="login-error">{{ error }}</p>
 
-          <button type="submit" class="submit-btn" :class="{ loading }" :disabled="loading">
+          <button type="submit" class="submit-btn" :class="{ loading }" :disabled="loading" data-testid="login-submit">
             <span v-if="!loading">دخول</span>
             <span v-else class="spinner"></span>
           </button>

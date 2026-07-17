@@ -1,15 +1,44 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppHeader from '@/components/ui/AppHeader.vue'
+import AppDialog from '@/components/ui/AppDialog.vue'
 import { useSettingsStore } from '@/features/settings'
 import type { Language, Theme, TextSize, IdleTimeout } from '@/features/settings'
 import ThemePickerScreen from './ThemePickerScreen.vue'
+import { signOut } from '@/data/supabase/auth'
+import { db } from '@/data/powersync/db'
 
 const router   = useRouter()
 const settings = useSettingsStore()
 const { t }    = useI18n()
+
+const showSignOutConfirm = ref(false)
+const unsyncedCount = ref(0)
+const signOutError = ref('')
+
+async function openSignOutConfirm() {
+  try {
+    const stats = await db.getUploadQueueStats()
+    unsyncedCount.value = stats.count
+    signOutError.value = ''
+    showSignOutConfirm.value = true
+  } catch {
+    signOutError.value = t('personal.signOutError')
+  }
+}
+
+async function confirmSignOut() {
+  try {
+    signOutError.value = ''
+    await signOut()
+    showSignOutConfirm.value = false
+    router.push('/login')
+  } catch {
+    signOutError.value = t('personal.signOutError')
+  }
+}
 
 const languages: { value: Language; label: string }[] = [
   { value: 'ar', label: 'العربية' },
@@ -160,12 +189,13 @@ const textSizes = computed(() => [
 
       <button
         type="button"
+        data-testid="signout-btn"
         class="settings-row settings-row--last signout-row"
-        disabled
+        @click="openSignOutConfirm"
       >
         <span class="signout-label">{{ t('personal.signOut') }}</span>
-        <span class="coming-soon-badge">{{ t('common.comingSoon') }}</span>
       </button>
+      <p v-if="signOutError" class="signout-error" data-testid="signout-error">{{ signOutError }}</p>
     </div>
 
     <!-- Daily digest group -->
@@ -215,6 +245,15 @@ const textSizes = computed(() => [
         </div>
       </div>
     </div>
+
+    <AppDialog
+      v-if="showSignOutConfirm"
+      :title="t('personal.signOutConfirmTitle')"
+      :message="unsyncedCount > 0 ? t('personal.signOutUnsyncedMessage', { count: unsyncedCount }) : t('personal.signOutConfirmMessage')"
+      :confirm-label="t('personal.signOut')"
+      @confirm="confirmSignOut"
+      @cancel="showSignOutConfirm = false"
+    />
 
   </div>
 </template>
@@ -467,8 +506,7 @@ button.settings-row:hover:not(:disabled) {
 
 /* ─── Sign out row ────────────────────────────────────────── */
 .signout-row {
-  cursor: not-allowed;
-  opacity: 0.85;
+  cursor: pointer;
   border-bottom: none;
   min-height: 52px;
 }
@@ -479,11 +517,11 @@ button.settings-row:hover:not(:disabled) {
   color: #EF4444;
 }
 
-.coming-soon-badge {
-  font-size: 0.75rem;
-  color: #9CA9BA;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 999px;
-  padding: 0.2rem 0.55rem;
+.signout-error {
+  margin: 0;
+  padding: 0 16px 14px;
+  font-size: 0.78rem;
+  color: #EF4444;
+  text-align: right;
 }
 </style>

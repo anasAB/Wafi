@@ -212,7 +212,6 @@ const devices = new Table({
   registered_at: column.text,
   sync_status:   column.text,
 })
-
 const returns = new Table({
   shop_id:                 column.text,
   original_sale_id:        column.text,
@@ -342,6 +341,14 @@ const subcategories = new Table({
   sync_status: column.text,
 })
 
+const shops = new Table({
+  owner_user_id: column.text,
+  name:          column.text,
+  business_type: column.text,
+  country:       column.text,
+  created_at:    column.text,
+})
+
 export const AppSchema = new Schema({
   products,
   stock_adjustments,
@@ -371,4 +378,5 @@ export const AppSchema = new Schema({
   installment_dues,
   categories,
   subcategories,
+  shops,
 })
