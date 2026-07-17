@@ -96,7 +96,7 @@ async function submit() {
           <div class="field">
             <div class="label-row">
               <label class="label">كلمة المرور</label>
-              <RouterLink to="/forgot" class="forgot-link" tabindex="-1">نسيت كلمة المرور؟</RouterLink>
+              <RouterLink to="/forgot-password" class="forgot-link" tabindex="-1">نسيت كلمة المرور؟</RouterLink>
             </div>
             <div class="pass-row">
               <input

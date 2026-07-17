@@ -54,6 +54,7 @@ const router = createRouter({
     { path: '/setup-owner',     component: () => import('@/features/shifts/components/OwnerSetupScreen.vue') },
     { path: '/login',  component: () => import('@/pages/LoginPage.vue') },
     { path: '/signup', component: () => import('@/pages/SignupPage.vue') },
+    { path: '/forgot-password', component: () => import('@/pages/ForgotPasswordPage.vue') },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
   scrollBehavior: () => ({ top: 0 }),
@@ -66,7 +67,7 @@ const router = createRouter({
 // reachable) for anyone lacking reports, so a deep-link to a denied financial
 // route fails closed onto the POS instead of bouncing (WAFI-058).
 router.beforeEach(async (to) => {
-  const PUBLIC_PATHS = ['/login', '/signup']
+  const PUBLIC_PATHS = ['/login', '/signup', '/forgot-password']
   const { data } = await supabase.auth.getSession()
   const isAuthenticated = !!data.session
 
