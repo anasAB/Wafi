@@ -111,10 +111,59 @@ describe('useDeviceStore', () => {
     vi.mocked(db.getOptional).mockResolvedValue({ id: 'shop-a' } as any)
     const { useDeviceStore } = await import('@/store/device.store')
     const store = useDeviceStore()
-    await store.refreshShopId()
+    // Establish account A as the last-known account the way the app really
+    // does — via the SIGNED_IN auth event, not a bare refreshShopId() call
+    // (refreshShopId() no longer tracks lastUserId itself; only the
+    // SIGNED_IN/SIGNED_OUT handler does).
+    authCb?.('SIGNED_IN')
+    await flush()
+    expect(store.shopId).toBe('shop-a')
 
     session.value = { access_token: 'tok2', user: { id: 'user-b' } }
     authCb?.('SIGNED_IN')
+    await flush()
+
+    expect(db.disconnectAndClear).toHaveBeenCalled()
+  })
+
+  it('does not skip clear-and-reconnect when refreshShopId races the SIGNED_IN handler (TOCTOU)', async () => {
+    // refreshShopId() is also called from unrelated code paths (e.g. useSync
+    // on PowerSync reconnect). If it were allowed to mutate lastUserId, a call
+    // interleaved during the SIGNED_IN IIFE's own `await getSession()` could
+    // overwrite lastUserId before the IIFE's own compare ran, silently
+    // skipping the clear-and-reconnect guard. This reproduces that race.
+    const { supabase } = await import('@/data/supabase/client')
+
+    session.value = { access_token: 'tok', user: { id: 'user-a' } }
+    vi.mocked(db.getOptional).mockResolvedValue({ id: 'shop-a' } as any)
+    const { useDeviceStore } = await import('@/store/device.store')
+    const store = useDeviceStore()
+    // Establish account A as the last-known account via the real SIGNED_IN
+    // path (refreshShopId() alone no longer sets lastUserId).
+    authCb?.('SIGNED_IN')
+    await flush()
+    expect(store.shopId).toBe('shop-a')
+
+    // Account B signs in on the same device.
+    session.value = { access_token: 'tok2', user: { id: 'user-b' } }
+
+    // Gate the SIGNED_IN IIFE's own getSession() call so we can interleave a
+    // concurrent refreshShopId() call before it resolves.
+    let releaseSignInGetSession: (() => void) | undefined
+    const gate = new Promise<void>(resolve => { releaseSignInGetSession = resolve })
+    vi.mocked(supabase.auth.getSession).mockImplementationOnce(async () => {
+      await gate
+      return { data: { session: session.value } }
+    })
+
+    authCb?.('SIGNED_IN')  // starts the async IIFE; its getSession() is now gated
+
+    // Simulate an independent caller (e.g. PowerSync reconnect) racing in
+    // during the gated await.
+    await store.refreshShopId()
+
+    // Now let the SIGNED_IN IIFE's getSession() resolve and run its compare.
+    releaseSignInGetSession!()
     await flush()
 
     expect(db.disconnectAndClear).toHaveBeenCalled()

@@ -76,7 +76,6 @@ export const useDeviceStore = defineStore('device', () => {
     const { data } = await supabase.auth.getSession()
     const userId = data.session?.user?.id
     if (!userId) return  // not signed in — keep current; sign-out clears it
-    lastUserId = userId
     try {
       // Scope the lookup to the signed-in account's own shop, mirroring the
       // server's `shops.owner_user_id → auth.uid()` mapping. Filtering by
@@ -94,10 +93,26 @@ export const useDeviceStore = defineStore('device', () => {
     }
   }
 
-  // Tracks which account last completed a SIGNED_IN resolution on this device,
-  // so a different account signing in on the same device can be detected and
-  // the previous account's synced local rows cleared before the new one reads.
+  // Tracks which account last completed a SIGNED_IN/SIGNED_OUT resolution on
+  // this device, so a different account signing in on the same device can be
+  // detected and the previous account's synced local rows cleared before the
+  // new one reads. Only the SIGNED_IN/SIGNED_OUT branches below may read or
+  // write this — refreshShopId() itself must NOT touch it. refreshShopId() is
+  // also invoked from unrelated code paths (e.g. useSync on PowerSync
+  // reconnect), and if it set lastUserId too, a reconnect call interleaved
+  // during the SIGNED_IN IIFE's own `await getSession()` could overwrite
+  // lastUserId before the IIFE's compare ran, silently defeating the
+  // clear-and-reconnect guard (TOCTOU race).
   let lastUserId: string | null = null
+
+  // In-flight guard for the SIGNED_IN clear-and-reconnect block, mirroring
+  // registrationInFlight above: two rapid SIGNED_IN events (e.g. a token
+  // refresh racing a real sign-in) would otherwise both read lastUserId and
+  // compare against it before either had a chance to write the new value,
+  // letting a second clear-and-reconnect run against a stale comparison or
+  // be skipped entirely. Serializing on this promise makes the read-compare-
+  // write of lastUserId atomic relative to other SIGNED_IN invocations.
+  let signInInFlight: Promise<void> | null = null
 
   // Keep shopId in sync with sign-in / sign-out.
   supabase.auth.onAuthStateChange((event) => {
@@ -112,16 +127,30 @@ export const useDeviceStore = defineStore('device', () => {
       // account's shop while its own data is still syncing.
       shopId.value = FALLBACK_SHOP_ID
       void (async () => {
-        const { data } = await supabase.auth.getSession()
-        const userId = data.session?.user?.id ?? null
-        if (lastUserId !== null && userId !== null && userId !== lastUserId) {
-          // A different account signed in on this device — the previous
-          // account's synced rows must not bleed into the new one.
-          await db.disconnectAndClear()
-          await db.connect(new SupabaseConnector())
+        if (signInInFlight) {
+          // A SIGNED_IN resolution is already in progress — wait for it
+          // instead of running a second, overlapping compare-and-clear.
+          await signInInFlight
+          return
         }
-        lastUserId = userId
-        await refreshShopId()
+        signInInFlight = (async () => {
+          const { data } = await supabase.auth.getSession()
+          const userId = data.session?.user?.id ?? null
+          const previousUserId = lastUserId
+          if (previousUserId !== null && userId !== null && userId !== previousUserId) {
+            // A different account signed in on this device — the previous
+            // account's synced rows must not bleed into the new one.
+            await db.disconnectAndClear()
+            await db.connect(new SupabaseConnector())
+          }
+          lastUserId = userId
+          await refreshShopId()
+        })()
+        try {
+          await signInInFlight
+        } finally {
+          signInInFlight = null
+        }
       })()
       return
     }
