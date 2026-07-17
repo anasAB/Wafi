@@ -48,6 +48,7 @@ export default {
     signOutConfirmTitle:   'تسجيل الخروج',
     signOutConfirmMessage: 'هل تريد تسجيل الخروج؟',
     signOutUnsyncedMessage: 'لديك {count} عملية لم تتم مزامنتها بعد. تسجيل الخروج الآن قد يؤدي لفقدانها. هل تريد المتابعة؟',
+    signOutError: 'تعذر تسجيل الخروج. حاول مرة أخرى.',
     aboutVersionLabel: 'الإصدار والدعم',
     dailyDigestSection: 'ملخص واتساب اليومي',
     dailyDigestToggle: 'تذكير يومي',

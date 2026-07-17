@@ -16,17 +16,28 @@ const { t }    = useI18n()
 
 const showSignOutConfirm = ref(false)
 const unsyncedCount = ref(0)
+const signOutError = ref('')
 
 async function openSignOutConfirm() {
-  const stats = await db.getUploadQueueStats()
-  unsyncedCount.value = stats.count
-  showSignOutConfirm.value = true
+  try {
+    const stats = await db.getUploadQueueStats()
+    unsyncedCount.value = stats.count
+    signOutError.value = ''
+    showSignOutConfirm.value = true
+  } catch {
+    signOutError.value = t('personal.signOutError')
+  }
 }
 
 async function confirmSignOut() {
-  showSignOutConfirm.value = false
-  await signOut()
-  router.push('/login')
+  try {
+    signOutError.value = ''
+    await signOut()
+    showSignOutConfirm.value = false
+    router.push('/login')
+  } catch {
+    signOutError.value = t('personal.signOutError')
+  }
 }
 
 const languages: { value: Language; label: string }[] = [
@@ -184,6 +195,7 @@ const textSizes = computed(() => [
       >
         <span class="signout-label">{{ t('personal.signOut') }}</span>
       </button>
+      <p v-if="signOutError" class="signout-error" data-testid="signout-error">{{ signOutError }}</p>
     </div>
 
     <!-- Daily digest group -->
@@ -239,7 +251,6 @@ const textSizes = computed(() => [
       :title="t('personal.signOutConfirmTitle')"
       :message="unsyncedCount > 0 ? t('personal.signOutUnsyncedMessage', { count: unsyncedCount }) : t('personal.signOutConfirmMessage')"
       :confirm-label="t('personal.signOut')"
-      cancel-label="إلغاء"
       @confirm="confirmSignOut"
       @cancel="showSignOutConfirm = false"
     />
@@ -504,5 +515,13 @@ button.settings-row:hover:not(:disabled) {
   font-size: 0.875rem;
   font-weight: 700;
   color: #EF4444;
+}
+
+.signout-error {
+  margin: 0;
+  padding: 0 16px 14px;
+  font-size: 0.78rem;
+  color: #EF4444;
+  text-align: right;
 }
 </style>
