@@ -112,6 +112,32 @@ export async function retryDeadLetterOp(
   return { status: 'transient', message: error.message }
 }
 
+/**
+ * Discard a held op. If it's a `categories` insert, also discard any held
+ * `subcategories` ops created under it: once the parent category's own write
+ * is abandoned, those children reference a `category_id` that will never
+ * exist server-side, so their foreign-key rejection can never clear on
+ * retry — leaving them stuck forever unless we clean them up together.
+ */
 export async function discardDeadLetterOp(db: AbstractPowerSyncDatabase, id: string): Promise<void> {
+  const row = await db.getOptional<DeadLetterEntry>(
+    `SELECT id, client_id, op_type, table_name, row_id, op_data, error_code, error_message, failed_at
+       FROM sync_dead_letter WHERE id = ?`,
+    [id],
+  )
+
   await db.execute(`DELETE FROM sync_dead_letter WHERE id = ?`, [id])
+
+  if (row?.table_name === 'categories') {
+    const orphaned = await db.getAll<DeadLetterEntry>(
+      `SELECT id, client_id, op_type, table_name, row_id, op_data, error_code, error_message, failed_at
+         FROM sync_dead_letter WHERE table_name = 'subcategories'`,
+    )
+    for (const orphan of orphaned) {
+      const opData = orphan.op_data ? (JSON.parse(orphan.op_data) as Record<string, unknown>) : undefined
+      if (opData?.category_id === row.row_id) {
+        await db.execute(`DELETE FROM sync_dead_letter WHERE id = ?`, [orphan.id])
+      }
+    }
+  }
 }

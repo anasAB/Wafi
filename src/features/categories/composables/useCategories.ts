@@ -105,15 +105,16 @@ export function useCategories() {
       `SELECT id, name FROM categories WHERE shop_id = ? AND lower(name) = lower('غير مصنف')`,
       [device.shopId]
     )
-    if (fallback && fallback.id === id) {
-      return { deleted: false, productCount: 0, blockedReason: 'fallback' }
-    }
 
     const row = await db.getOptional<{ count: number }>(
       `SELECT COUNT(*) as count FROM products WHERE category_id = ? AND (deleted = 0 OR deleted IS NULL)`,
       [id]
     )
     const productCount = row?.count ?? 0
+
+    if (fallback && fallback.id === id) {
+      return { deleted: false, productCount, blockedReason: 'fallback' }
+    }
     if (productCount > 0) return { deleted: false, productCount, blockedReason: 'in_use' }
 
     await db.execute(`DELETE FROM categories WHERE id = ?`, [id])

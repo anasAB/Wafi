@@ -60,3 +60,8 @@ streams:
       - SELECT * FROM public.suppliers                  WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
       - SELECT * FROM public.stock_receivings           WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
       - SELECT * FROM public.stock_receiving_line_items WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+      - SELECT * FROM public.cash_movements             WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+      - SELECT * FROM public.stock_take_sessions        WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+      - SELECT * FROM public.stock_take_lines           WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+      - SELECT * FROM public.categories                 WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+      - SELECT * FROM public.subcategories              WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())

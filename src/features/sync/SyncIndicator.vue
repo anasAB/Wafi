@@ -231,6 +231,7 @@ async function onDiscard(id: string) {
 .sync-panel {
   position: fixed;
   top: 64px;
+  bottom: 10px;
   inset-inline-start: 10px;
   inset-inline-end: 10px;
   z-index: 40;
@@ -238,20 +239,28 @@ async function onDiscard(id: string) {
   border: 1px solid rgba(26, 86, 219, 0.28);
   background: linear-gradient(145deg, rgba(9, 16, 31, .97), rgba(6, 12, 24, .97));
   box-shadow: 0 16px 40px rgba(3, 8, 20, 0.7), inset 0 1px 0 rgba(255,255,255,.06);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 @media (min-width: 1024px) {
   .sync-panel {
     top: 74px;
+    bottom: auto;
     inset-inline-start: auto;
     inset-inline-end: 18px;
     width: 360px;
+    max-height: calc(100vh - 94px);
   }
 }
 
 .sync-panel-inner {
   padding: 14px;
   font-family: 'Tajawal', system-ui, sans-serif;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 .sync-panel-head {

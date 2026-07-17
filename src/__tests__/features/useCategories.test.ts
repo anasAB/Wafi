@@ -97,4 +97,16 @@ describe('useCategories — load/create/rename', () => {
     expect(result).toEqual({ deleted: false, productCount: 0, blockedReason: 'fallback' })
     expect(vi.mocked(db.execute).mock.calls.some(([sql]) => /DELETE FROM categories/.test(sql))).toBe(false)
   })
+
+  it('deleteCategory reports the real product count when refusing to delete the fallback category', async () => {
+    vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({ id: 'c1', name: 'غير مصنف' } as any) // this IS the fallback row
+      .mockResolvedValueOnce({ count: 12 } as any)
+
+    const { deleteCategory } = useCategories()
+    const result = await deleteCategory('c1')
+
+    expect(result).toEqual({ deleted: false, productCount: 12, blockedReason: 'fallback' })
+    expect(vi.mocked(db.execute).mock.calls.some(([sql]) => /DELETE FROM categories/.test(sql))).toBe(false)
+  })
 })

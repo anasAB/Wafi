@@ -10,6 +10,7 @@ const props = defineProps<{
   products:           Product[]
   filterLowStock?:    boolean
   filterMissingCost?: boolean
+  initialCategoryId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -28,7 +29,9 @@ const subcategoryMenuRef = ref<HTMLElement | null>(null)
 // ── Category filter (#9) — real categories table, not derived from products ──
 const { categoriesWithSubcategories, load: loadCategories } = useCategories()
 
-const selectedCategoryId    = ref<string | null>(null)   // null = all categories
+// Arrived from a "which products use this category" link (e.g. the categories
+// screen's fallback-category delete guard) — preselect it instead of "all".
+const selectedCategoryId    = ref<string | null>(props.initialCategoryId ?? null)
 const selectedSubcategoryId = ref<string | null>(null)    // null = all subcategories in the selected category
 
 const categoryOptions = computed(() => [

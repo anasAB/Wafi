@@ -54,6 +54,7 @@ describe('ProductForm', () => {
 
   it('shows sale-below-cost warning when sale price < cost price on save', async () => {
     const w = mountForm()
+    ;(w.vm as any).categoryId = 'cat-1'
     await w.find('[data-testid="name-ar"]').setValue('منتج')
     await w.find('[data-testid="cost-price"]').setValue('10')
     await w.find('[data-testid="sale-price"]').setValue('7')
@@ -72,6 +73,7 @@ describe('ProductForm', () => {
 
   it('emits saved event after successful save', async () => {
     const w = mountForm()
+    ;(w.vm as any).categoryId = 'cat-1'
     await w.find('[data-testid="name-ar"]').setValue('منتج جديد')
     await w.find('[data-testid="cost-price"]').setValue('5')
     await w.find('[data-testid="sale-price"]').setValue('10')
@@ -81,8 +83,62 @@ describe('ProductForm', () => {
     expect(w.emitted('saved')).toBeTruthy()
   })
 
+  it('reloads its own category list before assigning a category created via quick-add', async () => {
+    // ProductForm and CategoryQuickAdd each hold an independent useCategories()
+    // instance — creating a category through the quick-add form must refresh
+    // THIS form's own list too, or the new id never resolves in its dropdown
+    // and the assignment is effectively lost (the bug this test guards).
+    let categoriesQueryCount = 0
+    vi.mocked(db.getAll).mockImplementation(async (sql: string) => {
+      if (/FROM categories\b/.test(sql)) {
+        categoriesQueryCount++
+        // First load (onMounted) sees nothing yet; only a reload made AFTER
+        // the quick-add's own create+load would see the newly created row.
+        return categoriesQueryCount === 1
+          ? []
+          : [{ id: 'new-cat-id', shop_id: 's1', name: 'فئة جديدة', created_at: '2024-01-01T00:00:00Z' }]
+      }
+      return []
+    })
+
+    const w = mountForm()
+    await (w.vm as any).onCategoryCreated('new-cat-id')
+
+    expect((w.vm as any).categoryId).toBe('new-cat-id')
+    expect((w.vm as any).categoryOptions).toEqual(
+      expect.arrayContaining([{ label: 'فئة جديدة', value: 'new-cat-id' }])
+    )
+    expect((w.vm as any).showQuickAddCategory).toBe(false)
+  })
+
+  it('hides the "create new category" option once a category is already assigned', async () => {
+    const w = mountForm({ mode: 'edit', product: { ...baseProduct, categoryId: 'existing-cat' } })
+    await new Promise(r => setTimeout(r, 0))
+
+    expect(w.find('[data-testid="quick-add-category-toggle"]').exists()).toBe(false)
+  })
+
+  it('shows the "create new category" option when no category is assigned yet', async () => {
+    const w = mountForm({ mode: 'add' })
+    await new Promise(r => setTimeout(r, 0))
+
+    expect(w.find('[data-testid="quick-add-category-toggle"]').exists()).toBe(true)
+  })
+
+  it('shows required-field error for missing category on save', async () => {
+    const w = mountForm()
+    await w.find('[data-testid="name-ar"]').setValue('منتج')
+    await w.find('[data-testid="cost-price"]').setValue('5')
+    await w.find('[data-testid="sale-price"]').setValue('10')
+    await w.find('[data-testid="current-stock"]').setValue('20')
+    await w.find('[data-testid="save-btn"]').trigger('click')
+    expect(w.find('[data-testid="error-category"]').exists()).toBe(true)
+    expect(w.emitted('saved')).toBeFalsy()
+  })
+
   it('saves successfully when user confirms price-below-cost warning', async () => {
     const w = mountForm()
+    ;(w.vm as any).categoryId = 'cat-1'
     await w.find('[data-testid="name-ar"]').setValue('منتج')
     await w.find('[data-testid="cost-price"]').setValue('10')
     await w.find('[data-testid="sale-price"]').setValue('7')

@@ -19,6 +19,7 @@ const scanner = useBarcodeScan()
 
 const filterLowStock    = computed(() => route.query.filter === 'low-stock')
 const filterMissingCost = computed(() => route.query.filter === 'missing-cost')
+const initialCategoryId = computed(() => (route.query.category as string | undefined) ?? null)
 const deleteTarget   = ref<string | null>(null)
 const toast          = ref<{ message: string; type: 'success' | 'error' } | null>(null)
 const missedBarcode  = ref<string | null>(null)
@@ -134,6 +135,7 @@ async function confirmDelete() {
         :products="products"
         :filter-low-stock="filterLowStock"
         :filter-missing-cost="filterMissingCost"
+        :initial-category-id="initialCategoryId"
         @edit="id => router.push(`/products/${id}/edit`)"
         @delete="handleDelete"
         @adjust-stock="id => stockTargetId = id"

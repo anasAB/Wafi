@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import Select from 'primevue/select'
 import { useDeviceStore } from '@/store/device.store'
 import { useProducts } from '@/features/products/composables/useProducts'
 import { useStockAdjustment } from '@/features/products/composables/useStockAdjustment'
@@ -66,20 +67,37 @@ const availableSubcategories = computed(() => {
   return cat?.subcategories ?? []
 })
 
+const categoryOptions = computed(() =>
+  categories.categoriesWithSubcategories.value.map(c => ({ label: c.name, value: c.id })),
+)
+
+const subcategoryOptions = computed(() => [
+  { label: 'بدون فئة فرعية', value: '' },
+  ...availableSubcategories.value.map(s => ({ label: s.name, value: s.id })),
+])
+
 function onCategoryChange() {
   if (!availableSubcategories.value.some(s => s.id === subcategoryId.value)) {
     subcategoryId.value = ''
   }
 }
 
-function onCategoryCreated(id: string) {
+async function onCategoryCreated(id: string) {
+  // CategoryQuickAdd owns its own useCategories() instance (separate reactive
+  // state from this form's `categories`), so its create-then-load already
+  // refreshed ITS list, not ours — without this reload, the new category is
+  // absent from `categoryOptions` and the Select can't resolve the id we're
+  // about to assign it.
+  await categories.load()
   categoryId.value = id
+  delete errors.value['category']
   showQuickAddCategory.value = false
 }
 
 function validate(): boolean {
   const e: Record<string, string> = {}
   if (!nameAr.value.trim())   e['name-ar']       = 'هذا الحقل مطلوب'
+  if (!categoryId.value)      e['category']      = 'هذا الحقل مطلوب'
   if (costPrice.value === '') e['cost-price']    = 'هذا الحقل مطلوب'
   if (salePrice.value === '') e['sale-price']    = 'هذا الحقل مطلوب'
   if (stock.value === '')     e['current-stock'] = 'هذا الحقل مطلوب'
@@ -186,29 +204,44 @@ onUnmounted(() => {
 
       <!-- Category / Subcategory (moved here from optional details) -->
       <div class="field">
-        <label class="field-label">الفئة <span class="optional">(اختياري)</span></label>
-        <select v-model="categoryId" data-testid="category-select" class="form-input" @change="onCategoryChange">
-          <option value="">بدون فئة</option>
-          <option v-for="cat in categories.categoriesWithSubcategories.value" :key="cat.id" :value="cat.id">
-            {{ cat.name }}
-          </option>
-        </select>
-        <button type="button" data-testid="quick-add-category-toggle" class="expand-btn"
-          @click="showQuickAddCategory = !showQuickAddCategory">
+        <label class="field-label">الفئة <span class="required">*</span></label>
+        <Select
+          v-model="categoryId"
+          data-testid="category-select"
+          class="form-input select-input"
+          :class="{ 'input-error': errors['category'] }"
+          :options="categoryOptions"
+          option-label="label"
+          option-value="value"
+          placeholder="اختر فئة"
+          @update:model-value="onCategoryChange(); delete errors['category']"
+        />
+        <p v-if="errors['category']" data-testid="error-category" class="field-error">
+          {{ errors['category'] }}
+        </p>
+        <button
+          v-if="!categoryId"
+          type="button"
+          data-testid="quick-add-category-toggle"
+          class="expand-btn"
+          @click="showQuickAddCategory = !showQuickAddCategory"
+        >
           + فئة جديدة
         </button>
-        <CategoryQuickAdd v-if="showQuickAddCategory" @created="onCategoryCreated" />
+        <CategoryQuickAdd v-if="!categoryId && showQuickAddCategory" @created="onCategoryCreated" />
       </div>
 
       <div class="field">
         <label class="field-label">الفئة الفرعية <span class="optional">(اختياري)</span></label>
-        <select v-model="subcategoryId" data-testid="subcategory-select" class="form-input"
-          :disabled="!categoryId">
-          <option value="">بدون فئة فرعية</option>
-          <option v-for="sub in availableSubcategories" :key="sub.id" :value="sub.id">
-            {{ sub.name }}
-          </option>
-        </select>
+        <Select
+          v-model="subcategoryId"
+          data-testid="subcategory-select"
+          class="form-input select-input"
+          :options="subcategoryOptions"
+          option-label="label"
+          option-value="value"
+          :disabled="!categoryId"
+        />
       </div>
     </div>
 
@@ -480,6 +513,41 @@ onUnmounted(() => {
 
 .form-input.input-error {
   border-color: #EF4444;
+}
+
+/* ── PrimeVue Select, styled to sit inside the same .form-input box ── */
+.select-input {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding-inline-end: 2.25rem;
+  cursor: pointer;
+}
+
+.select-input :deep(.p-select-label) {
+  padding: 0;
+  color: #E8EDF5;
+  font-size: 0.875rem;
+  font-family: 'Tajawal', system-ui, sans-serif;
+}
+
+.select-input :deep(.p-placeholder) {
+  color: #3D4F6B;
+}
+
+.select-input :deep(.p-select-dropdown) {
+  position: absolute;
+  inset-inline-end: 0.75rem;
+  inset-block: 0;
+  margin: auto;
+  width: 1rem;
+  height: 1rem;
+  color: #637285;
+}
+
+.select-input.p-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* ── Grid ─────────────────────────────────────────── */
