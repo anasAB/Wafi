@@ -1,7 +1,9 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { v4 as uuidv4 } from 'uuid'
 import { supabase } from '@/data/supabase/client'
 import { db } from '@/data/powersync/db'
+import { useDeviceRegistration } from '@/features/devices/composables/useDeviceRegistration'
 
 // Dev/transition fallback: until the owner's shop row has synced locally, fall
 // back to a configured shop so the app stays usable. In production (no
@@ -18,9 +20,30 @@ export const useDeviceStore = defineStore('device', () => {
   // whenever a sync connects (see useSync) and on sign-in.
   const shopId = ref<string>(FALLBACK_SHOP_ID)
 
-  // deviceId/deviceCode remain stubbed — real device registration is Sub-project 3.
-  const deviceId   = (import.meta.env.VITE_STUB_DEVICE_ID   ?? '00000000-0000-0000-0000-000000000002') as string
-  const deviceCode = (import.meta.env.VITE_STUB_DEVICE_CODE ?? 'A') as string
+  // deviceId/deviceCode are real, persisted registration values (see
+  // ensureDeviceRegistered below). The env vars remain as a dev/test seam —
+  // when set, they act as a pre-registered device and ensureDeviceRegistered
+  // is a no-op; when unset (production default), the device registers itself
+  // for real the first time its shop resolves.
+  const deviceId   = ref<string>((import.meta.env.VITE_STUB_DEVICE_ID   ?? '') as string)
+  const deviceCode = ref<string>((import.meta.env.VITE_STUB_DEVICE_CODE ?? '') as string)
+
+  /**
+   * Claims a device code for this browser/device the first time a shop is
+   * known. Guards against re-registering once a code exists (whether from a
+   * prior registration or the dev/test env stub), and against registering
+   * before a shop has resolved (there's nothing to register the device
+   * under yet — refreshShopId() calls this again once shopId is set).
+   */
+  async function ensureDeviceRegistered(): Promise<void> {
+    if (deviceCode.value) return  // already registered (or stubbed) on this device
+    if (!shopId.value) return     // no shop resolved yet — retry after refreshShopId()
+    const { registerDevice } = useDeviceRegistration()
+    const id = uuidv4()
+    const { code } = await registerDevice(shopId.value)
+    deviceId.value = id
+    deviceCode.value = code
+  }
 
   /**
    * Resolve shopId from the locally-synced `shops` table. The sync rules only
@@ -41,7 +64,10 @@ export const useDeviceStore = defineStore('device', () => {
       const row = await db.getOptional<{ id: string }>(
         'SELECT id FROM shops WHERE owner_user_id = ? LIMIT 1', [userId]
       )
-      if (row?.id) shopId.value = row.id
+      if (row?.id) {
+        shopId.value = row.id
+        await ensureDeviceRegistered()
+      }
     } catch {
       // DB not ready yet (pre-connect) — keep persisted/fallback value.
     }
@@ -62,8 +88,9 @@ export const useDeviceStore = defineStore('device', () => {
     void refreshShopId()
   })
 
-  return { shopId, deviceId, deviceCode, refreshShopId }
+  return { shopId, deviceId, deviceCode, refreshShopId, ensureDeviceRegistered }
 }, {
-  // Persist only shopId — deviceId/deviceCode are env-derived constants.
-  persist: { pick: ['shopId'] },
+  // Persist shopId plus the claimed device identity, so an offline cold-start
+  // reuses this device's registered code instead of re-registering.
+  persist: { pick: ['shopId', 'deviceId', 'deviceCode'] },
 })
