@@ -465,6 +465,21 @@ export function useAuditLog() {
   const logInstallmentPlanCancelled = (planId: string) =>
     _log('installment_plan.cancelled', 'installment_plan', planId, {})
 
+  const logStaffLedgerEntryCreated = (
+    entryId: string, staffId: string, entryType: string, amountUsd: number,
+  ) => _log('staff_ledger.entry_created', 'staff_ledger', entryId, { staffId, entryType, amountUsd })
+
+  // Sensitive: finalize is irreversible, so a failed audit write must surface.
+  const logStaffSettlementFinalized = (
+    settlementId: string, staffId: string, periodMonth: string, finalAmountUsd: number,
+    currency: string, hasNegativeBalance: boolean,
+  ) => _logSensitive('staff_settlement.finalized', 'staff_settlement', settlementId,
+        { staffId, periodMonth, finalAmountUsd, currency, hasNegativeBalance })
+
+  const logStaffSettlementPaid = (
+    settlementId: string, staffId: string, paymentMethod: string,
+  ) => _log('staff_settlement.paid', 'staff_settlement', settlementId, { staffId, paymentMethod })
+
   return {
     entries,
     loadLog,
@@ -513,5 +528,8 @@ export function useAuditLog() {
     logDeviceActivation,
     logCategoryMerged,
     logCategoryDeletedWithReassign,
+    logStaffLedgerEntryCreated,
+    logStaffSettlementFinalized,
+    logStaffSettlementPaid,
   }
 }

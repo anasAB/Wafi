@@ -44,6 +44,9 @@ export type AuditEvent =
   | 'device.renamed'
   | 'device.deactivated'
   | 'device.reactivated'
+  | 'staff_ledger.entry_created'
+  | 'staff_settlement.finalized'
+  | 'staff_settlement.paid'
 
 export type AuditEntityType =
   | 'sale' | 'return' | 'product' | 'expense'
@@ -51,6 +54,7 @@ export type AuditEntityType =
   | 'exchange_rate' | 'settings' | 'staff'
   | 'supplier' | 'receiving' | 'cash_movement'
   | 'installment_plan' | 'stock_take' | 'sync' | 'device' | 'category'
+  | 'staff_ledger' | 'staff_settlement'
 
 export interface AuditLog {
   id:         string
