@@ -433,6 +433,15 @@ export function useAuditLog() {
   const logInstallmentPaymentRecorded = (dueId: string, planId: string, amountUsd: number) =>
     _log('installment_payment.recorded', 'installment_plan', planId, { dueId, amountUsd })
 
+  // WAFI-135: discarding a dead-letter op permanently drops a server-rejected
+  // write (possibly a sale) — a data-loss decision. Sensitive: a failed audit
+  // write must surface, not vanish. The summary carries op identifiers only,
+  // never the op payload (may contain sensitive fields).
+  const logDeadLetterDiscarded = (
+    deadLetterId: string,
+    summary: Record<string, unknown>,
+  ) => _logSensitive('sync.dead_letter_discarded', 'sync', deadLetterId, summary)
+
   const logInstallmentPlanCancelled = (planId: string) =>
     _log('installment_plan.cancelled', 'installment_plan', planId, {})
 
@@ -479,5 +488,6 @@ export function useAuditLog() {
     logInstallmentPlanCreated,
     logInstallmentPaymentRecorded,
     logInstallmentPlanCancelled,
+    logDeadLetterDiscarded,
   }
 }

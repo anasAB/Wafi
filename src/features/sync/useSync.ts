@@ -1,6 +1,8 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useSyncStore } from '@/store/sync.store'
 import { useDeviceStore } from '@/store/device.store'
+import { useSessionStore } from '@/store/session.store'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 import { db } from '@/data/powersync/db'
 import { SupabaseConnector } from '@/data/powersync/connector'
 import {
@@ -12,6 +14,8 @@ import { supabase } from '@/data/supabase/client'
 export function useSync() {
   const syncStore  = useSyncStore()
   const deviceStore = useDeviceStore()
+  const session    = useSessionStore()
+  const audit      = useAuditLog()
 
   // Ops the server permanently rejected, held locally for owner recovery.
   const deadLetter = ref<DeadLetterEntry[]>([])
@@ -35,7 +39,21 @@ export function useSync() {
     syncStore.setBlockedCount(deadLetter.value.length)
   }
 
+  // WAFI-135: dead-letter actions are data-recovery controls, not sync plumbing.
+  // Retry re-issues a rejected write (owner/manager judgment call); discard
+  // permanently drops one — possibly a sale — so it is a data-loss decision
+  // reserved for the owner. The checks live HERE, not only in the UI, so a
+  // hidden button can never be the only line of defense.
+  const canRetryBlocked = computed(() => {
+    const role = session.activeStaff?.role
+    return role === 'owner' || role === 'manager'
+  })
+  const canDiscardBlocked = computed(() => session.activeStaff?.role === 'owner')
+
   async function retryBlocked(id: string): Promise<RetryResult> {
+    if (!canRetryBlocked.value) {
+      throw new Error('إعادة محاولة المعاملات المتوقفة متاحة للمالك أو المدير فقط')
+    }
     const result = await retryDeadLetterOp(db, id)
     await refreshDeadLetter()
     await refreshCounts()
@@ -43,7 +61,23 @@ export function useSync() {
   }
 
   async function discardBlocked(id: string): Promise<void> {
+    if (!canDiscardBlocked.value) {
+      throw new Error('حذف المعاملات المتوقفة متاح للمالك فقط')
+    }
+    // Snapshot the entry before deletion so the audit trail records WHAT was
+    // dropped. Summary fields only — never op_data (the raw payload).
+    const entry = deadLetter.value.find(e => e.id === id)
+      ?? (await listDeadLetter(db)).find(e => e.id === id)
+
     await discardDeadLetterOp(db, id)
+    await audit.logDeadLetterDiscarded(id, entry ? {
+      op_type:       entry.op_type,
+      table_name:    entry.table_name,
+      row_id:        entry.row_id,
+      error_code:    entry.error_code,
+      error_message: entry.error_message,
+      failed_at:     entry.failed_at,
+    } : {})
     await refreshDeadLetter()
     await refreshCounts()
   }
@@ -203,5 +237,7 @@ export function useSync() {
     refreshDeadLetter,
     retryBlocked,
     discardBlocked,
+    canRetryBlocked,
+    canDiscardBlocked,
   }
 }

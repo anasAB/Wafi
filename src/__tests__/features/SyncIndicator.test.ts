@@ -8,11 +8,15 @@ const deadLetter      = ref<any[]>([])
 const retryBlocked    = vi.fn(async () => ({ status: 'recovered' as const }))
 const discardBlocked  = vi.fn(async () => {})
 const refreshDeadLetter = vi.fn(async () => {})
+// WAFI-135: role gating flags — tests default to full (owner) capability.
+const canRetryBlocked   = ref(true)
+const canDiscardBlocked = ref(true)
 vi.mock('@/features/sync/useSync', () => ({
   useSync: () => ({
     status: ref('online'), pendingCount: ref(0), blockedCount,
     lastSyncedAt: ref(null), isStale: ref(false), errorMessage: ref(null),
     syncNow: vi.fn(), deadLetter, refreshDeadLetter, retryBlocked, discardBlocked,
+    canRetryBlocked, canDiscardBlocked,
   }),
 }))
 // ConnectionPill pulls in browser listeners — stub it; it's not under test here.
@@ -34,6 +38,8 @@ describe('SyncIndicator — blocked ops', () => {
   beforeEach(() => {
     blockedCount.value = 0
     deadLetter.value = []
+    canRetryBlocked.value = true
+    canDiscardBlocked.value = true
     vi.clearAllMocks()
   })
 
@@ -79,5 +85,41 @@ describe('SyncIndicator — blocked ops', () => {
 
     expect(retryBlocked).toHaveBeenCalledWith('dl-1')
     expect(w.find('.sync-blocked-feedback').text()).toContain('تعذّر الاتصال')
+  })
+
+  // WAFI-135 role gating in the UI (defense-in-depth: functions also refuse).
+  it('cashier sees the blocked list with a review notice and NO action buttons', async () => {
+    canRetryBlocked.value = false
+    canDiscardBlocked.value = false
+    deadLetter.value = [entry()]
+    const w = mount(SyncIndicator)
+    await openPanel(w)
+
+    expect(w.find('.sync-blocked-help').text()).toContain('بحاجة لمراجعة المالك')
+    expect(w.find('.sync-mini-btn--retry').exists()).toBe(false)
+    expect(w.find('.sync-mini-btn--discard').exists()).toBe(false)
+  })
+
+  it('manager sees retry but not discard', async () => {
+    canRetryBlocked.value = true
+    canDiscardBlocked.value = false
+    deadLetter.value = [entry()]
+    const w = mount(SyncIndicator)
+    await openPanel(w)
+
+    expect(w.find('.sync-mini-btn--retry').exists()).toBe(true)
+    expect(w.find('.sync-mini-btn--discard').exists()).toBe(false)
+  })
+
+  it('the armed discard confirm shows a readable summary of what will be dropped', async () => {
+    deadLetter.value = [entry()]
+    const w = mount(SyncIndicator)
+    await openPanel(w)
+
+    await w.find('.sync-mini-btn--discard').trigger('click') // arm
+    const confirm = w.find('.sync-blocked-confirm')
+    expect(confirm.exists()).toBe(true)
+    expect(confirm.text()).toContain('بيع')            // op label
+    expect(confirm.text()).toContain('duplicate key')  // rejection reason
   })
 })

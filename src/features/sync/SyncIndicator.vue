@@ -8,6 +8,7 @@ import ConnectionPill from '@/components/ui/ConnectionPill.vue'
 const {
   status, pendingCount, blockedCount, lastSyncedAt, isStale, errorMessage, syncNow,
   deadLetter, refreshDeadLetter, retryBlocked, discardBlocked,
+  canRetryBlocked, canDiscardBlocked,
 } = useSync()
 
 const panelOpen = ref(false)
@@ -28,6 +29,15 @@ const TABLE_LABELS: Record<string, string> = {
 }
 function opLabel(e: DeadLetterEntry): string {
   return TABLE_LABELS[e.table_name] ?? e.table_name
+}
+
+// The discard confirm must show exactly what will be dropped (WAFI-135).
+function formatFailedAt(iso: string): string {
+  try {
+    return new Intl.DateTimeFormat('ar-SY', {
+      hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short',
+    }).format(new Date(iso))
+  } catch { return iso }
 }
 
 function formatLastSync(d: Date | null): string {
@@ -136,7 +146,10 @@ async function onDiscard(id: string) {
            the cause, or discard. -->
       <div v-if="deadLetter.length > 0" class="sync-blocked">
         <p class="sync-blocked-title">معاملات متوقفة عن المزامنة</p>
-        <p class="sync-blocked-help">رفضها الخادم ولم تُحذف. أعد المحاولة بعد حل السبب، أو احذفها.</p>
+        <!-- Role gating (WAFI-135): retry = owner/manager; discard = owner only.
+             A cashier sees the count and a "needs owner review" notice — no actions. -->
+        <p v-if="canRetryBlocked" class="sync-blocked-help">رفضها الخادم ولم تُحذف. أعد المحاولة بعد حل السبب{{ canDiscardBlocked ? '، أو احذفها' : '' }}.</p>
+        <p v-else class="sync-blocked-help">رفضها الخادم ولم تُحذف — بحاجة لمراجعة المالك.</p>
 
         <ul class="sync-blocked-list">
           <li v-for="e in deadLetter" :key="e.id" class="sync-blocked-item">
@@ -144,8 +157,12 @@ async function onDiscard(id: string) {
               <span class="sync-blocked-op">{{ opLabel(e) }}</span>
               <span class="sync-blocked-reason">{{ e.error_message }}</span>
               <span v-if="itemMessage[e.id]" class="sync-blocked-feedback">{{ itemMessage[e.id] }}</span>
+              <span v-if="confirmId === e.id" class="sync-blocked-confirm">
+                سيتم حذف هذه المعاملة نهائياً ولن تصل إلى الخادم:
+                {{ opLabel(e) }} · {{ formatFailedAt(e.failed_at) }} · السبب: {{ e.error_message }}
+              </span>
             </div>
-            <div class="sync-blocked-buttons">
+            <div v-if="canRetryBlocked" class="sync-blocked-buttons">
               <button
                 type="button"
                 class="sync-mini-btn sync-mini-btn--retry"
@@ -153,6 +170,7 @@ async function onDiscard(id: string) {
                 @click="onRetry(e.id)"
               >إعادة المحاولة</button>
               <button
+                v-if="canDiscardBlocked"
                 type="button"
                 class="sync-mini-btn sync-mini-btn--discard"
                 :disabled="busyId === e.id"
@@ -384,6 +402,14 @@ async function onDiscard(id: string) {
   font-size: 11px;
   font-weight: 700;
   color: #FBBF24;
+}
+
+.sync-blocked-confirm {
+  font-size: 11px;
+  line-height: 1.4;
+  font-weight: 700;
+  color: #FCA5A5;
+  white-space: normal;
 }
 
 .sync-blocked-buttons {
