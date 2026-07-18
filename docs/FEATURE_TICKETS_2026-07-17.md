@@ -16,6 +16,16 @@
 
 **The 7 tickets with integration tensions:** WAFI-100 (discounts), WAFI-101 (quick-add/open-item), WAFI-102 (park/resume), WAFI-106 (supplier ledger), WAFI-110 (two-tier pricing), WAFI-113 (spot-check), WAFI-117 (practice mode). Each carries a red **INTEGRATION WARNING** block. Any PR for those tickets must include a short "invariants impact" note in the PR description.
 
+## 📋 FOUNDER DECISIONS LOG (2026-07-18)
+
+| # | Decision | Status |
+|---|---|---|
+| 1 | Cash recorded with **no open shift** (supplier payments WAFI-106, expenses/collections WAFI-120) | ✅ **DECIDED 2026-07-18 — resolved by NEW WAFI-136** (decouple owner auth from shift state + drawer-math bridge). WAFI-106/120's no-shift branches implement WAFI-136's bridge spec; WAFI-136 must land first or together. |
+| 2 | Discount × tier stacking | ✅ DECIDED — tier first, discount on tier price, caps vs tier price, below-cost hard guard (spec in WAFI-100/110) |
+| 3 | Concurrent stock-take sessions | ✅ DECIDED — block on scope overlap, allow disjoint scopes (spec in WAFI-121) |
+| 4 | `/onboarding` orphan | ✅ DECIDED — wire as skippable first-run modal, 1-day timebox else delete (spec in WAFI-132) |
+| 5 | Practice mode access | ✅ DECIDED — owner/manager toggle; cashier only via guided onboarding (spec in WAFI-117) |
+
 **The 11 clean tickets:** WAFI-103, 104, 105, 107, 108, 109, 111, 112, 114, 115, 116 — no invariant impact beyond what's stated inline.
 
 ---
@@ -44,6 +54,11 @@ Syrian retail runs on haggling. Without in-system discounts, haggled sales are r
 - **Returns:** returning a discounted line must refund the **net** price paid, not list price. `useReturnSheet` refund math must read the line's net amount.
 - **Credit sales:** a discounted credit sale reduces the customer balance by the **net** total.
 - **Rate lock:** fixed-amount discounts entered in SYP must convert using the sale's **locked** rate, not the current rate.
+- **Order of operations (DECIDED 2026-07-18, shared with WAFI-110):** `Final Line Price = Tier Price − (Tier Price × Discount %)`. When no tier applies, Tier Price = retail price. All discount caps are evaluated against the **tier price actually in effect**, never the retail price.
+- **Below-cost HARD GUARD (overrides all caps):** if `(price after discount) < unit cost`, the sale requires **Owner PIN** regardless of the operator's discount cap — a cashier "within their 5% limit" must still never sell below cost unauthorized. The guard uses the line's cost at sale time (the same value snapshotted into `unit_cost_usd`). Audit entry records `pin_approval: true` and the below-cost flag.
+- **Cart display transparency:** the line must show the math so the cashier isn't confused: tier price (retail struck/hidden), discount amount, final price — e.g. `جملة: $8.00 · خصم 5%: −$0.40 · النهائي: $7.60`.
+- **Receipt clarity:** a wholesale customer's receipt shows the tier price as the unit price (optionally labeled "سعر جملة") — **never the retail price** — then discount, then line total. No "why is there a higher price on my receipt" friction.
+- **Audit granularity per discounted line/sale:** `operator_id`, `tier_applied`, `base_price_used`, `discount_type`, `discount_value`, `final_price`, `pin_approval`, `below_cost` — specific enough for WAFI-107 anomaly flags to consume without re-deriving.
 
 ### Acceptance Criteria
 - [ ] Cashier can apply a % or fixed discount per line and per sale; both visible on receipt and confirmation screen.
@@ -342,7 +357,7 @@ Many retail shops sell semi-wholesale to repeat business buyers from memory — 
 
 ### 🔴 INTEGRATION WARNING
 - **Margin math:** profit/margin calcs read one price — line items already store the actual sold price, so reporting is safe, but any report computing "expected margin" from `products.price` must use the tier-aware resolver.
-- **Discount stacking (with WAFI-100):** define ONE rule and enforce it: tier price applies first, discounts apply on top, caps evaluated against the tier price. Document in invariants.
+- **Discount stacking (DECIDED 2026-07-18, spec shared with WAFI-100):** tier price applies first; discounts apply on the tier price; caps evaluated against the tier price. Formula, below-cost hard guard (Owner PIN override), cart display, receipt rules, and audit fields are specified in WAFI-100's INTEGRATION WARNING — implement from that single spec, do not re-derive here. Margin-erosion note: thin wholesale margins mean even small stacked discounts can cross below cost — the hard guard is the safety net, not the caps.
 - **Rate lock:** tier resolution happens in USD before SYP conversion — no interaction with the locked rate, but verify re-resolution on customer attach uses the sale's locked rate for display.
 
 ### Acceptance Criteria
@@ -533,9 +548,11 @@ A toggleable practice state with clearly watermarked UI ("وضع التدريب"
 The scariest moment for a new user is "what if I ruin my numbers." Practice mode deletes that fear (serves the 30-min self-serve onboarding goal), and solves the demo-data problem for the Syria trip.
 
 ### How it should act
-- Entered from Settings (owner) or first-run onboarding; exiting returns to the exact prior real state.
+- **Role gating (DECIDED 2026-07-18):** owner and manager can toggle practice mode in Settings anytime; a **cashier has NO self-serve toggle** — they enter practice only through the explicit guided first-days onboarding flow.
+- Exiting returns to the exact prior real state.
 - Practice data lives in a **separate local database instance** — not a flag on rows.
-- Persistent, unmissable visual treatment: colored banner on every screen + watermark on the (simulated) receipt output.
+- **Persistence across kill/restart:** the `is_practice_mode` flag is persisted locally; if the app crashes or is killed by the OS, it MUST boot back into the same environment (practice or real) without user intervention — booting into the real DB with practice UI state (or vice versa) is a catastrophic trust failure. Test crash-restart in BOTH directions.
+- **Visual safeguard:** a highly visible, un-dismissible bright banner — "⚠️ وضع التدريب: البيانات وهمية ولا تُحفظ" — pinned to the top of EVERY screen, both themes, including the simulated receipt output.
 
 ### 🔴 INTEGRATION WARNING — the highest-risk ticket of the 18
 - **Sync isolation:** practice writes must NEVER enter the PowerSync upload queue. A leaked practice sale into a real shop's books is a catastrophic trust failure. Implementation MUST be a second local DB (or fully detached schema instance) with sync disconnected — **never** an `is_practice` column on real tables.
@@ -606,7 +623,7 @@ Each item below is a test case the implementing dev must handle and the reviewer
 - Role caps changed while a sale is open: cap evaluated at apply-time; already-applied discounts stand.
 
 ## WAFI-101 Quick-Add / Open Item
-- Same unknown barcode quick-added on two offline devices → two products, same barcode: after sync, barcode lookup must deterministically pick one (oldest) and flag the duplicate in "needs review".
+- Same unknown barcode quick-added on two offline devices → two products, same barcode: after sync, barcode lookup deterministically resolves to the **first-created** product. Resolution rule: all historical sales stay attached to their original product IDs (line items are immutable records); the duplicate is marked merged/inactive with a pointer to the primary, its barcode reassigned to the primary, and its stock offered for merge into the primary in the "needs review" flow — never silently summed.
 - Quick-add with barcode that matches an *archived* product: offer to reactivate instead of creating a duplicate.
 - Open item with price 0: blocked (free giveaways go through WAFI-100's 100% discount path so they're audited).
 - Quick-add sheet dismissed mid-sale: cart untouched, scan buffer cleared (no ghost input from the wedge scanner).
@@ -643,7 +660,7 @@ Each item below is a test case the implementing dev must handle and the reviewer
 - Overpayment (payment > balance): allowed (advance payment), balance goes negative, displayed as "رصيد لك عند المورد" — but require a confirm.
 - Return-to-supplier: OUT OF SCOPE for this ticket — document; balance correction via a manual adjustment entry with note (audit-logged) is the interim path.
 - Receiving deleted/edited after payments recorded against the supplier: balance is derived, so it self-corrects — but add a floor test: payments exceeding remaining credit receivings shows the negative-balance state, never an error.
-- Cash payment recorded with no open shift (owner pays supplier after hours): allowed but flagged unattributed — or blocked with "افتح وردية" — **decide with product owner; default recommendation: allowed, attributed to no shift, listed separately in Z-report period totals** (do NOT silently attach to the next shift).
+- Cash payment recorded with no open shift (owner pays supplier after hours): ✅ **RESOLVED by WAFI-136** — implement per WAFI-136's spec: `shift_id = null`, staff+device stamped, drawer-vs-pocket source captured, drawer-sourced amounts bridge into the next shift's expected opening, segregated "خارج الورديات" reporting. If WAFI-136 hasn't landed yet, ship this ticket with the action disabled outside an open shift and enable it when 136 merges.
 - Same-supplier payment entered on two offline devices: both stand (payments are facts, not counters); flag in owner review if within same hour + same amount (likely double entry).
 
 ## WAFI-107 Anomaly Flags
@@ -665,7 +682,7 @@ Each item below is a test case the implementing dev must handle and the reviewer
 - Supplier with no phone: group renders with "أضف رقم المورد" action instead of send.
 
 ## WAFI-110 Two-Tier Pricing
-- Wholesale price set below cost: warn at save (allowed — loss leaders exist — but audit-logged).
+- Wholesale price set below cost: warn at save (allowed — loss leaders exist — but audit-logged **with the approving staff identity, timestamp, cost at that moment, and the price set**). This is a theft vector — a below-cost "wholesale" price sold to a fake wholesale customer while pocketing the real cash — so the audit entry must be specific enough for WAFI-107's anomaly flags to consume later (below-cost sales per operator).
 - Wholesale price left empty for some products: tiered customer gets retail price for those lines, badge absent — no error.
 - Customer tier changed while they're attached to a parked cart: resume re-resolves (ties into WAFI-102 revalidation).
 - Tiered customer on a credit sale then tier removed: historical sales keep their sold prices (line items are the record) — verify no report recomputes from product price.
@@ -805,7 +822,7 @@ The Z-report's variance — the product's core anti-theft number — is computed
 - Migration: nullable columns (historical rows stay null); PowerSync schema + sync rules updated.
 - Write paths: expense form and `RecordPaymentSheet` stamp current shift/device when a shift is open.
 - Z-report: rows with `shift_id` attribute directly; legacy null rows fall back to the existing time-window logic (clearly scoped to pre-migration data).
-- Cash expense/payment recorded with **no open shift**: allowed, `shift_id` null, shown in a separate "خارج الورديات" line in period reports — never silently attached to a shift (same decision pattern as WAFI-106).
+- Cash expense/payment recorded with **no open shift**: ✅ **RESOLVED by WAFI-136** — when a shift is open, stamp `shift_id`+`device_id` (this ticket's core fix, proceed independently); the no-shift path follows WAFI-136's spec (null shift_id + drawer/pocket source + bridge + segregated reporting). Sequence freely: this ticket does not need to wait for 136.
 
 ### Acceptance Criteria
 - [ ] Two overlapping shifts (simulated two devices): each Z-report counts only its own cash expenses/collections; totals across both equal the true sum (no double count, no loss).
@@ -841,7 +858,7 @@ Every sale made mid-count is currently erased from stock at commit — corruptin
 - [ ] Test: snapshot 10 → sell 2 (live 8) → count 9 → commit → final stock **7** (live 8 + delta −1); the sale is preserved.
 - [ ] Test: return-restock during count handled by the same delta math (opposite sign).
 - [ ] Double `confirmSession` call: second is a no-op with a clear message.
-- [ ] Two overlapping `in_progress` sessions on the same product prevented (or the documented multi-session decision implemented).
+- [ ] **Concurrency guard (DECIDED 2026-07-18):** starting a session checks all `in_progress` sessions; if scopes overlap (same category, or either side is "all products"), start is blocked with: "يوجد جرد نشط لهذه الأصناف حالياً. يرجى إكماله أو إلغاؤه أولاً." Non-overlapping scopes (category A vs category B) MAY run concurrently. Overlap is evaluated at product level via the scope definition (ties into WAFI-134's category_id scoping).
 - [ ] Zero-variance-with-movement lines: a product counted equal to *snapshot* but sold since (counted 10, snapshot 10, live 8) must still commit delta 0 — i.e., live stays 8, sale preserved; add this exact fixture.
 - [ ] Historical committed sessions untouched.
 **Edge cases:** product archived mid-session (delta still commits; product stays archived); two review screens open on two devices (status guard makes second commit a no-op after sync); offline device committing after another device already committed the same session (status conflict surfaces in review, not silent double-apply).
@@ -1107,7 +1124,7 @@ Flag registry file with pack mapping committed; one existing feature (e.g., `/re
 **Priority:** Nice-to-have (hygiene, do alongside other work) · **Effort:** ~1–2 days · **Improves:** codebase honesty
 
 ### Description
-Three items from the audit: (1) wire the onboarding checklist (`/onboarding`) into nav/first-run or delete it; (2) remove the deprecated free-text `products.category` field from forms and (after backfill verification) schema, now that categories tables exist; (3) delete or ticket-reference any other unreachable scaffolding found (imports folder is covered by WAFI-123 — do not delete it).
+Three items from the audit: (1) **onboarding checklist — DECIDED 2026-07-18:** wire `/onboarding` as a full-screen modal triggered only on the very first login of a newly provisioned shop (`shop.is_new && !checklist_completed`), with a prominent "تخطي والبدء لاحقاً" skip button — never a forced gate (the real onboarding hero is Excel import WAFI-123; this is a gentle guide for small catalogs). **Timebox: if clean wiring exceeds 1 day of engineering, delete the page instead and put the effort into WAFI-123.** (2) remove the deprecated free-text `products.category` field from forms and (after backfill verification) schema, now that categories tables exist; (3) delete or ticket-reference any other unreachable scaffolding found (imports folder is covered by WAFI-123 — do not delete it).
 
 ### Acceptance Criteria
 - [ ] `/onboarding` either reachable from first-run + settings, or removed (decision recorded).
@@ -1193,6 +1210,49 @@ Role-gating tests at the composable level; audit event added to the event regist
 
 ---
 
+## WAFI-136 — Decouple Owner Authentication from Shift State (Back Office Without Open Shift)
+
+**Priority:** CRITICAL (blocks real-world owner workflows; causes unrecorded cash movements) · **Effort:** ~1 week · **Depends on:** WAFI-119 (distinct user identity) · **Resolves:** Decisions Log #1 (unblocks the no-shift branches of WAFI-106 and WAFI-120)
+
+### Description
+Today the app gates everything behind an open shift (App-level LockScreen until a shift opens). Refactor entry and routing: logging in grants the owner/manager access to the Home Dashboard and Back Office regardless of shift state; only the POS (ring a sale) is strictly gated behind an open shift. Outside-shift cash movements become first-class, with drawer math bridged to the next shift.
+
+### Why we need it
+**The 9 PM supplier problem:** shift closed, cashier home, the wholesaler knocks for his $200. Today the owner must open a fake shift (corrupting tomorrow's opening cash) or not record the payment (corrupting the books). With this ticket: log in → record the payment from the dashboard → done. Books true, no fake shift.
+
+### How it should act
+- **Owner/Manager login:** PIN → Home Dashboard. If shift closed: prominent card "الوردية مغلقة — افتح الوردية لبدء البيع" with the open-shift CTA. POS tab disabled/locked; Back Office tabs (Reports, Expenses, Suppliers, Customers, Settings) fully active per existing role permissions.
+- **Cashier login with closed shift:** blocked with "الوردية مغلقة — يرجى من المدير فتح الوردية". ⚠️ **Deliberate behavior change:** today the LockScreen lets any staff open a shift by entering opening cash — this ticket revokes shift-opening from cashiers. Confirm this is intended for existing pilot use (recommended: make "can open shift" part of the permissions framework rather than hardcoded to role, per the flexible-permissions week-1 lock).
+- **Outside-shift movements:** expenses/supplier payments recorded with `shift_id = null`, always capturing `staff_id` + `device_id` (unattributed cash movement = security risk), segregated in reports under "حركات خارج الورديات".
+
+### 🔴 INTEGRATION WARNING
+- **Drawer math bridge:** `Next Expected Open = Last Z-Report Closing Count + Σ(outside-shift drawer pay-ins) − Σ(outside-shift drawer pay-outs)`, per currency, per device. This EXTENDS WAFI-129 (opening defaults from last close) — implement as one formula, not two competing prefills.
+- **Drawer vs pocket:** the bridge only applies to movements that actually came from the drawer. The outside-shift expense/payment form MUST ask the source: "من الدرج" (drawer → enters bridge) vs "من الجيب" (owner's own cash → recorded as expense/payment but NEVER bridges drawer math). Skipping this question silently corrupts the next shift's expected opening.
+- **POS hard guard:** `useSale`/the sale write path must programmatically fail when `isShiftOpen == false` — at the data layer, not just UI hiding. Route guard + composable guard + write-path assertion.
+- **Z-report integrity:** outside-shift rows never roll into any shift's variance — they appear only in the segregated section and in the next shift's expected-opening bridge.
+
+### Acceptance Criteria
+- [ ] Owner login, shift closed → Dashboard with open-shift CTA; Back Office reachable; POS locked.
+- [ ] Owner records a cash expense and a supplier payment with no shift open; rows saved with `shift_id = null`, `staff_id` + `device_id` stamped, drawer/pocket source captured.
+- [ ] POS write path hard-fails without an open shift (unit test at the composable/write layer, not just routing).
+- [ ] Cashier login with closed shift → blocked with the ask-manager message; shift-opening permission model decided and enforced.
+- [ ] Next shift on that device pre-fills expected opening cash = last close + drawer-sourced outside-shift net, per currency (WAFI-129 integration test).
+- [ ] Z-report and period reports show "حركات خارج الورديات" as a distinct section; no shift's variance includes them.
+- [ ] Fully offline; outside-shift rows sync like any write.
+
+### Edge Cases
+- App killed mid-expense: draft saved locally, restored on next login (same pattern as cart drafts).
+- Owner opens a shift, closes it, then taps POS: hard guard blocks with the open-shift prompt.
+- Sync lag on shift state: device A closes the shift while offline device B still thinks it's open and rings a sale — B's sale keeps the old `shift_id`, server accepts it, B's Z-report shows variance because that cash wasn't counted. **Accepted offline-first trade-off — document it**, and surface it in the shift detail ("مبيعات وصلت بعد الإغلاق").
+- Cashier session persisting past login (stale session): role gating (`can_view_reports` etc.) blocks Back Office regardless of shift state — test with a persisted cashier session.
+- Multiple outside-shift movements (mix of pay-ins and pay-outs, both currencies): bridge sums correctly — fixture test.
+- **First-ever shift on a new device (no closing baseline): outside-shift cash movements are BLOCKED until at least one shift has been opened and closed on that device** ("افتح أول وردية لتحديد رصيد الدرج") — establishing the float baseline first. (Adopted recommendation; the negative-opening alternative rejected.)
+
+### Definition of Done
+Routing/auth guards refactored; POS hard-guard unit test; bridge math tests per currency; QA the exact 9 PM supplier flow offline end-to-end (record → close app → reopen → open next shift → verify expected opening); PR includes invariants-impact note on drawer math; WAFI-106/120 no-shift branches re-pointed at this spec.
+
+---
+
 ## VERIFICATION ADDENDUM — Code-Check Results (2026-07-17)
 
 Every ticket's premises were verified against source by three independent code-reading passes. Corrections are already folded into the ticket texts above (marked **CODE-VERIFIED**). Summary for reviewers:
@@ -1231,7 +1291,7 @@ Every ticket's premises were verified against source by three independent code-r
 ## Combined Priority View (Parts A + B)
 
 **Do first — entry tickets & data integrity (Part B):**
-1. WAFI-118 printer · 2. WAFI-121 stock-take commit bug (CONFIRMED — small, do immediately) · 3. WAFI-134 stock-take scoping defect · 4. WAFI-119 auth verification · 5. WAFI-120 drawer unification · 6. WAFI-135 dead-letter gating (small) · 7. WAFI-123 Excel import · 8. WAFI-130 device management UI · 9. WAFI-131 feature flags
+1. WAFI-118 printer · 2. **WAFI-135 dead-letter gating** (1–2 days — an active, exploitable data-loss hole in the live system; plug it before anything else ships) · 3. **Stock-Take Rescue epic = WAFI-121 + WAFI-134 together** (one dev, one branch — the delta-commit fix and the scoping fix touch the same feature and both are confirmed broken; WAFI-113 is HARD-BLOCKED until this epic is merged and verified) · 4. WAFI-119 auth verification · 5. WAFI-120 drawer unification · 6. **WAFI-136 shift-state decoupling** (after 119; unblocks the 9 PM owner workflows and the no-shift branches of 106/120) · 7. WAFI-123 Excel import · 8. WAFI-130 device management UI · 9. WAFI-131 feature flags
 
 **Quick wins interleaved (Part A + B, days each):**
 WAFI-104 collections · WAFI-103 denominations · WAFI-108 dead stock · WAFI-101 quick-add · WAFI-124 cash fast path · WAFI-128 rate guided setup · WAFI-129 shift-open defaults · WAFI-126 credit balance at sale

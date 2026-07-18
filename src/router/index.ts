@@ -52,6 +52,7 @@ const router = createRouter({
     { path: '/shifts/history',  component: () => import('@/features/shifts/components/ShiftHistoryScreen.vue') },
     { path: '/shifts/:id',      component: () => import('@/features/shifts/components/ShiftDetailScreen.vue') },
     { path: '/setup-owner',     component: () => import('@/features/shifts/components/OwnerSetupScreen.vue') },
+    { path: '/welcome', component: () => import('@/components/HomePage.vue') },
     { path: '/login',  component: () => import('@/pages/LoginPage.vue') },
     { path: '/signup', component: () => import('@/pages/SignupPage.vue') },
     { path: '/forgot-password', component: () => import('@/pages/ForgotPasswordPage.vue') },
@@ -67,12 +68,12 @@ const router = createRouter({
 // reachable) for anyone lacking reports, so a deep-link to a denied financial
 // route fails closed onto the POS instead of bouncing (WAFI-058).
 router.beforeEach(async (to) => {
-  const PUBLIC_PATHS = ['/login', '/signup', '/forgot-password']
+  const PUBLIC_PATHS = ['/welcome', '/login', '/signup', '/forgot-password']
   const { data } = await supabase.auth.getSession()
   const isAuthenticated = !!data.session
 
   if (!isAuthenticated && !PUBLIC_PATHS.includes(to.path)) {
-    return '/login'
+    return '/welcome'
   }
   if (isAuthenticated && PUBLIC_PATHS.includes(to.path)) {
     return '/'

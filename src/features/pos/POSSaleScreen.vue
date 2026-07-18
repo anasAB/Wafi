@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import { useRouter, onBeforeRouteLeave } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import AppToast from '@/components/ui/AppToast.vue'
 import ProductGrid from './ProductGrid.vue'
-import ProductPickerCategoryChips from './components/ProductPickerCategoryChips.vue'
 import SalePanel from './SalePanel.vue'
 import { useSale, ExchangeRateNotSetError } from './useSale'
 import { useExchangeRate } from '@/features/exchange-rate'
+import { useCategories } from '@/features/categories/composables/useCategories'
 import { useBarcodeScan } from '@/composables/useBarcodeScan'
 import { useSaleDraft } from '@/composables/useSaleDraft'
 import PaymentModal from '@/features/payment/PaymentModal.vue'
@@ -21,6 +21,7 @@ const sale       = useSale(currentRate)
 const { scheduleSave, clearDraft } = useSaleDraft()
 const scanner    = useBarcodeScan()
 const saleStore  = useSaleStore()
+const { categoriesWithSubcategories, load: loadCategories } = useCategories()
 
 // Leaving the POS abandons the cart — confirm first, then clear it so it doesn't
 // silently reappear on return (#4). A completed sale already empties the cart,
@@ -52,6 +53,8 @@ function cancelLeave() {
 const searchQuery   = ref('')
 const selectedCategoryId    = ref<string | null>(null)
 const selectedSubcategoryId = ref<string | null>(null)
+const categoryMenuOpen = ref(false)
+const categoryMenuRef = ref<HTMLElement | null>(null)
 const payOpen       = ref(false)
 const toast         = ref<{ message: string; type: 'error' | 'success' | 'info' } | null>(null)
 
@@ -60,8 +63,19 @@ const cameraError   = ref<'permission-denied' | null>(null)
 const videoRef      = ref<HTMLVideoElement | null>(null)
 let   stopCamera: (() => void) | null = null
 
+const categoryOptions = computed(() => [
+  { value: null as string | null, label: 'كل الفئات' },
+  ...categoriesWithSubcategories.value.map((cat) => ({ value: cat.id, label: cat.name })),
+])
+
+const selectedCategoryLabel = computed(
+  () => categoryOptions.value.find((option) => option.value === selectedCategoryId.value)?.label ?? 'كل الفئات'
+)
+
 onMounted(async () => {
   await loadRate()
+  await loadCategories()
+  document.addEventListener('mousedown', closeCategoryMenuOnOutsideClick)
   scanner.onScan(handleBarcode)
 })
 
@@ -75,6 +89,23 @@ watch(currentRate, () => {
 function onCategorySelect(categoryId: string | null, subcategoryId: string | null) {
   selectedCategoryId.value = categoryId
   selectedSubcategoryId.value = subcategoryId
+}
+
+function toggleCategoryMenu() {
+  categoryMenuOpen.value = !categoryMenuOpen.value
+}
+
+function chooseCategory(categoryId: string | null) {
+  onCategorySelect(categoryId, null)
+  categoryMenuOpen.value = false
+}
+
+function closeCategoryMenuOnOutsideClick(event: MouseEvent) {
+  if (!categoryMenuOpen.value) return
+  const target = event.target as Node | null
+  if (target && categoryMenuRef.value && !categoryMenuRef.value.contains(target)) {
+    categoryMenuOpen.value = false
+  }
 }
 
 async function handleProductTap(productId: string) {
@@ -129,6 +160,7 @@ function closeCamera() {
 }
 
 onUnmounted(() => {
+  document.removeEventListener('mousedown', closeCategoryMenuOnOutsideClick)
   closeCamera()
   scanner.destroy()   // detach the scanner's global keydown listener (WAFI-032)
 })
@@ -189,6 +221,42 @@ function handlePaymentConfirmed(completedSale: CompletedSale) {
             />
           </div>
 
+          <div ref="categoryMenuRef" class="search-filter-wrap">
+            <button
+              type="button"
+              class="search-filter-btn"
+              data-testid="product-category-select"
+              :aria-expanded="categoryMenuOpen"
+              aria-haspopup="listbox"
+              @click="toggleCategoryMenu"
+            >
+              <span class="search-filter-text">{{ selectedCategoryLabel }}</span>
+              <svg
+                class="search-filter-chevron"
+                :class="{ 'search-filter-chevron-open': categoryMenuOpen }"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            <div v-if="categoryMenuOpen" class="search-filter-menu" role="listbox" aria-label="تصفية حسب الفئة">
+              <button
+                v-for="option in categoryOptions"
+                :key="option.label"
+                type="button"
+                class="search-filter-item"
+                :class="{ 'search-filter-item-active': selectedCategoryId === option.value }"
+                @click="chooseCategory(option.value)"
+              >{{ option.label }}</button>
+            </div>
+          </div>
+
           <button
             v-if="scanner.cameraAvailable.value"
             type="button"
@@ -202,8 +270,6 @@ function handlePaymentConfirmed(completedSale: CompletedSale) {
             </svg>
           </button>
         </div>
-
-        <ProductPickerCategoryChips @select="onCategorySelect" />
 
         <div class="products-scroll">
           <ProductGrid

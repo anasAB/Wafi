@@ -14,11 +14,11 @@ describe('router auth guard', () => {
     setActivePinia(createPinia())
   })
 
-  it('redirects an unauthenticated visit to /pos to /login', async () => {
+  it('redirects an unauthenticated visit to /pos to /welcome', async () => {
     const { default: router } = await import('@/router/index')
     await router.push('/pos')
     await router.isReady()
-    expect(router.currentRoute.value.path).toBe('/login')
+    expect(router.currentRoute.value.path).toBe('/welcome')
   })
 
   it('lets an authenticated session reach a normal route', async () => {
@@ -35,5 +35,20 @@ describe('router auth guard', () => {
     await router.push('/login')
     await router.isReady()
     expect(router.currentRoute.value.path).not.toBe('/login')
+  })
+
+  it('lets an unauthenticated visitor reach /welcome directly', async () => {
+    const { default: router } = await import('@/router/index')
+    await router.push('/welcome')
+    await router.isReady()
+    expect(router.currentRoute.value.path).toBe('/welcome')
+  })
+
+  it('redirects an authenticated user away from /welcome', async () => {
+    session.value = { user: { id: 'user-a' } }
+    const { default: router } = await import('@/router/index')
+    await router.push('/welcome')
+    await router.isReady()
+    expect(router.currentRoute.value.path).not.toBe('/welcome')
   })
 })

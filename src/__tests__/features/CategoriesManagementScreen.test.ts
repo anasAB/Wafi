@@ -60,4 +60,34 @@ describe('CategoriesManagementScreen', () => {
 
     expect(wrapper.get('[data-testid="blocked-message"]').text()).toContain('غير مصنف')
   })
+
+  it('opens category product picker and assigns multiple existing products', async () => {
+    vi.mocked(db.getAll).mockImplementation(async (sql: string) => {
+      if (/FROM categories/.test(sql)) return [{ id: 'c1', shop_id: 'shop1', name: 'هواتف', created_at: '2026-07-14T00:00:00Z' }] as any
+      if (/FROM subcategories/.test(sql)) return [] as any
+      if (/FROM products/.test(sql)) {
+        return [
+          { id: 'p1', name_ar: 'سامسونج A', category_id: null },
+          { id: 'p2', name_ar: 'غطاء', category_id: null },
+        ] as any
+      }
+      return []
+    })
+
+    const wrapper = mount(CategoriesManagementScreen)
+    await new Promise((r) => setTimeout(r, 0))
+
+    await wrapper.get('[data-testid="open-product-picker-c1"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    await wrapper.get('[data-testid="product-picker-item-p1"]').setValue(true)
+    await wrapper.get('[data-testid="product-picker-item-p2"]').setValue(true)
+    await wrapper.get('[data-testid="assign-selected-products"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    const updateCalls = vi.mocked(db.execute).mock.calls.filter(([sql]) => /UPDATE products/.test(sql))
+    expect(updateCalls.length).toBe(2)
+    expect(updateCalls[0][1]?.[0]).toBe('c1')
+    expect(updateCalls[1][1]?.[0]).toBe('c1')
+  })
 })
