@@ -141,6 +141,46 @@ const installment_dues = new Table({
   sync_status:     column.text,
 })
 
+const staff_settlements = new Table({
+  shop_id:              column.text,
+  staff_id:            column.text,
+  settlement_number:   column.text,
+  period_month:        column.text,   // YYYY-MM-DD
+  status:              column.text,   // 'draft' | 'finalized' | 'paid'
+  base_salary_usd:     column.real,
+  settlement_currency: column.text,   // 'usd' | 'syp'
+  locked_rate:         column.real,
+  applied_amount_usd:  column.real,
+  final_amount_usd:    column.real,
+  notes:               column.text,
+  staff_name_snapshot: column.text,
+  staff_role_snapshot: column.text,
+  finalized_at:        column.text,
+  paid_at:             column.text,
+  paid_by_staff_id:    column.text,
+  payment_method:      column.text,   // 'cash' | 'bank' | 'other'
+  client_operation_id: column.text,
+  created_at:          column.text,
+  sync_status:         column.text,
+})
+
+const staff_ledger = new Table({
+  shop_id:            column.text,
+  staff_id:           column.text,
+  entry_type:         column.text,   // 'advance' | 'bonus' | 'penalty' | 'carry_forward' | 'write_off' | 'correction'
+  amount_usd:         column.real,
+  currency_entered:   column.text,   // 'usd' | 'syp'
+  locked_rate:        column.real,
+  note:               column.text,
+  source_type:        column.text,   // 'manual' | 'shift' | 'settlement'
+  source_id:          column.text,
+  created_by_staff_id: column.text,
+  client_operation_id: column.text,
+  settlement_id:      column.text,
+  created_at:         column.text,
+  sync_status:        column.text,
+})
+
 const receipt_settings = new Table({
   shop_id:     column.text,
   shop_name:   column.text,
@@ -387,6 +427,8 @@ export const AppSchema = new Schema({
   stock_take_lines,
   installment_plans,
   installment_dues,
+  staff_settlements,
+  staff_ledger,
   categories,
   subcategories,
   shops,
