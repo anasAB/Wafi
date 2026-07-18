@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useCustomers } from '@/features/customers/composables/useCustomers'
+import { fetchAllCustomerBalances } from '@/features/customers/composables/useCustomerBalance'
+import { useDeviceStore } from '@/store/device.store'
+import { useSettingsStore } from '@/features/settings'
 import type { Customer } from '@/features/customers/customer.types'
 
 const emit = defineEmits<{
@@ -9,16 +12,37 @@ const emit = defineEmits<{
 }>()
 
 const { customers, load, search, save } = useCustomers()
+const settings   = useSettingsStore()
 const query      = ref('')
 const showAddNew = ref(false)
 const newName    = ref('')
 const saving     = ref(false)
 const results    = ref<Customer[]>([])
 
+// WAFI-126: balances load once (single bulk query) AFTER the list renders, so
+// search speed is untouched; rows fill in their chips when the map arrives.
+const balances = ref<Map<string, number>>(new Map())
+
 onMounted(async () => {
   await load()
   results.value = customers.value
+  balances.value = await fetchAllCustomerBalances(useDeviceStore().shopId).catch(() => new Map())
 })
+
+function balanceClass(c: Customer): string {
+  const b = balances.value.get(c.id) ?? 0
+  if (b < -0.001) return 'balance-chip balance-chip--credit'
+  if (b > settings.creditWarnThresholdUsd) return 'balance-chip balance-chip--over'
+  if (b > 0.001) return 'balance-chip balance-chip--normal'
+  return 'balance-chip balance-chip--zero'
+}
+
+function balanceLabel(c: Customer): string {
+  const b = balances.value.get(c.id) ?? 0
+  if (b < -0.001) return `له رصيد $${Math.abs(b).toFixed(2)}`
+  if (b > 0.001) return `عليه $${b.toFixed(2)}`
+  return ''
+}
 
 async function handleSearch(q: string) {
   query.value = q
@@ -90,7 +114,10 @@ async function handleQuickAdd() {
             @click="emit('select', c)"
           >
             <span class="result-name">{{ c.name }}</span>
-            <span v-if="c.phone" class="result-phone">{{ c.phone }}</span>
+            <span class="result-meta">
+              <span v-if="balanceLabel(c)" :class="balanceClass(c)" :data-testid="`balance-${c.id}`">{{ balanceLabel(c) }}</span>
+              <span v-if="c.phone" class="result-phone">{{ c.phone }}</span>
+            </span>
           </button>
 
           <div v-if="results.length === 0" class="empty-state">
@@ -285,6 +312,25 @@ async function handleQuickAdd() {
   font-size: 0.75rem;
   color: #637285;
 }
+
+.result-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* WAFI-126: outstanding-balance chip, color-coded by state */
+.balance-chip {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  border-radius: 9999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.balance-chip--normal { color: #FBBF24; background: rgba(120, 80, 8, 0.22); border: 1px solid rgba(251, 191, 36, 0.30); }
+.balance-chip--over   { color: #FCA5A5; background: rgba(127, 29, 29, 0.26); border: 1px solid rgba(239, 68, 68, 0.38); }
+.balance-chip--credit { color: #4ADE80; background: rgba(22, 101, 52, 0.22); border: 1px solid rgba(34, 197, 94, 0.32); }
+.balance-chip--zero   { display: none; }
 
 /* ── Empty state ─────────────────────────────────────────── */
 .empty-state {

@@ -69,4 +69,42 @@ describe('CustomerPickerModal', () => {
     await w.find('[data-testid="backdrop"]').trigger('click')
     expect(w.emitted('cancel')).toBeTruthy()
   })
+
+  // ── WAFI-126: balances at pick time ────────────────────────────────────────
+  function customersThenBalances(balances: Array<{ customer_id: string; balance_usd: number }>) {
+    vi.mocked(db.getAll).mockImplementation(async (sql: string) => {
+      if (/balance_usd/.test(sql)) return balances as any
+      return [
+        { id: 'c1', shop_id: 's1', name: 'أبو خالد', phone: null, mobile: null, address: null, deleted: 0, created_at: '', sync_status: '' },
+      ] as any
+    })
+  }
+
+  it('rows show the outstanding balance, color-coded by threshold (default $100)', async () => {
+    customersThenBalances([{ customer_id: 'c1', balance_usd: 250 }])
+    const w = mountPicker()
+    await new Promise(r => setTimeout(r, 10))
+
+    const chip = w.find('[data-testid="balance-c1"]')
+    expect(chip.exists()).toBe(true)
+    expect(chip.text()).toContain('250')
+    expect(chip.classes()).toContain('balance-chip--over')
+  })
+
+  it('negative balance renders green as store credit ("له رصيد"), never chased', async () => {
+    customersThenBalances([{ customer_id: 'c1', balance_usd: -12.5 }])
+    const w = mountPicker()
+    await new Promise(r => setTimeout(r, 10))
+
+    const chip = w.find('[data-testid="balance-c1"]')
+    expect(chip.text()).toContain('له رصيد')
+    expect(chip.classes()).toContain('balance-chip--credit')
+  })
+
+  it('zero balance shows no chip', async () => {
+    customersThenBalances([{ customer_id: 'c1', balance_usd: 0 }])
+    const w = mountPicker()
+    await new Promise(r => setTimeout(r, 10))
+    expect(w.find('[data-testid="balance-c1"]').exists()).toBe(false)
+  })
 })

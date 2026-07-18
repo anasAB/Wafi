@@ -6,6 +6,9 @@ import InstallmentPlanForm from './components/InstallmentPlanForm.vue'
 import { useInstallmentPlan } from '@/features/installments/composables/useInstallmentPlan'
 import { usePayment } from './usePayment'
 import { useSaleStore } from '@/store/sale.store'
+import { fetchOutstandingBalanceUsd } from '@/features/customers/composables/useCustomerBalance'
+import { useDeviceStore } from '@/store/device.store'
+import { useSettingsStore } from '@/features/settings'
 import type { CompletedSale } from './payment.types'
 import type { Customer } from '@/features/customers/customer.types'
 
@@ -136,19 +139,39 @@ async function handleInstallmentConfirm(terms: {
   emit('confirmed', sale)
 }
 
+// WAFI-126: soft credit warning — the cashier no longer extends credit blind.
+// Fires only for credit/installment tenders (cash sales to indebted customers
+// are fine); warns, never blocks. Balance math reuses the single source of
+// truth in useCustomerBalance (pending-sync rows included — local truth).
+const settings = useSettingsStore()
+const selectedCustomerBalance = ref<number | null>(null)
+
+const creditWarning = computed(() => {
+  if (method.value !== 'credit' && method.value !== 'installment') return null
+  const b = selectedCustomerBalance.value
+  if (b === null || b <= settings.creditWarnThresholdUsd) return null
+  return `تنبيه: رصيد ${selectedCustomer.value?.name ?? 'الزبون'} الحالي $${b.toFixed(2)} — البيع الآجل سيزيده`
+})
+
 function handleCustomerSelected(customer: Customer) {
   selectedCustomer.value = customer
   showPicker.value = false
+  selectedCustomerBalance.value = null
+  void fetchOutstandingBalanceUsd(customer.id, useDeviceStore().shopId)
+    .then((b) => { selectedCustomerBalance.value = b })
+    .catch(() => { /* warning is best-effort — never block the sale on it */ })
 }
 
 function handleBack() {
   back()
   selectedCustomer.value = null
+  selectedCustomerBalance.value = null
 }
 
 function handleCancel() {
   cancel()
   selectedCustomer.value = null
+  selectedCustomerBalance.value = null
   emit('close')
 }
 
@@ -468,6 +491,9 @@ async function confirmAsHigherPrice() {
           @click="showPicker = true"
         >اختر الزبون</button>
 
+        <!-- WAFI-126: soft over-threshold warning — informs, never blocks -->
+        <p v-if="creditWarning" class="credit-warning" data-testid="credit-balance-warning">{{ creditWarning }}</p>
+
         <button
           type="button"
           class="confirm-btn confirm-btn-amber"
@@ -505,6 +531,9 @@ async function confirmAsHigherPrice() {
           class="confirm-btn confirm-btn-amber"
           @click="showPicker = true"
         >اختر الزبون</button>
+
+        <!-- WAFI-126: soft over-threshold warning — informs, never blocks -->
+        <p v-if="creditWarning" class="credit-warning" data-testid="credit-balance-warning">{{ creditWarning }}</p>
 
         <InstallmentPlanForm
           v-if="selectedCustomer"
@@ -1114,6 +1143,19 @@ async function confirmAsHigherPrice() {
   font-size: 13px;
   color: #EF4444;
   margin-top: 8px;
+}
+
+/* WAFI-126: soft credit-balance warning (amber — informative, not an error) */
+.credit-warning {
+  margin: 8px 0 0;
+  border-radius: 10px;
+  border: 1px solid rgba(251, 191, 36, 0.34);
+  background: rgba(120, 80, 8, 0.18);
+  color: #FBBF24;
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 8px 10px;
+  text-align: right;
 }
 
 @media (max-width: 430px) {

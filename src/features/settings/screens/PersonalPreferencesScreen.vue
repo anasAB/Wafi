@@ -149,6 +149,18 @@ const textSizes = computed(() => [
         </div>
       </div>
 
+      <!-- WAFI-126: soft credit warning threshold -->
+      <div class="settings-row settings-row--inner">
+        <p class="row-title row-title--spaced">تنبيه رصيد الآجل عند تجاوز (بالدولار)</p>
+        <input
+          v-model.number="settings.creditWarnThresholdUsd"
+          type="number" min="0" step="1" dir="ltr"
+          class="threshold-input"
+          placeholder="100"
+        />
+        <p class="row-hint">تحذير فقط عند البيع الآجل لزبون رصيده أعلى — لا يمنع البيع</p>
+      </div>
+
       <!-- Language -->
       <div class="settings-row settings-row--inner">
         <p class="row-title row-title--spaced">{{ t('personal.language') }}</p>
@@ -428,6 +440,32 @@ button.settings-row:hover:not(:disabled) {
 
 .row-title--spaced {
   margin-bottom: 0.7rem;
+}
+
+/* WAFI-126: threshold input + hint */
+.threshold-input {
+  width: 100%;
+  height: 42px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 0.75rem;
+  padding: 0 0.875rem;
+  color: #E8EDF5;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  outline: none;
+  box-sizing: border-box;
+}
+.threshold-input:focus {
+  border-color: rgba(26, 86, 219, 0.8);
+  box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.25);
+}
+.row-hint {
+  margin: 0.4rem 0 0;
+  font-size: 0.6875rem;
+  color: #637285;
+  line-height: 1.4;
 }
 
 /* ─── Option buttons ─────────────────────────────────────── */

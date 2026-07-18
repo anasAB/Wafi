@@ -13,6 +13,9 @@ export const useSettingsStore = defineStore('settings', () => {
   const dailyDigestEnabled  = ref(false)
   const dailyDigestPhone    = ref('')
   const dailyDigestHour     = ref(20)
+  // WAFI-126: soft credit warning threshold (USD). Warn — never block — when
+  // attaching a customer whose balance exceeds this to a credit sale.
+  const creditWarnThresholdUsd = ref(100)
 
   return {
     language,
@@ -23,6 +26,7 @@ export const useSettingsStore = defineStore('settings', () => {
     dailyDigestEnabled,
     dailyDigestPhone,
     dailyDigestHour,
+    creditWarnThresholdUsd,
   }
 }, {
   persist: true,
