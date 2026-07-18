@@ -218,6 +218,26 @@ describe('usePayment', () => {
     expect(lineInsertCall?.[1]).toContain(7) // unit_cost_usd = 7
   })
 
+  it('WAFI-101: an open-item line writes sale_line_items but never touches products/stock_adjustments', async () => {
+    const store = useSaleStore()
+    store.clear()
+    store.addLine({
+      productId: 'open-1', nameAr: 'بند حر', quantity: 1, unitPriceUsd: 20,
+      unitCostUsd: 0, lineTotalUsd: 20, availableStock: Infinity, isOpenItem: true,
+    })
+    store.setLockedRate(14500)
+    const tx = setupTx({ cost_price_usd: 0, current_stock: 10 })
+
+    const { selectMethod, confirm } = usePayment()
+    selectMethod('card')
+    await confirm()
+
+    expect(tx.mock.calls.some(c => (c[0] as string).includes('INSERT INTO sale_line_items'))).toBe(true)
+    expect(tx.mock.calls.some(c => (c[0] as string).includes('SELECT cost_price_usd'))).toBe(false)
+    expect(tx.mock.calls.some(c => (c[0] as string).includes('UPDATE products'))).toBe(false)
+    expect(tx.mock.calls.some(c => (c[0] as string).includes('INSERT INTO stock_adjustments'))).toBe(false)
+  })
+
   it('confirm writes all sale writes inside a single transaction', async () => {
     const tx = setupTx({ cost_price_usd: 0, current_stock: 10 })
     const { selectMethod, confirm } = usePayment()

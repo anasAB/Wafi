@@ -17,6 +17,9 @@ export interface SaleLine {
   /** Catalog/list price snapshot, so the cart can flag when an item is sold
    *  above or below its listed price. Optional for back-compat. */
   listPriceUsd?: number
+  /** WAFI-101 — sold via the "بند حر" open-item flow (a hidden synthetic
+   *  product row, not a catalog item). Excluded from stock/stock-take logic. */
+  isOpenItem?: boolean
 }
 
 export const useSaleStore = defineStore('sale', () => {

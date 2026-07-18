@@ -37,6 +37,8 @@ export function useProducts() {
       shopId: string; nameAr: string; salePriceUsd: number; costPriceUsd: number
       currentStock: number; lowStockThreshold: number; isActive: boolean
       categoryId?: string; subcategoryId?: string
+      /** WAFI-101 — 'quick_add' when created inline from an unknown barcode scan. */
+      createdVia?: string
     }
   ) {
     // Stock floors at zero — never persist a negative on-hand count.
@@ -88,13 +90,13 @@ export function useProducts() {
         `INSERT INTO products
          (id, shop_id, name_ar, name_en, barcode, category, category_id, subcategory_id,
           price_usd, cost_price_usd, current_stock, low_stock_threshold, photo_url,
-          is_active, deleted, sync_status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'pending', ?, ?)`,
+          is_active, deleted, sync_status, created_at, updated_at, created_via)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'pending', ?, ?, ?)`,
         [id, data.shopId, data.nameAr, data.nameEn ?? null, normalizedBarcode || null,
          null, data.categoryId ?? null, effectiveSubcategoryId ?? null,
          data.salePriceUsd, data.costPriceUsd,
          currentStock, data.lowStockThreshold, data.photoUrl ?? null,
-         data.isActive ? 1 : 0, now, now]
+         data.isActive ? 1 : 0, now, now, data.createdVia ?? null]
       )
       await load()
       await logProductCreated(id, data.nameAr)

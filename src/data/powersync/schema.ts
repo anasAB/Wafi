@@ -18,6 +18,7 @@ const products = new Table({
   sync_status:         column.text,
   created_at:          column.text,
   updated_at:          column.text,
+  created_via:         column.text,   // WAFI-101: 'quick_add' | 'open_item' | null
 })
 
 const stock_adjustments = new Table({

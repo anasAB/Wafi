@@ -16,6 +16,7 @@ import { useCategoryBreakdown, type CategoryBreakdownRow } from '../composables/
 import { evaluateReportAnomalies } from '../composables/useReportAnomalies'
 import { useDeadStockReport } from '../composables/useDeadStockReport'
 import type { DeadStockThresholdDays } from '../composables/useDeadStockReport'
+import { useUncostedSalesNotice } from '../composables/useUncostedSalesNotice'
 import ProfitCumulativeChart from './ProfitCumulativeChart.vue'
 import ReportDrilldownSheet from './ReportDrilldownSheet.vue'
 import ExpenseDonutChart from './ExpenseDonutChart.vue'
@@ -29,6 +30,7 @@ const drilldown = useBucketBreakdown()
 const expenseBreakdown = useExpenseBreakdown()
 const categoryBreakdown = useCategoryBreakdown()
 const deadStock = useDeadStockReport()
+const uncostedSales = useUncostedSalesNotice()
 
 const period      = ref<ReportPeriod>('month')
 const customStart = ref('')
@@ -124,6 +126,7 @@ async function reload() {
     expenseBreakdown.load(start, end),
     expenseBreakdown.loadEntries(start, end, selectedExpenseCategory.value ?? undefined),
     categoryBreakdown.load(start, end),
+    uncostedSales.load(start, end),
     previousRange
       ? previousMetrics.loadRange(previousRange.start, previousRange.end)
       : Promise.resolve(),
@@ -331,6 +334,9 @@ onMounted(() => { reload(); deadStock.load() })
         </div>
 
         <p v-if="metrics.profitIsEstimated.value" class="caveat">{{ t('reports.estimated') }}</p>
+        <p v-if="uncostedSales.count.value > 0" class="caveat" data-test="uncosted-sales-notice">
+          الربح لا يشمل {{ uncostedSales.count.value }} {{ uncostedSales.count.value === 1 ? 'بيعة' : 'مبيعات' }} بدون تكلفة
+        </p>
 
         <div v-if="showTrendChart" class="card chart-card">
           <ProfitCumulativeChart

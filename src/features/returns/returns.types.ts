@@ -9,6 +9,8 @@ export interface ReturnLine {
   selected:           boolean
   qtyToReturn:        number   // 1 .. (originalQty - alreadyReturnedQty)
   restock:            boolean  // add back to stock on confirm
+  /** WAFI-101 — open-item line (no catalog product): restock is never offered. */
+  isOpenItem?:        boolean
 }
 
 export interface ReturnReason {
