@@ -354,6 +354,7 @@ const shops = new Table({
   business_type: column.text,
   country:       column.text,
   created_at:    column.text,
+  features:      column.text,   // WAFI-131: per-shop pack flags (JSON, server-set)
 })
 
 export const AppSchema = new Schema({

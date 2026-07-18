@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { ref, computed }   from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, RouterLink } from 'vue-router'
 import { useI18n }         from 'vue-i18n'
 import { useSessionStore } from '@/store/session.store'
+import { useFlagsStore } from '@/features/flags/flags.store'
+import type { FlagKey } from '@/features/flags/flagRegistry'
 import ZReportScreen       from '@/features/shifts/components/ZReportScreen.vue'
 import OperatorSwitchAction from '@/features/staff/components/OperatorSwitchAction.vue'
 import CashMovementEntry    from '@/features/shifts/components/CashMovementEntry.vue'
@@ -17,6 +19,8 @@ interface NavItem {
   labelKey:   string
   href:       string | null
   permission: string | null
+  /** WAFI-131: pack flag that must be enabled for this entry to show. */
+  feature?:   FlagKey
 }
 
 // Labels are i18n keys (resolved in the template) so the nav re-renders on a
@@ -35,15 +39,22 @@ const allNavItems: NavItem[] = [
   { key: 'suppliers',   labelKey: 'nav.suppliers',  href: '/suppliers',      permission: 'can_manage_products' },
   { key: 'receivings',  labelKey: 'nav.receivings', href: '/receivings',     permission: 'can_manage_products' },
   { key: 'shifts',      labelKey: 'nav.shifts',     href: '/shifts/history', permission: null },
-  { key: 'reports',     labelKey: 'nav.reports',    href: '/reports',        permission: 'can_view_reports' },
+  // WAFI-131: `feature` keys hide nav entries for packs the shop hasn't
+  // subscribed to (roles hide by permission; packs hide by flag).
+  { key: 'reports',     labelKey: 'nav.reports',    href: '/reports',        permission: 'can_view_reports', feature: 'reporting_pack' as const },
 ]
+
+const flags = useFlagsStore()
+onMounted(() => { void flags.ensureLoaded() })
 
 const navItems = computed(() => {
   const perms   = session.permissions
   const isOwner = session.activeStaff?.role === 'owner'
-  if (!perms || isOwner) return allNavItems.filter(i => i.href !== null)
+  const byFeature = (i: (typeof allNavItems)[number]) =>
+    !('feature' in i && i.feature) || flags.isEnabled(i.feature as FlagKey)
+  if (!perms || isOwner) return allNavItems.filter(i => i.href !== null && byFeature(i))
   return allNavItems.filter(i =>
-    i.href !== null && (!i.permission || (perms as any)[i.permission])
+    i.href !== null && (!i.permission || (perms as any)[i.permission]) && byFeature(i)
   )
 })
 

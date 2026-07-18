@@ -2,6 +2,8 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useSessionStore } from '@/store/session.store'
 import { useShiftStore } from '@/features/shifts/shift.store'
 import { isRouteAllowed, resolveLanding } from './permissions'
+import { useFlagsStore } from '@/features/flags/flags.store'
+import type { FlagKey } from '@/features/flags/flagRegistry'
 import type { StaffPermissions } from '@/features/staff/staff.types'
 import { supabase } from '@/data/supabase/client'
 
@@ -49,7 +51,9 @@ const router = createRouter({
         { path: 'exports',   component: () => import('@/features/exports/ExportPage.vue') },
       ],
     },
-    { path: '/reports',         component: () => import('@/features/dashboard/components/ReportsPage.vue'),      meta: { permission: 'can_view_reports' } },
+    { path: '/reports',         component: () => import('@/features/dashboard/components/ReportsPage.vue'),      meta: { permission: 'can_view_reports', feature: 'reporting_pack' } },
+    // WAFI-131: upgrade teaser for pack-gated features
+    { path: '/feature-locked',  component: () => import('@/features/flags/FeatureLockedScreen.vue') },
     { path: '/onboarding',      component: () => import('@/pages/OnboardingPage.vue') },
     { path: '/shifts/history',  component: () => import('@/features/shifts/components/ShiftHistoryScreen.vue') },
     { path: '/shifts/:id',      component: () => import('@/features/shifts/components/ShiftDetailScreen.vue') },
@@ -100,6 +104,19 @@ router.beforeEach(async (to) => {
   // so the global LockScreen open-shift flow can take over without URL loops.
   if (requiresOpenShift && !useShiftStore().isShiftOpen) {
     return to.path === SHIFT_OPEN_REDIRECT ? true : SHIFT_OPEN_REDIRECT
+  }
+
+  // WAFI-131: per-shop pack gating. A route tagged meta.feature is reachable
+  // only when the shop's synced flag enables it; otherwise the clean upgrade
+  // teaser — never a broken screen. Gating applies at navigation, so a flag
+  // turned off mid-operation lets the current screen finish (ticket rule).
+  const feature = to.meta.feature as FlagKey | undefined
+  if (feature) {
+    const flags = useFlagsStore()
+    await flags.ensureLoaded()
+    if (!flags.isEnabled(feature)) {
+      return { path: '/feature-locked', query: { f: feature } }
+    }
   }
 
   return true
