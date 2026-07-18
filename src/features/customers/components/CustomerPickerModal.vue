@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useCustomers } from '@/features/customers/composables/useCustomers'
-import { fetchAllCustomerBalances } from '@/features/customers/composables/useCustomerBalance'
-import { useDeviceStore } from '@/store/device.store'
 import { useSettingsStore } from '@/features/settings'
 import type { Customer } from '@/features/customers/customer.types'
 
@@ -19,18 +17,16 @@ const newName    = ref('')
 const saving     = ref(false)
 const results    = ref<Customer[]>([])
 
-// WAFI-126: balances load once (single bulk query) AFTER the list renders, so
-// search speed is untouched; rows fill in their chips when the map arrives.
-const balances = ref<Map<string, number>>(new Map())
-
+// WAFI-126: each customer row already carries its outstanding balance —
+// useCustomers.load() computes balance_usd in the list query (WAFI-104), so
+// the picker reuses it directly; no second query, search speed untouched.
 onMounted(async () => {
   await load()
   results.value = customers.value
-  balances.value = await fetchAllCustomerBalances(useDeviceStore().shopId).catch(() => new Map())
 })
 
 function balanceClass(c: Customer): string {
-  const b = balances.value.get(c.id) ?? 0
+  const b = c.balanceUsd ?? 0
   if (b < -0.001) return 'balance-chip balance-chip--credit'
   if (b > settings.creditWarnThresholdUsd) return 'balance-chip balance-chip--over'
   if (b > 0.001) return 'balance-chip balance-chip--normal'
@@ -38,7 +34,7 @@ function balanceClass(c: Customer): string {
 }
 
 function balanceLabel(c: Customer): string {
-  const b = balances.value.get(c.id) ?? 0
+  const b = c.balanceUsd ?? 0
   if (b < -0.001) return `له رصيد $${Math.abs(b).toFixed(2)}`
   if (b > 0.001) return `عليه $${b.toFixed(2)}`
   return ''

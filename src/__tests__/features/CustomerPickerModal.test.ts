@@ -71,17 +71,15 @@ describe('CustomerPickerModal', () => {
   })
 
   // ── WAFI-126: balances at pick time ────────────────────────────────────────
-  function customersThenBalances(balances: Array<{ customer_id: string; balance_usd: number }>) {
-    vi.mocked(db.getAll).mockImplementation(async (sql: string) => {
-      if (/balance_usd/.test(sql)) return balances as any
-      return [
-        { id: 'c1', shop_id: 's1', name: 'أبو خالد', phone: null, mobile: null, address: null, deleted: 0, created_at: '', sync_status: '' },
-      ] as any
-    })
+  // useCustomers.load() computes balance_usd inline (WAFI-104) — rows carry it.
+  function customersWithBalance(balanceUsd: number) {
+    vi.mocked(db.getAll).mockResolvedValue([
+      { id: 'c1', shop_id: 's1', name: 'أبو خالد', phone: null, mobile: null, address: null, deleted: 0, created_at: '', sync_status: '', balance_usd: balanceUsd, pending_sync_count: 0 },
+    ] as any)
   }
 
   it('rows show the outstanding balance, color-coded by threshold (default $100)', async () => {
-    customersThenBalances([{ customer_id: 'c1', balance_usd: 250 }])
+    customersWithBalance(250)
     const w = mountPicker()
     await new Promise(r => setTimeout(r, 10))
 
@@ -92,7 +90,7 @@ describe('CustomerPickerModal', () => {
   })
 
   it('negative balance renders green as store credit ("له رصيد"), never chased', async () => {
-    customersThenBalances([{ customer_id: 'c1', balance_usd: -12.5 }])
+    customersWithBalance(-12.5)
     const w = mountPicker()
     await new Promise(r => setTimeout(r, 10))
 
@@ -102,7 +100,7 @@ describe('CustomerPickerModal', () => {
   })
 
   it('zero balance shows no chip', async () => {
-    customersThenBalances([{ customer_id: 'c1', balance_usd: 0 }])
+    customersWithBalance(0)
     const w = mountPicker()
     await new Promise(r => setTimeout(r, 10))
     expect(w.find('[data-testid="balance-c1"]').exists()).toBe(false)

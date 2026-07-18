@@ -52,36 +52,6 @@ export async function fetchOutstandingBalanceUsd(customerId: string, shopId: str
   return row?.balance_usd ?? 0
 }
 
-// WAFI-126: all customers' balances in ONE query (the picker renders 500 rows on
-// low-end Android — per-row BALANCE_USD_SQL would be an N+1). The four grouped
-// subqueries are the same four components as BALANCE_USD_SQL above — if one
-// definition changes, change both (they share this module on purpose).
-// Includes pending-sync rows: the local DB is the source of truth on device.
-const ALL_BALANCES_SQL = `SELECT c.id AS customer_id,
-    COALESCE(cs.total, 0) - COALESCE(cp.total, 0) - COALESCE(rc.total, 0) - COALESCE(rsc.total, 0) AS balance_usd
-  FROM customers c
-  LEFT JOIN (SELECT customer_id, SUM(total_usd) AS total FROM sales
-              WHERE is_credit = 1 AND shop_id = ? GROUP BY customer_id) cs ON cs.customer_id = c.id
-  LEFT JOIN (SELECT customer_id, SUM(amount_usd) AS total FROM customer_payments
-              WHERE shop_id = ? GROUP BY customer_id) cp ON cp.customer_id = c.id
-  LEFT JOIN (SELECT s.customer_id, SUM(r.refund_amount_usd) AS total FROM returns r
-              JOIN sales s ON s.id = r.original_sale_id
-              WHERE s.is_credit = 1 AND r.shop_id = ? GROUP BY s.customer_id) rc ON rc.customer_id = c.id
-  LEFT JOIN (SELECT s.customer_id, SUM(r.refund_amount_usd) AS total FROM returns r
-              JOIN sales s ON s.id = r.original_sale_id
-              WHERE s.is_credit = 0 AND r.refund_method = 'store_credit' AND r.shop_id = ?
-              GROUP BY s.customer_id) rsc ON rsc.customer_id = c.id
-  WHERE c.shop_id = ?`
-
-/** customer_id → outstanding balance (USD). Positive = owes the shop; negative = store credit. */
-export async function fetchAllCustomerBalances(shopId: string): Promise<Map<string, number>> {
-  const rows = await db.getAll<{ customer_id: string; balance_usd: number }>(
-    ALL_BALANCES_SQL,
-    [shopId, shopId, shopId, shopId, shopId]
-  )
-  return new Map(rows.map(r => [r.customer_id, r.balance_usd ?? 0]))
-}
-
 export function useCustomerBalance(customerId: string) {
   const balanceUsd   = ref(0)
   const pendingSyncCount = ref(0)
