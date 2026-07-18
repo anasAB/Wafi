@@ -7,8 +7,9 @@ import { useDeviceStore } from '@/store/device.store'
 import { useCategories } from '@/features/categories/composables/useCategories'
 
 const router = useRouter()
-const { categoriesWithSubcategories, load, createCategory, renameCategory,
-        createSubcategory, renameSubcategory, deleteCategory, deleteSubcategory } = useCategories()
+const { categoriesWithSubcategories, duplicateCategoryGroups, load, createCategory, renameCategory,
+        createSubcategory, renameSubcategory, deleteCategory, deleteSubcategory,
+        ensureFallbackCategory, deleteCategoryWithReassign, mergeCategory } = useCategories()
 
 const newCategoryName = ref('')
 const newSubcategoryName = ref<Record<string, string>>({})
@@ -141,11 +142,58 @@ async function removeCategory(id: string) {
       : 'لا يمكن حذف فئة "غير مصنف" لأنها الفئة الاحتياطية للمنتجات غير المصنفة.'
     blockedCategoryId.value = id
   } else {
-    // No bulk-reassignment UI in v1 (spec: Category management — out of scope) — point
-    // the owner at the Product List's own category filter instead of promising a path
-    // that doesn't exist here.
-    blockedMessage.value = `لا يمكن حذف هذه الفئة، ${result.productCount} منتج مرتبط بها. أعد تصنيف هذه المنتجات من قائمة المنتجات أولاً.`
-    blockedCategoryId.value = id
+    // WAFI-133: the delete dead-end becomes inline bulk reassignment — pick a
+    // target and the products move in one transaction, then the delete proceeds.
+    await openTargetPicker('reassign', id, result.productCount)
+  }
+}
+
+// ── WAFI-133: shared target picker for reassign-delete and merge ────────────
+const targetPicker = ref<{ mode: 'reassign' | 'merge'; sourceId: string; sourceName: string; count: number } | null>(null)
+const pickerBusy = ref(false)
+
+async function openTargetPicker(mode: 'reassign' | 'merge', sourceId: string, count = 0) {
+  blockedMessage.value = null
+  // The fallback must always be a valid target — create it on first need.
+  await ensureFallbackCategory()
+  await load()
+  const source = categoriesWithSubcategories.value.find(c => c.id === sourceId)
+  targetPicker.value = { mode, sourceId, sourceName: source?.name ?? '', count }
+}
+
+const targetOptions = computed(() =>
+  categoriesWithSubcategories.value.filter(c => c.id !== targetPicker.value?.sourceId)
+)
+
+async function pickTarget(targetId: string) {
+  const p = targetPicker.value
+  if (!p || pickerBusy.value) return
+  pickerBusy.value = true
+  try {
+    const result = p.mode === 'reassign'
+      ? await deleteCategoryWithReassign(p.sourceId, targetId)
+      : await mergeCategory(p.sourceId, targetId)
+    if (result.error === 'open-stock-take') {
+      blockedMessage.value = 'يوجد جرد نشط لهذه الأصناف حالياً. يرجى إكماله أو إلغاؤه أولاً.'
+    } else if (result.error === 'fallback') {
+      blockedMessage.value = 'فئة "غير مصنف" لا يمكن دمجها أو حذفها — يمكن الدمج إليها فقط.'
+    }
+    targetPicker.value = null
+  } finally {
+    pickerBusy.value = false
+  }
+}
+
+// One-tap duplicate cleanup: merge every duplicate into the group's first
+// (oldest-sorted-by-name) entry.
+async function mergeDuplicateGroup(group: { id: string }[]) {
+  const [target, ...rest] = group
+  for (const source of rest) {
+    const r = await mergeCategory(source.id, target.id)
+    if (r.error === 'open-stock-take') {
+      blockedMessage.value = 'يوجد جرد نشط لهذه الأصناف حالياً. يرجى إكماله أو إلغاؤه أولاً.'
+      return
+    }
   }
 }
 
@@ -193,6 +241,22 @@ async function removeSubcategory(id: string) {
         لا توجد فئات بعد. أضف أول فئة أعلاه.
       </p>
 
+      <!-- WAFI-133: post-sync duplicates (same name from two offline devices) -->
+      <div
+        v-for="(group, gi) in duplicateCategoryGroups"
+        :key="`dup-${gi}`"
+        class="dup-banner"
+        data-testid="duplicate-banner"
+      >
+        <p class="dup-text">فئات مكررة باسم «{{ group[0].name }}» ({{ group.length }})</p>
+        <button
+          type="button"
+          class="btn-secondary"
+          :data-testid="`merge-duplicates-${gi}`"
+          @click="mergeDuplicateGroup(group)"
+        >دمج التكرارات</button>
+      </div>
+
       <div class="category-list">
         <div v-for="cat in categoriesWithSubcategories" :key="cat.id" class="category-card">
           <div class="category-row">
@@ -201,6 +265,14 @@ async function removeSubcategory(id: string) {
               class="text-input category-name-input"
               @change="renameCategory(cat.id, ($event.target as HTMLInputElement).value)"
             />
+            <button
+              type="button"
+              class="btn-secondary btn-merge"
+              :data-testid="`merge-category-${cat.id}`"
+              @click="openTargetPicker('merge', cat.id)"
+            >
+              دمج
+            </button>
             <button
               type="button"
               class="btn-danger"
@@ -315,6 +387,30 @@ async function removeSubcategory(id: string) {
         </div>
       </div>
     </main>
+
+    <!-- WAFI-133: target picker for reassign-delete and merge -->
+    <div v-if="targetPicker" class="picker-overlay" data-testid="target-picker" @click.self="targetPicker = null">
+      <div class="picker-sheet" dir="rtl">
+        <p class="picker-title">
+          {{ targetPicker.mode === 'reassign'
+            ? `نقل ${targetPicker.count} منتج من «${targetPicker.sourceName}» إلى:`
+            : `دمج «${targetPicker.sourceName}» في:` }}
+        </p>
+        <div class="picker-list">
+          <button
+            v-for="opt in targetOptions"
+            :key="opt.id"
+            type="button"
+            class="picker-item"
+            :disabled="pickerBusy"
+            :data-testid="`target-option-${opt.id}`"
+            @click="pickTarget(opt.id)"
+          >{{ opt.name }}</button>
+          <p v-if="targetOptions.length === 0" class="picker-empty">لا توجد فئة أخرى — أنشئ فئة أولاً</p>
+        </div>
+        <button type="button" class="btn-secondary picker-cancel" @click="targetPicker = null">إلغاء</button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -712,4 +808,62 @@ async function removeSubcategory(id: string) {
   opacity: 0.5;
   cursor: not-allowed;
 }
+/* ── WAFI-133: merge button, duplicates banner, target picker ── */
+.btn-merge { flex-shrink: 0; }
+
+.dup-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-radius: 0.875rem;
+  border: 1px solid rgba(251, 191, 36, 0.34);
+  background: rgba(120, 80, 8, 0.18);
+  padding: 0.625rem 0.875rem;
+  margin-bottom: 0.75rem;
+}
+.dup-text { margin: 0; font-size: 0.8125rem; font-weight: 700; color: #FBBF24; }
+
+.picker-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+}
+.picker-sheet {
+  width: 100%;
+  max-width: 28rem;
+  max-height: 70dvh;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border-radius: 1.25rem 1.25rem 0 0;
+  background: #0D1828;
+  border: 1px solid rgba(26, 86, 219, 0.28);
+  border-bottom: none;
+  padding: 1.25rem;
+}
+.picker-title { margin: 0; font-size: 0.875rem; font-weight: 700; color: #E8EDF5; line-height: 1.5; }
+.picker-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.375rem; }
+.picker-item {
+  height: 44px;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: #E8EDF5;
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: right;
+  padding: 0 0.875rem;
+}
+.picker-item:hover:not(:disabled) { background: rgba(26, 86, 219, 0.14); }
+.picker-item:disabled { opacity: 0.5; cursor: not-allowed; }
+.picker-empty { margin: 0; font-size: 0.8125rem; color: #637285; text-align: center; padding: 1rem 0; }
+.picker-cancel { width: 100%; }
 </style>

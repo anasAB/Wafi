@@ -39,6 +39,8 @@ export type AuditEvent =
   | 'installment_payment.recorded'
   | 'installment_plan.cancelled'
   | 'sync.dead_letter_discarded'
+  | 'category.merged'
+  | 'category.deleted_with_reassign'
   | 'device.renamed'
   | 'device.deactivated'
   | 'device.reactivated'
@@ -48,7 +50,7 @@ export type AuditEntityType =
   | 'customer' | 'stock' | 'shift'
   | 'exchange_rate' | 'settings' | 'staff'
   | 'supplier' | 'receiving' | 'cash_movement'
-  | 'installment_plan' | 'stock_take' | 'sync' | 'device'
+  | 'installment_plan' | 'stock_take' | 'sync' | 'device' | 'category'
 
 export interface AuditLog {
   id:         string

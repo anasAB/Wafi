@@ -24,6 +24,8 @@ const modules: Array<{
 }> = [
   { key: 'history',   label: 'المبيعات',  description: 'سجل جميع المبيعات',       route: '/history',        active: true,  permission: null },
   { key: 'products',  label: 'المنتجات',  description: 'إدارة المخزون والأسعار',  route: '/products',       active: true,  permission: 'can_manage_products' },
+  // WAFI-133: the categories screen was routed but unreachable from any nav.
+  { key: 'categories', label: 'الفئات',   description: 'تنظيم فئات المنتجات ودمجها', route: '/categories',  active: true,  permission: 'can_manage_products' },
   { key: 'expenses',  label: 'المصاريف',  description: 'تتبع مصاريف المحل',       route: '/expenses',       active: true,  permission: 'can_view_expenses' },
   { key: 'shifts',    label: 'الورديات',  description: 'الورديات وتقرير اليومية', route: '/shifts/history', active: true,  permission: null },
   { key: 'customers', label: 'الزبائن',   description: 'الديون والمدفوعات',       route: '/customers',      active: true,  permission: 'can_manage_customers' },

@@ -36,7 +36,7 @@ describe('CategoriesManagementScreen', () => {
     expect(insertCall![1]).toContain('أجهزة منزلية')
   })
 
-  it('blocks delete and shows the product count and reassignment guidance when a category is in use', async () => {
+  it('WAFI-133: deleting an in-use category opens the inline reassignment picker with the product count', async () => {
     vi.mocked(db.getOptional)
       .mockResolvedValueOnce({ id: 'other', name: 'غير مصنف' } as any) // fallback lookup: not c1
       .mockResolvedValueOnce({ count: 4 } as any)
@@ -46,8 +46,10 @@ describe('CategoriesManagementScreen', () => {
     await wrapper.get('[data-testid="delete-category-c1"]').trigger('click')
     await new Promise((r) => setTimeout(r, 0))
 
+    // The dead-end message is gone — the target picker opens instead,
+    // showing how many products will move (WAFI-133 bulk reassignment).
+    expect(wrapper.find('[data-testid="target-picker"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('4')
-    expect(wrapper.text()).toContain('قائمة المنتجات')
   })
 
   it('blocks delete of the غير مصنف fallback category with a distinct message, even with zero products', async () => {

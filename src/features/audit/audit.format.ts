@@ -85,6 +85,10 @@ export function eventLabel(entry: AuditLog): string {
       const lineCount = (m.lineCount as number) ?? 0
       return `سجّل استلام بضاعة من ${supplierName}: $${totalUsd.toFixed(2)} (${lineCount} أصناف)`
     }
+    case 'category.merged':
+      return `دمج فئة ${str(m.source_name)} في ${str(m.target_name)} (${num(m.product_count)} منتج)`
+    case 'category.deleted_with_reassign':
+      return `حذف فئة ${str(m.name)} ونقل ${num(m.product_count)} منتج`
     case 'device.renamed':      return `أعاد تسمية الجهاز ${str(m.code)}: ${str(m.label)}`
     case 'device.deactivated':  return `أوقف الجهاز ${str(m.code)}`
     case 'device.reactivated':  return `أعاد تفعيل الجهاز ${str(m.code)}`

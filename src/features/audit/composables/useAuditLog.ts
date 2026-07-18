@@ -442,6 +442,18 @@ export function useAuditLog() {
     summary: Record<string, unknown>,
   ) => _logSensitive('sync.dead_letter_discarded', 'sync', deadLetterId, summary)
 
+  // WAFI-133: category housekeeping — merges/reassign-deletes rewrite many
+  // product rows at once, so the trail records source/target/count.
+  const logCategoryMerged = (
+    sourceId: string, sourceName: string, targetId: string, targetName: string, productCount: number,
+  ) => _log('category.merged', 'category', targetId,
+            { source_id: sourceId, source_name: sourceName, target_name: targetName, product_count: productCount })
+
+  const logCategoryDeletedWithReassign = (
+    categoryId: string, name: string, targetId: string, productCount: number,
+  ) => _log('category.deleted_with_reassign', 'category', categoryId,
+            { name, target_id: targetId, product_count: productCount })
+
   // WAFI-130: device management actions. Renames are routine; flipping a
   // device's active state is a security control → sensitive (surface failures).
   const logDeviceRenamed = (deviceRowId: string, code: string, label: string) =>
@@ -499,5 +511,7 @@ export function useAuditLog() {
     logDeadLetterDiscarded,
     logDeviceRenamed,
     logDeviceActivation,
+    logCategoryMerged,
+    logCategoryDeletedWithReassign,
   }
 }
