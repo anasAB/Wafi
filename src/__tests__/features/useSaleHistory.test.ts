@@ -108,6 +108,30 @@ describe('useSaleHistory', () => {
     expect(sales.value[0].isPending).toBe(false)
   })
 
+  // WAFI-127: bare-number entry matches the numeric suffix across device prefixes,
+  // tolerant of the 6-digit zero-padding ("45" and "000045" both find "A1-000045").
+  it('digits-only query also matches the numeric suffix (unpadded entry, any device prefix)', async () => {
+    const { useDeviceStore } = await import('@/store/device.store')
+    const expectedShopId = useDeviceStore().shopId
+
+    const { searchByNumber } = useSaleHistory()
+    await searchByNumber('45')
+
+    const call = vi.mocked(db.execute).mock.calls.find(([sql]) => /display_sale_number\s+LIKE/.test(sql as string))
+    expect(call).toBeDefined()
+    expect(call![0]).toMatch(/CAST\(substr\(display_sale_number/)  // suffix numeric compare
+    expect(call![1]).toEqual([expectedShopId, '45%', '45'])
+  })
+
+  it('prefixed query stays a plain prefix LIKE (no suffix clause)', async () => {
+    const { searchByNumber } = useSaleHistory()
+    await searchByNumber('A1-45')
+
+    const call = vi.mocked(db.execute).mock.calls.find(([sql]) => /display_sale_number\s+LIKE/.test(sql as string))
+    expect(call![0]).not.toMatch(/CAST\(substr/)
+    expect(call![1]).toContain('A1-45%')
+  })
+
   it('searchByNumber with empty/whitespace query does not run an unbounded LIKE query', async () => {
     const { searchByNumber } = useSaleHistory()
     await searchByNumber('   ')

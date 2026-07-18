@@ -186,10 +186,25 @@ export function useSaleHistory() {
     loading.value = true
     error.value   = null
     try {
-      const result = await db.execute(
-        `SELECT * FROM sales WHERE shop_id = ? AND display_sale_number LIKE ? ORDER BY created_at DESC`,
-        [device.shopId, `${trimmed}%`]
-      )
+      // WAFI-127: a bare number without the device prefix must find the receipt
+      // regardless of zero-padding — "45" and "000045" both match "A1-000045".
+      // Digits-only queries ALSO match the numeric suffix after the prefix dash
+      // (numeric compare, so padding is irrelevant); when several devices share
+      // the sequence number, all candidates are returned for disambiguation.
+      const isBareNumber = /^\d+$/.test(trimmed)
+      const result = isBareNumber
+        ? await db.execute(
+            `SELECT * FROM sales WHERE shop_id = ? AND (
+               display_sale_number LIKE ?
+               OR (instr(display_sale_number, '-') > 0
+                   AND CAST(substr(display_sale_number, instr(display_sale_number, '-') + 1) AS INTEGER) = CAST(? AS INTEGER))
+             ) ORDER BY created_at DESC`,
+            [device.shopId, `${trimmed}%`, trimmed]
+          )
+        : await db.execute(
+            `SELECT * FROM sales WHERE shop_id = ? AND display_sale_number LIKE ? ORDER BY created_at DESC`,
+            [device.shopId, `${trimmed}%`]
+          )
       const rawRows = (result as any).rows._array as any[]
       sales.value = await enrichAndMapSales(rawRows, device.shopId)
     } catch (e) {
