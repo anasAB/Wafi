@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
+import { useShiftStore } from '@/features/shifts/shift.store'
 import type { OpenInvoice, PaymentAllocation, CustomerPayment } from '@/features/customers/customer.types'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 
@@ -167,19 +168,25 @@ export function useCustomerBalance(customerId: string) {
       }
     }
 
+    // WAFI-120: drawer attribution — a CASH collection puts physical money in
+    // the drawer, so every payment row carries the open shift + device at write
+    // time (null shift when none is open — legacy/no-shift rows fall back to
+    // the Z-report's time-window scoping).
+    const shiftStore = useShiftStore()
     // One transaction: either all allocations land or none do.
     await db.writeTransaction(async (tx) => {
       for (const alloc of allocations) {
         await tx.execute(
           `INSERT INTO customer_payments
              (id, shop_id, customer_id, sale_id, amount_usd, currency, amount_raw, method,
-              exchange_rate_at_payment, notes, paid_at, created_at, sync_status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?, ?, 'pending')`,
+              exchange_rate_at_payment, notes, paid_at, created_at, shift_id, device_id, sync_status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?, ?, ?, ?, 'pending')`,
           [
             uuidv4(), device.shopId, customerId, alloc.saleId,
             alloc.amountUsd, alloc.currency, alloc.amountRaw, alloc.method,
             alloc.exchangeRateAtPayment ?? null,
             now.slice(0, 10), now,
+            shiftStore.activeShiftId, device.deviceId,
           ]
         )
       }

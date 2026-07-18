@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
+import { useShiftStore } from '@/features/shifts/shift.store'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 import type { Expense, NewExpense } from '@/features/expenses/expense.types'
 
@@ -125,13 +126,19 @@ export function useExpenses() {
       // recurring expense spanning months must not book every month at one rate.
       const rate = data.currency === 'SYP' ? await rateForDate(device.shopId, expenseDate) : null
       const amountUsd = costUsd(data.amount, data.currency, data.amountUsd, rate)
+      // WAFI-120: drawer attribution — anything that can move physical cash
+      // carries shift_id + device_id at write time. Null when no shift is open
+      // (the no-shift path is WAFI-136's spec; Z-report falls back to the
+      // legacy time window for null rows).
+      const shiftStore = useShiftStore()
       await db.execute(
         `INSERT INTO expenses (id, shop_id, amount, currency, amount_usd, category, expense_date,
-          notes, photo_url, paid_in_cash, created_at, sync_status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+          notes, photo_url, paid_in_cash, created_at, shift_id, device_id, sync_status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
         [id, device.shopId, data.amount, data.currency, amountUsd,
          data.category, expenseDate, storedNotes,
-         data.photoUrl ?? null, data.paidInCash ? 1 : 0, now]
+         data.photoUrl ?? null, data.paidInCash ? 1 : 0, now,
+         shiftStore.activeShiftId, device.deviceId]
       )
       createdIds.push(id)
     }
@@ -190,10 +197,11 @@ export function useExpenses() {
       const plainNotes = parseRecurringMeta(r.notes).cleanNotes ?? null
       await db.execute(
         `INSERT INTO expenses (id, shop_id, amount, currency, amount_usd, category, expense_date,
-          notes, photo_url, paid_in_cash, created_at, sync_status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+          notes, photo_url, paid_in_cash, created_at, shift_id, device_id, sync_status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
         [uuidv4(), device.shopId, r.amount, r.currency, amountUsd, r.category, today,
-         plainNotes, r.photo_url, r.paid_in_cash, nowIso]
+         plainNotes, r.photo_url, r.paid_in_cash, nowIso,
+         useShiftStore().activeShiftId, device.deviceId]
       )
     }
     if (lastStart) await load(lastStart, lastEnd)

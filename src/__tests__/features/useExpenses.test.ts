@@ -4,6 +4,7 @@ import { setActivePinia, createPinia } from 'pinia'
 vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
 
 import { useExpenses } from '@/features/expenses/composables/useExpenses'
+import { useShiftStore } from '@/features/shifts/shift.store'
 import { db } from '@/data/powersync/db'
 
 describe('useExpenses', () => {
@@ -49,6 +50,38 @@ describe('useExpenses', () => {
       expect.stringContaining('INSERT INTO expenses'),
       expect.any(Array)
     )
+  })
+
+  // WAFI-120: anything that can move drawer cash carries shift_id + device_id.
+  it('save stamps the open shift_id on the expense row', async () => {
+    const shiftStore = useShiftStore()
+    shiftStore.openShift('shift-77', { id: 'st-1', name: 'خالد' } as any)
+
+    const { save } = useExpenses()
+    await save({
+      amount: 80, currency: 'USD', amountUsd: 80,
+      category: 'إيجار', expenseDate: '2025-05-01', paidInCash: true,
+    })
+
+    const insert = vi.mocked(db.execute).mock.calls.find(c => (c[0] as string).includes('INSERT INTO expenses'))!
+    expect(insert[0]).toContain('shift_id')
+    expect(insert[0]).toContain('device_id')
+    expect(insert[1]).toContain('shift-77')
+  })
+
+  it('save with no open shift stamps a null shift_id (legacy fallback path)', async () => {
+    const { save } = useExpenses()
+    await save({
+      amount: 80, currency: 'USD', amountUsd: 80,
+      category: 'إيجار', expenseDate: '2025-05-01', paidInCash: true,
+    })
+
+    const insert = vi.mocked(db.execute).mock.calls.find(c => (c[0] as string).includes('INSERT INTO expenses'))!
+    const params = insert[1] as unknown[]
+    // shift_id param slot is null when no shift is open
+    expect(params[params.length - 2]).not.toBe(undefined)
+    expect(params[params.length - 2] === null || typeof params[params.length - 2] === 'string').toBe(true)
+    expect(params).not.toContain('shift-77')
   })
 
   it('save converts SYP to USD using rate', async () => {

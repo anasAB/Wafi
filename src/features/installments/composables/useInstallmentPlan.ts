@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { useSessionStore } from '@/store/session.store'
+import { useShiftStore } from '@/features/shifts/shift.store'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 import { generateInstallmentSchedule } from '@/features/installments/installmentSchedule'
 import type { InstallmentPlan, InstallmentDue, NewInstallmentPlanInput } from '@/features/installments/installment.types'
@@ -77,14 +78,17 @@ export function useInstallmentPlan() {
       // left null — the down payment isn't collected against any single
       // scheduled due, it's the plan's own initiation payment.
       if (input.downPaymentUsd > 0) {
+        // WAFI-120: cash down payment enters the drawer → carries shift + device.
+        const shiftStore = useShiftStore()
         await tx.execute(
           `INSERT INTO customer_payments
              (id, shop_id, customer_id, sale_id, due_id, amount_usd, currency, amount_raw,
-              method, exchange_rate_at_payment, notes, paid_at, created_at, sync_status)
-           VALUES (?, ?, ?, ?, NULL, ?, 'USD', ?, 'cash', NULL, NULL, ?, ?, 'pending')`,
+              method, exchange_rate_at_payment, notes, paid_at, created_at, shift_id, device_id, sync_status)
+           VALUES (?, ?, ?, ?, NULL, ?, 'USD', ?, 'cash', NULL, NULL, ?, ?, ?, ?, 'pending')`,
           [
             uuidv4(), device.shopId, input.customerId, input.saleId,
             input.downPaymentUsd, input.downPaymentUsd, today, now,
+            shiftStore.activeShiftId, device.deviceId,
           ],
         )
       }
@@ -122,13 +126,17 @@ export function useInstallmentPlan() {
     const today = now.slice(0, 10)
     const newStatus: 'pending' | 'paid' = newPaid >= due.amount_due_usd - 0.01 ? 'paid' : 'pending'
 
+    // WAFI-120: cash installment collection enters the drawer → shift + device.
+    const shiftStore = useShiftStore()
+    const deviceStore = useDeviceStore()
     await db.writeTransaction(async (tx) => {
       await tx.execute(
         `INSERT INTO customer_payments
            (id, shop_id, customer_id, sale_id, due_id, amount_usd, currency, amount_raw,
-            method, exchange_rate_at_payment, notes, paid_at, created_at, sync_status)
-         VALUES (?, ?, ?, ?, ?, ?, 'USD', ?, 'cash', NULL, NULL, ?, ?, 'pending')`,
-        [uuidv4(), due.shop_id, due.customer_id, due.sale_id, dueId, amountUsd, amountUsd, today, now],
+            method, exchange_rate_at_payment, notes, paid_at, created_at, shift_id, device_id, sync_status)
+         VALUES (?, ?, ?, ?, ?, ?, 'USD', ?, 'cash', NULL, NULL, ?, ?, ?, ?, 'pending')`,
+        [uuidv4(), due.shop_id, due.customer_id, due.sale_id, dueId, amountUsd, amountUsd, today, now,
+         shiftStore.activeShiftId, deviceStore.deviceId],
       )
 
       await tx.execute(

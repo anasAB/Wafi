@@ -60,19 +60,26 @@ export function useZReport() {
             [device.shopId, shift.deviceId, shift.openedAt, closedAt]
           ),
           // Cash expenses, split by currency so each hits the right drawer.
-          // NOTE: the `expenses` table has no device_id or shift_id, so in a
-          // multi-device shop a cash expense can only be attributed by time window
-          // and may be counted by more than one open shift. Disambiguating needs a
-          // schema change (add shift_id/device_id to expenses).
+          // WAFI-120: rows now carry shift_id + device_id, so attribution is
+          // direct — an overlapping shift on another device can never
+          // double-count them. Legacy pre-migration rows (null shift_id) fall
+          // back to the old time-window scoping; a new null-shift row stamped
+          // with another device's id is excluded from that fallback.
           db.getOptional<{ total: number }>(
             `SELECT COALESCE(SUM(amount_usd), 0) as total FROM expenses
-             WHERE shop_id = ? AND paid_in_cash = 1 AND currency = 'USD' AND created_at BETWEEN ? AND ?`,
-            [device.shopId, shift.openedAt, closedAt]
+             WHERE shop_id = ? AND paid_in_cash = 1 AND currency = 'USD'
+               AND (shift_id = ?
+                    OR (shift_id IS NULL AND (device_id IS NULL OR device_id = ?)
+                        AND created_at BETWEEN ? AND ?))`,
+            [device.shopId, shift.id, shift.deviceId, shift.openedAt, closedAt]
           ),
           db.getOptional<{ total: number }>(
             `SELECT COALESCE(SUM(amount), 0) as total FROM expenses
-             WHERE shop_id = ? AND paid_in_cash = 1 AND currency = 'SYP' AND created_at BETWEEN ? AND ?`,
-            [device.shopId, shift.openedAt, closedAt]
+             WHERE shop_id = ? AND paid_in_cash = 1 AND currency = 'SYP'
+               AND (shift_id = ?
+                    OR (shift_id IS NULL AND (device_id IS NULL OR device_id = ?)
+                        AND created_at BETWEEN ? AND ?))`,
+            [device.shopId, shift.id, shift.deviceId, shift.openedAt, closedAt]
           ),
           // Cash refunds paid out this shift, by currency. Returns carry shift_id
           // (set to the open shift at refund time), so scope by it directly.
@@ -87,18 +94,24 @@ export function useZReport() {
             [device.shopId, shift.id]
           ),
           // Cash collected against customer credit this shift, by currency. Only
-          // method='cash' enters the drawer (wire/USDT/hawala do not). Like
-          // expenses, customer_payments has no device/shift link, so attribute by
-          // time window — same multi-device caveat applies.
+          // method='cash' enters the drawer (wire/USDT/hawala do not).
+          // WAFI-120: same direct shift_id attribution + legacy fallback as
+          // expenses above.
           db.getOptional<{ total: number }>(
             `SELECT COALESCE(SUM(amount_usd), 0) as total FROM customer_payments
-             WHERE shop_id = ? AND method = 'cash' AND currency = 'USD' AND created_at BETWEEN ? AND ?`,
-            [device.shopId, shift.openedAt, closedAt]
+             WHERE shop_id = ? AND method = 'cash' AND currency = 'USD'
+               AND (shift_id = ?
+                    OR (shift_id IS NULL AND (device_id IS NULL OR device_id = ?)
+                        AND created_at BETWEEN ? AND ?))`,
+            [device.shopId, shift.id, shift.deviceId, shift.openedAt, closedAt]
           ),
           db.getOptional<{ total: number }>(
             `SELECT COALESCE(SUM(amount_raw), 0) as total FROM customer_payments
-             WHERE shop_id = ? AND method = 'cash' AND currency = 'SYP' AND created_at BETWEEN ? AND ?`,
-            [device.shopId, shift.openedAt, closedAt]
+             WHERE shop_id = ? AND method = 'cash' AND currency = 'SYP'
+               AND (shift_id = ?
+                    OR (shift_id IS NULL AND (device_id IS NULL OR device_id = ?)
+                        AND created_at BETWEEN ? AND ?))`,
+            [device.shopId, shift.id, shift.deviceId, shift.openedAt, closedAt]
           ),
         ])
 

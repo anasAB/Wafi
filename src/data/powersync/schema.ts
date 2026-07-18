@@ -81,6 +81,8 @@ const expenses = new Table({
   photo_url:    column.text,
   paid_in_cash: column.integer,
   created_at:   column.text,
+  shift_id:     column.text,   // WAFI-120: drawer attribution (nullable; legacy rows null)
+  device_id:    column.text,
   sync_status:  column.text,
 })
 
@@ -108,6 +110,8 @@ const customer_payments = new Table({
   notes:                    column.text,
   paid_at:                  column.text,
   created_at:               column.text,
+  shift_id:                 column.text,   // WAFI-120: drawer attribution (nullable; legacy rows null)
+  device_id:                column.text,
   sync_status:              column.text,
   due_id:                   column.text,   // tags a payment against a specific installment_dues row; null for the plan's down payment
 })
