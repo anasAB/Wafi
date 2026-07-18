@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { setActivePinia, createPinia } from 'pinia'
 import { useBarcodeScan } from '@/composables/useBarcodeScan'
+import { useSettingsStore } from '@/features/settings'
 
 function fireKeySequence(keys: string[], intervalMs: number) {
   const now = performance.now()
@@ -149,6 +151,170 @@ describe('useBarcodeScan lifecycle + terminators (WAFI-032)', () => {
     destroy()
     burst(['1','2','3','4','5','6'], 'Enter')
     expect(cb).not.toHaveBeenCalled()
+  })
+})
+
+// ── WAFI-125: focus guard, timeout finalization, configuration ───────────────
+
+describe('useBarcodeScan — WAFI-125 focus guard strips leaked chars from a focused input', () => {
+  it('a scan into a focused input commits the full code AND removes the leaked first char from the field', () => {
+    const cb = vi.fn()
+    const { onScan, destroy } = useBarcodeScan()
+    onScan(cb)
+
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    input.focus()
+
+    ;['9','8','7','6','5'].forEach((key, i) => {
+      const e = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+      Object.defineProperty(e, 'timeStamp', { value: i * 10 })
+      input.dispatchEvent(e)
+      // Simulate the browser default action: only non-prevented keys insert.
+      if (!e.defaultPrevented) input.value += key
+    })
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    Object.defineProperty(enter, 'timeStamp', { value: 5 * 10 })
+    input.dispatchEvent(enter)
+
+    expect(cb).toHaveBeenCalledWith('98765')  // full code committed
+    expect(input.value).toBe('')              // leaked '9' stripped back out
+    document.body.removeChild(input)
+    destroy()
+  })
+
+  it('human typing into a focused input is never stripped', () => {
+    const cb = vi.fn()
+    const { onScan, destroy } = useBarcodeScan()
+    onScan(cb)
+
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    input.focus()
+
+    ;['a','b','c','d'].forEach((key, i) => {
+      const e = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+      Object.defineProperty(e, 'timeStamp', { value: i * 150 })
+      input.dispatchEvent(e)
+      if (!e.defaultPrevented) input.value += key
+    })
+
+    expect(cb).not.toHaveBeenCalled()
+    expect(input.value).toBe('abcd')
+    document.body.removeChild(input)
+    destroy()
+  })
+})
+
+describe('useBarcodeScan — WAFI-125 timeout finalization (no-terminator scanners)', () => {
+  beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('a fast burst with NO terminator commits after the silence timeout', () => {
+    const cb = vi.fn()
+    const { onScan, destroy } = useBarcodeScan()
+    onScan(cb)
+
+    ;['1','2','3','4','5','6'].forEach((key, i) => {
+      const e = new KeyboardEvent('keydown', { key, cancelable: true })
+      Object.defineProperty(e, 'timeStamp', { value: i * 10 })
+      document.dispatchEvent(e)
+    })
+    expect(cb).not.toHaveBeenCalled()  // nothing yet — still waiting
+
+    vi.advanceTimersByTime(300)
+    expect(cb).toHaveBeenCalledWith('123456')
+    destroy()
+  })
+
+  it('two back-to-back scans both register', () => {
+    const cb = vi.fn()
+    const { onScan, destroy } = useBarcodeScan()
+    onScan(cb)
+
+    const scan = (keys: string[], startAt: number) => {
+      keys.forEach((key, i) => {
+        const e = new KeyboardEvent('keydown', { key, cancelable: true })
+        Object.defineProperty(e, 'timeStamp', { value: startAt + i * 10 })
+        document.dispatchEvent(e)
+      })
+      const enter = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true })
+      Object.defineProperty(enter, 'timeStamp', { value: startAt + keys.length * 10 })
+      document.dispatchEvent(enter)
+    }
+
+    scan(['1','1','1','1'], 0)
+    scan(['2','2','2','2'], 150)  // < 200ms after the first
+
+    expect(cb).toHaveBeenNthCalledWith(1, '1111')
+    expect(cb).toHaveBeenNthCalledWith(2, '2222')
+    destroy()
+  })
+})
+
+describe('useBarcodeScan — WAFI-125 configuration', () => {
+  beforeEach(() => { setActivePinia(createPinia()); localStorage.clear() })
+
+  function burstAt(intervalMs: number, keys: string[], terminator?: string) {
+    keys.forEach((key, i) => {
+      const e = new KeyboardEvent('keydown', { key, cancelable: true })
+      Object.defineProperty(e, 'timeStamp', { value: i * intervalMs })
+      document.dispatchEvent(e)
+    })
+    if (terminator) {
+      const t = new KeyboardEvent('keydown', { key: terminator, cancelable: true })
+      Object.defineProperty(t, 'timeStamp', { value: keys.length * intervalMs })
+      document.dispatchEvent(t)
+    }
+  }
+
+  it('a slow scanner (60ms/char) is accepted once the threshold is raised in settings', () => {
+    useSettingsStore().scannerIntervalMs = 80
+    const cb = vi.fn()
+    const { onScan, destroy } = useBarcodeScan()
+    onScan(cb)
+
+    burstAt(60, ['5','5','5','5','5'], 'Enter')
+    expect(cb).toHaveBeenCalledWith('55555')
+    destroy()
+  })
+
+  it('bursts shorter than the configured min length are ignored', () => {
+    useSettingsStore().scannerMinLength = 6
+    const cb = vi.fn()
+    const { onScan, destroy } = useBarcodeScan()
+    onScan(cb)
+
+    burstAt(10, ['1','2','3','4','5'], 'Enter')
+    expect(cb).not.toHaveBeenCalled()
+    destroy()
+  })
+
+  it("terminator 'enter' rejects Tab-terminated bursts", () => {
+    useSettingsStore().scannerTerminator = 'enter'
+    const cb = vi.fn()
+    const { onScan, destroy } = useBarcodeScan()
+    onScan(cb)
+
+    burstAt(10, ['1','2','3','4','5','6'], 'Tab')
+    expect(cb).not.toHaveBeenCalled()
+    destroy()
+  })
+
+  it('emits diagnostics events (key timings + commit) for the pairing screen', () => {
+    const events: any[] = []
+    const { onScan, onDiagnostic, destroy } = useBarcodeScan()
+    onScan(() => {})
+    onDiagnostic(e => events.push(e))
+
+    burstAt(10, ['1','2','3','4'], 'Enter')
+
+    const keys = events.filter(e => e.type === 'key')
+    expect(keys).toHaveLength(4)
+    expect(keys[0].intervalMs).toBeNull()
+    expect(keys[1].intervalMs).toBe(10)
+    expect(events.at(-1)).toMatchObject({ type: 'commit', code: '1234', via: 'terminator' })
+    destroy()
   })
 })
 

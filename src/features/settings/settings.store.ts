@@ -16,6 +16,11 @@ export const useSettingsStore = defineStore('settings', () => {
   // WAFI-126: soft credit warning threshold (USD). Warn — never block — when
   // attaching a customer whose balance exceeds this to a credit sale.
   const creditWarnThresholdUsd = ref(100)
+  // WAFI-125: barcode wedge configuration. Defaults = the previously hardcoded
+  // behavior; cheap/slow scanners are tuned here via the diagnostics screen.
+  const scannerIntervalMs = ref(33)                    // max ms between keys to count as a burst
+  const scannerMinLength  = ref(4)                     // shorter bursts are ignored
+  const scannerTerminator = ref<'enter-tab' | 'enter' | 'tab' | 'none'>('enter-tab')
 
   return {
     language,
@@ -27,6 +32,9 @@ export const useSettingsStore = defineStore('settings', () => {
     dailyDigestPhone,
     dailyDigestHour,
     creditWarnThresholdUsd,
+    scannerIntervalMs,
+    scannerMinLength,
+    scannerTerminator,
   }
 }, {
   persist: true,

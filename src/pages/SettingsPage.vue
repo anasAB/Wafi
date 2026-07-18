@@ -148,6 +148,26 @@ watch(
           </svg>
         </button>
 
+        <!-- WAFI-125: scanner pairing & diagnostics -->
+        <button
+          type="button"
+          class="nav-row"
+          @click="router.push('/settings/scanner')"
+        >
+          <div class="nav-row-start">
+            <span class="nav-icon-wrap">
+              <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM13.5 19.5h.75v.75h-.75v-.75zM19.5 13.5h.75v.75h-.75v-.75zM19.5 19.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75z" />
+              </svg>
+            </span>
+            <span class="nav-title">الماسح الضوئي</span>
+          </div>
+          <svg class="nav-arrow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+
         <!-- Audit log -->
         <button
           type="button"
@@ -294,6 +314,21 @@ watch(
               <span>{{ t('settings.returnReasons') }}</span>
             </div>
             <span v-if="route.path === '/settings/return-reasons'" class="active-dot" />
+          </RouterLink>
+
+          <RouterLink
+            to="/settings/scanner"
+            class="desktop-nav-link"
+            :class="route.path === '/settings/scanner' ? 'desktop-nav-link--active' : ''"
+            style="border-bottom: 1px solid rgba(26,86,219,0.14)"
+          >
+            <div class="nav-row-start">
+              <svg class="nav-icon-sm" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" />
+              </svg>
+              <span>الماسح الضوئي</span>
+            </div>
+            <span v-if="route.path === '/settings/scanner'" class="active-dot" />
           </RouterLink>
 
           <RouterLink
