@@ -9,6 +9,7 @@ import type { Language, Theme, TextSize, IdleTimeout } from '@/features/settings
 import ThemePickerScreen from './ThemePickerScreen.vue'
 import { signOut } from '@/data/supabase/auth'
 import { db } from '@/data/powersync/db'
+import { useFastCashSettings } from '@/features/payment/useFastCashSettings'
 
 const router   = useRouter()
 const settings = useSettingsStore()
@@ -64,6 +65,9 @@ const digestHourLabel = computed(() => {
   return `${String(hour).padStart(2, '0')}:00`
 })
 
+// WAFI-124: fast-cash button configuration (device-local, like other prefs here)
+const { settings: fastCash } = useFastCashSettings()
+
 const textSizes = computed(() => [
   { value: 'small'   as TextSize, short: t('textSize.small'),   full: t('textSize.smallFull')   },
   { value: 'default' as TextSize, short: t('textSize.default'),  full: t('textSize.defaultFull') },
@@ -109,6 +113,39 @@ const textSizes = computed(() => [
         <p class="row-title row-title--spaced">{{ t('personal.luxuryTheme') }}</p>
         <div class="theme-picker-wrap">
           <ThemePickerScreen />
+        </div>
+      </div>
+
+      <!-- WAFI-124: one-tap exact-cash buttons on the POS cart -->
+      <div class="settings-row settings-row--inner">
+        <p class="row-title row-title--spaced">أزرار الدفع السريع (نقداً مضبوط)</p>
+        <div class="option-grid option-grid--two">
+          <button
+            type="button"
+            class="option-btn"
+            :class="{ 'option-btn--active': fastCash.showSyp }"
+            @click="fastCash.showSyp = !fastCash.showSyp"
+          >زر ل.س</button>
+          <button
+            type="button"
+            class="option-btn"
+            :class="{ 'option-btn--active': fastCash.showUsd }"
+            @click="fastCash.showUsd = !fastCash.showUsd"
+          >زر $</button>
+        </div>
+        <div class="option-grid option-grid--two" style="margin-top: 8px">
+          <button
+            type="button"
+            class="option-btn"
+            :class="{ 'option-btn--active': fastCash.sypFirst }"
+            @click="fastCash.sypFirst = true"
+          >ل.س أولاً</button>
+          <button
+            type="button"
+            class="option-btn"
+            :class="{ 'option-btn--active': !fastCash.sypFirst }"
+            @click="fastCash.sypFirst = false"
+          >$ أولاً</button>
         </div>
       </div>
 

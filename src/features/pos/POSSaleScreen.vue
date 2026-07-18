@@ -11,6 +11,7 @@ import { useCategories } from '@/features/categories/composables/useCategories'
 import { useBarcodeScan } from '@/composables/useBarcodeScan'
 import { useSaleDraft } from '@/composables/useSaleDraft'
 import PaymentModal from '@/features/payment/PaymentModal.vue'
+import { useFastCash } from '@/features/payment/useFastCash'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import { useSaleStore } from '@/store/sale.store'
 import type { CompletedSale } from '@/features/payment/payment.types'
@@ -203,6 +204,18 @@ function handleInstallmentPlanFailed(_sale: CompletedSale, message: string) {
   installmentPlanErrorMessage = message
 }
 
+// WAFI-124: one-tap exact-cash from the cart — same commit path as the modal
+// (useFastCash drives usePayment.confirm), same confirmation screen after.
+const { payExactCash } = useFastCash()
+async function handleFastCash(currency: 'USD' | 'SYP') {
+  try {
+    const sale = await payExactCash(currency)
+    if (sale) handlePaymentConfirmed(sale)
+  } catch (err) {
+    toast.value = { message: err instanceof Error ? err.message : 'فشل إتمام البيع', type: 'error' }
+  }
+}
+
 function handlePaymentConfirmed(completedSale: CompletedSale) {
   // Sale is done (cart already cleared in usePayment) — skip the leave guard.
   confirmedLeave = true
@@ -311,7 +324,7 @@ function handlePaymentConfirmed(completedSale: CompletedSale) {
 
       <!-- Sale panel -->
       <div class="sale-area">
-        <SalePanel @pay="payOpen = true" />
+        <SalePanel @pay="payOpen = true" @fast-cash="handleFastCash" />
       </div>
     </div>
   </div>

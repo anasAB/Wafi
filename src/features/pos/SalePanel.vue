@@ -1,14 +1,35 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import { useSaleStore } from '@/store/sale.store'
 import { useSaleDraft } from '@/composables/useSaleDraft'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import BaseModal from '@/components/ui/BaseModal.vue'
 import { db } from '@/data/powersync/db'
+import { useFastCashSettings } from '@/features/payment/useFastCashSettings'
 
-const emit = defineEmits<{ (e: 'pay'): void }>()
+const emit = defineEmits<{ (e: 'pay'): void; (e: 'fast-cash', currency: 'USD' | 'SYP'): void }>()
 const store = useSaleStore()
 const { clearDraft } = useSaleDraft()
+
+// WAFI-124: one-tap exact-cash buttons. Disabled for 300ms after any cart
+// change — protects against a scan-then-tap slip committing an unintended sale.
+const { fastButtons } = useFastCashSettings()
+const fastReady = ref(true)
+let fastDebounce: ReturnType<typeof setTimeout> | undefined
+watch(
+  () => store.lines.map(l => `${l.productId}:${l.quantity}`).join('|'),
+  () => {
+    fastReady.value = false
+    clearTimeout(fastDebounce)
+    fastDebounce = setTimeout(() => { fastReady.value = true }, 300)
+  }
+)
+onUnmounted(() => clearTimeout(fastDebounce))
+
+function fastCashDisabled(currency: 'USD' | 'SYP'): boolean {
+  if (!fastReady.value || store.lines.length === 0 || store.totalUsd <= 0) return true
+  return currency === 'SYP' && store.lockedExchangeRate === null
+}
 
 const totalSyp = computed(() => {
   const rate = store.lockedExchangeRate
@@ -311,6 +332,22 @@ async function handleClearSale() {
           <span class="total-syp-label">بالليرة</span>
           <span class="total-syp-value">{{ totalSyp.toLocaleString() }} ل.س</span>
         </div>
+      </div>
+
+      <!-- WAFI-124: one-tap exact-cash fast path (~80% of transactions).
+           The full modal below stays for change, split, card, credit. -->
+      <div v-if="fastButtons.length > 0" class="fast-cash-row">
+        <button
+          v-for="c in fastButtons"
+          :key="c"
+          type="button"
+          class="fast-cash-btn"
+          :data-testid="`fast-cash-${c.toLowerCase()}`"
+          :disabled="fastCashDisabled(c)"
+          @click="emit('fast-cash', c)"
+        >
+          {{ c === 'SYP' ? 'نقداً ل.س (مضبوط)' : 'نقداً $ (مضبوط)' }}
+        </button>
       </div>
 
       <button
@@ -822,6 +859,28 @@ async function handleClearSale() {
 }
 
 /* Pay button */
+.fast-cash-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.fast-cash-btn {
+  flex: 1;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid rgba(34, 197, 94, 0.38);
+  background: rgba(22, 101, 52, 0.22);
+  color: #4ADE80;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s ease, opacity .15s ease;
+}
+.fast-cash-btn:hover:not(:disabled) { background: rgba(22, 101, 52, 0.38); }
+.fast-cash-btn:disabled { opacity: .45; cursor: not-allowed; }
+
 .pay-btn {
   display: flex;
   align-items: center;
