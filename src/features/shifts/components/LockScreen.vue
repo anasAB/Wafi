@@ -15,6 +15,7 @@ import type { Staff, StaffPermissions } from '@/features/staff/staff.types'
 import type { CashierShift } from '@/features/shifts/shift.types'
 import { roleLabel }       from '@/features/staff/staff.types'
 import { resolveLanding, isRouteAllowed } from '@/router/permissions'
+import { computeOpeningDefaults } from '@/features/shifts/composables/openingDefaults'
 
 // `login` (default): the app gate — pick staff, PIN, then open a shift with a
 // cash count. `switch`: re-auth as another operator inside an open shift — no
@@ -154,9 +155,27 @@ async function onPinComplete(pin: string) {
   // Moving to the cash count — surface the previous shift's closing cash as a hint.
   // Best-effort: a missing/failed read just hides the hint, never blocks opening.
   lastClosed.value = await loadLastClosedShift().catch(() => null)
+  applyOpeningDefaults()
   confirmZero.value = false
   step.value = 'opening-cash'
 }
+
+// WAFI-129: pre-fill opening cash from the previous close (editable defaults,
+// one tap when the float is unchanged). Derivation rules live in
+// computeOpeningDefaults — see that helper for the no-baseline cases.
+const defaultsFromLastClose = ref(false)
+function applyOpeningDefaults() {
+  const defaults = computeOpeningDefaults(lastClosed.value)
+  defaultsFromLastClose.value = defaults !== null
+  openingCashSyp.value = defaults?.syp ?? ''
+  openingCashUsd.value = defaults?.usd ?? ''
+}
+
+const lastCloseDate = computed(() => {
+  const iso = lastClosed.value?.closedAt
+  if (!iso) return ''
+  return new Intl.DateTimeFormat('ar-SY', { day: 'numeric', month: 'short' }).format(new Date(iso))
+})
 
 // Owner force-closed the conflicting shift → the device is now free; continue to the
 // owner's own opening-cash count.
@@ -164,6 +183,7 @@ async function onConflictResolved() {
   showForceClose.value = false
   conflictShift.value = null
   lastClosed.value = await loadLastClosedShift().catch(() => null)
+  applyOpeningDefaults()
   confirmZero.value = false
   step.value = 'opening-cash'
 }
@@ -205,9 +225,6 @@ async function doOpen() {
     loading.value = false
   }
 }
-
-const fmtSyp = (n: number) => `${n.toLocaleString('en-US')} ل.س`
-const fmtUsd = (n: number) => `$${n.toFixed(2)}`
 
 function back() {
   // From PIN entry → staff list. From cash entry → also back to staff list (not
@@ -280,12 +297,15 @@ function back() {
         <p class="prompt">كم في الصندوق؟</p>
         <p class="sub">أدخل رصيد الفتح بالليرة والدولار</p>
 
-        <!-- Last shift's closing cash, as a starting reference -->
-        <p v-if="lastClosed" class="last-closed-hint">
-          أُغلقت الوردية السابقة بـ
-          <span dir="ltr">{{ fmtSyp(lastClosed.closingCashSyp ?? 0) }}</span>
-          +
-          <span dir="ltr">{{ fmtUsd(lastClosed.closingCashUsd ?? 0) }}</span>
+        <!-- WAFI-129: defaults come from the previous close (editable). When no
+             reliable baseline exists (force-close / no previous shift) the hint
+             explains, and the fields stay blank as before. -->
+        <p v-if="defaultsFromLastClose" class="last-closed-hint">
+          من إغلاق الوردية السابقة<template v-if="lastCloseDate"> ({{ lastCloseDate }})</template> —
+          عدّل الأرقام إن تغيّر الصندوق
+        </p>
+        <p v-else-if="lastClosed && lastClosed.forceClosedBy" class="last-closed-hint">
+          الوردية السابقة أُغلقت إجبارياً — أدخل العد يدوياً
         </p>
 
         <!-- Confirm-with-zero prompt: an empty count must be deliberate -->

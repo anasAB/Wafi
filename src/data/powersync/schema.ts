@@ -85,14 +85,15 @@ const expenses = new Table({
 })
 
 const customers = new Table({
-  shop_id:     column.text,
-  name:        column.text,
-  phone:       column.text,
-  mobile:      column.text,
-  address:     column.text,
-  deleted:     column.integer,
-  created_at:  column.text,
-  sync_status: column.text,
+  shop_id:          column.text,
+  name:             column.text,
+  phone:            column.text,
+  mobile:           column.text,
+  address:          column.text,
+  deleted:          column.integer,
+  created_at:       column.text,
+  sync_status:      column.text,
+  last_reminded_at: column.text,
 })
 
 const customer_payments = new Table({
