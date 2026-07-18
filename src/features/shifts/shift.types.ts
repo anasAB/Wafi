@@ -21,9 +21,12 @@ export interface CashierShift {
   forceClosedBy?: string | null
   zReportData?:   ZReportMetrics | null  // Z-report snapshot captured at close
   // WAFI-103 — denomination breakdown evidence, one JSON object per currency pair
-  // keyed by denomination value; absent/null = manual total entry was used.
-  openingBreakdown?: { usd: DenominationBreakdown; syp: DenominationBreakdown } | null
-  closingBreakdown?: { usd: DenominationBreakdown; syp: DenominationBreakdown } | null
+  // keyed by denomination value. The whole field is absent/null before any tally
+  // was ever attempted; either side is null when THAT side used manual-total
+  // entry instead of a tally (the two sides are independent — SYP can be tallied
+  // while USD is typed directly, or vice versa).
+  openingBreakdown?: { usd: DenominationBreakdown | null; syp: DenominationBreakdown | null } | null
+  closingBreakdown?: { usd: DenominationBreakdown | null; syp: DenominationBreakdown | null } | null
   // WAFI-065 — 'abandoned' is reserved for orphaned shifts cleared without a count.
   // It is NEVER a fake 'closed': abandoned shifts carry no counted cash/variance and
   // are excluded from revenue/variance analytics. Schema-only for now — nothing is
