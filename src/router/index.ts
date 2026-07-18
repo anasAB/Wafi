@@ -23,6 +23,7 @@ const router = createRouter({
     { path: '/categories', component: () => import('@/features/categories/components/CategoriesManagementScreen.vue'), meta: { permission: 'can_manage_products' } },
     { path: '/expenses',          component: () => import('@/features/expenses/ExpenseListPage.vue'),  meta: { permission: 'can_view_expenses' } },
     { path: '/customers',         component: () => import('@/features/customers/CustomersPage.vue'),       meta: { permission: 'can_manage_customers' } },
+    { path: '/customers/collections', component: () => import('@/features/customers/CollectionsWorklistPage.vue'), meta: { permission: 'can_view_reports' } },
     { path: '/customers/:id',     component: () => import('@/features/customers/CustomerDetailPage.vue'),  meta: { permission: 'can_manage_customers' } },
     { path: '/installments',      component: () => import('@/features/installments/InstallmentsDuePage.vue'), meta: { permission: 'can_manage_customers' } },
     { path: '/suppliers',         component: () => import('@/features/suppliers/SuppliersPage.vue'),       meta: { permission: 'can_manage_products' } },

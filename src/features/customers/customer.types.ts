@@ -13,6 +13,22 @@ export interface Customer {
   balanceUsd?: number
   /** Unsynced credit rows for this customer (credit sales + payments). */
   pendingSyncCount?: number
+  /** Last time a WhatsApp collection reminder was sent (WAFI-104). */
+  lastRemindedAt?: string
+}
+
+/** One row of the Collections Worklist (WAFI-104) — customers with
+ *  outstanding credit, ranked by debt age × amount. */
+export interface CollectionsWorklistRow {
+  customerId:       string
+  customerName:     string
+  phone:            string | null
+  balanceUsd:       number
+  /** Oldest unpaid credit sale's date (FIFO — same basis as useCustomerBalance). */
+  oldestUnpaidDate: string
+  daysOutstanding:  number
+  lastPaymentDate:  string | null
+  lastRemindedAt:   string | null
 }
 
 export interface NewCustomer {

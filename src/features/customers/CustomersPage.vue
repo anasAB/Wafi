@@ -7,11 +7,16 @@ import AppToast from '@/components/ui/AppToast.vue'
 import CustomerForm from './components/CustomerForm.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { useCustomers } from './composables/useCustomers'
+import { useCollectionsWorklist } from './composables/useCollectionsWorklist'
 import { useSyncStore } from '@/store/sync.store'
+import { useCan } from '@/composables/useCan'
 
 const router = useRouter()
 const route  = useRoute()
 const { customers, load } = useCustomers()
+const { overdueCount, load: loadCollections } = useCollectionsWorklist()
+const { can } = useCan()
+const canViewCollections = can('can_view_reports')
 const showAddForm = ref(false)
 const query = ref('')
 const toast = ref<{ message: string; type: 'success' | 'error' } | null>(null)
@@ -21,10 +26,14 @@ const { pendingCount } = storeToRefs(syncStore)
 // Arrived from the dashboard "زبائن بفواتير آجلة" signal → show only debtors.
 const onlyDebtors = computed(() => route.query.filter === 'debtors')
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  if (canViewCollections.value) await loadCollections()
+})
 
 watch(pendingCount, async () => {
   await load()
+  if (canViewCollections.value) await loadCollections()
 })
 
 const filtered = computed(() => {
@@ -71,6 +80,18 @@ async function handleSaved() {
             class="search-input"
           />
         </div>
+
+        <!-- Collections worklist entry (owner/financials-only) -->
+        <button
+          v-if="canViewCollections"
+          type="button"
+          data-testid="collections-worklist-link"
+          class="btn-collections"
+          @click="router.push('/customers/collections')"
+        >
+          متابعة التحصيل
+          <span v-if="overdueCount > 0" class="collections-badge">{{ overdueCount }}</span>
+        </button>
 
         <!-- Add button (desktop) -->
         <button type="button" class="btn-primary btn-add-desktop" @click="showAddForm = true">
@@ -320,6 +341,40 @@ async function handleSaved() {
 
 .btn-add-desktop { display: none; }
 @media (min-width: 1024px) { .btn-add-desktop { display: flex; } }
+
+.btn-collections {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 40px;
+  padding-inline: 1rem;
+  border-radius: 0.75rem;
+  background: rgba(245, 158, 11, 0.10);
+  color: #F59E0B;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  border: 1px solid rgba(245, 158, 11, 0.30);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-family: inherit;
+}
+
+.btn-collections:hover { background: rgba(245, 158, 11, 0.18); }
+
+.collections-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: #EF4444;
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
 
 /* ── Debtor filter banner ────────────────────────────────── */
 .debtor-banner {
