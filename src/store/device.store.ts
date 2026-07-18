@@ -5,6 +5,7 @@ import { supabase } from '@/data/supabase/client'
 import { db } from '@/data/powersync/db'
 import { SupabaseConnector } from '@/data/powersync/connector'
 import { useDeviceRegistration } from '@/features/devices/composables/useDeviceRegistration'
+import { touchDeviceLastSeen } from '@/features/devices/composables/useDevices'
 
 // Dev/transition fallback: until the owner's shop row has synced locally, fall
 // back to a configured shop so the app stays usable. In production (no
@@ -37,6 +38,8 @@ export const useDeviceStore = defineStore('device', () => {
   // in-progress promise here means a concurrent call reuses it instead of
   // starting a second registration.
   let registrationInFlight: Promise<void> | null = null
+  // WAFI-130: last-seen heartbeat fires at most once per app session.
+  let lastSeenTouched = false
 
   /**
    * Claims a device code for this browser/device the first time a shop is
@@ -87,6 +90,12 @@ export const useDeviceStore = defineStore('device', () => {
       if (row?.id) {
         shopId.value = row.id
         await ensureDeviceRegistered()
+        // WAFI-130: heartbeat for the owner's device list ("last seen"), once
+        // per app session. Best-effort; never blocks resolution.
+        if (!lastSeenTouched) {
+          lastSeenTouched = true
+          void touchDeviceLastSeen(shopId.value, deviceCode.value)
+        }
       }
     } catch {
       // DB not ready yet (pre-connect) — keep persisted/fallback value.

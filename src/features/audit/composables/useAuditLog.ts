@@ -442,6 +442,14 @@ export function useAuditLog() {
     summary: Record<string, unknown>,
   ) => _logSensitive('sync.dead_letter_discarded', 'sync', deadLetterId, summary)
 
+  // WAFI-130: device management actions. Renames are routine; flipping a
+  // device's active state is a security control → sensitive (surface failures).
+  const logDeviceRenamed = (deviceRowId: string, code: string, label: string) =>
+    _log('device.renamed', 'device', deviceRowId, { code, label })
+
+  const logDeviceActivation = (deviceRowId: string, code: string, active: boolean) =>
+    _logSensitive(active ? 'device.reactivated' : 'device.deactivated', 'device', deviceRowId, { code })
+
   const logInstallmentPlanCancelled = (planId: string) =>
     _log('installment_plan.cancelled', 'installment_plan', planId, {})
 
@@ -489,5 +497,7 @@ export function useAuditLog() {
     logInstallmentPaymentRecorded,
     logInstallmentPlanCancelled,
     logDeadLetterDiscarded,
+    logDeviceRenamed,
+    logDeviceActivation,
   }
 }

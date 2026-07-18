@@ -89,6 +89,9 @@ export type OpenShiftResult =
   | { status: 'opened';   shiftId: string }
   | { status: 'resumed';  shiftId: string }
   | { status: 'conflict'; shift: CashierShift }
+  // WAFI-130: this device was deactivated by the owner — no NEW shifts. An
+  // already-open shift resumes/closes normally (the check runs before insert).
+  | { status: 'device-deactivated' }
 
 /** What a force-close persists (WAFI-065 Part 2). Mirrors a normal close's evidence
  *  but is performed BY the owner on someone else's abandoned shift, so the actor is
@@ -144,6 +147,19 @@ export function useShift() {
       // A different operator already holds the device's open shift → do not open a
       // second. Caller surfaces Story 5.3 (notify non-owner / owner force-close).
       return { status: 'conflict', shift: existing }
+    }
+
+    // WAFI-130 deactivation enforcement: a device the owner turned off cannot
+    // open NEW shifts once the flag has synced. Enforced at the write layer,
+    // not just UI. Resume (above) and close stay allowed so an in-flight shift
+    // can finish cleanly. Missing row / null flag = active (legacy, offline
+    // first-run) — never brick a working register on absent data.
+    const deviceRow = await db.getOptional<{ is_active: number | null }>(
+      `SELECT is_active FROM devices WHERE shop_id = ? AND code = ?`,
+      [device.shopId, device.deviceCode]
+    )
+    if (deviceRow && deviceRow.is_active === 0) {
+      return { status: 'device-deactivated' }
     }
 
     const shiftId = crypto.randomUUID()

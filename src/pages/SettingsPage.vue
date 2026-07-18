@@ -168,6 +168,25 @@ watch(
           </svg>
         </button>
 
+        <!-- WAFI-130: device management -->
+        <button
+          type="button"
+          class="nav-row"
+          @click="router.push('/settings/devices')"
+        >
+          <div class="nav-row-start">
+            <span class="nav-icon-wrap">
+              <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3" />
+              </svg>
+            </span>
+            <span class="nav-title">الأجهزة</span>
+          </div>
+          <svg class="nav-arrow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+
         <!-- Audit log -->
         <button
           type="button"
@@ -329,6 +348,21 @@ watch(
               <span>الماسح الضوئي</span>
             </div>
             <span v-if="route.path === '/settings/scanner'" class="active-dot" />
+          </RouterLink>
+
+          <RouterLink
+            to="/settings/devices"
+            class="desktop-nav-link"
+            :class="route.path === '/settings/devices' ? 'desktop-nav-link--active' : ''"
+            style="border-bottom: 1px solid rgba(26,86,219,0.14)"
+          >
+            <div class="nav-row-start">
+              <svg class="nav-icon-sm" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3" />
+              </svg>
+              <span>الأجهزة</span>
+            </div>
+            <span v-if="route.path === '/settings/devices'" class="active-dot" />
           </RouterLink>
 
           <RouterLink

@@ -85,6 +85,9 @@ export function eventLabel(entry: AuditLog): string {
       const lineCount = (m.lineCount as number) ?? 0
       return `سجّل استلام بضاعة من ${supplierName}: $${totalUsd.toFixed(2)} (${lineCount} أصناف)`
     }
+    case 'device.renamed':      return `أعاد تسمية الجهاز ${str(m.code)}: ${str(m.label)}`
+    case 'device.deactivated':  return `أوقف الجهاز ${str(m.code)}`
+    case 'device.reactivated':  return `أعاد تفعيل الجهاز ${str(m.code)}`
     case 'sync.dead_letter_discarded':
       return `حذف نهائياً معاملة متوقفة عن المزامنة (${str(m.table_name)} — ${str(m.error_message)})`
     case 'operator.switched': {

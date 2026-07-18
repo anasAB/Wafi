@@ -164,6 +164,8 @@ async function onPinComplete(pin: string) {
 // one tap when the float is unchanged). Derivation rules live in
 // computeOpeningDefaults — see that helper for the no-baseline cases.
 const defaultsFromLastClose = ref(false)
+// WAFI-130: shift-open blocked (deactivated device) message for the cash step.
+const openError = ref('')
 function applyOpeningDefaults() {
   const defaults = computeOpeningDefaults(lastClosed.value)
   defaultsFromLastClose.value = defaults !== null
@@ -215,6 +217,11 @@ async function doOpen() {
     if (result.status === 'conflict') {
       conflictShift.value = result.shift
       step.value = 'conflict'
+      return
+    }
+    // WAFI-130: the owner deactivated this device — no new shifts here.
+    if (result.status === 'device-deactivated') {
+      openError.value = 'هذا الجهاز موقوف من قبل المالك — لا يمكن فتح وردية جديدة عليه'
       return
     }
     // Land on the right home before first paint: the owner and a reports-granted
@@ -336,6 +343,7 @@ function back() {
               placeholder="0.00" dir="ltr"
             />
           </div>
+          <p v-if="openError" class="zero-warning" role="alert">{{ openError }}</p>
           <button type="button" class="btn-primary" :disabled="loading" @click="confirmOpen">
             {{ loading ? 'جاري الفتح...' : 'فتح الوردية' }}
           </button>

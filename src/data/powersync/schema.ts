@@ -215,6 +215,9 @@ const devices = new Table({
   code:          column.text,
   is_temporary:  column.integer,
   registered_at: column.text,
+  label:         column.text,     // WAFI-130: owner-set human name ("كاشير ١")
+  last_seen_at:  column.text,     // WAFI-130: stale-device pruning signal
+  is_active:     column.integer,  // WAFI-130: deactivation (null/1 = active)
   sync_status:   column.text,
 })
 const returns = new Table({
