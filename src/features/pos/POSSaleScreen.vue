@@ -6,7 +6,7 @@ import AppToast from '@/components/ui/AppToast.vue'
 import ProductGrid from './ProductGrid.vue'
 import SalePanel from './SalePanel.vue'
 import { useSale, ExchangeRateNotSetError } from './useSale'
-import { useExchangeRate } from '@/features/exchange-rate'
+import { useExchangeRate, ExchangeRateEditor } from '@/features/exchange-rate'
 import { useCategories } from '@/features/categories/composables/useCategories'
 import { useBarcodeScan } from '@/composables/useBarcodeScan'
 import { useSaleDraft } from '@/composables/useSaleDraft'
@@ -108,17 +108,45 @@ function closeCategoryMenuOnOutsideClick(event: MouseEvent) {
   }
 }
 
+// WAFI-128: a first sale attempted with no rate set must not dead-end into a
+// toast — open the rate editor in place, and on save retry the exact line that
+// was blocked so checkout continues where it was. The guard itself stays: a
+// sale without a rate remains impossible (useSale still throws).
+const rateEditorOpen = ref(false)
+const pendingRetryProductId = ref<string | null>(null)
+
+async function onRateEditorSaved() {
+  // Clear pending state BEFORE any await: the editor emits 'saved' then 'close'
+  // synchronously, and the close handler must see nothing left to cancel.
+  rateEditorOpen.value = false
+  const retryId = pendingRetryProductId.value
+  pendingRetryProductId.value = null
+  await loadRate() // the cart's rate lock engages with the just-set rate on retry
+  if (retryId) await handleProductTap(retryId)
+}
+
+function onRateEditorClosed() {
+  rateEditorOpen.value = false
+  if (pendingRetryProductId.value) {
+    pendingRetryProductId.value = null
+    // Dismissed without saving: still blocked — keep the guard message visible.
+    toast.value = { message: 'حدّد سعر صرف الدولار قبل البدء في البيع', type: 'error' }
+  }
+}
+
 async function handleProductTap(productId: string) {
   try {
     await sale.addLine(productId)
     scheduleSave()
   } catch (err) {
+    if (err instanceof ExchangeRateNotSetError) {
+      pendingRetryProductId.value = productId
+      rateEditorOpen.value = true
+      return
+    }
     // Map known domain errors to localized, actionable Arabic guidance.
-    // The exchange-rate case tells the user exactly how to fix it (BUG-013/014).
     toast.value = {
-      message: err instanceof ExchangeRateNotSetError
-        ? 'حدّد سعر صرف الدولار من الأعلى قبل البدء في البيع'
-        : err instanceof Error ? err.message : 'خطأ في الإضافة',
+      message: err instanceof Error ? err.message : 'خطأ في الإضافة',
       type: 'error',
     }
   }
@@ -311,6 +339,13 @@ function handlePaymentConfirmed(completedSale: CompletedSale) {
     @confirmed="handlePaymentConfirmed"
     @installment-plan-failed="handleInstallmentPlanFailed"
     @close="payOpen = false"
+  />
+
+  <!-- WAFI-128: in-context rate setup — first-sale-with-no-rate recovery -->
+  <ExchangeRateEditor
+    v-if="rateEditorOpen"
+    @close="onRateEditorClosed"
+    @saved="onRateEditorSaved"
   />
 
   <AppToast v-if="toast" :message="toast.message" :type="toast.type" @dismiss="toast = null" />
