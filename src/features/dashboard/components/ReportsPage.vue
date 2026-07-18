@@ -14,6 +14,8 @@ import { useBucketBreakdown } from '../composables/useBucketBreakdown'
 import { useExpenseBreakdown } from '../composables/useExpenseBreakdown'
 import { useCategoryBreakdown, type CategoryBreakdownRow } from '../composables/useCategoryBreakdown'
 import { evaluateReportAnomalies } from '../composables/useReportAnomalies'
+import { useDeadStockReport } from '../composables/useDeadStockReport'
+import type { DeadStockThresholdDays } from '../composables/useDeadStockReport'
 import ProfitCumulativeChart from './ProfitCumulativeChart.vue'
 import ReportDrilldownSheet from './ReportDrilldownSheet.vue'
 import ExpenseDonutChart from './ExpenseDonutChart.vue'
@@ -26,6 +28,7 @@ const trend   = useProfitTrend()
 const drilldown = useBucketBreakdown()
 const expenseBreakdown = useExpenseBreakdown()
 const categoryBreakdown = useCategoryBreakdown()
+const deadStock = useDeadStockReport()
 
 const period      = ref<ReportPeriod>('month')
 const customStart = ref('')
@@ -38,7 +41,7 @@ const drilldownTitle = ref('')
 const drilldownOpen = ref(false)
 const drilldownLoading = ref(false)
 const selectedTrendPointIndex = ref<number | null>(null)
-const activeTab = ref<'profitability' | 'expenses' | 'category'>('profitability')
+const activeTab = ref<'profitability' | 'expenses' | 'category' | 'deadStock'>('profitability')
 const selectedExpenseCategory = ref<string | null>(null)
 const expandedCategoryId = ref<string | null>(null)
 const expandedCategorySubrows = ref<CategoryBreakdownRow[]>([])
@@ -205,8 +208,16 @@ function selectTrendPoint(index: number) {
   void openDrilldownForPoint(index)
 }
 
+const DEAD_STOCK_THRESHOLDS: DeadStockThresholdDays[] = [30, 60, 90, 180]
+
+function selectDeadStockThreshold(days: DeadStockThresholdDays) {
+  deadStock.thresholdDays.value = days
+}
+
+watch(deadStock.thresholdDays, () => deadStock.load())
+
 watch([period, customStart, customEnd], reload)
-onMounted(reload)
+onMounted(() => { reload(); deadStock.load() })
 </script>
 
 <template>
@@ -247,6 +258,13 @@ onMounted(reload)
         :class="{ active: activeTab === 'category' }"
         @click="activeTab = 'category'"
       >{{ t('reports.tabCategory') }}</button>
+      <button
+        type="button"
+        data-test="tab-dead-stock"
+        class="reports-tab"
+        :class="{ active: activeTab === 'deadStock' }"
+        @click="activeTab = 'deadStock'"
+      >بضاعة راكدة</button>
     </div>
 
     <div v-if="period === 'custom'" class="custom-range">
@@ -382,6 +400,45 @@ onMounted(reload)
           </li>
         </ul>
         <p v-else class="cold-start-note">{{ t('reports.empty') }}</p>
+      </section>
+
+      <section v-else-if="activeTab === 'deadStock'" class="report-body" data-test="dead-stock-tab-panel">
+        <div class="dead-stock-threshold-row">
+          <button
+            v-for="d in DEAD_STOCK_THRESHOLDS"
+            :key="d"
+            type="button"
+            class="sort-chip"
+            :class="{ active: deadStock.thresholdDays.value === d }"
+            @click="selectDeadStockThreshold(d)"
+          >{{ d }} يوم</button>
+        </div>
+
+        <div class="card headline dead-stock-headline">
+          <span class="verb">لديك بضاعة راكدة بقيمة</span>
+          <span class="amount" data-test="dead-stock-headline" dir="ltr">${{ deadStock.totalFrozenCapitalUsd.value.toFixed(2) }}</span>
+          <p class="dead-stock-sub">لم تُبع منذ {{ deadStock.thresholdDays.value }} يوماً</p>
+        </div>
+
+        <div class="dead-stock-sort-row">
+          <button type="button" class="sort-chip" :class="{ active: deadStock.sort.value === 'value' }" @click="deadStock.sort.value = 'value'">الأعلى قيمة</button>
+          <button type="button" class="sort-chip" :class="{ active: deadStock.sort.value === 'age' }" @click="deadStock.sort.value = 'age'">الأقدم</button>
+        </div>
+
+        <ul v-if="deadStock.rows.value.length" class="dead-stock-list card">
+          <li v-for="row in deadStock.rows.value" :key="row.productId" class="dead-stock-row" :class="{ 'dead-stock-row--uncosted': row.isUncosted }">
+            <div class="dead-stock-info">
+              <span class="dead-stock-name">{{ row.nameAr }}</span>
+              <span class="dead-stock-meta">
+                {{ row.neverSold ? 'لم تُبع أبداً' : `آخر بيع قبل ${deadStock.daysSince(row.lastSoldAt!)} يوماً` }}
+                · المخزون {{ row.currentStock }}
+              </span>
+            </div>
+            <span v-if="row.isUncosted" class="dead-stock-value dead-stock-value--uncosted">غير مُسعّرة</span>
+            <span v-else class="dead-stock-value" dir="ltr">${{ row.valueUsd.toFixed(2) }}</span>
+          </li>
+        </ul>
+        <p v-else class="cold-start-note">لا توجد بضاعة راكدة ضمن هذه المدة</p>
       </section>
 
       <p v-else data-test="empty" class="empty">{{ t('reports.empty') }}</p>
@@ -784,6 +841,39 @@ onMounted(reload)
 .breakdown .total { font-weight: 800; color: #E8EDF5; padding-top: 12px; }
 
 .empty { text-align: center; padding: 40px 0; color: #637285; }
+
+/* ── Dead-stock tab ───────────────────────────────── */
+.dead-stock-threshold-row, .dead-stock-sort-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+.sort-chip {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.14);
+  color: #9FB0C7;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.sort-chip.active { background: rgba(26,86,219,0.20); border-color: rgba(26,86,219,0.55); color: #60A5FA; }
+
+.dead-stock-headline .amount { color: #F59E0B; }
+.dead-stock-sub { margin: 0; font-size: 0.78rem; color: #93A3B8; }
+
+.dead-stock-list { list-style: none; margin: 0; padding: 8px 16px; }
+.dead-stock-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  padding: 10px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.dead-stock-row:last-child { border-bottom: none; }
+.dead-stock-info { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dead-stock-name { font-size: 0.875rem; font-weight: 700; color: #E8EDF5; }
+.dead-stock-meta { font-size: 0.72rem; color: #637285; }
+.dead-stock-value { font-size: 0.875rem; font-weight: 800; color: #F59E0B; flex-shrink: 0; }
+.dead-stock-value--uncosted { color: #93A3B8; font-weight: 600; font-size: 0.78rem; }
+.dead-stock-row--uncosted .dead-stock-name { opacity: 0.75; }
 
 /* ── By-category tab ─────────────────────────────── */
 .category-list { list-style: none; margin: 0; padding: 8px 16px; }
