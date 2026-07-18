@@ -1,3 +1,7 @@
+// WAFI-103 — denomination tally: value (as string, e.g. "5000") → count. Null
+// means the cashier used the "enter total directly" fallback for that side.
+export type DenominationBreakdown = Record<string, number>
+
 export interface CashierShift {
   id:             string
   shopId:         string
@@ -16,6 +20,10 @@ export interface CashierShift {
   closeNote?:     string | null
   forceClosedBy?: string | null
   zReportData?:   ZReportMetrics | null  // Z-report snapshot captured at close
+  // WAFI-103 — denomination breakdown evidence, one JSON object per currency pair
+  // keyed by denomination value; absent/null = manual total entry was used.
+  openingBreakdown?: { usd: DenominationBreakdown; syp: DenominationBreakdown } | null
+  closingBreakdown?: { usd: DenominationBreakdown; syp: DenominationBreakdown } | null
   // WAFI-065 — 'abandoned' is reserved for orphaned shifts cleared without a count.
   // It is NEVER a fake 'closed': abandoned shifts carry no counted cash/variance and
   // are excluded from revenue/variance analytics. Schema-only for now — nothing is

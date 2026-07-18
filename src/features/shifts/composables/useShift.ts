@@ -4,7 +4,20 @@ import { useShiftStore }  from '@/features/shifts/shift.store'
 import { useSessionStore } from '@/store/session.store'
 import type { Staff }     from '@/features/staff/staff.types'
 import { LONG_OPEN_HOURS } from '../shift.types'
-import type { CashierShift, ZReportMetrics } from '../shift.types'
+import type { CashierShift, ZReportMetrics, DenominationBreakdown } from '../shift.types'
+
+type CurrencyBreakdown = { usd: DenominationBreakdown | null; syp: DenominationBreakdown | null } | null
+
+/** Null when the side is missing entirely; { usd: null, syp: null } when both
+ *  sides used manual entry (still valid — distinct from "no data captured"). */
+function parseBreakdown(raw: unknown): CurrencyBreakdown {
+  if (typeof raw !== 'string' || raw.length === 0) return null
+  try {
+    return JSON.parse(raw) as CurrencyBreakdown
+  } catch {
+    return null
+  }
+}
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 
 /** Parse the stored Z-report JSON snapshot. Never throws — a corrupt/absent blob
@@ -35,6 +48,8 @@ function rowToShift(r: any): CashierShift {
     closeNote:      r.close_note ?? null,
     forceClosedBy:  r.force_closed_by ?? null,
     zReportData:    parseZReport(r.z_report_data),
+    openingBreakdown: parseBreakdown(r.opening_breakdown),
+    closingBreakdown: parseBreakdown(r.closing_breakdown),
     status:         r.status,
   }
 }
@@ -71,6 +86,7 @@ export interface CloseShiftInput {
   closeNote?:     string | null
   zReport?:       ZReportMetrics | null
   forceClosedBy?: string | null   // WAFI-065 force-close; null for a normal close
+  closingBreakdown?: CurrencyBreakdown  // WAFI-103 — null when counted by manual total
 }
 
 const DEFAULT_PAGE_SIZE = 25
@@ -130,6 +146,7 @@ export function useShift() {
     staff: Staff,
     openingCashUsd: number,
     openingCashSyp: number,
+    openingBreakdown: CurrencyBreakdown = null,
   ): Promise<OpenShiftResult> {
     // Guard: at most one open shift per device (WAFI-065 Part 1). The app-level
     // check is primary — offline-first can't rely on the DB partial unique index at
@@ -166,9 +183,12 @@ export function useShift() {
     const now     = new Date().toISOString()
     await db.execute(
       `INSERT INTO cashier_shifts
-         (id, shop_id, device_id, staff_id, opened_at, opening_cash_usd, opening_cash_syp, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'open')`,
-      [shiftId, device.shopId, device.deviceId, staff.id, now, openingCashUsd, openingCashSyp]
+         (id, shop_id, device_id, staff_id, opened_at, opening_cash_usd, opening_cash_syp, opening_breakdown, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open')`,
+      [
+        shiftId, device.shopId, device.deviceId, staff.id, now, openingCashUsd, openingCashSyp,
+        openingBreakdown ? JSON.stringify(openingBreakdown) : null,
+      ]
     )
     // Identity lives in one place: opening a shift establishes who is using this
     // device. Set the session store BEFORE logging so the audit entry for the
@@ -191,12 +211,13 @@ export function useShift() {
     closeNote:      string | null
     forceClosedBy:  string | null
     zReport:        ZReportMetrics | null
+    closingBreakdown?: CurrencyBreakdown
   }): Promise<void> {
     await db.execute(
       `UPDATE cashier_shifts
        SET status = 'closed', closed_at = ?, closing_cash_usd = ?, closing_cash_syp = ?,
            variance_usd = ?, variance_syp = ?, close_note = ?, force_closed_by = ?,
-           z_report_data = ?
+           z_report_data = ?, closing_breakdown = ?
        WHERE id = ?`,
       [
         new Date().toISOString(),
@@ -207,6 +228,7 @@ export function useShift() {
         e.closeNote,
         e.forceClosedBy,
         e.zReport ? JSON.stringify(e.zReport) : null,
+        e.closingBreakdown ? JSON.stringify(e.closingBreakdown) : null,
         shiftId,
       ]
     )
@@ -258,6 +280,7 @@ export function useShift() {
       closeNote:      input.closeNote ?? null,
       forceClosedBy:  input.forceClosedBy ?? null,
       zReport:        input.zReport ?? null,
+      closingBreakdown: input.closingBreakdown ?? null,
     })
     shiftStore.closeShift()
     // Log the close while identity is still set, then clear it so the two

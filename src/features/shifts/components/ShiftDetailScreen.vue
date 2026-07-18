@@ -193,6 +193,26 @@ const varClass = computed(() => {
             <div><span class="meta-label">رصيد الفتح</span><span class="meta-value" dir="ltr">{{ fmtSyp(shift.openingCashSyp ?? 0) }} · {{ fmtUsd(shift.openingCashUsd) }}</span></div>
           </div>
 
+          <!-- WAFI-103: denomination breakdown, when the shift was opened/closed by tally -->
+          <div v-if="shift.openingBreakdown?.syp || shift.openingBreakdown?.usd" class="breakdown-note">
+            <span class="meta-label">عدّ فتح الوردية:</span>
+            <span v-if="shift.openingBreakdown?.syp" dir="ltr">
+              {{ Object.entries(shift.openingBreakdown.syp).filter(([,c]) => c > 0).map(([v,c]) => `${v}×${c}`).join('، ') || '—' }} ل.س
+            </span>
+            <span v-if="shift.openingBreakdown?.usd" dir="ltr">
+              {{ Object.entries(shift.openingBreakdown.usd).filter(([,c]) => c > 0).map(([v,c]) => `${v}×${c}`).join('، ') || '—' }} $
+            </span>
+          </div>
+          <div v-if="shift.closingBreakdown?.syp || shift.closingBreakdown?.usd" class="breakdown-note">
+            <span class="meta-label">عدّ إغلاق الوردية:</span>
+            <span v-if="shift.closingBreakdown?.syp" dir="ltr">
+              {{ Object.entries(shift.closingBreakdown.syp).filter(([,c]) => c > 0).map(([v,c]) => `${v}×${c}`).join('، ') || '—' }} ل.س
+            </span>
+            <span v-if="shift.closingBreakdown?.usd" dir="ltr">
+              {{ Object.entries(shift.closingBreakdown.usd).filter(([,c]) => c > 0).map(([v,c]) => `${v}×${c}`).join('، ') || '—' }} $
+            </span>
+          </div>
+
           <!-- Owner force-close (WAFI-065): only for an open shift, owner only. The
                cashier abandoned it without counting, so the owner closes it on the
                record (force_closed_by + audit + snapshot), never silently. -->
@@ -390,6 +410,11 @@ const varClass = computed(() => {
 .meta-grid > div { display: flex; flex-direction: column; gap: 2px; }
 .meta-label { font-size: 0.7rem; color: #637285; }
 .meta-value { font-size: 0.875rem; font-weight: 600; color: #E8EDF5; }
+
+.breakdown-note {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline;
+  padding: 0 16px 10px; font-size: 0.75rem; color: #9FB0C7;
+}
 
 .section-title { font-size: 0.8125rem; font-weight: 700; color: #60A5FA; padding: 14px 16px 6px; margin: 0; }
 

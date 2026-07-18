@@ -16,6 +16,9 @@ import type { CashierShift } from '@/features/shifts/shift.types'
 import { roleLabel }       from '@/features/staff/staff.types'
 import { resolveLanding, isRouteAllowed } from '@/router/permissions'
 import { computeOpeningDefaults } from '@/features/shifts/composables/openingDefaults'
+import DenominationTally from '@/features/shifts/components/DenominationTally.vue'
+import { useDenominationConfig } from '@/features/shifts/composables/useDenominationConfig'
+import type { DenominationBreakdown } from '@/features/shifts/shift.types'
 
 // `login` (default): the app gate — pick staff, PIN, then open a shift with a
 // cash count. `switch`: re-auth as another operator inside an open shift — no
@@ -37,6 +40,20 @@ const step           = ref<Step>('pick-staff')
 const selectedStaff  = ref<Staff | null>(null)
 // WAFI-059: opening cash is dual-currency. SYP is the primary field (focused first
 // for Syrian shops); both persist on the shift.
+const { usd: usdDenoms, syp: sypDenoms, load: loadDenoms } = useDenominationConfig()
+// WAFI-103: tally mode is opt-in per opening; the pre-filled manual fields
+// (WAFI-129) stay the default fast path.
+const openingUseTally = ref(false)
+const openingUsdBreakdown = ref<DenominationBreakdown | null>(null)
+const openingSypBreakdown = ref<DenominationBreakdown | null>(null)
+function onOpeningUsdTally(payload: { total: number; breakdown: DenominationBreakdown | null }) {
+  openingCashUsd.value = String(payload.total)
+  openingUsdBreakdown.value = payload.breakdown
+}
+function onOpeningSypTally(payload: { total: number; breakdown: DenominationBreakdown | null }) {
+  openingCashSyp.value = String(payload.total)
+  openingSypBreakdown.value = payload.breakdown
+}
 const openingCashSyp = ref('')
 const openingCashUsd = ref('')
 // Previous shift's closing cash, shown as a hint above the inputs (epic Story 5.3).
@@ -62,7 +79,7 @@ const conflictCashierName = computed(() => {
   return staff.value.find(s => s.id === id)?.name ?? 'كاشير آخر'
 })
 
-onMounted(() => loadStaff())
+onMounted(() => { loadStaff(); loadDenoms() })
 
 function selectStaff(s: Staff) {
   selectedStaff.value = s
@@ -211,6 +228,7 @@ async function doOpen() {
       selectedStaff.value,
       parseFloat(openingCashUsd.value) || 0,
       parseFloat(openingCashSyp.value) || 0,
+      openingUseTally.value ? { usd: openingUsdBreakdown.value, syp: openingSypBreakdown.value } : null,
     )
     // A shift opened on this device between the PIN step and here (race) → surface
     // the same conflict flow rather than silently doing nothing.
@@ -243,6 +261,9 @@ function back() {
   recoveryDone.value = false
   openingCashSyp.value = ''
   openingCashUsd.value = ''
+  openingUseTally.value = false
+  openingUsdBreakdown.value = null
+  openingSypBreakdown.value = null
   confirmZero.value = false
   conflictShift.value = null
   showForceClose.value = false
@@ -325,24 +346,46 @@ function back() {
         </template>
 
         <template v-else>
-          <div class="cash-input-card">
-            <span class="cash-currency">ل.س</span>
-            <input
-              v-model="openingCashSyp"
-              type="number" min="0" step="1"
-              class="cash-input"
-              placeholder="0" dir="ltr" autofocus
+          <button type="button" class="tally-toggle-link" @click="openingUseTally = !openingUseTally">
+            {{ openingUseTally ? 'إدخال المبلغ مباشرة' : 'عدّ الفئات بدلاً من ذلك' }}
+          </button>
+
+          <template v-if="openingUseTally">
+            <DenominationTally
+              label="ليرة سورية ل.س"
+              :denominations="sypDenoms.map(d => d.value)"
+              :is-syp="true"
+              @change="onOpeningSypTally"
             />
-          </div>
-          <div class="cash-input-card cash-input-card--spaced">
-            <span class="cash-currency">$</span>
-            <input
-              v-model="openingCashUsd"
-              type="number" min="0" step="0.01"
-              class="cash-input"
-              placeholder="0.00" dir="ltr"
+            <DenominationTally
+              label="دولار أمريكي $"
+              :denominations="usdDenoms.map(d => d.value)"
+              :is-syp="false"
+              @change="onOpeningUsdTally"
             />
-          </div>
+          </template>
+
+          <template v-else>
+            <div class="cash-input-card">
+              <span class="cash-currency">ل.س</span>
+              <input
+                v-model="openingCashSyp"
+                type="number" min="0" step="1"
+                class="cash-input"
+                placeholder="0" dir="ltr" autofocus
+              />
+            </div>
+            <div class="cash-input-card cash-input-card--spaced">
+              <span class="cash-currency">$</span>
+              <input
+                v-model="openingCashUsd"
+                type="number" min="0" step="0.01"
+                class="cash-input"
+                placeholder="0.00" dir="ltr"
+              />
+            </div>
+          </template>
+
           <p v-if="openError" class="zero-warning" role="alert">{{ openError }}</p>
           <button type="button" class="btn-primary" :disabled="loading" @click="confirmOpen">
             {{ loading ? 'جاري الفتح...' : 'فتح الوردية' }}
@@ -453,6 +496,12 @@ function back() {
 }
 .cash-input-card--spaced { margin-top: 0.75rem; }
 .cash-currency { color: #637285; font-size: 1.25rem; min-width: 2.25rem; text-align: center; }
+
+.tally-toggle-link {
+  display: block; margin: 0 auto 0.75rem; padding: 0.35rem 0.75rem; border-radius: 0.6rem;
+  background: rgba(26, 86, 219, 0.10); border: 1px solid rgba(26, 86, 219, 0.28);
+  color: #60A5FA; font-size: 0.75rem; font-weight: 600; font-family: inherit; cursor: pointer;
+}
 
 .last-closed-hint {
   font-size: 0.8125rem; color: #93B4F0; text-align: center; width: 100%;
