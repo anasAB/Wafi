@@ -311,7 +311,9 @@ const stock_take_sessions = new Table({
   completed_at: column.text,
   status:       column.text,   // 'in_progress' | 'completed' | 'cancelled'
   created_by:   column.text,
-  scope:        column.text,
+  scope:        column.text,   // human-readable scope name snapshot (WAFI-134)
+  scope_category_id:    column.text, // real categories scoping (WAFI-134)
+  scope_subcategory_id: column.text,
   sync_status:  column.text,
 })
 

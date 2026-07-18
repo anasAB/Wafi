@@ -151,5 +151,46 @@ export function useProducts() {
     await logStockAdjusted(productId, nameRow?.name_ar ?? productId, oldValue, clampedValue)
   }
 
-  return { products, lowStockProducts, load, getById, save, softDelete, adjustStock }
+  // WAFI-121: snapshot-based flows (stock take, spot checks) must commit
+  // RELATIVE deltas against live stock — an absolute write erases any sale or
+  // return rung between snapshot and commit. Read-modify-write happens inside
+  // one transaction so a concurrent local write can't interleave.
+  async function adjustStockBy(
+    productId: string,
+    delta: number,
+    reason: AdjustmentReason,
+    notes?: string
+  ) {
+    if (delta === 0) return
+    const now = new Date().toISOString()
+    const device = useDeviceStore()
+    let oldValue = 0
+    let newValue = 0
+
+    await db.writeTransaction(async (tx) => {
+      const stockResult = await tx.execute(
+        'SELECT current_stock FROM products WHERE id = ?', [productId]
+      )
+      oldValue = (stockResult as any).rows._array[0]?.current_stock ?? 0
+      // Same never-below-zero clamp as adjustStock (the oversold convention).
+      newValue = Math.max(0, oldValue + delta)
+      await tx.execute(
+        `UPDATE products SET current_stock = ?, updated_at = ?, sync_status = 'pending' WHERE id = ?`,
+        [newValue, now, productId]
+      )
+      await tx.execute(
+        `INSERT INTO stock_adjustments (id, shop_id, product_id, old_value, new_value, reason, notes, created_at, device_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [uuidv4(), device.shopId, productId, oldValue, newValue, reason, notes ?? null, now, device.deviceId]
+      )
+    })
+
+    const nameRow = await db.getOptional<{ name_ar: string }>(
+      `SELECT name_ar FROM products WHERE id = ?`, [productId]
+    )
+    await load()
+    await logStockAdjusted(productId, nameRow?.name_ar ?? productId, oldValue, newValue)
+  }
+
+  return { products, lowStockProducts, load, getById, save, softDelete, adjustStock, adjustStockBy }
 }

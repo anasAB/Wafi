@@ -1,19 +1,47 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
-import { useStockTake } from '@/features/stock-take/composables/useStockTake'
+import { useStockTake, StockTakeOverlapError } from '@/features/stock-take/composables/useStockTake'
+import { useCategories } from '@/features/categories/composables/useCategories'
 
 const router = useRouter()
 const { startSession } = useStockTake()
-const scope = ref<string | null>(null)
+const { categoriesWithSubcategories, load: loadCategories } = useCategories()
+
+// WAFI-134: scope is a real category picker, not free text — free-text scoping
+// filtered on the deprecated products.category column and matched nothing.
+const categoryId = ref<string>('')      // '' = all products
+const subcategoryId = ref<string>('')   // '' = whole category
 const starting = ref(false)
+const errorMessage = ref<string | null>(null)
+const loadingCategories = ref(true)
+
+onMounted(async () => {
+  try { await loadCategories() } finally { loadingCategories.value = false }
+})
+
+const selectedCategory = computed(() =>
+  categoriesWithSubcategories.value.find(c => c.id === categoryId.value) ?? null)
+
+function onCategoryChange() { subcategoryId.value = '' }
 
 async function start() {
   starting.value = true
+  errorMessage.value = null
   try {
-    const sessionId = await startSession(scope.value?.trim() || null)
+    const cat = selectedCategory.value
+    const sub = cat?.subcategories.find(s => s.id === subcategoryId.value) ?? null
+    const sessionId = await startSession(cat ? {
+      categoryId: cat.id,
+      subcategoryId: sub?.id ?? null,
+      scopeName: sub ? `${cat.name} — ${sub.name}` : cat.name,
+    } : null)
     router.push(`/stock-take/${sessionId}`)
+  } catch (err) {
+    errorMessage.value = err instanceof StockTakeOverlapError
+      ? err.message
+      : 'تعذّر بدء الجرد. حاول مرة أخرى.'
   } finally {
     starting.value = false
   }
@@ -34,13 +62,31 @@ async function start() {
         <p class="card-title">جرد المخزون</p>
         <p class="card-sub">سيتم تجميد الكميات الحالية وطلب عد كل منتج يدويًا. يمكنك تحديد فئة معينة أو جرد كل المخزون.</p>
 
-        <label class="field-label">فئة محددة (اختياري)</label>
-        <input
-          v-model="scope"
-          data-testid="stock-take-scope-input"
+        <label class="field-label">نطاق الجرد</label>
+        <select
+          v-model="categoryId"
+          data-testid="stock-take-scope-category"
           class="form-input"
-          placeholder="اتركه فارغًا لجرد كل المنتجات"
-        />
+          :disabled="loadingCategories"
+          @change="onCategoryChange"
+        >
+          <option value="">كل المنتجات</option>
+          <option v-for="c in categoriesWithSubcategories" :key="c.id" :value="c.id">{{ c.name }}</option>
+        </select>
+
+        <template v-if="selectedCategory && selectedCategory.subcategories.length > 0">
+          <label class="field-label">فئة فرعية (اختياري)</label>
+          <select
+            v-model="subcategoryId"
+            data-testid="stock-take-scope-subcategory"
+            class="form-input"
+          >
+            <option value="">كل الفئة</option>
+            <option v-for="s in selectedCategory.subcategories" :key="s.id" :value="s.id">{{ s.name }}</option>
+          </select>
+        </template>
+
+        <p v-if="errorMessage" class="error-note" role="alert">{{ errorMessage }}</p>
 
         <button
           type="button"
@@ -144,6 +190,19 @@ async function start() {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .form-input::placeholder { color: #3D4F6B; }
+
+.error-note {
+  align-self: stretch;
+  margin: 0;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(239, 68, 68, 0.38);
+  background: rgba(127, 29, 29, 0.24);
+  color: #FCA5A5;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  padding: 0.625rem 0.875rem;
+  text-align: right;
+}
 .form-input:focus {
   border-color: rgba(26, 86, 219, 0.8);
   box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.25), 0 0 12px rgba(26, 86, 219, 0.15);

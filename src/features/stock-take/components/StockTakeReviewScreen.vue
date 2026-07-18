@@ -19,14 +19,29 @@ onMounted(async () => {
   loading.value = false
 })
 
+const alreadyCompleted = ref(false)
+
 async function onConfirm() {
   confirming.value = true
   try {
-    await confirmSession()
+    // WAFI-121: commit is idempotent — a second confirm (double tap, second
+    // device) is a no-op reported here instead of re-running adjustments.
+    const result = await confirmSession()
+    if (result === 'already-completed') {
+      alreadyCompleted.value = true
+      return
+    }
     router.push('/stock-take/history')
   } finally {
     confirming.value = false
   }
+}
+
+// WAFI-121: lines whose live stock moved since the snapshot (a sale/return rung
+// mid-count). The commit applies deltas so those movements survive — this note
+// makes that visible: final = live + (counted − snapshot), clamped ≥ 0.
+function finalStock(line: { liveStock: number; variance: number | null }): number {
+  return Math.max(0, line.liveStock + (line.variance ?? 0))
 }
 </script>
 
@@ -62,6 +77,9 @@ async function onConfirm() {
             <div class="line-info">
               <span class="line-name">{{ line.productNameAr }}</span>
               <span class="line-variance">الفرق: {{ line.variance }}</span>
+              <span v-if="line.liveStock !== line.expectedStock" class="line-moved">
+                تحرّك أثناء الجرد: {{ line.expectedStock }} ← {{ line.liveStock }} · الرصيد النهائي بعد التأكيد: {{ finalStock(line) }}
+              </span>
             </div>
             <span
               v-if="line.varianceValueUsd !== null"
@@ -74,11 +92,16 @@ async function onConfirm() {
           </div>
         </div>
 
+        <p v-if="alreadyCompleted" class="already-note" role="alert">
+          هذا الجرد مؤكد مسبقاً — لم يتم تطبيق أي تعديلات إضافية.
+          <button type="button" class="already-link" @click="router.push('/stock-take/history')">عرض السجل</button>
+        </p>
+
         <button
           type="button"
           class="btn-primary"
           data-testid="stock-take-confirm"
-          :disabled="confirming"
+          :disabled="confirming || alreadyCompleted"
           @click="onConfirm"
         >
           {{ confirming ? 'جاري التطبيق...' : 'تأكيد وتطبيق' }}
@@ -109,6 +132,35 @@ async function onConfirm() {
   gap: 1rem;
 }
 @media (min-width: 1024px) { .main-content { padding: 1.5rem; } }
+
+.line-moved {
+  font-size: 0.6875rem;
+  color: #FBBF24;
+  line-height: 1.4;
+}
+
+.already-note {
+  margin: 0;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(251, 191, 36, 0.34);
+  background: rgba(120, 80, 8, 0.18);
+  color: #FBBF24;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  padding: 0.625rem 0.875rem;
+}
+.already-link {
+  background: none;
+  border: none;
+  color: #93B4F0;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+  margin-inline-start: 0.375rem;
+}
 
 .loading-wrap {
   flex: 1;
