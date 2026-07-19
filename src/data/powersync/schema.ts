@@ -50,6 +50,9 @@ const sales = new Table({
   is_split:                 column.integer, // 0/1, default 0
   shift_id:                 column.text,   // FK → cashier_shifts.id, nullable
   staff_id:                 column.text,   // operator who completed the sale (nullable)
+  sale_discount_type:       column.text,   // WAFI-100
+  sale_discount_value:      column.real,   // WAFI-100
+  sale_discount_amount_usd: column.real,   // WAFI-100
   sync_status:              column.text,
 })
 
@@ -61,6 +64,9 @@ const sale_line_items = new Table({
   unit_price_usd: column.real,
   unit_cost_usd:  column.real,
   line_total_usd: column.real,
+  discount_type:         column.text,   // WAFI-100
+  discount_value:        column.real,   // WAFI-100
+  discount_amount_usd:   column.real,   // WAFI-100
 })
 
 const exchange_rates = new Table({
@@ -406,12 +412,14 @@ const subcategories = new Table({
 })
 
 const shops = new Table({
-  owner_user_id: column.text,
-  name:          column.text,
-  business_type: column.text,
-  country:       column.text,
-  created_at:    column.text,
-  features:      column.text,   // WAFI-131: per-shop pack flags (JSON, server-set)
+  owner_user_id:               column.text,
+  name:                        column.text,
+  business_type:               column.text,
+  country:                     column.text,
+  created_at:                  column.text,
+  features:                    column.text,   // WAFI-131: per-shop pack flags (JSON, server-set)
+  cashier_discount_cap_pct:    column.real,   // WAFI-100
+  manager_discount_cap_pct:    column.real,   // WAFI-100
 })
 
 export const AppSchema = new Schema({
