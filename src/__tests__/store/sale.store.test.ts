@@ -118,16 +118,6 @@ describe('useSaleStore', () => {
     expect(store.lines[0].lineTotalUsd).toBe(20)
   })
 
-  it('updateUnitPrice overrides the charged price and recomputes the line total', () => {
-    const store = useSaleStore()
-    store.addLine({ productId: 'p1', nameAr: 'تست', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10, availableStock: 99, listPriceUsd: 10 })
-    store.updateQuantity('p1', 2)
-    store.updateUnitPrice('p1', 15) // sold above the listed $10
-    expect(store.lines[0].unitPriceUsd).toBe(15)
-    expect(store.lines[0].lineTotalUsd).toBe(30)
-    expect(store.lines[0].listPriceUsd).toBe(10) // list snapshot unchanged
-  })
-
   it('scalePricesToTotal raises line prices so the cart total matches the amount paid', () => {
     const store = useSaleStore()
     store.addLine({ productId: 'p1', nameAr: 'تست', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10, availableStock: 99, listPriceUsd: 10 })
@@ -148,13 +138,88 @@ describe('useSaleStore', () => {
     expect(store.totalUsd).toBe(20)
   })
 
-  it('updateUnitPrice ignores negative or NaN prices', () => {
+})
+
+describe('discounts', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+  })
+
+  it('applyLineDiscount applies a percent discount to the line', () => {
     const store = useSaleStore()
-    store.addLine({ productId: 'p1', nameAr: 'تست', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10, availableStock: 99 })
-    store.updateUnitPrice('p1', -5)
-    expect(store.lines[0].unitPriceUsd).toBe(10)
-    store.updateUnitPrice('p1', NaN)
-    expect(store.lines[0].unitPriceUsd).toBe(10)
+    store.addLine({
+      productId: 'p1', nameAr: 'Test', quantity: 2,
+      unitPriceUsd: 10, unitCostUsd: 4, lineTotalUsd: 20,
+      availableStock: 10, listPriceUsd: 10,
+    })
+    store.applyLineDiscount('p1', { type: 'percent', value: 20 })
+    const line = store.lines.find(l => l.productId === 'p1')!
+    expect(line.unitPriceUsd).toBeCloseTo(8, 2)
+    expect(line.lineTotalUsd).toBeCloseTo(16, 2)
+    expect(line.discountType).toBe('percent')
+    expect(line.discountValue).toBe(20)
+    expect(line.discountAmountUsd).toBeCloseTo(2, 2)
+  })
+
+  it('applyLineDiscount(null) clears the discount and restores list price', () => {
+    const store = useSaleStore()
+    store.addLine({
+      productId: 'p1', nameAr: 'Test', quantity: 1,
+      unitPriceUsd: 10, unitCostUsd: 4, lineTotalUsd: 10,
+      availableStock: 10, listPriceUsd: 10,
+    })
+    store.applyLineDiscount('p1', { type: 'fixed', value: 3 })
+    store.applyLineDiscount('p1', null)
+    const line = store.lines.find(l => l.productId === 'p1')!
+    expect(line.unitPriceUsd).toBe(10)
+    expect(line.discountType).toBeUndefined()
+    expect(line.discountAmountUsd).toBeUndefined()
+  })
+
+  it('applyMarkup sets a price above list with no discount fields', () => {
+    const store = useSaleStore()
+    store.addLine({
+      productId: 'p1', nameAr: 'Test', quantity: 1,
+      unitPriceUsd: 10, unitCostUsd: 4, lineTotalUsd: 10,
+      availableStock: 10, listPriceUsd: 10,
+    })
+    store.applyMarkup('p1', 12)
+    const line = store.lines.find(l => l.productId === 'p1')!
+    expect(line.unitPriceUsd).toBe(12)
+    expect(line.discountType).toBeUndefined()
+  })
+
+  it('applyMarkup no-ops if the price is below list', () => {
+    const store = useSaleStore()
+    store.addLine({
+      productId: 'p1', nameAr: 'Test', quantity: 1,
+      unitPriceUsd: 10, unitCostUsd: 4, lineTotalUsd: 10,
+      availableStock: 10, listPriceUsd: 10,
+    })
+    store.applyMarkup('p1', 9)
+    const line = store.lines.find(l => l.productId === 'p1')!
+    expect(line.unitPriceUsd).toBe(10)
+  })
+
+  it('applySaleDiscount reduces totalUsd on top of line totals (stacking)', () => {
+    const store = useSaleStore()
+    store.addLine({
+      productId: 'p1', nameAr: 'Test', quantity: 1,
+      unitPriceUsd: 10, unitCostUsd: 4, lineTotalUsd: 10,
+      availableStock: 10, listPriceUsd: 10,
+    })
+    store.applyLineDiscount('p1', { type: 'percent', value: 10 }) // line net = 9
+    store.applySaleDiscount({ type: 'fixed', value: 1 })          // sale net = 8
+    expect(store.totalUsd).toBeCloseTo(8, 2)
+    expect(store.saleDiscount?.amountUsd).toBeCloseTo(1, 2)
+  })
+
+  it('clear() resets saleDiscount', () => {
+    const store = useSaleStore()
+    store.applySaleDiscount({ type: 'fixed', value: 1 })
+    store.clear()
+    expect(store.saleDiscount).toBeNull()
   })
 })
 

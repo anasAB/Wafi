@@ -2,12 +2,13 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
+import { computeDiscountedPrice, computeDiscountAmount, type DiscountType } from '@/features/pos/discounts'
 
 export interface SaleLine {
   productId:    string
   nameAr:       string
   quantity:     number
-  unitPriceUsd: number       // actual price charged (cashier may negotiate up/down)
+  unitPriceUsd: number       // actual price charged (net of any discount/markup)
   /** Cost snapshot at add-to-cart time, used for in-cart profit preview. */
   unitCostUsd?: number
   lineTotalUsd: number
@@ -20,6 +21,21 @@ export interface SaleLine {
   /** WAFI-101 — sold via the "بند حر" open-item flow (a hidden synthetic
    *  product row, not a catalog item). Excluded from stock/stock-take logic. */
   isOpenItem?: boolean
+  /** WAFI-100: set only when a discount (not a markup) is applied to this line. */
+  discountType?:       DiscountType
+  discountValue?:      number
+  discountAmountUsd?:  number
+  /** WAFI-100: true when this discount required (and received) owner/manager
+   *  PIN approval — read by usePayment.confirm() to decide which lines need
+   *  a sale.discount_applied audit entry once the sale id exists. */
+  discountPinApproved?: boolean
+}
+
+export interface SaleDiscount {
+  type:          DiscountType
+  value:         number
+  amountUsd:     number
+  pinApproved?:  boolean
 }
 
 export const useSaleStore = defineStore('sale', () => {
@@ -29,10 +45,12 @@ export const useSaleStore = defineStore('sale', () => {
   const deviceSequence      = ref<number>(
     parseInt(localStorage.getItem('wafi_device_seq') ?? '0', 10)
   )
+  const saleDiscount = ref<SaleDiscount | null>(null)
 
-  const totalUsd = computed(() =>
-    lines.value.reduce((sum, l) => sum + l.lineTotalUsd, 0)
-  )
+  const totalUsd = computed(() => {
+    const linesTotal = lines.value.reduce((sum, l) => sum + l.lineTotalUsd, 0)
+    return Math.max(0, linesTotal - (saleDiscount.value?.amountUsd ?? 0))
+  })
 
   function addLine(line: SaleLine) {
     const max = line.availableStock ?? Infinity
@@ -59,13 +77,68 @@ export const useSaleStore = defineStore('sale', () => {
     if (idx !== -1) lines.value.splice(idx, 1)
   }
 
-  // Override the price charged for a line (e.g. sold above the listed price).
-  function updateUnitPrice(productId: string, unitPriceUsd: number) {
-    if (unitPriceUsd < 0 || Number.isNaN(unitPriceUsd)) return
+  // WAFI-100: apply a capped/audited discount to one line. Recomputes the
+  // line's unitPriceUsd/lineTotalUsd/discount* fields from listPriceUsd (the
+  // undiscounted price), so re-applying a different discount is idempotent —
+  // it never compounds on top of a previous discount.
+  function applyLineDiscount(
+    productId: string,
+    discount: { type: DiscountType; value: number } | null,
+    pinApproved = false,
+  ) {
     const line = lines.value.find(l => l.productId === productId)
-    if (line) {
-      line.unitPriceUsd = unitPriceUsd
-      line.lineTotalUsd = line.quantity * unitPriceUsd
+    if (!line) return
+    const base = line.listPriceUsd ?? line.unitPriceUsd
+    if (discount === null) {
+      line.unitPriceUsd         = base
+      line.lineTotalUsd         = base * line.quantity
+      line.discountType         = undefined
+      line.discountValue        = undefined
+      line.discountAmountUsd    = undefined
+      line.discountPinApproved  = undefined
+      return
+    }
+    const finalPrice = computeDiscountedPrice(base, discount)
+    line.unitPriceUsd        = finalPrice
+    line.lineTotalUsd        = finalPrice * line.quantity
+    line.discountType        = discount.type
+    line.discountValue       = discount.value
+    line.discountAmountUsd   = computeDiscountAmount(base, finalPrice)
+    line.discountPinApproved = pinApproved
+  }
+
+  // WAFI-100: sell above list price. Uncapped, unaudited (never hurts the
+  // shop financially) — a distinct path from applyLineDiscount so a markup
+  // is never mistaken for a discount by the cap/PIN system.
+  function applyMarkup(productId: string, newUnitPriceUsd: number) {
+    const line = lines.value.find(l => l.productId === productId)
+    if (!line) return
+    const base = line.listPriceUsd ?? line.unitPriceUsd
+    if (newUnitPriceUsd < base) return
+    line.unitPriceUsd      = newUnitPriceUsd
+    line.lineTotalUsd       = newUnitPriceUsd * line.quantity
+    line.discountType       = undefined
+    line.discountValue      = undefined
+    line.discountAmountUsd  = undefined
+  }
+
+  // WAFI-100: sale-footer discount, applied on top of the (already net) line
+  // totals — stacking, not exclusive with line discounts.
+  function applySaleDiscount(
+    discount: { type: DiscountType; value: number } | null,
+    pinApproved = false,
+  ) {
+    if (discount === null) {
+      saleDiscount.value = null
+      return
+    }
+    const linesTotal = lines.value.reduce((sum, l) => sum + l.lineTotalUsd, 0)
+    const finalTotal  = computeDiscountedPrice(linesTotal, discount)
+    saleDiscount.value = {
+      type:        discount.type,
+      value:       discount.value,
+      amountUsd:   computeDiscountAmount(linesTotal, finalTotal),
+      pinApproved,
     }
   }
 
@@ -137,9 +210,10 @@ export const useSaleStore = defineStore('sale', () => {
   }
 
   function clear() {
-    lines.value              = []
-    lockedExchangeRate.value = null
+    lines.value               = []
+    lockedExchangeRate.value  = null
     hasRateChangeNotice.value = false
+    saleDiscount.value        = null
     // deviceSequence is intentionally NOT reset — it is a monotonically increasing
     // per-device counter that persists across sales to guarantee unique receipt numbers.
   }
@@ -149,11 +223,14 @@ export const useSaleStore = defineStore('sale', () => {
     lockedExchangeRate,
     hasRateChangeNotice,
     deviceSequence,
+    saleDiscount,
     totalUsd,
     addLine,
     removeLine,
     updateQuantity,
-    updateUnitPrice,
+    applyLineDiscount,
+    applyMarkup,
+    applySaleDiscount,
     scalePricesToTotal,
     setLockedRate,
     setRateChangeNotice,
