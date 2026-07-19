@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { setActivePinia, createPinia } from 'pinia'
 
 // Mock the Supabase auth client so the service runs with no network. Spies are
 // hoisted so they exist when the (hoisted) vi.mock factory runs.
@@ -10,24 +9,10 @@ const { signUp, signInWithPassword, signOut, getUser } = vi.hoisted(() => ({
   getUser:            vi.fn(),
 }))
 vi.mock('@/data/supabase/client', () => ({
-  supabase: {
-    auth: {
-      signUp, signInWithPassword, signOut, getUser,
-      // device.store.ts wires these at module scope (WAFI-122's signIn now
-      // pulls in useDeviceStore) — stubbed so importing it here doesn't throw.
-      onAuthStateChange: vi.fn(),
-      getSession: vi.fn().mockResolvedValue({ data: { session: null } }),
-    },
-  },
+  supabase: { auth: { signUp, signInWithPassword, signOut, getUser } },
 }))
 
 import { phoneToEmail, signUpOwner, signIn, signOut as serviceSignOut, verifyAccountPassword } from '@/data/supabase/auth'
-
-// WAFI-122: signIn now calls useDeviceStore() — every test in this file needs
-// an active Pinia instance for that not to throw.
-beforeEach(() => {
-  setActivePinia(createPinia())
-})
 
 describe('phoneToEmail', () => {
   it('strips spaces, dashes and the leading + to a stable synthetic local-part', () => {
@@ -119,7 +104,7 @@ describe('signIn', () => {
   it('signs in with the synthetic email derived from the phone', async () => {
     const res = await signIn({ phone: '+963944123456', password: 'secret123' })
     expect(res.ok).toBe(true)
-    expect(signInWithPassword).toHaveBeenCalledWith(expect.objectContaining({ email: '963944123456@wafi.app', password: 'secret123' }))
+    expect(signInWithPassword).toHaveBeenCalledWith({ email: '963944123456@wafi.app', password: 'secret123' })
   })
 
   it('maps invalid credentials to a distinct reason', async () => {
