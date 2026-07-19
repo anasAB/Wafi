@@ -1109,7 +1109,7 @@ Add minimal styling for the new trigger elements near the existing `.price-input
 
 Update the main total row to read `store.totalUsd` as before (already net, no change needed there — `totalUsd` is already the net computed value from Task 5).
 
-**Known follow-up left for whoever implements this task:** `onPinConfirmed` above has a placeholder comment rather than a real PIN check, because this codebase's existing PIN-verification composable (used by `ShiftDetailScreen.vue`/`OwnerSetupScreen.vue` for force-close and owner setup) needs to be located and reused exactly — grep for how those screens validate an entered PIN against `staff.pinHash`/`pinSalt` before wiring this, and use the *same* composable rather than reimplementing PIN hashing here.
+Also add an approver-picker step before the `PinPad` inside the `pinSheetOpen` `BaseModal` above: list active staff from `useStaff()` filtered to `role === 'owner' || role === 'manager'`, each a tappable button that sets `approverCandidate.value = staff` before showing the `PinPad` — mirror `LockScreen.vue`'s existing staff-picker step for the markup/layout, since it's the same "pick staff, then PIN" shape.
 
 - [ ] **Step 4: Run test to verify it passes**
 
