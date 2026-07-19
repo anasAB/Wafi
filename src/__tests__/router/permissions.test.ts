@@ -36,6 +36,19 @@ describe('isRouteAllowed', () => {
   })
 })
 
+// WAFI-138: staff ledger/settlement routes are gated behind can_view_expenses —
+// the existing financials permission, not a new flag.
+describe('isRouteAllowed — staff ledger/settlement routes (WAFI-138)', () => {
+  it('denies a cashier without can_view_expenses from the staff ledger route', () => {
+    const cashier = staff('cashier')
+    expect(isRouteAllowed('can_view_expenses', cashier)).toBe(false)
+  })
+
+  it('allows the owner into the staff ledger route', () => {
+    expect(isRouteAllowed('can_view_expenses', staff('owner', OWNER_PERMISSIONS))).toBe(true)
+  })
+})
+
 // WAFI-058 supersedes the "manager always sees reports" half of WAFI-013:
 // financials are Owner-only by default and owner-grantable per manager.
 describe('isRouteAllowed — manager role (WAFI-058 default-off financials)', () => {

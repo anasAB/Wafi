@@ -24,6 +24,10 @@ const router = createRouter({
     { path: '/products/:id/edit', component: () => import('@/features/products/EditProductPage.vue'),  meta: { permission: 'can_manage_products' } },
     { path: '/categories', component: () => import('@/features/categories/components/CategoriesManagementScreen.vue'), meta: { permission: 'can_manage_products' } },
     { path: '/expenses',          component: () => import('@/features/expenses/ExpenseListPage.vue'),  meta: { permission: 'can_view_expenses' } },
+    // WAFI-138: staff ledger/settlement — reuses can_view_expenses (no new permission flag).
+    { path: '/staff/:staffId/ledger',                       component: () => import('@/features/staff-ledger/views/StaffLedgerView.vue'),       meta: { permission: 'can_view_expenses' }, props: true },
+    { path: '/staff/:staffId/settlement/draft/:periodMonth', component: () => import('@/features/staff-ledger/views/SettlementDraftView.vue'),   meta: { permission: 'can_view_expenses' }, props: true },
+    { path: '/staff/:staffId/settlement/:settlementId',      component: () => import('@/features/staff-ledger/views/SettlementDetailView.vue'),  meta: { permission: 'can_view_expenses' }, props: true },
     { path: '/customers',         component: () => import('@/features/customers/CustomersPage.vue'),       meta: { permission: 'can_manage_customers' } },
     { path: '/customers/collections', component: () => import('@/features/customers/CollectionsWorklistPage.vue'), meta: { permission: 'can_view_reports' } },
     { path: '/customers/:id',     component: () => import('@/features/customers/CustomerDetailPage.vue'),  meta: { permission: 'can_manage_customers' } },
