@@ -135,6 +135,22 @@ describe('useOperatorSwitch', () => {
       expect(refreshSessionMock).not.toHaveBeenCalled()
     })
 
+    it('does not call the RPC (and does not refresh the session) when session_id decode fails, but still sets the active staff locally', async () => {
+      getSessionMock.mockResolvedValueOnce({
+        data: { session: { access_token: fakeAccessToken(null) } },
+        error: null,
+      })
+      const { useSessionStore }   = await import('@/store/session.store')
+      const { useOperatorSwitch } = await import('@/features/staff/composables/useOperatorSwitch')
+
+      const { switchTo } = useOperatorSwitch()
+      await switchTo(cashier, '1234')
+
+      expect(rpcMock).not.toHaveBeenCalled()
+      expect(refreshSessionMock).not.toHaveBeenCalled()
+      expect(useSessionStore().activeStaff?.id).toBe('staff-1')
+    })
+
     it('does not block the switch when supabase.rpc resolves an error object instead of throwing', async () => {
       rpcMock.mockResolvedValueOnce({ data: null, error: new Error('offline') })
       const { useSessionStore }   = await import('@/store/session.store')

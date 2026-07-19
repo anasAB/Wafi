@@ -70,6 +70,25 @@ export function useOperatorSwitch() {
       const accessToken = sessionData?.session?.access_token
       const sessionId = accessToken ? decodeSessionIdClaim(accessToken) : null
 
+      if (sessionId === null) {
+        // A failed/missing session_id decode must NEVER be sent to the RPC as
+        // a real value: `switch_active_operator`'s upsert is
+        // `ON CONFLICT (device_id) DO UPDATE SET session_id = excluded.session_id`,
+        // which unconditionally overwrites this device's stored session_id.
+        // If a previous successful switch had stamped a genuine, working
+        // session_id for this device, passing null here would silently
+        // regress device_sessions.session_id back to NULL and permanently
+        // break active_role stamping for that device (the Access Token
+        // Hook's lookup, keyed on the real session_id, would never match a
+        // NULL row again). Treat this exactly like the offline/network
+        // fallback below: set the active staff locally and leave the
+        // device's server-side role stale (but not clobbered) rather than
+        // calling the RPC with a bogus session_id.
+        session.setActiveStaff(staff)
+        await logOperatorSwitched(from?.id ?? null, from?.name ?? null, staff.id, staff.name)
+        return
+      }
+
       const { data: ok, error } = await supabase.rpc('switch_active_operator', {
         p_device_id:  device.deviceId,
         p_session_id: sessionId,
