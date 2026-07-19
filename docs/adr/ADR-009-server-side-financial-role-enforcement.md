@@ -7,6 +7,51 @@
 | Deciders   | Anas Baaj (CTO), PO         |
 | Supersedes | None (extends, does not reverse, the tenant-isolation model in ADR-004; deliberately reopens the "no custom JWT hook" choice made when migration 014 / `jwt.ts` were removed) |
 
+## Design Correction (2026-07-19, post-implementation)
+
+During Task 4's implementation review, the original mechanism described
+below (client embeds `device_id` via `signInWithPassword({ options: { data:
+{ device_id } } })`, hook reads it back off the session) was found to be
+**broken for two independent reasons**, verified against real
+Supabase/GoTrue behavior:
+
+1. `signInWithPassword`'s `options` object does not support a `data` field
+   at all -- that shape exists only on `signUp`'s options. The `device_id`
+   claim never reaches the server on sign-in; the client-side change
+   (commit 6f446c9) was a no-op and has been reverted.
+2. Even if it had reached the server, it would have landed in
+   `auth.users.raw_user_meta_data` -- a single column on the ONE account
+   row per shop (WAFI-119's one-account-per-shop model), not per-session
+   state. Two devices signed into the same shop account would stomp each
+   other's value; there is no way for that column to hold two different
+   device identities at once.
+
+**The fix**: Supabase JWTs already carry a genuine per-session `session_id`
+claim by default -- stable across token refreshes of the same login
+session, changing only on a brand-new sign-in. The whole mechanism is
+re-keyed on `session_id` instead of `device_id`. This requires **no
+client-side claim embedding at sign-in at all** (unlike the broken
+approach) -- `session_id` is already present in `event.claims` for the
+Custom Access Token Hook to read directly. `device_sessions` gains a
+`session_id` column (partial unique index, nullable) as the new lookup
+key; `device_id` remains the table's PK and stays as informational
+device-management context. `switch_active_operator` gains a `p_session_id`
+parameter and stamps it into the same upsert that already writes
+`active_role`. See migration `048_session_id_active_role.sql` for the full
+implementation.
+
+Everything else in this ADR -- the RPC's role, the fail-closed lockout,
+the tenant-scoping-only-via-`shop_id` constraint, the Architecture
+Guidelines below -- is unchanged. Only the claim name and its source
+(platform-provided vs. client-embedded) changed.
+
+**Not yet verified** (see updated Review Date section): whether
+`session_id` is genuinely present in the Auth Hook's `event.claims` in a
+live Supabase project, and whether the client SDK's `Session` object
+exposes `session_id` directly (needed so a later task can pass it to
+`switch_active_operator`) versus requiring the client to decode its own
+JWT payload manually.
+
 ## Context
 
 WAFI-122 (formerly WAFI-010) requires that financial data — cost fields,
@@ -47,12 +92,16 @@ their queries on `request.jwt() ->> 'active_role'`.
    upserts `device_sessions` for that device. This is the *only* write path
    to `active_role` — never a raw client update, so a compromised client
    cannot self-elevate.
-3. **Custom Access Token Hook** (Supabase Auth Hook, Postgres function): at
-   first sign-in from a device, the client passes its `device_id` once,
-   which the hook embeds as a stable claim on that device's session. On
-   every subsequent mint/refresh for that same session, the hook re-reads
-   the incoming claims' `device_id`, looks up `device_sessions.active_role`
-   for it, and stamps the current value into `active_role` on the token.
+3. **Custom Access Token Hook** (Supabase Auth Hook, Postgres function):
+   Supabase populates a genuine per-session `session_id` claim on every
+   token by default -- no client action needed to put it there. On every
+   mint/refresh, the hook reads `session_id` off the incoming claims, looks
+   up `device_sessions.active_role` for it (via the `session_id` column,
+   re-keyed by `switch_active_operator` on each PIN switch), and stamps the
+   current value into `active_role` on the token. *(See Design Correction
+   above: the original design read a client-embedded `device_id` claim
+   instead; that path was confirmed broken and replaced with this
+   platform-provided `session_id` claim.)*
 4. **Forced refresh on PIN switch**: immediately after
    `switch_active_operator` succeeds, the client calls
    `supabase.auth.refreshSession()`, so the new role claim is live within
@@ -148,6 +197,17 @@ scoped per-session as assumed, fall back to the client-supplied
 subscription-parameter approach listed under Alternatives Considered before
 proceeding further — this must be confirmed in the implementation phase's
 first days, not assumed from this ADR alone.
+
+**Added 2026-07-19 (post-implementation, see Design Correction above):**
+the same "confirm against the live platform before shipping" caveat now
+applies to `session_id` specifically. Two things remain unverified against
+a real Supabase project: (1) that `session_id` is genuinely present in the
+Auth Hook's `event.claims` object for every mint/refresh, not just some;
+(2) whether the client SDK's `Session` object exposes `session_id` as a
+directly readable field, or whether the client must decode its own JWT
+payload to obtain it (needed so a later task can pass it as
+`p_session_id` to `switch_active_operator`). Do not ship this mechanism
+until both are confirmed.
 
 Revisit this whole design if/when WAFI-119 moves toward real per-staff-member
 Supabase accounts — at that point, per-role sync buckets keyed on the
