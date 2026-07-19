@@ -152,6 +152,9 @@ export function useStaffSettlement() {
       `SELECT * FROM staff_settlements WHERE id = ?`, [settlementId],
     )
     if (!existingSettlementRow) throw new Error(`settlement ${settlementId} not found`)
+    if (existingSettlementRow.status !== 'draft') {
+      throw new Error(`settlement ${settlementId} already finalized (status: ${existingSettlementRow.status})`)
+    }
 
     let finalizedAt = ''
 

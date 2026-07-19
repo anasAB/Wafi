@@ -151,4 +151,24 @@ describe('useStaffSettlement.finalize', () => {
     })).rejects.toThrow(/exceeds/i)
     expect(db.writeTransaction).not.toHaveBeenCalled()
   })
+
+  it('rejects finalize() when the settlement is already finalized/paid', async () => {
+    vi.mocked(db.getAll).mockResolvedValue([
+      { id: 'l-1', shop_id: 'shop-1', staff_id: 'emp-1', entry_type: 'advance', amount_usd: 100, currency_entered: 'usd', locked_rate: null, note: null, source_type: 'manual', source_id: null, created_by_staff_id: 'staff-1', client_operation_id: 'a', settlement_id: null, created_at: '2026-03-01T00:00:00Z' },
+    ] as any)
+    vi.mocked(db.getOptional).mockResolvedValue({
+      id: 'settle-1', shop_id: 'shop-1', staff_id: 'emp-1', settlement_number: '202603-ABCDEF',
+      period_month: '2026-03-01', status: 'finalized', base_salary_usd: 300, settlement_currency: 'usd',
+      locked_rate: null, applied_amount_usd: -70, final_amount_usd: 230, notes: null,
+      staff_name_snapshot: null, staff_role_snapshot: null, finalized_at: '2026-03-02T00:00:00Z', paid_at: null,
+      paid_by_staff_id: null, payment_method: null, client_operation_id: 'op-1', created_at: '2026-03-01T00:00:00Z',
+    } as any)
+
+    const { finalize } = useStaffSettlement()
+    await expect(finalize('settle-1', 'emp-1', {
+      settlementCurrency: 'usd', baseSalaryUsd: 300, notes: null,
+      applications: [{ ledgerEntryId: 'l-1', applyAmountUsd: 70 }],
+    })).rejects.toThrow(/already finalized/i)
+    expect(db.writeTransaction).not.toHaveBeenCalled()
+  })
 })
