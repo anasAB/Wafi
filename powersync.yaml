@@ -67,7 +67,19 @@ streams:
 
       - SELECT * FROM public.stock_adjustments          WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
       - SELECT * FROM public.sales                      WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
-      - SELECT * FROM public.sale_line_items            WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+
+      # WAFI-122: unit_cost_usd withheld from cashier sessions (server-side
+      # enforcement — see ADR-009). Column list here must be kept in sync with
+      # sale_line_items' full column list minus unit_cost_usd; verify against
+      # src/data/powersync/schema.ts before each edit.
+      - SELECT id, sale_id, shop_id, product_id, quantity, unit_price_usd,
+               line_total_usd
+        FROM public.sale_line_items
+        WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+          AND (request.jwt() ->> 'active_role') = 'cashier'
+      - SELECT * FROM public.sale_line_items
+        WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+          AND (request.jwt() ->> 'active_role') IN ('owner', 'manager')
       - SELECT * FROM public.exchange_rates             WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
 
       # WAFI-122: expenses carry no non-cost data cashiers need — entire table
