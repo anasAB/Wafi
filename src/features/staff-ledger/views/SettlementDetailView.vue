@@ -9,6 +9,7 @@ const { markPaid } = useStaffSettlement()
 const settlement = ref<StaffSettlement | null>(null)
 const showPaidConfirm = ref(false)
 const paymentMethod = ref<'cash' | 'bank' | 'other'>('cash')
+const markPaidError = ref<string | null>(null)
 
 async function reload() {
   // NOTE: db.getOptional returns the raw snake_case DB row shape (e.g.
@@ -26,9 +27,14 @@ async function reload() {
 onMounted(reload)
 
 async function onConfirmPaid() {
-  await markPaid(props.settlementId, props.staffId, { paymentMethod: paymentMethod.value })
-  showPaidConfirm.value = false
-  await reload()
+  markPaidError.value = null
+  try {
+    await markPaid(props.settlementId, props.staffId, { paymentMethod: paymentMethod.value })
+    showPaidConfirm.value = false
+    await reload()
+  } catch (err) {
+    markPaidError.value = 'تعذر تسجيل الدفع، حاول مرة أخرى'
+  }
 }
 
 const statusLabel: Record<string, string> = {
@@ -63,6 +69,7 @@ const statusLabel: Record<string, string> = {
           <option value="bank">تحويل بنكي</option>
           <option value="other">أخرى</option>
         </select>
+        <p v-if="markPaidError" data-testid="mark-paid-error" class="field-error">{{ markPaidError }}</p>
         <div class="action-row">
           <button type="button" class="btn-ghost" @click="showPaidConfirm = false">إلغاء</button>
           <button type="button" data-testid="confirm-paid-button" class="btn-primary" @click="onConfirmPaid">
@@ -137,6 +144,8 @@ const statusLabel: Record<string, string> = {
   font-family: 'Tajawal', system-ui, sans-serif;
   box-sizing: border-box;
 }
+
+.field-error { font-size: 0.75rem; color: #EF4444; margin-top: 0.375rem; }
 
 .action-row { display: flex; gap: 0.5rem; margin-top: 1rem; }
 

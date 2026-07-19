@@ -17,6 +17,7 @@ const loading = ref(false)
 const showAddSheet = ref(false)
 const saving = ref(false)
 const errors = ref<Record<string, string>>({})
+const saveError = ref<string | null>(null)
 
 // Manual entry types only — carry_forward is system-generated and never
 // offered here.
@@ -51,6 +52,7 @@ function openAddSheet() {
   currency.value = 'usd'
   note.value = ''
   errors.value = {}
+  saveError.value = null
   showAddSheet.value = true
 }
 
@@ -70,6 +72,7 @@ function validate(): boolean {
 
 async function handleSave() {
   if (!validate()) return
+  saveError.value = null
   saving.value = true
   try {
     await addLedgerEntry({
@@ -82,6 +85,8 @@ async function handleSave() {
     })
     showAddSheet.value = false
     await reload()
+  } catch (err) {
+    saveError.value = 'تعذر حفظ الحركة، حاول مرة أخرى'
   } finally {
     saving.value = false
   }
@@ -193,6 +198,8 @@ defineExpose({ reload })
             class="form-input form-textarea"
           />
         </div>
+
+        <p v-if="saveError" data-testid="save-error" class="field-error">{{ saveError }}</p>
 
         <div class="action-row">
           <button
