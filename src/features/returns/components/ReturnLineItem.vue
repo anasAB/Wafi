@@ -48,7 +48,7 @@ function toggleRestock() {
           <span class="rli-qty-val">{{ line.qtyToReturn }}</span>
           <button type="button" class="rli-qty-btn" :disabled="line.qtyToReturn >= maxQty" @click="setQty(1)">+</button>
         </div>
-        <div class="rli-restock">
+        <div v-if="!line.isOpenItem" class="rli-restock">
           <span class="rli-restock-label">مخزون</span>
           <button
             type="button"

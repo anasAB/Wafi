@@ -18,6 +18,7 @@ const products = new Table({
   sync_status:         column.text,
   created_at:          column.text,
   updated_at:          column.text,
+  created_via:         column.text,   // WAFI-101: 'quick_add' | 'open_item' | null
 })
 
 const stock_adjustments = new Table({
@@ -234,6 +235,19 @@ const cashier_shifts = new Table({
   force_closed_by:  column.text,    // nullable — staff id, WAFI-065 force-close
   z_report_data:    column.text,    // nullable — JSON snapshot of ZReportMetrics
   status:           column.text,    // 'open' | 'closed'
+  // WAFI-103: JSON {"500":2,...} when counted by denomination; null = manual total entry.
+  opening_breakdown: column.text,
+  closing_breakdown: column.text,
+})
+
+const denomination_configs = new Table({
+  shop_id:     column.text,
+  currency:    column.text,   // 'USD' | 'SYP'
+  value:       column.real,
+  sort_order:  column.integer,
+  deleted:     column.integer,
+  created_at:  column.text,
+  sync_status: column.text,
 })
 
 const cash_movements = new Table({
@@ -432,4 +446,5 @@ export const AppSchema = new Schema({
   categories,
   subcategories,
   shops,
+  denomination_configs,
 })

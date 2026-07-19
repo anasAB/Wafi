@@ -1,4 +1,5 @@
 import { computed, toValue, type MaybeRef } from 'vue'
+import { v4 as uuidv4 } from 'uuid'
 import { useSaleStore } from '@/store/sale.store'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
@@ -74,6 +75,43 @@ export function useSale(currentRateParam: MaybeRef<number | null>) {
     )
   }
 
+  // WAFI-101 — "بند حر": a one-off cart line with no catalog product. Implemented
+  // as a hidden (is_active=0) synthetic product row rather than a nullable
+  // product_id, so checkout/receipts/returns/reporting need no schema-wide
+  // changes: they already LEFT/INNER JOIN products by id. current_stock stays
+  // pinned at 0 and created_via='open_item' excludes it from the POS grid,
+  // dead-stock, low-stock and reorder logic everywhere those already filter
+  // on is_active/current_stock.
+  async function addOpenItem(nameAr: string, priceUsd: number): Promise<void> {
+    const currentRate = toValue(currentRateParam)
+    if (currentRate === null) throw new ExchangeRateNotSetError()
+    if (priceUsd <= 0) throw new Error('السعر يجب أن يكون أكبر من صفر')
+
+    const device = useDeviceStore()
+    const productId = uuidv4()
+    const now = new Date().toISOString()
+    await db.execute(
+      `INSERT INTO products
+         (id, shop_id, name_ar, price_usd, cost_price_usd, current_stock, low_stock_threshold,
+          is_active, deleted, created_via, created_at, updated_at, sync_status)
+       VALUES (?, ?, ?, ?, 0, 0, 0, 0, 0, 'open_item', ?, ?, 'pending')`,
+      [productId, device.shopId, nameAr, priceUsd, now, now]
+    )
+
+    saleStore.setLockedRate(currentRate)
+    saleStore.addLine({
+      productId,
+      nameAr,
+      quantity:       1,
+      unitPriceUsd:   priceUsd,
+      unitCostUsd:    0,
+      lineTotalUsd:   priceUsd,
+      availableStock: Infinity,
+      listPriceUsd:   priceUsd,
+      isOpenItem:     true,
+    })
+  }
+
   async function lookupByBarcode(barcode: string): Promise<string | null> {
     const device = useDeviceStore()
     const result = await db.execute(
@@ -91,6 +129,7 @@ export function useSale(currentRateParam: MaybeRef<number | null>) {
     lockedRate:          computed(() => saleStore.lockedExchangeRate),
     hasRateChangeNotice: computed(() => saleStore.hasRateChangeNotice),
     addLine,
+    addOpenItem,
     removeLine:          saleStore.removeLine,
     updateQuantity:      saleStore.updateQuantity,
     checkRateChanged,

@@ -7,7 +7,7 @@ import { useDeviceStore }  from '@/store/device.store'
 import { useCan }          from '@/composables/useCan'
 import CashCountSheet      from './CashCountSheet.vue'
 import type { ZReportMetrics } from '@/features/shifts/shift.types'
-import type { CashierShift }   from '@/features/shifts/shift.types'
+import type { CashierShift, DenominationBreakdown }   from '@/features/shifts/shift.types'
 
 const emit = defineEmits<{ (e: 'close'): void }>()
 
@@ -32,6 +32,7 @@ const metrics    = ref<ZReportMetrics | null>(null)
 const cashCountError = ref('')
 const closingUsd = ref(0)
 const closingSyp = ref(0)
+const closingBreakdown = ref<{ usd: DenominationBreakdown | null; syp: DenominationBreakdown | null } | null>(null)
 const closing    = ref(false)
 // WAFI-060: a close whose variance exceeds 5% must carry a reason note.
 const closeNote  = ref('')
@@ -53,7 +54,11 @@ const requiresNote = computed(() => {
 
 onMounted(async () => { shift.value = await loadActiveShift() })
 
-async function onCashCounted(usd: number, syp: number) {
+async function onCashCounted(
+  usd: number,
+  syp: number,
+  breakdown: { usd: DenominationBreakdown | null; syp: DenominationBreakdown | null },
+) {
   if (!shift.value) {
     shift.value = await loadActiveShift()
   }
@@ -64,6 +69,7 @@ async function onCashCounted(usd: number, syp: number) {
   cashCountError.value = ''
   closingUsd.value = usd
   closingSyp.value = syp
+  closingBreakdown.value = breakdown
   metrics.value = await compute(shift.value, usd, syp)
   step.value = 'report'
 }
@@ -97,6 +103,7 @@ async function handleClose(withPrint: boolean) {
       varianceSyp:    metrics.value.varianceSyp,
       closeNote:      closeNote.value.trim() || null,
       zReport:        metrics.value,
+      closingBreakdown: closingBreakdown.value,
     })
   } finally {
     closing.value = false

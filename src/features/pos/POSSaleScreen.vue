@@ -10,6 +10,8 @@ import { useExchangeRate, ExchangeRateEditor } from '@/features/exchange-rate'
 import { useCategories } from '@/features/categories/composables/useCategories'
 import { useBarcodeScan } from '@/composables/useBarcodeScan'
 import { useSaleDraft } from '@/composables/useSaleDraft'
+import QuickAddProductSheet from './components/QuickAddProductSheet.vue'
+import OpenItemSheet from './components/OpenItemSheet.vue'
 import PaymentModal from '@/features/payment/PaymentModal.vue'
 import { useFastCash } from '@/features/payment/useFastCash'
 import AppDialog from '@/components/ui/AppDialog.vue'
@@ -58,6 +60,9 @@ const categoryMenuOpen = ref(false)
 const categoryMenuRef = ref<HTMLElement | null>(null)
 const payOpen       = ref(false)
 const toast         = ref<{ message: string; type: 'error' | 'success' | 'info' } | null>(null)
+
+const quickAddBarcode = ref<string | null>(null)
+const openItemOpen    = ref(false)
 
 const cameraOpen    = ref(false)
 const cameraError   = ref<'permission-denied' | null>(null)
@@ -158,7 +163,29 @@ async function handleBarcode(barcode: string) {
   if (productId) {
     await handleProductTap(productId)
   } else {
-    toast.value = { message: 'الباركود غير معروف', type: 'error' }
+    // WAFI-101 — an unknown barcode is never a dead end: open quick-add with
+    // the scanned code prefilled instead of just an error toast.
+    quickAddBarcode.value = barcode
+  }
+}
+
+async function handleQuickAddSaved(productId: string) {
+  quickAddBarcode.value = null
+  await handleProductTap(productId)
+}
+
+async function handleOpenItemConfirmed(payload: { nameAr: string; priceUsd: number }) {
+  openItemOpen.value = false
+  try {
+    await sale.addOpenItem(payload.nameAr, payload.priceUsd)
+    scheduleSave()
+  } catch (err) {
+    toast.value = {
+      message: err instanceof ExchangeRateNotSetError
+        ? 'حدّد سعر صرف الدولار من الأعلى قبل البدء في البيع'
+        : err instanceof Error ? err.message : 'خطأ في الإضافة',
+      type: 'error',
+    }
   }
 }
 
@@ -310,6 +337,18 @@ function handlePaymentConfirmed(completedSale: CompletedSale) {
               <path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
           </button>
+
+          <button
+            type="button"
+            data-testid="open-item-btn"
+            class="camera-btn"
+            aria-label="بند حر"
+            @click="openItemOpen = true"
+          >
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+          </button>
         </div>
 
         <div class="products-scroll">
@@ -359,6 +398,19 @@ function handlePaymentConfirmed(completedSale: CompletedSale) {
     v-if="rateEditorOpen"
     @close="onRateEditorClosed"
     @saved="onRateEditorSaved"
+  />
+
+  <QuickAddProductSheet
+    v-if="quickAddBarcode"
+    :barcode="quickAddBarcode"
+    @saved="handleQuickAddSaved"
+    @cancel="quickAddBarcode = null"
+  />
+
+  <OpenItemSheet
+    v-if="openItemOpen"
+    @confirm="handleOpenItemConfirmed"
+    @cancel="openItemOpen = false"
   />
 
   <AppToast v-if="toast" :message="toast.message" :type="toast.type" @dismiss="toast = null" />

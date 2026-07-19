@@ -55,9 +55,9 @@ export function useReturnSheet(saleId: string) {
     exchangeRate.value = (rateResult as any).rows._array[0]?.rate ?? 1
 
     // 2. Fetch original line items
-    type LineRow = { product_id: string; product_name: string; quantity: number; unit_price_usd: number }
+    type LineRow = { product_id: string; product_name: string; quantity: number; unit_price_usd: number; created_via: string | null }
     const lineRows = await db.getAll<LineRow>(
-      `SELECT sli.product_id, p.name_ar AS product_name, sli.quantity, sli.unit_price_usd
+      `SELECT sli.product_id, p.name_ar AS product_name, sli.quantity, sli.unit_price_usd, p.created_via
        FROM sale_line_items sli
        JOIN products p ON p.id = sli.product_id
        WHERE sli.sale_id = ?`,
@@ -83,6 +83,7 @@ export function useReturnSheet(saleId: string) {
       .map(row => {
         const alreadyReturnedQty = returnedMap.get(row.product_id) ?? 0
         const remaining          = row.quantity - alreadyReturnedQty
+        const isOpenItem = row.created_via === 'open_item'
         return {
           productId:          row.product_id,
           productName:        row.product_name,
@@ -91,7 +92,8 @@ export function useReturnSheet(saleId: string) {
           unitPriceUsd:       row.unit_price_usd,
           selected:           false,
           qtyToReturn:        Math.min(1, remaining),
-          restock:            true,
+          restock:            !isOpenItem,
+          isOpenItem,
         }
       })
   }
@@ -148,8 +150,9 @@ export function useReturnSheet(saleId: string) {
         )
       }
 
-      // Restock + stock_adjustments
-      for (const line of selectedLines.filter(l => l.restock)) {
+      // Restock + stock_adjustments. Open-item lines never restock — they have no
+      // real catalog stock to add back to (WAFI-101).
+      for (const line of selectedLines.filter(l => l.restock && !l.isOpenItem)) {
         const stockResult = await tx.execute(
           `SELECT current_stock FROM products WHERE id = ?`,
           [line.productId],

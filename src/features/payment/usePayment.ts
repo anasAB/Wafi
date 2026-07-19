@@ -254,6 +254,18 @@ export function usePayment() {
         }
 
         for (const line of saleStore.lines) {
+          // WAFI-101 — open items are a hidden synthetic product with no real
+          // stock: never touch current_stock or write a stock_adjustments row.
+          if (line.isOpenItem) {
+            await tx.execute(
+              `INSERT INTO sale_line_items (id, sale_id, shop_id, product_id, quantity, unit_price_usd, unit_cost_usd, line_total_usd)
+               VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
+              [uuidv4(), saleId, deviceStore.shopId, line.productId,
+               line.quantity, line.unitPriceUsd, line.lineTotalUsd]
+            )
+            continue
+          }
+
           const res = await tx.execute(
             'SELECT cost_price_usd, current_stock FROM products WHERE id = ?',
             [line.productId]

@@ -114,4 +114,38 @@ describe('useSale', () => {
     useSale(14500).checkRateChanged()
     expect(store.hasRateChangeNotice).toBe(false)  // rate back to locked → notice off
   })
+
+  describe('addOpenItem (WAFI-101)', () => {
+    it('creates a hidden synthetic product (is_active=0, created_via=open_item) and adds it to the cart', async () => {
+      vi.mocked(db.execute).mockResolvedValue({ rows: { _array: [] } } as any)
+      const store = useSaleStore()
+      const { addOpenItem } = useSale(14500)
+      await addOpenItem('توصيل', 5)
+
+      const insertCall = vi.mocked(db.execute).mock.calls.find(c => /INSERT INTO products/.test(c[0] as string))
+      expect(insertCall).toBeDefined()
+      const sql = insertCall![0] as string
+      const params = insertCall![1] as unknown[]
+      expect(sql).toMatch(/created_via/)
+      expect(sql).toMatch(/'open_item'/)
+      expect(params).toContain(5) // priceUsd bound
+
+      expect(store.lines).toHaveLength(1)
+      expect(store.lines[0].isOpenItem).toBe(true)
+      expect(store.lines[0].unitCostUsd).toBe(0)
+      expect(store.lines[0].nameAr).toBe('توصيل')
+      expect(store.lockedExchangeRate).toBe(14500)
+    })
+
+    it('rejects a zero or negative price — a free item must go through the discount/PIN path, not a silent $0 open item', async () => {
+      const { addOpenItem } = useSale(14500)
+      await expect(addOpenItem('هدية', 0)).rejects.toThrow()
+      await expect(addOpenItem('هدية', -1)).rejects.toThrow()
+    })
+
+    it('throws ExchangeRateNotSetError when no rate is configured', async () => {
+      const { addOpenItem } = useSale(null)
+      await expect(addOpenItem('توصيل', 5)).rejects.toThrow('Exchange rate not set')
+    })
+  })
 })

@@ -1,14 +1,36 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import BaseModal from '@/components/ui/BaseModal.vue'
+import DenominationTally from './DenominationTally.vue'
+import { useDenominationConfig } from '../composables/useDenominationConfig'
+import type { DenominationBreakdown } from '../shift.types'
 
 const props = defineProps<{ errorMessage?: string }>()
-const emit      = defineEmits<{ confirm: [usd: number, syp: number]; cancel: [] }>()
-const usdAmount = ref('')
-const sypAmount = ref('')
+const emit = defineEmits<{
+  confirm: [usd: number, syp: number, breakdown: { usd: DenominationBreakdown | null; syp: DenominationBreakdown | null }]
+  cancel: []
+}>()
+
+const { usd: usdDenoms, syp: sypDenoms, load: loadDenoms } = useDenominationConfig()
+loadDenoms()
+
+const usdTotal = ref(0)
+const sypTotal = ref(0)
+const usdBreakdown = ref<DenominationBreakdown | null>(null)
+const sypBreakdown = ref<DenominationBreakdown | null>(null)
+
+function onUsdChange(payload: { total: number; breakdown: DenominationBreakdown | null }) {
+  usdTotal.value = payload.total
+  usdBreakdown.value = payload.breakdown
+}
+
+function onSypChange(payload: { total: number; breakdown: DenominationBreakdown | null }) {
+  sypTotal.value = payload.total
+  sypBreakdown.value = payload.breakdown
+}
 
 function confirm() {
-  emit('confirm', parseFloat(usdAmount.value) || 0, parseFloat(sypAmount.value) || 0)
+  emit('confirm', usdTotal.value, sypTotal.value, { usd: usdBreakdown.value, syp: sypBreakdown.value })
 }
 </script>
 
@@ -20,31 +42,18 @@ function confirm() {
       <p v-if="props.errorMessage" class="sheet-error">{{ props.errorMessage }}</p>
 
       <div class="inputs-wrap">
-        <div class="cash-input-card">
-          <label class="cash-label">دولار أمريكي $</label>
-          <input
-            v-model="usdAmount"
-            type="number"
-            min="0"
-            step="0.01"
-            class="cash-input"
-            placeholder="0.00"
-            dir="ltr"
-          />
-        </div>
-
-        <div class="cash-input-card">
-          <label class="cash-label">ليرة سورية ل.س</label>
-          <input
-            v-model="sypAmount"
-            type="number"
-            min="0"
-            step="1"
-            class="cash-input"
-            placeholder="0"
-            dir="ltr"
-          />
-        </div>
+        <DenominationTally
+          label="دولار أمريكي $"
+          :denominations="usdDenoms.map(d => d.value)"
+          :is-syp="false"
+          @change="onUsdChange"
+        />
+        <DenominationTally
+          label="ليرة سورية ل.س"
+          :denominations="sypDenoms.map(d => d.value)"
+          :is-syp="true"
+          @change="onSypChange"
+        />
       </div>
     </div>
 
@@ -86,42 +95,9 @@ function confirm() {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  max-height: 60vh;
+  overflow-y: auto;
 }
-
-.cash-input-card {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 1rem;
-  padding: 0.75rem 0.875rem;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.cash-input-card:focus-within {
-  border-color: rgba(26, 86, 219, 0.8);
-  box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.25), 0 0 12px rgba(26, 86, 219, 0.15);
-}
-
-.cash-label {
-  display: block;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: #637285;
-  margin-bottom: 0.45rem;
-}
-
-.cash-input {
-  width: 100%;
-  background: transparent;
-  border: none;
-  outline: none;
-  color: #E8EDF5;
-  font-size: 1.5rem;
-  font-weight: 700;
-  font-family: 'Tajawal', system-ui, sans-serif;
-  padding: 0;
-}
-
-.cash-input::placeholder { color: #3D4F6B; }
 
 .sheet-footer {
   display: flex;
