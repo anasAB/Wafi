@@ -130,4 +130,45 @@ describe('SettlementDraftView', () => {
 
     expect(wrapper.find('[data-testid="apply-error-entry-1"]').exists()).toBe(true)
   })
+
+  it('does not crash and shows an inline error when applying an amount over the entry remaining balance for a SYP entry', async () => {
+    const actualLedger = vi.mocked(useStaffLedger).getMockImplementation()!()
+    vi.mocked(useStaffLedger).mockReturnValueOnce({
+      ...actualLedger,
+      getOutstandingEntries: vi.fn().mockResolvedValue({
+        usd: [],
+        syp: [{
+          id: 'entry-2',
+          shopId: 'shop-1',
+          staffId: 'emp-1',
+          entryType: 'bonus',
+          amountUsd: 10,
+          currencyEntered: 'syp',
+          lockedRate: 15000,
+          note: null,
+          sourceType: null,
+          sourceId: null,
+          createdByStaffId: 'staff-1',
+          settlementId: null,
+          clientOperationId: 'op-2',
+          createdAt: '2026-03-01T00:00:00.000Z',
+        }],
+      }),
+    })
+
+    const wrapper = mount(SettlementDraftView, { props: { staffId: 'emp-1', periodMonth: '2026-03-01' } })
+    await new Promise(r => setTimeout(r, 0))
+
+    const input = wrapper.find('.apply-input')
+    expect(input.exists()).toBe(true)
+
+    await expect(async () => {
+      await input.setValue(999)
+      await input.trigger('change')
+    }).not.toThrow()
+
+    await new Promise(r => setTimeout(r, 0))
+
+    expect(wrapper.find('[data-testid="apply-error-entry-2"]').exists()).toBe(true)
+  })
 })

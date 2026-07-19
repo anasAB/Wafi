@@ -137,6 +137,9 @@ async function onConfirmFinalize() {
               step="0.01"
               @change="toggleApply(entry, Number(($event.target as HTMLInputElement).value))"
             />
+            <span v-if="applyErrors[entry.id]" class="apply-error" :data-testid="`apply-error-${entry.id}`">
+              المبلغ يتجاوز الرصيد المتبقي
+            </span>
           </li>
         </ul>
       </section>
