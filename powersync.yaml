@@ -72,7 +72,10 @@ streams:
           AND subscription.parameter('active_role') = 'cashier'
       - SELECT * FROM public.products
         WHERE shop_id = subscription.parameter('shop_id')
-          AND subscription.parameter('active_role') IN ('owner', 'manager')
+          AND subscription.parameter('active_role') = 'owner'
+      - SELECT * FROM public.products
+        WHERE shop_id = subscription.parameter('shop_id')
+          AND subscription.parameter('active_role') = 'manager'
 
       - SELECT * FROM public.stock_adjustments          WHERE shop_id = subscription.parameter('shop_id')
       - SELECT * FROM public.sales                      WHERE shop_id = subscription.parameter('shop_id')
@@ -88,7 +91,10 @@ streams:
           AND subscription.parameter('active_role') = 'cashier'
       - SELECT * FROM public.sale_line_items
         WHERE shop_id = subscription.parameter('shop_id')
-          AND subscription.parameter('active_role') IN ('owner', 'manager')
+          AND subscription.parameter('active_role') = 'owner'
+      - SELECT * FROM public.sale_line_items
+        WHERE shop_id = subscription.parameter('shop_id')
+          AND subscription.parameter('active_role') = 'manager'
       - SELECT * FROM public.exchange_rates             WHERE shop_id = subscription.parameter('shop_id')
 
       # WAFI-122: expenses carry no non-cost data cashiers need — entire table
@@ -98,7 +104,10 @@ streams:
           AND subscription.parameter('active_role') = 'cashier'
       - SELECT * FROM public.expenses
         WHERE shop_id = subscription.parameter('shop_id')
-          AND subscription.parameter('active_role') IN ('owner', 'manager')
+          AND subscription.parameter('active_role') = 'owner'
+      - SELECT * FROM public.expenses
+        WHERE shop_id = subscription.parameter('shop_id')
+          AND subscription.parameter('active_role') = 'manager'
 
       - SELECT * FROM public.customers                  WHERE shop_id = subscription.parameter('shop_id')
       - SELECT * FROM public.customer_payments          WHERE shop_id = subscription.parameter('shop_id')
@@ -131,7 +140,10 @@ streams:
           AND subscription.parameter('active_role') = 'cashier'
       - SELECT * FROM public.stock_receivings
         WHERE shop_id = subscription.parameter('shop_id')
-          AND subscription.parameter('active_role') IN ('owner', 'manager')
+          AND subscription.parameter('active_role') = 'owner'
+      - SELECT * FROM public.stock_receivings
+        WHERE shop_id = subscription.parameter('shop_id')
+          AND subscription.parameter('active_role') = 'manager'
 
       # WAFI-122: unit_cost_usd withheld from cashier sessions (server-side
       # enforcement — see ADR-009). Column list here must be kept in sync with
@@ -144,7 +156,10 @@ streams:
           AND subscription.parameter('active_role') = 'cashier'
       - SELECT * FROM public.stock_receiving_line_items
         WHERE shop_id = subscription.parameter('shop_id')
-          AND subscription.parameter('active_role') IN ('owner', 'manager')
+          AND subscription.parameter('active_role') = 'owner'
+      - SELECT * FROM public.stock_receiving_line_items
+        WHERE shop_id = subscription.parameter('shop_id')
+          AND subscription.parameter('active_role') = 'manager'
 
       - SELECT * FROM public.cash_movements             WHERE shop_id = subscription.parameter('shop_id')
       - SELECT * FROM public.stock_take_sessions        WHERE shop_id = subscription.parameter('shop_id')
@@ -160,7 +175,10 @@ streams:
           AND subscription.parameter('active_role') = 'cashier'
       - SELECT * FROM public.stock_take_lines
         WHERE shop_id = subscription.parameter('shop_id')
-          AND subscription.parameter('active_role') IN ('owner', 'manager')
+          AND subscription.parameter('active_role') = 'owner'
+      - SELECT * FROM public.stock_take_lines
+        WHERE shop_id = subscription.parameter('shop_id')
+          AND subscription.parameter('active_role') = 'manager'
 
       - SELECT * FROM public.categories                 WHERE shop_id = subscription.parameter('shop_id')
       - SELECT * FROM public.subcategories              WHERE shop_id = subscription.parameter('shop_id')
@@ -174,11 +192,17 @@ streams:
           AND subscription.parameter('active_role') = 'cashier'
       - SELECT * FROM public.staff_ledger
         WHERE shop_id = subscription.parameter('shop_id')
-          AND subscription.parameter('active_role') IN ('owner', 'manager')
+          AND subscription.parameter('active_role') = 'owner'
+      - SELECT * FROM public.staff_ledger
+        WHERE shop_id = subscription.parameter('shop_id')
+          AND subscription.parameter('active_role') = 'manager'
 
       - SELECT * FROM public.staff_settlements
         WHERE false
           AND subscription.parameter('active_role') = 'cashier'
       - SELECT * FROM public.staff_settlements
         WHERE shop_id = subscription.parameter('shop_id')
-          AND subscription.parameter('active_role') IN ('owner', 'manager')
+          AND subscription.parameter('active_role') = 'owner'
+      - SELECT * FROM public.staff_settlements
+        WHERE shop_id = subscription.parameter('shop_id')
+          AND subscription.parameter('active_role') = 'manager'
