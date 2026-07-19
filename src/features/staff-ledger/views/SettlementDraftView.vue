@@ -38,12 +38,25 @@ onMounted(async () => {
 
 const canFinalize = computed(() => settlementCurrency.value !== null)
 
+const applyErrors = ref<Record<string, string>>({}) // ledgerEntryId -> inline error message
+
+// Matches SQLite's "UNIQUE constraint failed: ..." wording (see src/data/powersync/ops.ts
+// for the equivalent Postgres/PostgREST convention) plus finalize()'s own pre-check message
+// ("settlement ... already finalized ...") — both mean another device closed this
+// staff+month settlement first.
+const CONFLICT_ERROR_PATTERN = /unique|already finalized/i
+
 function toggleApply(entry: StaffLedgerEntry, amount: number) {
-  // applyLedgerEntry throws when amount exceeds the entry's remaining amount —
-  // the running total shown to the user is purely informational; finalize()
-  // re-validates the real amounts server-side before committing anything.
-  applyLedgerEntry(entry, amount)
-  applied.value[entry.id] = amount
+  // applyLedgerEntry throws when amount exceeds the entry's remaining amount.
+  // Catch it here so an over-limit input surfaces an inline error instead of
+  // throwing uncaught out of the @change handler.
+  try {
+    applyLedgerEntry(entry, amount)
+    applied.value[entry.id] = amount
+    delete applyErrors.value[entry.id]
+  } catch (err) {
+    applyErrors.value[entry.id] = err instanceof Error ? err.message : String(err)
+  }
 }
 
 async function onConfirmFinalize() {
@@ -57,12 +70,13 @@ async function onConfirmFinalize() {
     })
     showFinalizeConfirm.value = false
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    finalizeError.value = message
     // Offline-conflict path: a unique-constraint violation (or an "already
     // finalized" guard from finalize()) means another device closed this
-    // staff+month settlement first. Surface a clear message and stop —
-    // never silently retry or merge two finalize attempts.
-    alreadyFinalizedNotice.value = true
-    finalizeError.value = err instanceof Error ? err.message : String(err)
+    // staff+month settlement first. Anything else (validation, network,
+    // unrelated bugs) gets an honest generic failure message instead.
+    alreadyFinalizedNotice.value = CONFLICT_ERROR_PATTERN.test(message)
     showFinalizeConfirm.value = false
   } finally {
     finalizing.value = false
@@ -73,8 +87,11 @@ async function onConfirmFinalize() {
 <template>
   <div dir="rtl" class="settlement-draft-view">
     <p v-if="resumedNotice" class="info-notice">استئناف المسودة الحالية لهذا الشهر</p>
-    <p v-if="alreadyFinalizedNotice" class="error-notice">
+    <p v-if="alreadyFinalizedNotice" class="error-notice" data-testid="conflict-notice">
       تم إغلاق هذه التسوية بالفعل على جهاز آخر
+    </p>
+    <p v-else-if="finalizeError" class="error-notice" data-testid="finalize-error-notice">
+      تعذر إنهاء التسوية، حاول مرة أخرى
     </p>
 
     <div
@@ -99,6 +116,9 @@ async function onConfirmFinalize() {
               step="0.01"
               @change="toggleApply(entry, Number(($event.target as HTMLInputElement).value))"
             />
+            <span v-if="applyErrors[entry.id]" class="apply-error" :data-testid="`apply-error-${entry.id}`">
+              المبلغ يتجاوز الرصيد المتبقي
+            </span>
           </li>
         </ul>
       </section>
@@ -255,6 +275,12 @@ async function onConfirmFinalize() {
 
 .entry-label { color: #C8D5E8; flex: 1; }
 .entry-amount { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.apply-error {
+  color: #F87171;
+  font-size: 0.75rem;
+  flex-basis: 100%;
+}
 
 .apply-input {
   width: 5.5rem;
