@@ -245,3 +245,57 @@ describe('useStaffSettlement.markPaid', () => {
     expect(db.execute).not.toHaveBeenCalled()
   })
 })
+
+describe('useStaffSettlement.finalize crash recovery', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    useDeviceStore().shopId = 'shop-1'
+    useSessionStore().setActiveStaff({
+      id: 'staff-1', shopId: 'shop-1', name: 'المالك', pinHash: 'x', pinSalt: null, role: 'owner',
+      permissions: { can_view_reports: true, can_manage_products: true, can_manage_customers: true, can_view_expenses: true, can_manage_settings: true },
+      isActive: true, createdAt: '2026-01-01T00:00:00Z',
+    })
+  })
+
+  it('leaves no settlement_id assigned and no settlement snapshot written if the transaction rejects mid-way', async () => {
+    vi.mocked(db.getAll).mockResolvedValue([
+      { id: 'l-1', shop_id: 'shop-1', staff_id: 'emp-1', entry_type: 'advance', amount_usd: 100, currency_entered: 'usd', locked_rate: null, note: null, source_type: 'manual', source_id: null, created_by_staff_id: 'staff-1', client_operation_id: 'a', settlement_id: null, created_at: '2026-03-01T00:00:00Z' },
+    ] as any)
+    // finalize() makes two db.getOptional calls before ever reaching db.writeTransaction:
+    // 1) staffRow lookup (SELECT name, role FROM staff ...) — result isn't load-bearing here.
+    // 2) existingSettlementRow lookup (SELECT * FROM staff_settlements ...) — MUST resolve to a
+    //    valid draft row, otherwise finalize() throws its own "not found"/"already finalized"
+    //    guard before ever calling db.writeTransaction, and the simulated crash below would
+    //    never be exercised.
+    // A third db.getOptional call happens after finalize() rejects — that's this test's own
+    // follow-up read (not part of finalize()) verifying no snapshot survived the "crash".
+    vi.mocked(db.getOptional)
+      .mockResolvedValueOnce(null) // staffRow lookup — absent staff name/role is fine for this test
+      .mockResolvedValueOnce({
+        id: 'settle-1', shop_id: 'shop-1', staff_id: 'emp-1', settlement_number: '202603-ABCDEF',
+        period_month: '2026-03-01', status: 'draft', base_salary_usd: null, settlement_currency: null,
+        locked_rate: null, applied_amount_usd: null, final_amount_usd: null, notes: null,
+        staff_name_snapshot: null, staff_role_snapshot: null, finalized_at: null, paid_at: null,
+        paid_by_staff_id: null, payment_method: null, client_operation_id: 'op-1', created_at: '2026-03-01T00:00:00Z',
+      } as any) // existingSettlementRow lookup — a valid draft so finalize() proceeds to writeTransaction
+      .mockResolvedValueOnce(null) // post-crash reload (this test's own check): no snapshot was written
+    // Simulate the transaction throwing partway through (e.g. app killed after
+    // the first tx.execute) — writeTransaction's real implementation guarantees
+    // this means NONE of the statements inside it took effect.
+    vi.mocked(db.writeTransaction).mockRejectedValueOnce(new Error('simulated crash mid-transaction'))
+
+    const { finalize } = useStaffSettlement()
+    await expect(finalize('settle-1', 'emp-1', {
+      settlementCurrency: 'usd', baseSalaryUsd: 300, notes: null,
+      applications: [{ ledgerEntryId: 'l-1', applyAmountUsd: 70 }],
+    })).rejects.toThrow(/crash/i)
+
+    // Re-querying the settlement after the "crash" must show it still draft/nonexistent,
+    // never a half-written finalized row — this is PowerSync's writeTransaction contract,
+    // asserted here so a future refactor that splits finalize() across two transactions
+    // would break this test rather than silently violating Invariant 10.
+    const row = await db.getOptional('SELECT * FROM staff_settlements WHERE id = ?', ['settle-1'])
+    expect(row).toBeNull()
+  })
+})
