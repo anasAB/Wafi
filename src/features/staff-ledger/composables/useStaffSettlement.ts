@@ -41,7 +41,7 @@ function rowToSettlement(r: StaffSettlementRow): StaffSettlement {
 }
 
 export function useStaffSettlement() {
-  const { logStaffSettlementFinalized } = useAuditLog()
+  const { logStaffSettlementFinalized, logStaffSettlementPaid } = useAuditLog()
 
   async function createDraft(
     staffId: string, periodMonth: string,
@@ -223,5 +223,32 @@ export function useStaffSettlement() {
     })
   }
 
-  return { createDraft, applyLedgerEntry, finalize }
+  /**
+   * Marks an already-finalized settlement as paid. Never recalculates
+   * financial values (Invariant: a finalized settlement's snapshot is
+   * immutable) — only sets status/paid_at/paid_by_staff_id/payment_method.
+   */
+  async function markPaid(
+    settlementId: string,
+    staffId: string,
+    options: { paymentMethod: 'cash' | 'bank' | 'other' },
+  ): Promise<StaffSettlement> {
+    const session = useSessionStore()
+    await executeFinancialWrite(
+      async () => {
+        const now = new Date().toISOString()
+        await db.execute(
+          `UPDATE staff_settlements SET status = 'paid', paid_at = ?, paid_by_staff_id = ?, payment_method = ? WHERE id = ?`,
+          [now, session.activeStaff!.id, options.paymentMethod, settlementId],
+        )
+      },
+      () => logStaffSettlementPaid(settlementId, staffId, options.paymentMethod),
+    )
+    const row = await db.getOptional<StaffSettlementRow>(
+      `SELECT * FROM staff_settlements WHERE id = ?`, [settlementId],
+    )
+    return rowToSettlement(row!)
+  }
+
+  return { createDraft, applyLedgerEntry, finalize, markPaid }
 }
