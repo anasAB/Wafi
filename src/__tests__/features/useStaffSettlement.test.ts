@@ -187,7 +187,50 @@ describe('useStaffSettlement.markPaid', () => {
 
   it('sets paid_at/paid_by/payment_method and status without touching amount columns', async () => {
     vi.mocked(db.execute).mockResolvedValue({ rows: { _array: [] } } as any)
-    vi.mocked(db.getOptional).mockResolvedValue({
+    vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({
+        id: 'settle-1', shop_id: 'shop-1', staff_id: 'emp-1', settlement_number: '202603-ABCDEF',
+        period_month: '2026-03-01', status: 'finalized', base_salary_usd: 300, settlement_currency: 'usd',
+        locked_rate: null, applied_amount_usd: -70, final_amount_usd: 230, notes: null,
+        staff_name_snapshot: 'Ahmed', staff_role_snapshot: 'cashier', finalized_at: '2026-03-31T00:00:00Z',
+        paid_at: null, paid_by_staff_id: null, payment_method: null,
+        client_operation_id: 'op-1', created_at: '2026-03-01T00:00:00Z',
+      } as any)
+      .mockResolvedValueOnce({
+        id: 'settle-1', shop_id: 'shop-1', staff_id: 'emp-1', settlement_number: '202603-ABCDEF',
+        period_month: '2026-03-01', status: 'paid', base_salary_usd: 300, settlement_currency: 'usd',
+        locked_rate: null, applied_amount_usd: -70, final_amount_usd: 230, notes: null,
+        staff_name_snapshot: 'Ahmed', staff_role_snapshot: 'cashier', finalized_at: '2026-03-31T00:00:00Z',
+        paid_at: '2026-04-01T00:00:00Z', paid_by_staff_id: 'staff-1', payment_method: 'cash',
+        client_operation_id: 'op-1', created_at: '2026-03-01T00:00:00Z',
+      } as any)
+
+    const { markPaid } = useStaffSettlement()
+    const result = await markPaid('settle-1', 'emp-1', { paymentMethod: 'cash' })
+
+    expect(result.status).toBe('paid')
+    expect(result.finalAmountUsd).toBe(230) // unchanged from finalize
+    const [sql] = vi.mocked(db.execute).mock.calls[0]
+    expect(sql).not.toMatch(/final_amount_usd\s*=/) // never recalculates
+  })
+
+  it('rejects markPaid() when the settlement is still a draft', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce({
+      id: 'settle-1', shop_id: 'shop-1', staff_id: 'emp-1', settlement_number: '202603-ABCDEF',
+      period_month: '2026-03-01', status: 'draft', base_salary_usd: null, settlement_currency: null,
+      locked_rate: null, applied_amount_usd: null, final_amount_usd: null, notes: null,
+      staff_name_snapshot: null, staff_role_snapshot: null, finalized_at: null, paid_at: null,
+      paid_by_staff_id: null, payment_method: null, client_operation_id: 'op-1', created_at: '2026-03-01T00:00:00Z',
+    } as any)
+
+    const { markPaid } = useStaffSettlement()
+    await expect(markPaid('settle-1', 'emp-1', { paymentMethod: 'cash' }))
+      .rejects.toThrow(/not finalized/i)
+    expect(db.execute).not.toHaveBeenCalled()
+  })
+
+  it('rejects markPaid() when the settlement is already paid', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce({
       id: 'settle-1', shop_id: 'shop-1', staff_id: 'emp-1', settlement_number: '202603-ABCDEF',
       period_month: '2026-03-01', status: 'paid', base_salary_usd: 300, settlement_currency: 'usd',
       locked_rate: null, applied_amount_usd: -70, final_amount_usd: 230, notes: null,
@@ -197,11 +240,8 @@ describe('useStaffSettlement.markPaid', () => {
     } as any)
 
     const { markPaid } = useStaffSettlement()
-    const result = await markPaid('settle-1', 'emp-1', { paymentMethod: 'cash' })
-
-    expect(result.status).toBe('paid')
-    expect(result.finalAmountUsd).toBe(230) // unchanged from finalize
-    const [sql] = vi.mocked(db.execute).mock.calls[0]
-    expect(sql).not.toMatch(/final_amount_usd\s*=/) // never recalculates
+    await expect(markPaid('settle-1', 'emp-1', { paymentMethod: 'cash' }))
+      .rejects.toThrow(/not finalized/i)
+    expect(db.execute).not.toHaveBeenCalled()
   })
 })

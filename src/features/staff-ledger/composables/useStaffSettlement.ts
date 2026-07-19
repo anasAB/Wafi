@@ -234,6 +234,15 @@ export function useStaffSettlement() {
     options: { paymentMethod: 'cash' | 'bank' | 'other' },
   ): Promise<StaffSettlement> {
     const session = useSessionStore()
+
+    const existingSettlementRow = await db.getOptional<StaffSettlementRow>(
+      `SELECT * FROM staff_settlements WHERE id = ?`, [settlementId],
+    )
+    if (!existingSettlementRow) throw new Error(`settlement ${settlementId} not found`)
+    if (existingSettlementRow.status !== 'finalized') {
+      throw new Error(`settlement ${settlementId} is not finalized (status: ${existingSettlementRow.status})`)
+    }
+
     await executeFinancialWrite(
       async () => {
         const now = new Date().toISOString()
