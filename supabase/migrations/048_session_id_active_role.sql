@@ -159,7 +159,7 @@ BEGIN
 END;
 $$;
 
--- Drop the old 4-arg signature (device_id, staff_id, pin) now superseded by
+-- Drop the old 3-arg signature (device_id, staff_id, pin) now superseded by
 -- the 4-arg (device_id, session_id, staff_id, pin) signature above -- these
 -- are different overloads by Postgres's rules (different parameter list),
 -- so the old one must be explicitly removed or it remains callable and
