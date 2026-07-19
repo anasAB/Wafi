@@ -3,7 +3,7 @@
 | Field      | Value                       |
 |------------|-----------------------------|
 | Date       | 2026-07-19                  |
-| Status     | Proposed (spike output — not yet implemented) |
+| Status     | Accepted (implementation landed on branch `wafi-138-staff-ledger-settlement`, re-keyed on `session_id` per the Design Correction below; hosted-Supabase dashboard hook wiring and the two-session isolation test are pending — see Definition of Done) |
 | Deciders   | Anas Baaj (CTO), PO         |
 | Supersedes | None (extends, does not reverse, the tenant-isolation model in ADR-004; deliberately reopens the "no custom JWT hook" choice made when migration 014 / `jwt.ts` were removed) |
 
