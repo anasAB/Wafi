@@ -22,12 +22,19 @@ DECLARE
   v_device   text;
   v_role     text;
 BEGIN
-  -- event may be missing the "claims" key entirely (or have it explicitly
-  -- null); COALESCE to an empty object so jsonb_set below never receives a
-  -- SQL NULL first argument (jsonb_set is STRICT — NULL in, NULL out —
-  -- which would otherwise silently produce {"claims": null} instead of
-  -- failing closed).
-  claims := COALESCE(event -> 'claims', '{}'::jsonb);
+  -- event may be missing the "claims" key entirely (SQL NULL from ->),
+  -- or "claims" may be present but hold the JSON literal null, or any
+  -- other non-object JSON value (scalar/array). jsonb_set requires an
+  -- object (or array) target once the path is non-empty — calling it on
+  -- a JSON null or other scalar raises "cannot set path in scalar",
+  -- which is NOT caught by COALESCE (jsonb '{"claims": null}' -> 'claims'
+  -- returns a genuine jsonb null, not SQL NULL). Normalize any non-object
+  -- value to an empty object up front so every downstream jsonb_set call
+  -- is guaranteed a safe target.
+  claims := event -> 'claims';
+  IF claims IS NULL OR jsonb_typeof(claims) <> 'object' THEN
+    claims := '{}'::jsonb;
+  END IF;
   v_device := claims ->> 'device_id';
 
   IF v_device IS NULL THEN
