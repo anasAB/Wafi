@@ -119,7 +119,7 @@ async function onPinComplete(pin: string) {
   // Switch mode: correct PIN changes the active operator and leaves the open
   // shift untouched. Login mode: proceed to the opening-cash count.
   if (props.mode === 'switch') {
-    await switchTo(s)
+    await switchTo(s, pin)
     // If the screen the previous operator was on is no longer permitted for the
     // new operator (e.g. Owner → ungranted Manager on the dashboard), bounce to
     // a permitted landing so financial views vanish immediately (WAFI-058). An
