@@ -34,17 +34,51 @@ streams:
   shop_data:
     auto_subscribe: true
     queries:
+      # ⚠️ VERIFY ON DEPLOY (WAFI-122): confirm `request.jwt() ->> 'active_role'`
+      # is a valid accessor in this PowerSync edition/version, and that the
+      # Customize Access Token Hook (migration 046, enabled in the dashboard
+      # per that migration's Task 3) is actually live BEFORE deploying this
+      # file — otherwise every session's active_role claim is absent and every
+      # row falls through neither branch (visible as missing data, not a
+      # security hole, but confirm the failure mode in staging first).
+
       # The shop itself (and its devices) for the owning account.
       - SELECT * FROM public.shops   WHERE owner_user_id = auth.user_id()
       - SELECT * FROM public.devices WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
 
       # All tenant data, scoped to the account's shop.
-      - SELECT * FROM public.products                   WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+
+      # WAFI-122: cost_price_usd withheld from cashier sessions (server-side
+      # enforcement — see ADR-009). Column list here must be kept in sync with
+      # products' full column list minus cost_price_usd; verify against
+      # src/data/powersync/schema.ts and supabase/migrations for the current
+      # authoritative column list before each edit, since this list will drift
+      # as products gains columns.
+      - SELECT id, shop_id, name_ar, name_en, price_usd, barcode, category,
+               category_id, subcategory_id, photo_url, current_stock,
+               low_stock_threshold, is_active, deleted, sync_status,
+               created_at, updated_at
+        FROM public.products
+        WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+          AND (request.jwt() ->> 'active_role') = 'cashier'
+      - SELECT * FROM public.products
+        WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+          AND (request.jwt() ->> 'active_role') IN ('owner', 'manager')
+
       - SELECT * FROM public.stock_adjustments          WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
       - SELECT * FROM public.sales                      WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
       - SELECT * FROM public.sale_line_items            WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
       - SELECT * FROM public.exchange_rates             WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
-      - SELECT * FROM public.expenses                   WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+
+      # WAFI-122: expenses carry no non-cost data cashiers need — entire table
+      # withheld from cashier sessions (server-side enforcement — see ADR-009).
+      - SELECT * FROM public.expenses
+        WHERE false
+          AND (request.jwt() ->> 'active_role') = 'cashier'
+      - SELECT * FROM public.expenses
+        WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+          AND (request.jwt() ->> 'active_role') IN ('owner', 'manager')
+
       - SELECT * FROM public.customers                  WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
       - SELECT * FROM public.customer_payments          WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
       - SELECT * FROM public.installment_plans          WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
@@ -57,11 +91,73 @@ streams:
       - SELECT * FROM public.return_line_items          WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
       - SELECT * FROM public.return_reasons             WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
       - SELECT * FROM public.audit_log                  WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+
+      # WAFI-122: suppliers currently carries no cost/payment-term columns
+      # (verified against src/data/powersync/schema.ts — shop_id, name, phone,
+      # contact_person, address, notes, deleted, created_at, sync_status only).
+      # No role-branching needed today; re-check this table's column list
+      # before adding any cost/payment-term field and branch it then.
       - SELECT * FROM public.suppliers                  WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
-      - SELECT * FROM public.stock_receivings           WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
-      - SELECT * FROM public.stock_receiving_line_items WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+
+      # WAFI-122: total_cost_usd withheld from cashier sessions (server-side
+      # enforcement — see ADR-009). Column list here must be kept in sync with
+      # stock_receivings' full column list minus total_cost_usd; verify
+      # against src/data/powersync/schema.ts before each edit.
+      - SELECT id, shop_id, supplier_id, received_at, invoice_photo_url,
+               exchange_rate_at_receiving, notes, staff_id, sync_status
+        FROM public.stock_receivings
+        WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+          AND (request.jwt() ->> 'active_role') = 'cashier'
+      - SELECT * FROM public.stock_receivings
+        WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+          AND (request.jwt() ->> 'active_role') IN ('owner', 'manager')
+
+      # WAFI-122: unit_cost_usd withheld from cashier sessions (server-side
+      # enforcement — see ADR-009). Column list here must be kept in sync with
+      # stock_receiving_line_items' full column list minus unit_cost_usd;
+      # verify against src/data/powersync/schema.ts before each edit.
+      - SELECT id, receiving_id, shop_id, product_id, qty_received,
+               cost_updated, sync_status
+        FROM public.stock_receiving_line_items
+        WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+          AND (request.jwt() ->> 'active_role') = 'cashier'
+      - SELECT * FROM public.stock_receiving_line_items
+        WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+          AND (request.jwt() ->> 'active_role') IN ('owner', 'manager')
+
       - SELECT * FROM public.cash_movements             WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
       - SELECT * FROM public.stock_take_sessions        WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
-      - SELECT * FROM public.stock_take_lines           WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+
+      # WAFI-122: variance_value_usd withheld from cashier sessions (server-side
+      # enforcement — see ADR-009). Column list here must be kept in sync with
+      # stock_take_lines' full column list minus variance_value_usd; verify
+      # against src/data/powersync/schema.ts before each edit.
+      - SELECT id, session_id, shop_id, product_id, expected_stock,
+               counted_stock, variance, sync_status
+        FROM public.stock_take_lines
+        WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+          AND (request.jwt() ->> 'active_role') = 'cashier'
+      - SELECT * FROM public.stock_take_lines
+        WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+          AND (request.jwt() ->> 'active_role') IN ('owner', 'manager')
+
       - SELECT * FROM public.categories                 WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
       - SELECT * FROM public.subcategories              WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+
+      # WAFI-122 / WAFI-138: staff_ledger and staff_settlements were not
+      # previously synced at all. Entire tables withheld from cashier sessions
+      # (server-side enforcement — see ADR-009) since both carry
+      # amounts/wages that are owner/manager-only financial data.
+      - SELECT * FROM public.staff_ledger
+        WHERE false
+          AND (request.jwt() ->> 'active_role') = 'cashier'
+      - SELECT * FROM public.staff_ledger
+        WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+          AND (request.jwt() ->> 'active_role') IN ('owner', 'manager')
+
+      - SELECT * FROM public.staff_settlements
+        WHERE false
+          AND (request.jwt() ->> 'active_role') = 'cashier'
+      - SELECT * FROM public.staff_settlements
+        WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+          AND (request.jwt() ->> 'active_role') IN ('owner', 'manager')
