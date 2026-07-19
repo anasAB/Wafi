@@ -1,7 +1,20 @@
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
+import { useSessionStore } from '@/store/session.store'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
+import { executeFinancialWrite } from '@/features/staff-ledger/composables/executeFinancialWrite'
 import type { StaffSettlement, StaffLedgerEntry } from '@/features/staff-ledger/staff-ledger.types'
+
+type StaffLedgerRowLocal = { id: string; entry_type: string; amount_usd: number }
+
+interface FinalizeOptions {
+  settlementCurrency: 'usd' | 'syp'
+  baseSalaryUsd: number
+  notes: string | null
+  applications: Array<{ ledgerEntryId: string; applyAmountUsd: number }>
+  settlementRate?: number // required if settlementCurrency = 'syp'
+}
 
 type StaffSettlementRow = {
   id: string; shop_id: string; staff_id: string; settlement_number: string
@@ -28,6 +41,8 @@ function rowToSettlement(r: StaffSettlementRow): StaffSettlement {
 }
 
 export function useStaffSettlement() {
+  const { logStaffSettlementFinalized } = useAuditLog()
+
   async function createDraft(
     staffId: string, periodMonth: string,
   ): Promise<{ settlement: StaffSettlement; resumed: boolean }> {
@@ -85,5 +100,125 @@ export function useStaffSettlement() {
     }
   }
 
-  return { createDraft, applyLedgerEntry }
+  /**
+   * Transactional month-end settlement finalization (WAFI-138 Invariant 10).
+   * Re-reads outstanding ledger rows fresh from the DB — never trusts
+   * UI-computed totals — re-validates every applied amount against the
+   * row's actual remaining amount, then inside a single db.writeTransaction:
+   * links consumed rows to the settlement (Invariant 2 — the only place
+   * settlement_id is ever set), creates carry_forward rows for remainders
+   * (Invariant 12 — original rows are never mutated in place), and writes
+   * the immutable financial snapshot (Invariants 3-5) on staff_settlements.
+   */
+  async function finalize(
+    settlementId: string,
+    staffId: string,
+    options: FinalizeOptions,
+  ): Promise<StaffSettlement> {
+    const device = useDeviceStore()
+    const session = useSessionStore()
+
+    // Lock exchange rate (already provided by caller for syp; usd needs none).
+    const lockedRate = options.settlementCurrency === 'syp' ? options.settlementRate! : null
+
+    // Re-read outstanding ledger fresh — never trust UI-held state at commit time.
+    const outstandingRows = await db.getAll<StaffLedgerRowLocal>(
+      `SELECT * FROM staff_ledger WHERE shop_id = ? AND staff_id = ? AND settlement_id IS NULL`,
+      [device.shopId, staffId],
+    )
+    const byId = new Map(outstandingRows.map(r => [r.id, r]))
+
+    // Re-validate every applied amount <= remaining (defense in depth;
+    // the UI already checked this via applyLedgerEntry()).
+    const plannedCarryForwards: Array<{ sourceId: string; amountUsd: number }> = []
+    let appliedTotalUsd = 0
+    for (const app of options.applications) {
+      const row = byId.get(app.ledgerEntryId)
+      if (!row) throw new Error(`ledger entry ${app.ledgerEntryId} not found or already consumed`)
+      if (app.applyAmountUsd > row.amount_usd) {
+        throw new Error(`apply amount ${app.applyAmountUsd} exceeds entry remaining amount ${row.amount_usd}`)
+      }
+      const direction = row.entry_type === 'bonus' ? 1 : -1
+      appliedTotalUsd += direction * app.applyAmountUsd
+      const remainder = Math.round((row.amount_usd - app.applyAmountUsd) * 100) / 100
+      if (remainder > 0) plannedCarryForwards.push({ sourceId: row.id, amountUsd: remainder })
+    }
+    const finalAmountUsd = Math.round((options.baseSalaryUsd + appliedTotalUsd) * 100) / 100
+
+    const staffRow = await db.getOptional<{ name: string; role: string }>(
+      `SELECT name, role FROM staff WHERE id = ?`, [staffId],
+    )
+    const existingSettlementRow = await db.getOptional<StaffSettlementRow>(
+      `SELECT * FROM staff_settlements WHERE id = ?`, [settlementId],
+    )
+    if (!existingSettlementRow) throw new Error(`settlement ${settlementId} not found`)
+
+    let finalizedAt = ''
+
+    await executeFinancialWrite(
+      async () => {
+        const now = new Date().toISOString()
+        // All writes inside one transaction (Invariant 10) — link consumed
+        // rows, insert carry-forwards, write the snapshot; all-or-nothing.
+        await db.writeTransaction(async (tx) => {
+          for (const app of options.applications) {
+            await tx.execute(
+              `UPDATE staff_ledger SET settlement_id = ? WHERE id = ?`,
+              [settlementId, app.ledgerEntryId],
+            )
+          }
+          for (const cf of plannedCarryForwards) {
+            await tx.execute(
+              `INSERT INTO staff_ledger
+                 (id, shop_id, staff_id, entry_type, amount_usd, currency_entered, locked_rate,
+                  note, source_type, source_id, created_by_staff_id, client_operation_id,
+                  settlement_id, created_at, sync_status)
+               VALUES (?, ?, ?, 'carry_forward', ?, 'usd', NULL, ?, 'settlement', ?, ?, ?, NULL, ?, 'pending')`,
+              [
+                uuidv4(), device.shopId, staffId, cf.amountUsd,
+                `Carry-forward from ${cf.sourceId}`, cf.sourceId,
+                session.activeStaff!.id, uuidv4(), now,
+              ],
+            )
+          }
+          await tx.execute(
+            `UPDATE staff_settlements
+             SET status = 'finalized', base_salary_usd = ?, settlement_currency = ?, locked_rate = ?,
+                 applied_amount_usd = ?, final_amount_usd = ?, notes = ?,
+                 staff_name_snapshot = ?, staff_role_snapshot = ?, finalized_at = ?
+             WHERE id = ?`,
+            [
+              options.baseSalaryUsd, options.settlementCurrency, lockedRate,
+              appliedTotalUsd, finalAmountUsd, options.notes,
+              staffRow?.name ?? null, staffRow?.role ?? null, now, settlementId,
+            ],
+          )
+        })
+        finalizedAt = now
+        return { finalAmountUsd, now }
+      },
+      ({ finalAmountUsd }) => logStaffSettlementFinalized(
+        settlementId, staffId, existingSettlementRow.period_month, finalAmountUsd,
+        options.settlementCurrency, finalAmountUsd < 0,
+      ),
+    )
+
+    // Build the result from the pre-write row plus the values we just wrote —
+    // avoids relying on a second round-trip re-read reflecting our own write.
+    return rowToSettlement({
+      ...existingSettlementRow,
+      status: 'finalized',
+      base_salary_usd: options.baseSalaryUsd,
+      settlement_currency: options.settlementCurrency,
+      locked_rate: lockedRate,
+      applied_amount_usd: appliedTotalUsd,
+      final_amount_usd: finalAmountUsd,
+      notes: options.notes,
+      staff_name_snapshot: staffRow?.name ?? null,
+      staff_role_snapshot: staffRow?.role ?? null,
+      finalized_at: finalizedAt,
+    })
+  }
+
+  return { createDraft, applyLedgerEntry, finalize }
 }
