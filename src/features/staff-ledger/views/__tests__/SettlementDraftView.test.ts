@@ -131,6 +131,45 @@ describe('SettlementDraftView', () => {
     expect(wrapper.find('[data-testid="apply-error-entry-1"]').exists()).toBe(true)
   })
 
+  it('keeps the finalize button disabled when SYP is selected without a rate, and enables it once a rate is entered', async () => {
+    const wrapper = mount(SettlementDraftView, { props: { staffId: 'emp-1', periodMonth: '2026-03-01' } })
+    await new Promise(r => setTimeout(r, 0))
+
+    await wrapper.find('[data-testid="currency-syp"]').trigger('click')
+    let finalizeBtn = wrapper.find('[data-testid="finalize-button"]')
+    expect(finalizeBtn.attributes('disabled')).toBeDefined()
+
+    const rateInput = wrapper.find('[data-testid="settlement-rate-input"]')
+    expect(rateInput.exists()).toBe(true)
+    await rateInput.setValue(15000)
+
+    finalizeBtn = wrapper.find('[data-testid="finalize-button"]')
+    expect(finalizeBtn.attributes('disabled')).toBeUndefined()
+  })
+
+  it('passes the entered rate as settlementRate when finalizing a SYP settlement', async () => {
+    const actual = vi.mocked(useStaffSettlement).getMockImplementation()!()
+    const finalizeSpy = vi.fn().mockResolvedValue({})
+    vi.mocked(useStaffSettlement).mockReturnValueOnce({
+      ...actual,
+      finalize: finalizeSpy,
+    })
+
+    const wrapper = mount(SettlementDraftView, { props: { staffId: 'emp-1', periodMonth: '2026-03-01' } })
+    await new Promise(r => setTimeout(r, 0))
+
+    await wrapper.find('[data-testid="currency-syp"]').trigger('click')
+    await wrapper.find('[data-testid="settlement-rate-input"]').setValue(15000)
+    await wrapper.find('[data-testid="finalize-button"]').trigger('click')
+    await wrapper.find('[data-testid="confirm-finalize-button"]').trigger('click')
+    await new Promise(r => setTimeout(r, 0))
+
+    expect(finalizeSpy).toHaveBeenCalledTimes(1)
+    const optionsArg = finalizeSpy.mock.calls[0][2]
+    expect(optionsArg.settlementCurrency).toBe('syp')
+    expect(optionsArg.settlementRate).toBe(15000)
+  })
+
   it('does not crash and shows an inline error when applying an amount over the entry remaining balance for a SYP entry', async () => {
     const actualLedger = vi.mocked(useStaffLedger).getMockImplementation()!()
     vi.mocked(useStaffLedger).mockReturnValueOnce({

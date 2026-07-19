@@ -19,6 +19,7 @@ const sypEntries = ref<StaffLedgerEntry[]>([])
 const activityDays = ref<string[]>([])
 const applied = ref<Record<string, number>>({}) // ledgerEntryId -> applyAmountUsd
 const settlementCurrency = ref<'usd' | 'syp' | null>(null)
+const settlementRate = ref<number | ''>('')
 const baseSalaryUsd = ref<number | null>(null)
 const notes = ref('')
 const showFinalizeConfirm = ref(false)
@@ -36,7 +37,11 @@ onMounted(async () => {
   activityDays.value = await getPosActivityDays(props.staffId, props.periodMonth)
 })
 
-const canFinalize = computed(() => settlementCurrency.value !== null)
+const canFinalize = computed(() => {
+  if (settlementCurrency.value === null) return false
+  if (settlementCurrency.value === 'syp') return Number(settlementRate.value) > 0
+  return true
+})
 
 const applyErrors = ref<Record<string, string>>({}) // ledgerEntryId -> inline error message
 
@@ -67,6 +72,7 @@ async function onConfirmFinalize() {
       baseSalaryUsd: baseSalaryUsd.value ?? 0,
       notes: notes.value || null,
       applications: Object.entries(applied.value).map(([ledgerEntryId, applyAmountUsd]) => ({ ledgerEntryId, applyAmountUsd })),
+      ...(settlementCurrency.value === 'syp' ? { settlementRate: Number(settlementRate.value) } : {}),
     })
     showFinalizeConfirm.value = false
   } catch (err) {
@@ -175,6 +181,17 @@ async function onConfirmFinalize() {
           @click="settlementCurrency = 'syp'"
         >ليرة سورية</button>
       </div>
+    </div>
+
+    <div v-if="settlementCurrency === 'syp'" class="field-group">
+      <label class="field-label">سعر الصرف <span class="label-required">*</span></label>
+      <input
+        v-model.number="settlementRate"
+        data-testid="settlement-rate-input"
+        type="number" min="0" step="0.01"
+        placeholder="0.00"
+        class="form-input"
+      />
     </div>
 
     <div class="field-group">
