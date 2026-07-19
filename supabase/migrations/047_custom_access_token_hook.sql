@@ -22,7 +22,12 @@ DECLARE
   v_device   text;
   v_role     text;
 BEGIN
-  claims := event -> 'claims';
+  -- event may be missing the "claims" key entirely (or have it explicitly
+  -- null); COALESCE to an empty object so jsonb_set below never receives a
+  -- SQL NULL first argument (jsonb_set is STRICT — NULL in, NULL out —
+  -- which would otherwise silently produce {"claims": null} instead of
+  -- failing closed).
+  claims := COALESCE(event -> 'claims', '{}'::jsonb);
   v_device := claims ->> 'device_id';
 
   IF v_device IS NULL THEN
@@ -32,9 +37,17 @@ BEGIN
     RETURN jsonb_build_object('claims', claims);
   END IF;
 
-  SELECT active_role INTO v_role
-  FROM public.device_sessions
-  WHERE device_id = v_device::uuid;
+  -- Narrowly scoped: only the cast + lookup are guarded, so a malformed
+  -- (non-UUID) device_id claim falls through to the same fail-closed
+  -- 'cashier' path as a missing claim or missing row, without masking
+  -- unexpected errors elsewhere in the function.
+  BEGIN
+    SELECT active_role INTO v_role
+    FROM public.device_sessions
+    WHERE device_id = v_device::uuid;
+  EXCEPTION WHEN OTHERS THEN
+    v_role := 'cashier';
+  END;
 
   IF v_role IS NULL THEN
     v_role := 'cashier';
