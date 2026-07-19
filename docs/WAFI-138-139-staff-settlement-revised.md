@@ -6,6 +6,41 @@
 
 ---
 
+## ⚠️ FOLLOW-UP REQUIRED — release gate overridden on merge (2026-07-19)
+
+**WAFI-138's write endpoints were merged to `main` on 2026-07-19 with WAFI-122
+(server-side role enforcement) still incomplete.** This is a deliberate,
+conscious override of the hard gate this doc itself set below (#1 in the
+revision table), made by the CTO because the branch had accumulated too much
+work to hold indefinitely and the risk was judged acceptable pre-launch (no
+real cashier accounts on the live shop yet).
+
+**What is actually true right now:**
+- `staff_ledger`/`staff_settlements` sync to every device regardless of
+  role — `powersync.yaml` currently has NO role-branching (reverted after
+  the mechanism below was found broken; see next point). A cashier with
+  browser dev tools can read every staff advance, bonus, and settlement
+  amount today.
+- The `session_id`-keyed JWT claim mechanism (device PIN switch → RPC →
+  Postgres Auth Hook → `active_role` claim) IS built, deployed, and
+  confirmed working end-to-end on the hosted Supabase project — see
+  `docs/adr/ADR-009-server-side-financial-role-enforcement.md` and
+  `.superpowers/sdd/progress.md`'s "Task 9 live verification" section.
+- What's missing is purely the PowerSync sync-layer consumption of that
+  claim: `parameters:` + `subscription.parameter(...)` returns zero rows
+  for every dependent table on this project, for reasons not yet
+  understood — needs investigation with PowerSync's own docs/support
+  before another attempt.
+
+**Before this product is used with any real cashier who shouldn't see
+salary/advance data, WAFI-122's sync-layer piece must be finished and
+re-verified** (two-session isolation test, per its Definition of Done).
+Until then, treat `can_view_expenses` as UX-only, not a real boundary, for
+these two tables specifically — same caveat migration 043 already carries
+for the rest of this feature's RLS.
+
+---
+
 ## 🚨 Product Boundary Statement (unchanged, read first)
 
 The Staff Settlement feature exists strictly to support store operations, cash accountability, and month-end cash reconciliation. It is **NOT** a general HR or payroll system. Any feature that primarily serves HR administration (automated overtime rules, vacation tracking, tax deductions, complex scheduling) is explicitly OUT OF SCOPE unless the core product vision is formally changed.
