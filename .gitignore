@@ -26,3 +26,7 @@ dist-ssr
 # Subagent-driven-development scratch (reports, briefs, diffs, ledger)
 .superpowers/sdd/
 .worktrees/
+
+# ruflo/claude-flow plugin runtime state and telemetry (local, not source)
+.claude-flow/
+ruvector.db
