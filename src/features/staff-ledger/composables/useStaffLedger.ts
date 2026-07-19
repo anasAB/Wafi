@@ -34,12 +34,16 @@ export function useStaffLedger() {
 
   async function addLedgerEntry(input: NewStaffLedgerEntry): Promise<StaffLedgerEntry> {
     if (input.amount <= 0) throw new Error('amount must be positive')
-    if (input.currency === 'syp' && !input.lockedRate) {
-      throw new Error('lockedRate is required when currency is syp')
+    if (input.currency === 'syp' && !(input.lockedRate! > 0)) {
+      throw new Error('lockedRate is required and must be a positive rate when currency is syp')
     }
     const amountUsd = input.currency === 'syp'
       ? Math.round((input.amount / input.lockedRate!) * 100) / 100
       : input.amount
+
+    if (amountUsd <= 0) {
+      throw new Error('amount_usd must be positive after currency conversion')
+    }
 
     return executeFinancialWrite(
       async () => {

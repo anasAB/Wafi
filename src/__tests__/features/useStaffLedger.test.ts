@@ -59,6 +59,22 @@ describe('useStaffLedger.addLedgerEntry', () => {
     const [, params] = vi.mocked(db.execute).mock.calls[0]
     expect(params).toContain(10) // 145000 / 14500
   })
+
+  it('rejects a SYP amount that rounds to zero amount_usd after conversion', async () => {
+    const { addLedgerEntry } = useStaffLedger()
+    await expect(
+      addLedgerEntry({ staffId: 'emp-1', entryType: 'bonus', amount: 1, currency: 'syp', lockedRate: 14500 }),
+    ).rejects.toThrow(/positive/i)
+    expect(db.execute).not.toHaveBeenCalled()
+  })
+
+  it('rejects a negative lockedRate', async () => {
+    const { addLedgerEntry } = useStaffLedger()
+    await expect(
+      addLedgerEntry({ staffId: 'emp-1', entryType: 'bonus', amount: 50000, currency: 'syp', lockedRate: -14500 }),
+    ).rejects.toThrow(/rate/i)
+    expect(db.execute).not.toHaveBeenCalled()
+  })
 })
 
 describe('useStaffLedger.getOutstandingEntries', () => {
