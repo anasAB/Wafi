@@ -33,14 +33,17 @@ config:
 streams:
   shop_data:
     auto_subscribe: true
+    # WAFI-122: the PowerSync Sync Streams validator rejects an inline
+    # `request.jwt() ->> 'active_role'` expression written directly in a data
+    # query's WHERE clause ("Invalid schema in function name" / "This
+    # expression is not supported by PowerSync" — confirmed live on deploy).
+    # JWT claim access is only permitted inside a stream's `parameters:`
+    # query; every data query below then reads the resolved value via
+    # `subscription.parameter('active_role')` instead of calling
+    # `request.jwt()` itself. This mirrors the exact fallback pattern this
+    # file's own header already documents for `shop_id` scoping.
+    parameters: SELECT request.jwt() ->> 'active_role' AS active_role
     queries:
-      # ⚠️ VERIFY ON DEPLOY (WAFI-122): confirm `request.jwt() ->> 'active_role'`
-      # is a valid accessor in this PowerSync edition/version, and that the
-      # Customize Access Token Hook (migration 046, enabled in the dashboard
-      # per that migration's Task 3) is actually live BEFORE deploying this
-      # file — otherwise every session's active_role claim is absent and every
-      # row falls through neither branch (visible as missing data, not a
-      # security hole, but confirm the failure mode in staging first).
 
       # The shop itself (and its devices) for the owning account.
       - SELECT * FROM public.shops   WHERE owner_user_id = auth.user_id()
@@ -60,10 +63,10 @@ streams:
                created_at, updated_at
         FROM public.products
         WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
-          AND (request.jwt() ->> 'active_role') = 'cashier'
+          AND subscription.parameter('active_role') = 'cashier'
       - SELECT * FROM public.products
         WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
-          AND (request.jwt() ->> 'active_role') IN ('owner', 'manager')
+          AND subscription.parameter('active_role') IN ('owner', 'manager')
 
       - SELECT * FROM public.stock_adjustments          WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
       - SELECT * FROM public.sales                      WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
@@ -76,20 +79,20 @@ streams:
                line_total_usd
         FROM public.sale_line_items
         WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
-          AND (request.jwt() ->> 'active_role') = 'cashier'
+          AND subscription.parameter('active_role') = 'cashier'
       - SELECT * FROM public.sale_line_items
         WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
-          AND (request.jwt() ->> 'active_role') IN ('owner', 'manager')
+          AND subscription.parameter('active_role') IN ('owner', 'manager')
       - SELECT * FROM public.exchange_rates             WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
 
       # WAFI-122: expenses carry no non-cost data cashiers need — entire table
       # withheld from cashier sessions (server-side enforcement — see ADR-009).
       - SELECT * FROM public.expenses
         WHERE false
-          AND (request.jwt() ->> 'active_role') = 'cashier'
+          AND subscription.parameter('active_role') = 'cashier'
       - SELECT * FROM public.expenses
         WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
-          AND (request.jwt() ->> 'active_role') IN ('owner', 'manager')
+          AND subscription.parameter('active_role') IN ('owner', 'manager')
 
       - SELECT * FROM public.customers                  WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
       - SELECT * FROM public.customer_payments          WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
@@ -119,10 +122,10 @@ streams:
                exchange_rate_at_receiving, notes, staff_id, sync_status
         FROM public.stock_receivings
         WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
-          AND (request.jwt() ->> 'active_role') = 'cashier'
+          AND subscription.parameter('active_role') = 'cashier'
       - SELECT * FROM public.stock_receivings
         WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
-          AND (request.jwt() ->> 'active_role') IN ('owner', 'manager')
+          AND subscription.parameter('active_role') IN ('owner', 'manager')
 
       # WAFI-122: unit_cost_usd withheld from cashier sessions (server-side
       # enforcement — see ADR-009). Column list here must be kept in sync with
@@ -132,10 +135,10 @@ streams:
                cost_updated, sync_status
         FROM public.stock_receiving_line_items
         WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
-          AND (request.jwt() ->> 'active_role') = 'cashier'
+          AND subscription.parameter('active_role') = 'cashier'
       - SELECT * FROM public.stock_receiving_line_items
         WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
-          AND (request.jwt() ->> 'active_role') IN ('owner', 'manager')
+          AND subscription.parameter('active_role') IN ('owner', 'manager')
 
       - SELECT * FROM public.cash_movements             WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
       - SELECT * FROM public.stock_take_sessions        WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
@@ -148,10 +151,10 @@ streams:
                counted_stock, variance, sync_status
         FROM public.stock_take_lines
         WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
-          AND (request.jwt() ->> 'active_role') = 'cashier'
+          AND subscription.parameter('active_role') = 'cashier'
       - SELECT * FROM public.stock_take_lines
         WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
-          AND (request.jwt() ->> 'active_role') IN ('owner', 'manager')
+          AND subscription.parameter('active_role') IN ('owner', 'manager')
 
       - SELECT * FROM public.categories                 WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
       - SELECT * FROM public.subcategories              WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
@@ -162,14 +165,14 @@ streams:
       # amounts/wages that are owner/manager-only financial data.
       - SELECT * FROM public.staff_ledger
         WHERE false
-          AND (request.jwt() ->> 'active_role') = 'cashier'
+          AND subscription.parameter('active_role') = 'cashier'
       - SELECT * FROM public.staff_ledger
         WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
-          AND (request.jwt() ->> 'active_role') IN ('owner', 'manager')
+          AND subscription.parameter('active_role') IN ('owner', 'manager')
 
       - SELECT * FROM public.staff_settlements
         WHERE false
-          AND (request.jwt() ->> 'active_role') = 'cashier'
+          AND subscription.parameter('active_role') = 'cashier'
       - SELECT * FROM public.staff_settlements
         WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
-          AND (request.jwt() ->> 'active_role') IN ('owner', 'manager')
+          AND subscription.parameter('active_role') IN ('owner', 'manager')
