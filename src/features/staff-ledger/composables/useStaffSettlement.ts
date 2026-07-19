@@ -16,7 +16,7 @@ interface FinalizeOptions {
   settlementRate?: number // required if settlementCurrency = 'syp'
 }
 
-type StaffSettlementRow = {
+export type StaffSettlementRow = {
   id: string; shop_id: string; staff_id: string; settlement_number: string
   period_month: string; status: string; base_salary_usd: number | null
   settlement_currency: 'usd' | 'syp' | null; locked_rate: number | null
@@ -26,7 +26,7 @@ type StaffSettlementRow = {
   payment_method: string | null; client_operation_id: string; created_at: string
 }
 
-function rowToSettlement(r: StaffSettlementRow): StaffSettlement {
+export function rowToSettlement(r: StaffSettlementRow): StaffSettlement {
   return {
     id: r.id, shopId: r.shop_id, staffId: r.staff_id, settlementNumber: r.settlement_number,
     periodMonth: r.period_month, status: r.status as StaffSettlement['status'],
