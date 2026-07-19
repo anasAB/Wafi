@@ -73,3 +73,23 @@ describe('router shift-open guard (WAFI 5.3)', () => {
     expect(router.currentRoute.value.path).toBe('/onboarding')
   })
 })
+
+describe('router meta.permission wiring for staff ledger/settlement routes (WAFI-138)', () => {
+  // router.resolve() does not fire beforeEach navigation guards, so these
+  // assertions need none of the session/shift/supabase mocking above — they
+  // check the static route table directly.
+  it('gates /staff/:staffId/ledger behind can_view_expenses', () => {
+    const resolved = router.resolve('/staff/emp-1/ledger')
+    expect(resolved.meta.permission).toBe('can_view_expenses')
+  })
+
+  it('gates /staff/:staffId/settlement/draft/:periodMonth behind can_view_expenses', () => {
+    const resolved = router.resolve('/staff/emp-1/settlement/draft/2026-03-01')
+    expect(resolved.meta.permission).toBe('can_view_expenses')
+  })
+
+  it('gates /staff/:staffId/settlement/:settlementId behind can_view_expenses', () => {
+    const resolved = router.resolve('/staff/emp-1/settlement/settle-1')
+    expect(resolved.meta.permission).toBe('can_view_expenses')
+  })
+})
