@@ -1,4 +1,5 @@
 import { supabase } from './client'
+import { useDeviceStore } from '@/store/device.store'
 
 // WAFI-055 — Real auth for self-serve onboarding.
 //
@@ -106,9 +107,15 @@ export async function signUpOwner(input: SignUpInput): Promise<AuthOutcome> {
 /** Sign a returning owner in by phone + password. */
 export async function signIn(input: SignInInput): Promise<AuthOutcome> {
   try {
+    // WAFI-122: the device_id rides along in options.data so the Custom Access
+    // Token Hook (server-side) can read it off the resulting session and stamp
+    // it into the JWT claims — needed by switch_active_operator's lockout to
+    // scope failed-PIN attempts per physical device, not per account.
+    const device = useDeviceStore()
     const { error } = await supabase.auth.signInWithPassword({
       email:    phoneToEmail(input.phone),
       password: input.password,
+      options:  { data: { device_id: device.deviceId } },
     })
     if (error) return fail(classifyAuthError(error.message), error.message)
     return { ok: true }
