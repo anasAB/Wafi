@@ -1,4 +1,4 @@
--- 045_sale_discounts.sql
+-- 052_sale_discounts.sql
 -- WAFI-100: capped/audited line + sale discounts.
 -- Caps are OWNER-EDITABLE from the client (unlike shops.features in ADR-008/041,
 -- which is server-only) — do NOT add a client-update-blocking trigger here.
