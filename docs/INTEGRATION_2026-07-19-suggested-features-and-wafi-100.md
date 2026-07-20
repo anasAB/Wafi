@@ -28,22 +28,25 @@ Not merged into `main` yet — this branch is ready for review first.
 - `npx vue-tsc --noEmit` — 0 errors
 - `npx vitest run` — 167 test files / 1007 tests, all passing
 
-## ⚠️ MUST FIX before this branch ships — real regression, untested
+## ✅ Fixed — `SalePanel.vue` → `updateUnitPrice` regression
 
-`worktree-wafi-100-discounts` **removed `sale.store.ts`'s `updateUnitPrice()`** and replaced it with `applyLineDiscount` / `applyMarkup` / `applySaleDiscount`, but **never updated the caller**:
+`worktree-wafi-100-discounts` had removed `sale.store.ts`'s `updateUnitPrice()` in favor of `applyLineDiscount` / `applyMarkup` / `applySaleDiscount`, but never updated its only caller — `SalePanel.vue`'s free-form price input would have thrown at runtime the moment a cashier edited a line's price by hand, with no type error or test catching it.
 
-- `src/features/pos/SalePanel.vue:259` still calls `store.updateUnitPrice(...)` in the free-form price input's `@change` handler. That method no longer exists on the store.
-- No type error catches this (Pinia store return type isn't narrow enough here) and no test exercises this specific input, so `vue-tsc` and the full test suite both pass clean despite this — **it will throw at runtime** the moment a cashier edits a line's price by hand.
-- This isn't a mechanical merge fix — it's a product decision: should manual price edits in `SalePanel.vue` now route through `applyMarkup` (price ≥ list) or `applyLineDiscount` (price < list, PIN-gated per WAFI-100's caps), or should the free-form editor be removed entirely in favor of the new discount/markup UI? The WAFI-100 design spec itself calls the old free-form editor "an unaudited discount bypass this ticket must close" — so the intent was to close it, just not finished on this branch.
-- **Do not merge to `main` until this is wired**, or the POS price-edit flow breaks in production.
+Wired now (`fix(WAFI-100): wire SalePanel's free-form price editor...`):
+- Price ≥ list price → `applyMarkup` (uncapped, unaudited — never hurts the shop)
+- Price < list price → `applyLineDiscount`, gated by `requiresPinApproval` (role cap or below-cost check)
+- When PIN approval is required: a new `findDiscountApprover()` (`src/features/pos/useDiscountApproval.ts`) checks the entered PIN against active **owner/manager** staff only — a cashier can never self-approve past their own cap. Reuses the existing `PinPad` component in a new modal.
+- New test: `src/__tests__/features/useDiscountApproval.test.ts` (match / no-match / role-scoping).
+- Re-verified after the fix: `vue-tsc --noEmit` clean, full suite 168 files / 1010 tests passing.
+
+This branch is now considered ready to merge to `main`, pending your review.
 
 ## Tomorrow — things to actually run/apply
 
 1. **Run the two new/renumbered migrations** against Supabase (in order): `039_denomination_counting.sql`, `051_products_created_via.sql`, `052_sale_discounts.sql`.
 2. **Deploy the updated `powersync.yaml`** to the PowerSync dashboard's Sync Streams editor (per its own header comment — the repo file is source of record, but the dashboard is what actually runs). The new `denomination_configs` line needs to be live there.
-3. **Fix the `SalePanel.vue` → `updateUnitPrice` break** described above before this branch is usable.
-4. Optional/lower priority: `v1_epics.md` still has zero entries for WAFI-100/101/103/108/138 — update it once you're happy with the merge so ticket status tracking doesn't silently drift.
+3. Optional/lower priority: `v1_epics.md` still has zero entries for WAFI-100/101/103/108/138 — update it once you're happy with the merge so ticket status tracking doesn't silently drift.
 
 ## Not yet done
 
-- This branch has not been pushed or merged into `main` — review it first (`git log main..integration/wafi-100-and-suggested-features`), fix item #3 above, then merge/push yourself.
+- This branch has not been pushed or merged into `main` — you can now merge/push it, or ask me to.
