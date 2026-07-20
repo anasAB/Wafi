@@ -1,15 +1,23 @@
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted } from 'vue'
+import { ref, computed, watch, onUnmounted, onMounted } from 'vue'
 import { useSaleStore } from '@/store/sale.store'
 import { useSaleDraft } from '@/composables/useSaleDraft'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import BaseModal from '@/components/ui/BaseModal.vue'
 import { db } from '@/data/powersync/db'
 import { useFastCashSettings } from '@/features/payment/useFastCashSettings'
+import { useSessionStore } from '@/store/session.store'
+import { useDiscountCaps } from '@/features/pos/useDiscountCaps'
+import { requiresPinApproval } from '@/features/pos/useDiscountAuthorization'
+import { findDiscountApprover } from '@/features/pos/useDiscountApproval'
+import PinPad from '@/features/staff/components/PinPad.vue'
 
 const emit = defineEmits<{ (e: 'pay'): void; (e: 'fast-cash', currency: 'USD' | 'SYP'): void }>()
 const store = useSaleStore()
 const { clearDraft } = useSaleDraft()
+const session = useSessionStore()
+const discountCaps = useDiscountCaps()
+onMounted(() => { discountCaps.load() })
 
 // WAFI-124: one-tap exact-cash buttons. Disabled for 300ms after any cart
 // change — protects against a scan-then-tap slip committing an unintended sale.
@@ -190,6 +198,67 @@ async function handleClearSale() {
   await clearDraft()
   showClearDialog.value = false
 }
+
+// WAFI-100: the free-form price editor now routes through the store's
+// audited discount/markup mutations instead of the removed updateUnitPrice.
+// A price at/above list is a markup (uncapped, unaudited — never hurts the
+// shop). A price below list is a discount: capped per-role, and escalated to
+// a PIN prompt when requiresPinApproval says the cashier's own authority
+// isn't enough (over their cap, or below cost regardless of role).
+const pendingDiscount = ref<{ productId: string; discountValue: number } | null>(null)
+const discountApprovalError = ref<string | null>(null)
+
+function onPriceChange(productId: string, rawValue: number) {
+  if (Number.isNaN(rawValue) || rawValue < 0) return
+  const line = store.lines.find(l => l.productId === productId)
+  if (!line) return
+  const base = line.listPriceUsd ?? line.unitPriceUsd
+
+  if (rawValue >= base) {
+    store.applyMarkup(productId, rawValue)
+    return
+  }
+
+  const discountValue = base - rawValue
+  const discountPct   = base > 0 ? (discountValue / base) * 100 : 0
+  const role          = session.activeStaff?.role ?? 'cashier'
+
+  const needsPin = requiresPinApproval({
+    role,
+    discountPct,
+    finalPriceUsd: rawValue,
+    unitCostUsd:   line.unitCostUsd ?? 0,
+    caps: {
+      cashierPct: discountCaps.cashierPct.value,
+      managerPct: discountCaps.managerPct.value,
+    },
+  })
+
+  if (needsPin) {
+    pendingDiscount.value = { productId, discountValue }
+    discountApprovalError.value = null
+    return
+  }
+
+  store.applyLineDiscount(productId, { type: 'fixed', value: discountValue }, false)
+}
+
+async function onDiscountApprovalPin(pin: string) {
+  if (!pendingDiscount.value) return
+  const approver = await findDiscountApprover(pin)
+  if (!approver) {
+    discountApprovalError.value = 'رمز غير صحيح — يلزم رمز المالك أو المدير'
+    return
+  }
+  store.applyLineDiscount(pendingDiscount.value.productId, { type: 'fixed', value: pendingDiscount.value.discountValue }, true)
+  pendingDiscount.value = null
+  discountApprovalError.value = null
+}
+
+function cancelDiscountApproval() {
+  pendingDiscount.value = null
+  discountApprovalError.value = null
+}
 </script>
 
 <template>
@@ -256,7 +325,7 @@ async function handleClearSale() {
               class="price-input"
               :value="line.unitPriceUsd"
               :aria-label="`سعر ${line.nameAr}`"
-              @change="store.updateUnitPrice(line.productId, parseFloat(($event.target as HTMLInputElement).value))"
+              @change="onPriceChange(line.productId, parseFloat(($event.target as HTMLInputElement).value))"
             /></span>
             <span class="times">× {{ line.quantity }}</span>
             <span
@@ -412,6 +481,18 @@ async function handleClearSale() {
           <span class="preview-value" dir="ltr">{{ previewData.barcode || '—' }}</span>
         </div>
       </div>
+    </div>
+  </BaseModal>
+
+  <BaseModal
+    v-if="pendingDiscount"
+    title="تخفيض يتجاوز الحد المسموح"
+    @close="cancelDiscountApproval"
+  >
+    <div class="discount-approval">
+      <p class="discount-approval-msg">يلزم رمز المالك أو المدير للموافقة على هذا التخفيض.</p>
+      <PinPad @complete="onDiscountApprovalPin" />
+      <p v-if="discountApprovalError" class="discount-approval-error">{{ discountApprovalError }}</p>
     </div>
   </BaseModal>
 </template>
@@ -742,6 +823,25 @@ async function handleClearSale() {
   color: #9FB0C6;
   font-size: 13px;
   padding: 8px 0;
+}
+
+.discount-approval {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.discount-approval-msg {
+  color: #9FB0C6;
+  font-size: 13px;
+  text-align: center;
+}
+
+.discount-approval-error {
+  color: #F87171;
+  font-size: 13px;
+  text-align: center;
 }
 
 .preview-body {
