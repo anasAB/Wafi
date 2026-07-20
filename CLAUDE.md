@@ -5,6 +5,12 @@
 
 ---
 
+## Mandatory Review Lens
+
+Before implementing any new feature, reviewing any PR, or testing/evaluating any release, load and apply `AI_PRINCIPAL_ENGINEER_REVIEW.md` (repo root). It defines the review role, invariants, and evaluation framework that every feature/PR/release must be checked against — apply it in full, not as an optional checklist.
+
+---
+
 ## What We Are Building
 
 **A cloud-based retail operations platform (POS + inventory + reporting + profitability views) for shop owners in Syria and the broader Middle East.**
