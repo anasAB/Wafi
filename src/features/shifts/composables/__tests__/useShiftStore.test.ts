@@ -19,6 +19,7 @@ const mockStaff: Staff = {
     can_manage_inventory:  false,
     can_manage_suppliers:  false,
     can_manage_stock_take: false,
+    can_view_staff_ledger: false,
   },
   isActive:  true,
   createdAt: '2026-01-01T00:00:00Z',

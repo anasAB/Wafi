@@ -77,7 +77,7 @@ describe('useStaffSettlement.finalize', () => {
     const session = useSessionStore()
     session.setActiveStaff({
       id: 'staff-1', shopId: 'shop-1', name: 'المالك', pinHash: 'x', pinSalt: null, role: 'owner',
-      permissions: { can_view_reports: true, can_manage_products: true, can_manage_customers: true, can_view_expenses: true, can_manage_settings: true, can_manage_inventory: true, can_manage_suppliers: true, can_manage_stock_take: true },
+      permissions: { can_view_reports: true, can_manage_products: true, can_manage_customers: true, can_view_expenses: true, can_manage_settings: true, can_manage_inventory: true, can_manage_suppliers: true, can_manage_stock_take: true, can_view_staff_ledger: true },
       isActive: true, createdAt: '2026-01-01T00:00:00Z',
     })
   })
@@ -180,7 +180,7 @@ describe('useStaffSettlement.markPaid', () => {
     useDeviceStore().shopId = 'shop-1'
     useSessionStore().setActiveStaff({
       id: 'staff-1', shopId: 'shop-1', name: 'المالك', pinHash: 'x', pinSalt: null, role: 'owner',
-      permissions: { can_view_reports: true, can_manage_products: true, can_manage_customers: true, can_view_expenses: true, can_manage_settings: true, can_manage_inventory: true, can_manage_suppliers: true, can_manage_stock_take: true },
+      permissions: { can_view_reports: true, can_manage_products: true, can_manage_customers: true, can_view_expenses: true, can_manage_settings: true, can_manage_inventory: true, can_manage_suppliers: true, can_manage_stock_take: true, can_view_staff_ledger: true },
       isActive: true, createdAt: '2026-01-01T00:00:00Z',
     })
   })
@@ -253,7 +253,7 @@ describe('useStaffSettlement.finalize crash recovery', () => {
     useDeviceStore().shopId = 'shop-1'
     useSessionStore().setActiveStaff({
       id: 'staff-1', shopId: 'shop-1', name: 'المالك', pinHash: 'x', pinSalt: null, role: 'owner',
-      permissions: { can_view_reports: true, can_manage_products: true, can_manage_customers: true, can_view_expenses: true, can_manage_settings: true, can_manage_inventory: true, can_manage_suppliers: true, can_manage_stock_take: true },
+      permissions: { can_view_reports: true, can_manage_products: true, can_manage_customers: true, can_view_expenses: true, can_manage_settings: true, can_manage_inventory: true, can_manage_suppliers: true, can_manage_stock_take: true, can_view_staff_ledger: true },
       isActive: true, createdAt: '2026-01-01T00:00:00Z',
     })
   })

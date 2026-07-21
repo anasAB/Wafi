@@ -12,7 +12,7 @@ import type { Staff } from '@/features/staff/staff.types'
 function staffWith(role: Staff['role'], canViewExpenses: boolean): Staff {
   return {
     id: `staff-${role}`, shopId: 'shop-1', name: role, pinHash: 'x', pinSalt: null, role,
-    permissions: { can_view_reports: false, can_manage_products: true, can_manage_customers: true, can_view_expenses: canViewExpenses, can_manage_settings: false, can_manage_inventory: false, can_manage_suppliers: false, can_manage_stock_take: false },
+    permissions: { can_view_reports: false, can_manage_products: true, can_manage_customers: true, can_view_expenses: canViewExpenses, can_manage_settings: false, can_manage_inventory: false, can_manage_suppliers: false, can_manage_stock_take: false, can_view_staff_ledger: false },
     isActive: true, createdAt: '2026-01-01T00:00:00Z',
   }
 }

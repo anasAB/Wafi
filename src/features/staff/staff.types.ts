@@ -16,6 +16,7 @@ export interface StaffPermissions {
   can_manage_inventory:  boolean
   can_manage_suppliers:  boolean
   can_manage_stock_take: boolean
+  can_view_staff_ledger: boolean
 }
 
 export const DEFAULT_CASHIER_PERMISSIONS: StaffPermissions = {
@@ -27,6 +28,7 @@ export const DEFAULT_CASHIER_PERMISSIONS: StaffPermissions = {
   can_manage_inventory:  false,
   can_manage_suppliers:  false,
   can_manage_stock_take: false,
+  can_view_staff_ledger: false,
 }
 
 export const OWNER_PERMISSIONS: StaffPermissions = {
@@ -38,6 +40,7 @@ export const OWNER_PERMISSIONS: StaffPermissions = {
   can_manage_inventory:  true,
   can_manage_suppliers:  true,
   can_manage_stock_take: true,
+  can_view_staff_ledger: true,
 }
 
 // A manager runs the floor: products + customers, open/close shifts, ring sales.
@@ -54,6 +57,7 @@ export const MANAGER_PERMISSIONS: StaffPermissions = {
   can_manage_inventory:  true,
   can_manage_suppliers:  true,
   can_manage_stock_take: true,
+  can_view_staff_ledger: false,
 }
 
 /**
@@ -84,6 +88,7 @@ export function permissionsForRole(
       can_manage_stock_take: true,
       can_view_reports:      Boolean(custom?.can_view_reports),
       can_view_expenses:     Boolean(custom?.can_view_expenses),
+      can_view_staff_ledger: Boolean(custom?.can_view_staff_ledger),
     }
   }
   return { ...DEFAULT_CASHIER_PERMISSIONS, ...custom }
