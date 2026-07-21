@@ -17,6 +17,7 @@ describe('permissionsForRole (WAFI-058 owner-only financials)', () => {
     const perms = permissionsForRole('manager', {})
     expect(perms.can_view_reports).toBe(false)
     expect(perms.can_view_expenses).toBe(false)
+    expect(perms.can_view_staff_ledger).toBe(false)
     // Structural manager flags are fixed by role.
     expect(perms.can_manage_products).toBe(true)
     expect(perms.can_manage_customers).toBe(true)
@@ -29,6 +30,7 @@ describe('permissionsForRole (WAFI-058 owner-only financials)', () => {
   it('MANAGER_PERMISSIONS is the default-off manager baseline', () => {
     expect(MANAGER_PERMISSIONS.can_view_reports).toBe(false)
     expect(MANAGER_PERMISSIONS.can_view_expenses).toBe(false)
+    expect(MANAGER_PERMISSIONS.can_view_staff_ledger).toBe(false)
     expect(MANAGER_PERMISSIONS.can_manage_products).toBe(true)
     expect(MANAGER_PERMISSIONS.can_manage_customers).toBe(true)
     expect(MANAGER_PERMISSIONS.can_manage_settings).toBe(false)
@@ -51,6 +53,27 @@ describe('permissionsForRole (WAFI-058 owner-only financials)', () => {
     const perms = permissionsForRole('manager', { can_view_reports: true })
     expect(perms.can_view_reports).toBe(true)
     expect(perms.can_view_expenses).toBe(false)
+  })
+
+  it('a default manager (no stored grants) does NOT see the staff ledger', () => {
+    const perms = permissionsForRole('manager', {})
+    expect(perms.can_view_staff_ledger).toBe(false)
+  })
+
+  it('an owner-granted manager reads can_view_staff_ledger from stored permissions', () => {
+    const perms = permissionsForRole('manager', { can_view_staff_ledger: true })
+    expect(perms.can_view_staff_ledger).toBe(true)
+  })
+
+  it('owner always holds can_view_staff_ledger, ignoring stored custom', () => {
+    expect(permissionsForRole('owner', { can_view_staff_ledger: false } as never).can_view_staff_ledger)
+      .toBe(true)
+  })
+
+  it('DEFAULT_CASHIER_PERMISSIONS.can_view_staff_ledger is false, and a cashier can be granted it via custom', () => {
+    expect(DEFAULT_CASHIER_PERMISSIONS.can_view_staff_ledger).toBe(false)
+    const custom = { ...DEFAULT_CASHIER_PERMISSIONS, can_view_staff_ledger: true }
+    expect(permissionsForRole('cashier', custom)).toEqual(custom)
   })
 
   it('a manager can NEVER gain can_manage_settings via stored permissions', () => {
