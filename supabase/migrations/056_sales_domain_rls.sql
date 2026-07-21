@@ -116,6 +116,8 @@ CREATE POLICY return_line_items_select_own_or_manager ON public.return_line_item
 -- have confirmed column values for, so is deferred to a follow-up (noted
 -- in the plan's Task 12 verification script as a known gap to re-check
 -- against the live schema before considering this domain fully closed).
+-- Tracked as WAFI-202 (also covers the missing INSERT staff_id attribution
+-- check across this domain and cash_movements/cashier_shifts).
 
 -- return_reasons: config-like table, gate writes by can_manage_products
 -- (shares the products config surface per design spec §5.2).

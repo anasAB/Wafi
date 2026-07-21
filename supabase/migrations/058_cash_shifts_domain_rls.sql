@@ -43,6 +43,9 @@ CREATE POLICY cash_movements_select_own_or_manager ON public.cash_movements
 -- Keep INSERT policy open (cashier must record own movements).
 -- cash_movements is append-only: no UPDATE/DELETE policy created.
 -- Existing insert policy from migration 027 stays as-is.
+-- No INSERT staff_id attribution check on cash_movements/cashier_shifts yet
+-- (a cashier could insert a movement/shift misattributed to another staff
+-- member via direct API). Tracked as WAFI-202.
 
 DROP POLICY IF EXISTS cash_movements_update_all ON public.cash_movements;
 DROP POLICY IF EXISTS cash_movements_delete_all ON public.cash_movements;
