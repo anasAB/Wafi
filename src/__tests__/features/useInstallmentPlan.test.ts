@@ -14,6 +14,7 @@ const mockStaff: Staff = {
   permissions: {
     can_view_reports: true, can_manage_products: true,
     can_manage_customers: true, can_view_expenses: true, can_manage_settings: true,
+    can_manage_inventory: true, can_manage_suppliers: true, can_manage_stock_take: true,
   },
   isActive: true, createdAt: '2026-01-01T00:00:00Z',
 }

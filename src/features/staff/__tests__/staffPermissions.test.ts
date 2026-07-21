@@ -21,6 +21,9 @@ describe('permissionsForRole (WAFI-058 owner-only financials)', () => {
     expect(perms.can_manage_products).toBe(true)
     expect(perms.can_manage_customers).toBe(true)
     expect(perms.can_manage_settings).toBe(false)
+    expect(perms.can_manage_inventory).toBe(true)
+    expect(perms.can_manage_suppliers).toBe(true)
+    expect(perms.can_manage_stock_take).toBe(true)
   })
 
   it('MANAGER_PERMISSIONS is the default-off manager baseline', () => {
@@ -29,6 +32,9 @@ describe('permissionsForRole (WAFI-058 owner-only financials)', () => {
     expect(MANAGER_PERMISSIONS.can_manage_products).toBe(true)
     expect(MANAGER_PERMISSIONS.can_manage_customers).toBe(true)
     expect(MANAGER_PERMISSIONS.can_manage_settings).toBe(false)
+    expect(MANAGER_PERMISSIONS.can_manage_inventory).toBe(true)
+    expect(MANAGER_PERMISSIONS.can_manage_suppliers).toBe(true)
+    expect(MANAGER_PERMISSIONS.can_manage_stock_take).toBe(true)
   })
 
   it('an owner-granted manager reads the two financial flags from stored permissions', () => {

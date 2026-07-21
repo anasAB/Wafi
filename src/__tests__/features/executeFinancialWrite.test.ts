@@ -7,7 +7,7 @@ import type { Staff } from '@/features/staff/staff.types'
 const grantedStaff: Staff = {
   id: 'staff-1', shopId: 'shop-1', name: 'Ahmed', pinHash: 'x', pinSalt: null,
   role: 'manager',
-  permissions: { can_view_reports: false, can_manage_products: true, can_manage_customers: true, can_view_expenses: true, can_manage_settings: false },
+  permissions: { can_view_reports: false, can_manage_products: true, can_manage_customers: true, can_view_expenses: true, can_manage_settings: false, can_manage_inventory: false, can_manage_suppliers: false, can_manage_stock_take: false },
   isActive: true, createdAt: '2026-01-01T00:00:00Z',
 }
 

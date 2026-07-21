@@ -8,27 +8,36 @@ export function roleLabel(role: StaffRole): string {
 }
 
 export interface StaffPermissions {
-  can_view_reports:     boolean
-  can_manage_products:  boolean
-  can_manage_customers: boolean
-  can_view_expenses:    boolean
-  can_manage_settings:  boolean
+  can_view_reports:      boolean
+  can_manage_products:   boolean
+  can_manage_customers:  boolean
+  can_view_expenses:     boolean
+  can_manage_settings:   boolean
+  can_manage_inventory:  boolean
+  can_manage_suppliers:  boolean
+  can_manage_stock_take: boolean
 }
 
 export const DEFAULT_CASHIER_PERMISSIONS: StaffPermissions = {
-  can_view_reports:     false,
-  can_manage_products:  false,
-  can_manage_customers: false,
-  can_view_expenses:    false,
-  can_manage_settings:  false,
+  can_view_reports:      false,
+  can_manage_products:   false,
+  can_manage_customers:  false,
+  can_view_expenses:     false,
+  can_manage_settings:   false,
+  can_manage_inventory:  false,
+  can_manage_suppliers:  false,
+  can_manage_stock_take: false,
 }
 
 export const OWNER_PERMISSIONS: StaffPermissions = {
-  can_view_reports:     true,
-  can_manage_products:  true,
-  can_manage_customers: true,
-  can_view_expenses:    true,
-  can_manage_settings:  true,
+  can_view_reports:      true,
+  can_manage_products:   true,
+  can_manage_customers:  true,
+  can_view_expenses:     true,
+  can_manage_settings:   true,
+  can_manage_inventory:  true,
+  can_manage_suppliers:  true,
+  can_manage_stock_take: true,
 }
 
 // A manager runs the floor: products + customers, open/close shifts, ring sales.
@@ -37,11 +46,14 @@ export const OWNER_PERMISSIONS: StaffPermissions = {
 // The structural flags below are fixed by role (see permissionsForRole), and
 // can_manage_settings stays false so a manager can never grant access to anyone.
 export const MANAGER_PERMISSIONS: StaffPermissions = {
-  can_view_reports:     false,
-  can_manage_products:  true,
-  can_manage_customers: true,
-  can_view_expenses:    false,
-  can_manage_settings:  false,
+  can_view_reports:      false,
+  can_manage_products:   true,
+  can_manage_customers:  true,
+  can_view_expenses:     false,
+  can_manage_settings:   false,
+  can_manage_inventory:  true,
+  can_manage_suppliers:  true,
+  can_manage_stock_take: true,
 }
 
 /**
@@ -64,11 +76,14 @@ export function permissionsForRole(
   if (role === 'owner') return OWNER_PERMISSIONS
   if (role === 'manager') {
     return {
-      can_manage_products:  true,
-      can_manage_customers: true,
-      can_manage_settings:  false,
-      can_view_reports:     Boolean(custom?.can_view_reports),
-      can_view_expenses:    Boolean(custom?.can_view_expenses),
+      can_manage_products:   true,
+      can_manage_customers:  true,
+      can_manage_settings:   false,
+      can_manage_inventory:  true,
+      can_manage_suppliers:  true,
+      can_manage_stock_take: true,
+      can_view_reports:      Boolean(custom?.can_view_reports),
+      can_view_expenses:     Boolean(custom?.can_view_expenses),
     }
   }
   return { ...DEFAULT_CASHIER_PERMISSIONS, ...custom }
