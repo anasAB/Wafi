@@ -109,3 +109,19 @@ SELECT public.custom_access_token_hook(
 -- Any `false` or error means the fail-closed guarantee is broken and must
 -- be fixed before this hook is wired into production Auth Hooks config.
 -- ---------------------------------------------------------------------
+
+-- Case 6: session_id present, matching device_sessions row has
+-- active_staff_id set -- staff_id claim must equal it.
+SELECT (public.custom_access_token_hook(
+  jsonb_build_object('claims', jsonb_build_object('session_id', ds.session_id))
+) -> 'claims' ->> 'staff_id')::uuid = ds.active_staff_id AS case_6_pass
+FROM public.device_sessions ds
+WHERE ds.session_id IS NOT NULL AND ds.active_staff_id IS NOT NULL
+LIMIT 1;
+
+-- Case 7: no session_id claim at all -- staff_id must be JSON null, not
+-- SQL NULL (i.e. the key must exist and be explicitly null, not absent).
+SELECT (public.custom_access_token_hook(jsonb_build_object('claims', '{}'::jsonb))
+  -> 'claims') ? 'staff_id' AS case_7_key_present,
+  (public.custom_access_token_hook(jsonb_build_object('claims', '{}'::jsonb))
+  -> 'claims' -> 'staff_id') = 'null'::jsonb AS case_7_pass;
