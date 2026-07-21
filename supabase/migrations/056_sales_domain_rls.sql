@@ -25,14 +25,13 @@
 -- instead of _select_all), substitute the correct names in the DROP POLICY
 -- statements before executing this migration.
 --
--- RESIDUAL RISK: returns.staff_id is referenced in the returns_select_own_or_manager
--- policy below, but the column may not yet exist in the schema (migration 017 added
--- sales.staff_id, but returns.staff_id was not found in prior migrations). This will
--- cause the policy creation to fail if the column is missing. Verify that returns.staff_id
--- exists before applying, or add it in a prior migration. See column discovery query
--- above and the information_schema query:
--- SELECT column_name FROM information_schema.columns
--- WHERE table_schema='public' AND table_name='returns' AND column_name = 'staff_id';
+-- CONFIRMED (post-implementation-review correction): returns has NO staff_id
+-- column -- it was never added (only migration 017 added sales.staff_id).
+-- returns DOES have a shift_id column (migration 009), referencing
+-- cashier_shifts, which DOES have staff_id (migration 009). So "cashier's own
+-- returns" is expressed via the same EXISTS-through-parent pattern already
+-- used for sale_line_items/sale_payments below, joining through
+-- cashier_shifts instead of sales.
 --
 -- INSERT/UPDATE stay open to every shop role (cashier must be able to ring
 -- a sale) -- the restriction is on SELECT: cashier sees only their own
@@ -89,7 +88,10 @@ CREATE POLICY returns_select_own_or_manager ON public.returns
     shop_id = (SELECT public.auth_shop_id())
     AND (
       public.auth_role() IN ('owner', 'manager')
-      OR staff_id = public.auth_staff_id()
+      OR EXISTS (
+        SELECT 1 FROM public.cashier_shifts cs
+        WHERE cs.id = returns.shift_id AND cs.staff_id = public.auth_staff_id()
+      )
     )
   );
 
@@ -101,7 +103,8 @@ CREATE POLICY return_line_items_select_own_or_manager ON public.return_line_item
       public.auth_role() IN ('owner', 'manager')
       OR EXISTS (
         SELECT 1 FROM public.returns r
-        WHERE r.id = return_line_items.return_id AND r.staff_id = public.auth_staff_id()
+        JOIN public.cashier_shifts cs ON cs.id = r.shift_id
+        WHERE r.id = return_line_items.return_id AND cs.staff_id = public.auth_staff_id()
       )
     )
   );
