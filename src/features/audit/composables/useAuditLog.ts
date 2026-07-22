@@ -459,8 +459,9 @@ export function useAuditLog() {
   const logDeviceRenamed = (deviceRowId: string, code: string, label: string) =>
     _log('device.renamed', 'device', deviceRowId, { code, label })
 
-  const logDeviceActivation = (deviceRowId: string, code: string, active: boolean) =>
-    _logSensitive(active ? 'device.reactivated' : 'device.deactivated', 'device', deviceRowId, { code })
+  const logDeviceActivation = (deviceRowId: string, code: string, active: boolean, sessionRevoked = false) =>
+    _logSensitive(active ? 'device.reactivated' : 'device.deactivated', 'device', deviceRowId,
+      sessionRevoked ? { code, sessionRevoked } : { code })
 
   const logInstallmentPlanCancelled = (planId: string) =>
     _log('installment_plan.cancelled', 'installment_plan', planId, {})

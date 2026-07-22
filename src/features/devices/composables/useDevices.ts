@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
+import { supabase } from '@/data/supabase/client'
 
 /**
  * WAFI-130: owner-facing device management over the existing self-registration.
@@ -79,7 +80,12 @@ export function useDevices() {
       `UPDATE devices SET is_active = ?, sync_status = 'pending' WHERE id = ?`,
       [active ? 1 : 0, id]
     )
-    await logDeviceActivation(id, d?.code ?? id, active)
+    let sessionRevoked = false
+    if (!active) {
+      const { error } = await supabase.rpc('revoke_device_session', { p_device_id: id })
+      sessionRevoked = !error
+    }
+    await logDeviceActivation(id, d?.code ?? id, active, sessionRevoked)
     await load()
   }
 

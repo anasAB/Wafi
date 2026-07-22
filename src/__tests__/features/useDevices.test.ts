@@ -3,6 +3,17 @@ import { setActivePinia, createPinia } from 'pinia'
 
 vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
 
+const rpcMock = vi.fn().mockResolvedValue({ data: null, error: null })
+vi.mock('@/data/supabase/client', () => ({
+  supabase: {
+    rpc: (...args: unknown[]) => rpcMock(...args),
+    auth: {
+      getSession: vi.fn().mockResolvedValue({ data: { session: null } }),
+      onAuthStateChange: vi.fn().mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } }),
+    },
+  },
+}))
+
 const logDeviceRenamed    = vi.fn(async () => {})
 const logDeviceActivation = vi.fn(async () => {})
 vi.mock('@/features/audit/composables/useAuditLog', () => ({
@@ -62,7 +73,7 @@ describe('useDevices (WAFI-130)', () => {
     expect(logDeviceRenamed).toHaveBeenCalledWith('dev-row-1', 'A', 'كاشير ١')
   })
 
-  it('deactivation writes is_active = 0 and audit-logs as sensitive action', async () => {
+  it('deactivation writes is_active = 0, revokes the session, and audit-logs it', async () => {
     vi.mocked(db.getAll).mockResolvedValue([deviceRow({ code: 'B' })] as any)
     const { load, setActive } = useDevices()
     await load()
@@ -71,7 +82,19 @@ describe('useDevices (WAFI-130)', () => {
 
     const update = vi.mocked(db.execute).mock.calls.find(([sql]) => /UPDATE devices SET is_active/.test(sql as string))!
     expect(update[1]).toEqual([0, 'dev-row-1'])
-    expect(logDeviceActivation).toHaveBeenCalledWith('dev-row-1', 'B', false)
+    expect(rpcMock).toHaveBeenCalledWith('revoke_device_session', { p_device_id: 'dev-row-1' })
+    expect(logDeviceActivation).toHaveBeenCalledWith('dev-row-1', 'B', false, true)
+  })
+
+  it('reactivation does not call revoke_device_session', async () => {
+    vi.mocked(db.getAll).mockResolvedValue([deviceRow({ code: 'B', is_active: 0 })] as any)
+    const { load, setActive } = useDevices()
+    await load()
+
+    await setActive('dev-row-1', true)
+
+    expect(rpcMock).not.toHaveBeenCalled()
+    expect(logDeviceActivation).toHaveBeenCalledWith('dev-row-1', 'B', true, false)
   })
 
   it('refuses to deactivate the device currently in use (self-lockout guard)', async () => {
