@@ -6,6 +6,7 @@ import { db } from '@/data/powersync/db'
 import { SupabaseConnector } from '@/data/powersync/connector'
 import { useDeviceRegistration } from '@/features/devices/composables/useDeviceRegistration'
 import { touchDeviceLastSeen } from '@/features/devices/composables/useDevices'
+import { decodeSessionIdClaim } from '@/features/staff/composables/useOperatorSwitch'
 
 // Dev/transition fallback: until the owner's shop row has synced locally, fall
 // back to a configured shop so the app stays usable. In production (no
@@ -49,6 +50,12 @@ export const useDeviceStore = defineStore('device', () => {
   let registrationInFlight: Promise<void> | null = null
   // WAFI-130: last-seen heartbeat fires at most once per app session.
   let lastSeenTouched = false
+  // WAFI-003: record this device's own auth session id once per app session,
+  // independent of PIN-switch activity — establishOperatorIdentity's
+  // offline-same-identity shortcut (WAFI-203) can leave device_sessions
+  // .session_id stale across a sign-out/sign-in cycle otherwise, which would
+  // make a later revoke_device_session() call target a dead session.
+  let sessionIdRecorded = false
 
   /**
    * Claims a device code for this browser/device the first time a shop is
@@ -104,6 +111,17 @@ export const useDeviceStore = defineStore('device', () => {
         if (!lastSeenTouched) {
           lastSeenTouched = true
           void touchDeviceLastSeen(shopId.value, deviceCode.value)
+        }
+        if (!sessionIdRecorded && deviceId.value) {
+          const accessToken = data.session?.access_token
+          const sessionId = accessToken ? decodeSessionIdClaim(accessToken) : null
+          if (sessionId) {
+            sessionIdRecorded = true
+            void supabase.rpc('record_device_session_id', {
+              p_device_id:  deviceId.value,
+              p_session_id: sessionId,
+            })
+          }
         }
       }
     } catch {

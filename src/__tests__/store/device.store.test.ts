@@ -5,12 +5,15 @@ import { setActivePinia, createPinia } from 'pinia'
 const session: { value: { access_token: string; user?: { id: string } } | null } = { value: null }
 let authCb: ((event: string) => void) | undefined
 
+const rpcMock = vi.fn().mockResolvedValue({ data: null, error: null })
+
 vi.mock('@/data/supabase/client', () => ({
   supabase: {
     auth: {
       getSession: vi.fn(async () => ({ data: { session: session.value } })),
       onAuthStateChange: vi.fn((cb: (event: string) => void) => { authCb = cb }),
     },
+    rpc: (...args: unknown[]) => rpcMock(...args),
   },
 }))
 
@@ -53,6 +56,41 @@ describe('useDeviceStore', () => {
     await store.refreshShopId()
     expect(store.shopId).toBe('shop-xyz')
     expect(db.getOptional).toHaveBeenCalledWith(expect.stringContaining('FROM shops'), expect.any(Array))
+  })
+
+  it('records the device session id via RPC once a device is registered', async () => {
+    const b64url = (obj: unknown) =>
+      btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+    const fakeAccessToken = (sessionId: string) =>
+      `${b64url({ alg: 'HS256' })}.${b64url({ session_id: sessionId })}.sig`
+
+    session.value = { access_token: fakeAccessToken('session-xyz'), user: { id: 'user-a' } }
+    vi.mocked(db.getOptional).mockResolvedValue({ id: 'shop-a' } as any)
+    registerDeviceMock.mockResolvedValue({ code: 'A' })
+
+    const { useDeviceStore } = await import('@/store/device.store')
+    const store = useDeviceStore()
+    await store.refreshShopId()
+
+    expect(rpcMock).toHaveBeenCalledWith('record_device_session_id', {
+      p_device_id:  store.deviceId,
+      p_session_id: 'session-xyz',
+    })
+  })
+
+  it('does not call record_device_session_id when the access token has no session_id claim', async () => {
+    const b64url = (obj: unknown) =>
+      btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+    const fakeAccessTokenNoClaim = () => `${b64url({ alg: 'HS256' })}.${b64url({})}.sig`
+
+    session.value = { access_token: fakeAccessTokenNoClaim(), user: { id: 'user-a' } }
+    vi.mocked(db.getOptional).mockResolvedValue({ id: 'shop-a' } as any)
+    registerDeviceMock.mockResolvedValue({ code: 'A' })
+
+    const { useDeviceStore } = await import('@/store/device.store')
+    await useDeviceStore().refreshShopId()
+
+    expect(rpcMock).not.toHaveBeenCalledWith('record_device_session_id', expect.anything())
   })
 
   it('scopes the shops lookup to the signed-in account (owner_user_id)', async () => {
