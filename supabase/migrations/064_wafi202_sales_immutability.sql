@@ -1,18 +1,10 @@
 -- supabase/migrations/064_wafi202_sales_immutability.sql
--- ============================================================
--- !! DO NOT APPLY TO THE PRODUCTION SUPABASE PROJECT YET !!
--- ============================================================
--- This migration is gated on WAFI-203 ("Operator Identity Must Be
--- Server-Authoritative"), which has not shipped. Applying this migration
--- before WAFI-203 lands will REJECT EVERY NEW SALE for any shop whose
--- devices don't yet have an active-operator JWT staff_id claim -- which is
--- the current state of the pilot shop today (all sampled production
--- `sales` rows have staff_id = NULL). The strict `staff_id =
--- auth_staff_id()` INSERT policy below has no null/exception carve-out by
--- design (see the design spec's Blocking Prerequisite section) -- do not
--- add one to work around this; fix WAFI-203 first, then apply this
--- migration.
--- ============================================================
+-- WAFI-203 ("Operator Identity Must Be Server-Authoritative") has shipped
+-- (docs/superpowers/plans/2026-07-22-wafi-203-operator-identity.md): openShift
+-- and switchTo now both require server-confirmed identity before adopting a
+-- new operator, and usePayment.confirm() refuses to write a sale with no
+-- active operator. This migration is safe to apply to the production
+-- Supabase project.
 -- WAFI-202: sales, sale_line_items, sale_payments, returns, return_line_items
 -- become append-only from the client's perspective (no UPDATE/DELETE for
 -- anon/authenticated), and INSERT requires strict staff attribution --
