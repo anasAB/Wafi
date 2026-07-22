@@ -191,5 +191,38 @@ SELECT is(
 );
 RESET ROLE;
 
--- (Section C continues below, added by the final task. Do not COMMIT/
--- ROLLBACK or call finish() until then.)
+-- ============================================================
+-- Section C: lifecycle
+-- ============================================================
+
+-- C1: Manager loses can_view_reports mid-session -- flip the flag directly
+-- (simulating a still-valid JWT with a live permissions change), re-run the
+-- SAME claims -- auth_permissions() re-reads the LIVE staff row on every
+-- call (not cached in the JWT), so access must be lost immediately.
+UPDATE public.staff SET permissions = '{"can_view_reports":false,"can_manage_products":true}'
+WHERE id = 'a0000000-0000-0000-0000-000000000004';
+
+SELECT set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-0000-0000-000000000002","role":"authenticated","active_role":"manager","staff_id":"a0000000-0000-0000-0000-000000000004"}', true);
+SET LOCAL ROLE authenticated;
+SELECT is(
+  public.can('can_view_reports'), false,
+  'C1: permission loss takes effect immediately, no JWT refresh needed'
+);
+RESET ROLE;
+
+-- C2: Device reassigned to a different shop -- staff_id from the OLD shop
+-- must not resolve once auth_shop_id() points at the NEW shop. Same
+-- underlying mechanism as B6 (tenant boundary is claims-independent),
+-- framed per the manual script's own C2 case for 1:1 traceability.
+SELECT set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-0000-0000-000000000002","role":"authenticated","active_role":"owner","staff_id":"a0000000-0000-0000-0000-000000000003"}', true);
+SET LOCAL ROLE authenticated;
+SELECT is(
+  (SELECT count(*) FROM public.staff WHERE id = 'b0000000-0000-0000-0000-000000000003'::uuid)::int, 0,
+  'C2: staff_id from a shop no longer resolved by auth_shop_id() is invisible'
+);
+RESET ROLE;
+
+SELECT finish();
+ROLLBACK;
