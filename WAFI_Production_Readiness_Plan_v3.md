@@ -1,6 +1,35 @@
 # WAFI Unified Architecture Roadmap V3.0
 ## Production Readiness + Event-Driven Platform + Enterprise Architecture
 ### Version: 3.0 | Date: 2026-07-21 | Status: STAFF ENGINEER REVIEWED
+### Last implementation update: 2026-07-22
+
+---
+
+## IMPLEMENTATION STATUS (as of 2026-07-22)
+
+Quick-scan status for anyone opening this doc cold. Full narrative for each
+ticket lives in its row in the tables below — this section is the summary,
+not a replacement for them.
+
+| Item | Status | Note |
+|---|---|---|
+| WAFI-001 (Server-Side Role Enforcement) | 🟡 Partially shipped | RLS/JWT mechanism live (WAFI-122). WAFI-202 (sales immutability) and WAFI-203 (operator identity) both shipped — see below. Migration `064_wafi202_sales_immutability.sql` is code-unblocked but **not yet applied to the production Supabase project** — that's a separate, deliberate deploy step still pending. Formal pentest and security sign-off doc still not done. |
+| WAFI-202 (Sales/Returns Immutability RLS) | ✅ Shipped | Migration `064` + 16-case pgTAP suite merged. Not yet applied to production (waits on the deploy step above) and not yet executed by pgTAP (see known issue below — no test in this repo has run for real yet). |
+| WAFI-203 (Operator Identity Server-Authoritative) | ✅ Shipped | `establishOperatorIdentity` gates `openShift` (new-shift + resume) and `switchTo`; `usePayment.confirm()` refuses a sale with no active operator. Merged to main. |
+| WAFI-122 pgTAP suite, Sections A–C (role×table automated tests) | ✅ Shipped | `supabase/tests/wafi122_role_enforcement.test.sql`, 13 assertions, merged to main. Section D (live REST pentest) stays manual by design. Not yet executed for real — see known issue below. |
+| WAFI-002 through WAFI-023 (remaining Macro-Phase 1) | ⬜ Not started | No work done beyond WAFI-001's sub-items above. |
+| Macro-Phase 2 (WAFI-152, WAFI-140, WAFI-150/143/144/145/146/142) | ⬜ Not started | |
+| Macro-Phase 3 (WAFI-151/153/154/155/156/157/147/148/149/026/032/033) | ⬜ Not started | |
+
+**Known issue (blocks real test execution, not just this doc's tickets):**
+migration `037_devices.sql` creates a `UNIQUE INDEX` on a `code` column that
+doesn't exist — `public.devices` was actually created with `device_code` by
+`001_initial_schema.sql`. This breaks `supabase start`/`db reset` for *any*
+local Supabase stack, which is why neither the WAFI-202 pgTAP suite nor the
+WAFI-122 Sections A–C suite has ever actually been executed in this repo —
+both were built and their assertions manually traced against the real
+policy source instead. Needs its own fix ticket before either suite counts
+as executed rather than traced.
 
 ---
 
@@ -23,7 +52,7 @@ This document unifies three streams of work into a single, coherent architecture
 
 | Ticket | Title | Priority | Effort | What It Builds |
 |---|---|---|---|---|
-| WAFI-001 | Server-Side Role Enforcement (RLS) | P0 | 2 sprints | Auth, RLS, device identity — blocks everything. **Status: IN PROGRESS, not complete.** Delivered under ticket WAFI-122 (migrations 055–062, ADR-010). **WAFI-202 CONFIRMED via live exploit test against production (2026-07-21)**, not merely inferred from policy review: a manager-role session successfully changed `total_usd` on a completed sale it didn't create and forged `staff_id` attribution to the owner via direct PATCH to the REST API (`sales_update_all`/`sales_delete_all`, inherited unmodified from migration 015, check only `shop_id` — no status/immutability/attribution guard). Precise scope (narrower than a first static read suggested, because Postgres requires a row to pass the table's SELECT policy before an UPDATE/DELETE policy is even consulted): owner/manager can tamper with or delete *any* sale/return in the shop; a cashier is limited to sales they can already see (their own), but for those, the same lack of immutability/attribution guard applies. No cross-tenant exposure — tenant isolation held throughout testing. Also open: (2) **RESOLVED** — automated pgTAP suite added for Sections A-C (role access, edge cases, lifecycle) at `supabase/tests/wafi122_role_enforcement.test.sql`; the manual script's Section D (live REST pentest) remains manual by nature and is covered by item (3). Still open: (3) live exploit test above stands in for a full pentest but a formal one is still not performed; (4) no final security sign-off document. Offline-sync confidentiality gap (WAFI-201, ADR-010) is a deliberate, accepted scope exclusion, not a blocker. WAFI-202's fix design (2026-07-22, `docs/superpowers/specs/2026-07-22-wafi-202-sales-immutability-design.md`) surfaced a new blocking dependency: `useOperatorSwitch.ts`'s offline fallback lets the locally-active operator diverge from the JWT `staff_id` claim, and no client-side gate currently requires an operator to be active before checkout — both must be fixed (tracked as **WAFI-203**, "Operator Identity Must Be Server-Authoritative", needs its own brainstorm) before the strict `staff_id = auth_staff_id()` policy can go live in production, even though the migration + pgTAP suite themselves can be built and merged independently. WAFI-202's migration (064_wafi202_sales_immutability.sql) and 16-case pgTAP suite are merged to main; all 16 assertions were manually traced against the policy predicates and confirmed to reach their expected outcome, but no automated test run has actually executed them yet (no Docker/Postgres environment was available) — a human with Docker or a disposable Supabase project should run `supabase test db` for real execution proof before this is applied to production. Not yet applied to production, pending WAFI-203. **Do not treat as done until WAFI-202 lands (migration merged, tests passing) + WAFI-203 lands (SHIPPED — prerequisite satisfied) + pentest/sign-off recorded.** |
+| WAFI-001 | Server-Side Role Enforcement (RLS) | P0 | 2 sprints | Auth, RLS, device identity — blocks everything. **Status: IN PROGRESS, not complete.** Delivered under ticket WAFI-122 (migrations 055–062, ADR-010). **WAFI-202 CONFIRMED via live exploit test against production (2026-07-21)**, not merely inferred from policy review: a manager-role session successfully changed `total_usd` on a completed sale it didn't create and forged `staff_id` attribution to the owner via direct PATCH to the REST API (`sales_update_all`/`sales_delete_all`, inherited unmodified from migration 015, check only `shop_id` — no status/immutability/attribution guard). Precise scope (narrower than a first static read suggested, because Postgres requires a row to pass the table's SELECT policy before an UPDATE/DELETE policy is even consulted): owner/manager can tamper with or delete *any* sale/return in the shop; a cashier is limited to sales they can already see (their own), but for those, the same lack of immutability/attribution guard applies. No cross-tenant exposure — tenant isolation held throughout testing. Also open: (2) **RESOLVED** — automated pgTAP suite added for Sections A-C (role access, edge cases, lifecycle) at `supabase/tests/wafi122_role_enforcement.test.sql`; the manual script's Section D (live REST pentest) remains manual by nature and is covered by item (3). Still open: (3) live exploit test above stands in for a full pentest but a formal one is still not performed; (4) no final security sign-off document. Offline-sync confidentiality gap (WAFI-201, ADR-010) is a deliberate, accepted scope exclusion, not a blocker. WAFI-202's fix design (2026-07-22, `docs/superpowers/specs/2026-07-22-wafi-202-sales-immutability-design.md`) surfaced a new blocking dependency: `useOperatorSwitch.ts`'s offline fallback lets the locally-active operator diverge from the JWT `staff_id` claim, and no client-side gate currently requires an operator to be active before checkout — both must be fixed (tracked as **WAFI-203**, "Operator Identity Must Be Server-Authoritative", needs its own brainstorm) before the strict `staff_id = auth_staff_id()` policy can go live in production, even though the migration + pgTAP suite themselves can be built and merged independently. WAFI-202's migration (064_wafi202_sales_immutability.sql) and 16-case pgTAP suite are merged to main; all 16 assertions were manually traced against the policy predicates and confirmed to reach their expected outcome, but no automated test run has actually executed them yet (no Docker/Postgres environment was available) — a human with Docker or a disposable Supabase project should run `supabase test db` for real execution proof before this is applied to production. **As of 2026-07-22: WAFI-202 and WAFI-203 have both shipped and merged (see their own rows/IMPLEMENTATION STATUS above) — the migration is code-unblocked, but still not yet applied to the production Supabase project, and no pgTAP run for this suite has actually executed (blocked by the known `037_devices.sql` issue in the Risk Register).** Do not treat WAFI-001 as fully done until: the migration is applied to production, a real `supabase test db` execution passes, a formal pentest is recorded, and a security sign-off document exists. |
 | WAFI-203 | Operator Identity Must Be Server-Authoritative | P0 | 0.5 sprint | Blocking prerequisite for WAFI-202's production rollout. `useOperatorSwitch.ts` currently treats operator identity as client-authoritative (switch locally, sync JWT best-effort) — network/RPC failures leave the JWT's `staff_id` claim stale relative to the locally-active operator, which would cause synced sales to be rejected once WAFI-202's strict attribution policy is live. Also: no client-side gate currently requires an active operator before checkout (all sampled production sales have `staff_id = NULL` today). Architectural options on the table: block operator changes while offline vs. make the operator switch itself a signed, locally-queued, PowerSync-synchronized object. Needs its own design session before implementation. **Status: SHIPPED** — see docs/superpowers/plans/2026-07-22-wafi-203-operator-identity.md. `openShift` and `switchTo` now both require server-confirmed identity via a shared `establishOperatorIdentity` helper before adopting a new operator locally; same-identity re-entry stays fully offline via a persisted `lastConfirmedOperatorId`; `usePayment.confirm()` refuses a sale with no active operator. Migration 064 (WAFI-202) is unblocked for production. |
 | WAFI-002 | Real Authentication System | P0 | 1.5 sprints | Signup, login, JWT, session, PIN, tenant isolation |
 | WAFI-003 | Self-Serve Device Registration | P0 | 1 sprint | Multi-device, device codes, remote sign-out |
@@ -48,7 +77,7 @@ This document unifies three streams of work into a single, coherent architecture
 | WAFI-022 | Production Deployment Checklist | P2 | 0.25 sprint | Staging, monitoring, backup, rollback tested |
 | WAFI-023 | Post-Launch Monitoring & Feedback | P2 | Ongoing | Sentry, in-app reporting, weekly review, SLA |
 
-**Foundation Total: 23 tickets | 8 weeks**
+**Foundation Total: 23 tickets | 8 weeks** — **1 of 23 fully shipped (WAFI-203), 1 partially shipped (WAFI-001, two of its sub-items done), 21 not started.**
 **Critical Path: 001 → 002 → 003 → 004 → 007 → 022**
 
 ---
@@ -317,6 +346,7 @@ WEEK 24:    FINAL BUFFER — Integration, Performance, Sign-off
 | Performance on cheap Android unacceptable | Medium | High | WAFI-020 tests early; performance budget; read models reduce load |
 | Team velocity drops during architecture work | Medium | Medium | Parallel tracks; clear priorities; WAFI-033 constitution aligns team |
 | Cross-tenant event isolation failure | Low | Critical | Security tests in WAFI-140; penetration testing; RLS validation |
+| Local Supabase stack can't start (`037_devices.sql` references a nonexistent `code` column; table has `device_code`) | Confirmed | High | Blocks `supabase start`/`db reset` for every pgTAP suite in this repo (WAFI-202's and WAFI-122's Sections A-C, both currently traced-not-executed as a result). Needs a dedicated fix ticket — likely `037`'s index target column or the redundant `CREATE TABLE IF NOT EXISTS` re-declaration. |
 
 ---
 
