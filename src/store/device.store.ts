@@ -117,10 +117,16 @@ export const useDeviceStore = defineStore('device', () => {
           const sessionId = accessToken ? decodeSessionIdClaim(accessToken) : null
           if (sessionId) {
             sessionIdRecorded = true
-            void supabase.rpc('record_device_session_id', {
-              p_device_id:  deviceId.value,
-              p_session_id: sessionId,
-            })
+            void (async () => {
+              try {
+                await supabase.rpc('record_device_session_id', {
+                  p_device_id:  deviceId.value,
+                  p_session_id: sessionId,
+                })
+              } catch {
+                // advisory signal only, same as touchDeviceLastSeen
+              }
+            })()
           }
         }
       }
