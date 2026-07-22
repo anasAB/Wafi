@@ -6,7 +6,7 @@ import { useStaff }        from '@/features/staff/composables/useStaff'
 import { verifyPin }       from '@/features/staff/composables/usePinAuth'
 import { usePinLockout }   from '@/features/staff/composables/usePinLockout'
 import { useShift }        from '@/features/shifts/composables/useShift'
-import { useOperatorSwitch } from '@/features/staff/composables/useOperatorSwitch'
+import { useOperatorSwitch, OperatorSwitchBlockedError } from '@/features/staff/composables/useOperatorSwitch'
 import { useAuditLog }     from '@/features/audit/composables/useAuditLog'
 import PinPad              from '@/features/staff/components/PinPad.vue'
 import PinRecovery         from '@/features/staff/components/PinRecovery.vue'
@@ -38,6 +38,7 @@ type Step = 'pick-staff' | 'enter-pin' | 'opening-cash' | 'conflict'
 
 const step           = ref<Step>('pick-staff')
 const selectedStaff  = ref<Staff | null>(null)
+const enteredPin      = ref('')
 // WAFI-059: opening cash is dual-currency. SYP is the primary field (focused first
 // for Syrian shops); both persist on the shift.
 const { usd: usdDenoms, syp: sypDenoms, load: loadDenoms } = useDenominationConfig()
@@ -132,11 +133,20 @@ async function onPinComplete(pin: string) {
   // Correct PIN — clear the failure counter for this operator.
   lockout.reset(s.id)
   authError.value = ''
+  enteredPin.value = pin
 
   // Switch mode: correct PIN changes the active operator and leaves the open
   // shift untouched. Login mode: proceed to the opening-cash count.
   if (props.mode === 'switch') {
-    await switchTo(s, pin)
+    try {
+      await switchTo(s, pin)
+    } catch (e) {
+      if (e instanceof OperatorSwitchBlockedError) {
+        authError.value = e.message
+        return
+      }
+      throw e
+    }
     // If the screen the previous operator was on is no longer permitted for the
     // new operator (e.g. Owner → ungranted Manager on the dashboard), bounce to
     // a permitted landing so financial views vanish immediately (WAFI-058). An
@@ -159,8 +169,8 @@ async function onPinComplete(pin: string) {
   if (existing) {
     if (existing.staffId === s.id) {
       // Resume own open shift. openShift takes the resume branch and ignores the
-      // (unused) cash args; identity + store are re-established there.
-      await openShift(s, 0, 0)
+      // (unused) cash args and pin; identity + store are re-established there.
+      await openShift(s, 0, 0, enteredPin.value)
       await router.replace(resolveLanding(s))
       return
     }
@@ -228,6 +238,7 @@ async function doOpen() {
       selectedStaff.value,
       parseFloat(openingCashUsd.value) || 0,
       parseFloat(openingCashSyp.value) || 0,
+      enteredPin.value,
       openingUseTally.value ? { usd: openingUsdBreakdown.value, syp: openingSypBreakdown.value } : null,
     )
     // A shift opened on this device between the PIN step and here (race) → surface
@@ -240,6 +251,13 @@ async function doOpen() {
     // WAFI-130: the owner deactivated this device — no new shifts here.
     if (result.status === 'device-deactivated') {
       openError.value = 'هذا الجهاز موقوف من قبل المالك — لا يمكن فتح وردية جديدة عليه'
+      return
+    }
+    // WAFI-203: this is a NEW identity for this device and the server could
+    // not confirm it (offline). No shift was opened — stay on this step so
+    // the cashier can retry once online.
+    if (result.status === 'identity-unconfirmed') {
+      openError.value = result.reason
       return
     }
     // Land on the right home before first paint: the owner and a reports-granted
@@ -257,6 +275,7 @@ function back() {
   step.value = 'pick-staff'
   selectedStaff.value = null
   authError.value = ''
+  enteredPin.value = ''
   recovering.value = false
   recoveryDone.value = false
   openingCashSyp.value = ''
