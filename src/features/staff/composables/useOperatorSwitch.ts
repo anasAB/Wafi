@@ -119,10 +119,16 @@ export async function establishOperatorIdentity(
  * re-verifies the PIN and stamps `device_sessions.active_role`, keyed on this
  * session's `session_id` — see ADR-009 and migration
  * 048_session_id_active_role.sql), then forces a token refresh so the new
- * `active_role` JWT claim is live within one sync cycle. This is a best-effort
- * sync-layer update, not a local authorization gate: `usePinAuth().verifyPin`
- * already gated entry to this function client-side, so a network/RPC failure
- * must never block the local switch (offline-first).
+ * `active_role` JWT claim is live within one sync cycle.
+ *
+ * WAFI-203: this is offline-safe only for re-entering the device's already
+ * last-confirmed identity (`establishOperatorIdentity`'s `offline-same-identity`
+ * path) — no network call is made and the switch proceeds locally. For a
+ * genuinely new identity, the RPC + `refreshSession` must both succeed before
+ * the switch is adopted; on failure (including offline), `switchTo` throws
+ * `OperatorSwitchBlockedError` rather than silently proceeding, so the JWT's
+ * `staff_id` claim and the locally-active operator never diverge. See
+ * `establishOperatorIdentity`'s doc comment above for the full rationale.
  */
 export function useOperatorSwitch() {
   const session = useSessionStore()
