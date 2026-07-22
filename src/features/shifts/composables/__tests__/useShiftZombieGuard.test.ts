@@ -3,6 +3,20 @@ import { setActivePinia, createPinia } from 'pinia'
 
 vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
 
+vi.mock('@/data/supabase/client', () => ({
+  supabase: {
+    rpc: vi.fn().mockResolvedValue({ data: true, error: null }),
+    auth: {
+      refreshSession: vi.fn().mockResolvedValue({ data: {}, error: null }),
+      getSession: vi.fn().mockResolvedValue({
+        data: { session: { access_token: 'h.eyJzZXNzaW9uX2lkIjoic2Vzc2lvbi14In0.s' } },
+        error: null,
+      }),
+      onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+    },
+  },
+}))
+
 import { useShift } from '../useShift'
 import { db } from '@/data/powersync/db'
 import { useShiftStore } from '../../shift.store'
@@ -51,15 +65,27 @@ describe('WAFI-065 — one open shift per device (openShift guard)', () => {
   it('opens a fresh shift when none is open on the device', async () => {
     vi.mocked(db.getOptional).mockResolvedValueOnce(null)  // findOpenShiftForDevice → none
     const { openShift } = useShift()
-    const res = await openShift(staffA, 10, 20)
+    const res = await openShift(staffA, 10, 20, '1234')
     expect(res.status).toBe('opened')
     expect(vi.mocked(db.execute).mock.calls.some(insertShiftCall)).toBe(true)
+  })
+
+  it('does NOT open a new shift when identity establishment is blocked (offline, new operator)', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce(null)  // findOpenShiftForDevice → none
+    const { supabase } = await import('@/data/supabase/client')
+    vi.mocked(supabase.rpc).mockRejectedValueOnce(new Error('network error'))
+
+    const { openShift } = useShift()
+    const res = await openShift(staffA, 10, 20, '1234')
+
+    expect(res.status).toBe('identity-unconfirmed')
+    expect(vi.mocked(db.execute).mock.calls.some(insertShiftCall)).toBe(false)
   })
 
   it('resumes the SAME operator\'s existing open shift — no second row', async () => {
     vi.mocked(db.getOptional).mockResolvedValueOnce(openRow({ staff_id: 'staff-A' }) as any)
     const { openShift } = useShift()
-    const res = await openShift(staffA, 10, 20)
+    const res = await openShift(staffA, 10, 20, '1234')
     expect(res).toEqual({ status: 'resumed', shiftId: 'existing-1' })
     // No INSERT — the existing shift is re-attached, not duplicated.
     expect(vi.mocked(db.execute).mock.calls.some(insertShiftCall)).toBe(false)
@@ -71,7 +97,7 @@ describe('WAFI-065 — one open shift per device (openShift guard)', () => {
   it('reports a conflict when a DIFFERENT operator holds the device\'s open shift', async () => {
     vi.mocked(db.getOptional).mockResolvedValueOnce(openRow({ staff_id: 'staff-A' }) as any)
     const { openShift } = useShift()
-    const res = await openShift(owner, 10, 20)
+    const res = await openShift(owner, 10, 20, '1234')
     expect(res.status).toBe('conflict')
     if (res.status === 'conflict') expect(res.shift.staffId).toBe('staff-A')
     expect(vi.mocked(db.execute).mock.calls.some(insertShiftCall)).toBe(false)

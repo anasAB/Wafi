@@ -19,6 +19,7 @@ function parseBreakdown(raw: unknown): CurrencyBreakdown {
   }
 }
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
+import { establishOperatorIdentity } from '@/features/staff/composables/useOperatorSwitch'
 
 /** Parse the stored Z-report JSON snapshot. Never throws — a corrupt/absent blob
  *  yields null so the UI falls back gracefully (live preview for an open shift). */
@@ -108,6 +109,11 @@ export type OpenShiftResult =
   // WAFI-130: this device was deactivated by the owner — no NEW shifts. An
   // already-open shift resumes/closes normally (the check runs before insert).
   | { status: 'device-deactivated' }
+  // WAFI-203: this is a genuinely NEW operator identity for this device, and
+  // the server could not confirm it (offline/network failure). No shift row
+  // is created — the caller should show `reason` and let the cashier retry
+  // once online, or resume as whoever this device's identity already was.
+  | { status: 'identity-unconfirmed'; reason: string }
 
 /** What a force-close persists (WAFI-065 Part 2). Mirrors a normal close's evidence
  *  but is performed BY the owner on someone else's abandoned shift, so the actor is
@@ -146,6 +152,7 @@ export function useShift() {
     staff: Staff,
     openingCashUsd: number,
     openingCashSyp: number,
+    pin: string,
     openingBreakdown: CurrencyBreakdown = null,
   ): Promise<OpenShiftResult> {
     // Guard: at most one open shift per device (WAFI-065 Part 1). The app-level
@@ -177,6 +184,16 @@ export function useShift() {
     )
     if (deviceRow && deviceRow.is_active === 0) {
       return { status: 'device-deactivated' }
+    }
+
+    // WAFI-203: opening a brand-new shift for `staff` establishes a NEW
+    // server-side identity for this device (there is no existing shift to
+    // fall back to, unlike the resume branch above). This must be
+    // server-confirmed before the shift is created — a blocked result means
+    // no shift row is written and local state is untouched.
+    const identity = await establishOperatorIdentity(staff, pin)
+    if (identity.status === 'blocked') {
+      return { status: 'identity-unconfirmed', reason: identity.reason }
     }
 
     const shiftId = crypto.randomUUID()

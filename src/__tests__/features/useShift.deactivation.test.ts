@@ -3,6 +3,20 @@ import { setActivePinia, createPinia } from 'pinia'
 
 vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
 
+vi.mock('@/data/supabase/client', () => ({
+  supabase: {
+    rpc: vi.fn().mockResolvedValue({ data: true, error: null }),
+    auth: {
+      refreshSession: vi.fn().mockResolvedValue({ data: {}, error: null }),
+      getSession: vi.fn().mockResolvedValue({
+        data: { session: { access_token: 'h.eyJzZXNzaW9uX2lkIjoic2Vzc2lvbi14In0.s' } },
+        error: null,
+      }),
+      onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+    },
+  },
+}))
+
 import { useShift } from '@/features/shifts/composables/useShift'
 import { db } from '@/data/powersync/db'
 import type { Staff } from '@/features/staff/staff.types'
@@ -27,7 +41,7 @@ describe('useShift.openShift — WAFI-130 deactivation enforcement', () => {
     })
 
     const { openShift } = useShift()
-    const result = await openShift(staff, 10, 100000)
+    const result = await openShift(staff, 10, 100000, '1234')
 
     expect(result.status).toBe('device-deactivated')
     const insert = vi.mocked(db.execute).mock.calls.find(([sql]) => /INSERT INTO cashier_shifts/.test(sql as string))
@@ -41,7 +55,7 @@ describe('useShift.openShift — WAFI-130 deactivation enforcement', () => {
     })
 
     const { openShift } = useShift()
-    const result = await openShift(staff, 10, 100000)
+    const result = await openShift(staff, 10, 100000, '1234')
 
     expect(result.status).toBe('opened')
     const insert = vi.mocked(db.execute).mock.calls.find(([sql]) => /INSERT INTO cashier_shifts/.test(sql as string))
