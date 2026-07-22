@@ -162,8 +162,18 @@ export function useShift() {
     const existing = await findOpenShiftForDevice()
     if (existing) {
       if (existing.staffId === staff.id) {
-        // Same operator returning to their own still-open shift → re-attach, never
-        // create a second row. Re-establish identity for the existing shift.
+        // Same operator returning to their own still-open shift. WAFI-203: this
+        // still must reconcile identity — a switch to a DIFFERENT operator could
+        // have happened after this shift was opened (switch is identity-only,
+        // it never touches the open shift), leaving lastConfirmedOperatorId (and
+        // the JWT) pointing at that other operator while this shift's owner
+        // resumes. establishOperatorIdentity's own same-identity fast path means
+        // this costs no network call in the common case (nothing changed since
+        // this staff was last confirmed).
+        const identity = await establishOperatorIdentity(staff, pin)
+        if (identity.status === 'blocked') {
+          return { status: 'identity-unconfirmed', reason: identity.reason }
+        }
         session.setActiveStaff(staff)
         shiftStore.openShift(existing.id, staff)
         return { status: 'resumed', shiftId: existing.id }

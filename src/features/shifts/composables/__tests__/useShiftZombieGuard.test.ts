@@ -21,6 +21,7 @@ import { useShift } from '../useShift'
 import { db } from '@/data/powersync/db'
 import { useShiftStore } from '../../shift.store'
 import { useSessionStore } from '@/store/session.store'
+import { useDeviceStore } from '@/store/device.store'
 import { isLongOpen, LONG_OPEN_HOURS } from '../../shift.types'
 import type { Staff } from '@/features/staff/staff.types'
 import type { CashierShift, ZReportMetrics } from '../../shift.types'
@@ -101,6 +102,31 @@ describe('WAFI-065 — one open shift per device (openShift guard)', () => {
     expect(res.status).toBe('conflict')
     if (res.status === 'conflict') expect(res.shift.staffId).toBe('staff-A')
     expect(vi.mocked(db.execute).mock.calls.some(insertShiftCall)).toBe(false)
+  })
+
+  it('reconciles identity on resume when a switch happened after this shift opened — blocks if offline', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce(openRow({ staff_id: 'staff-A' }) as any)
+    useDeviceStore().lastConfirmedOperatorId = 'owner-1'  // Y switched in after shift opened
+    const { supabase } = await import('@/data/supabase/client')
+    vi.mocked(supabase.rpc).mockRejectedValueOnce(new Error('network error'))
+
+    const { openShift } = useShift()
+    const res = await openShift(staffA, 10, 20, '1234')
+
+    expect(res).toEqual({ status: 'identity-unconfirmed', reason: expect.any(String) })
+    expect(useSessionStore().activeStaff?.id).not.toBe('staff-A')
+  })
+
+  it('resumes fully offline when lastConfirmedOperatorId already matches the resuming operator', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce(openRow({ staff_id: 'staff-A' }) as any)
+    useDeviceStore().lastConfirmedOperatorId = 'staff-A'
+    const { supabase } = await import('@/data/supabase/client')
+
+    const { openShift } = useShift()
+    const res = await openShift(staffA, 10, 20, '1234')
+
+    expect(supabase.rpc).not.toHaveBeenCalled()
+    expect(res).toEqual({ status: 'resumed', shiftId: 'existing-1' })
   })
 })
 

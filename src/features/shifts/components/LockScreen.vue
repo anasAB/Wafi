@@ -156,6 +156,7 @@ async function onPinComplete(pin: string) {
     if (!isRouteAllowed(required, s)) {
       await router.replace(resolveLanding(s))
     }
+    enteredPin.value = ''
     emit('done')
     return
   }
@@ -168,8 +169,11 @@ async function onPinComplete(pin: string) {
   const existing = await findOpenShiftForDevice().catch(() => null)
   if (existing) {
     if (existing.staffId === s.id) {
-      // Resume own open shift. openShift takes the resume branch and ignores the
-      // (unused) cash args and pin; identity + store are re-established there.
+      // Resume own open shift. openShift takes the resume branch, ignoring the
+      // unused cash args — but the pin IS used there (WAFI-203): it re-confirms
+      // identity with the server in case a different operator switched in on
+      // this device since the shift was opened, so identity + store are
+      // re-established there rather than blindly reattached.
       await openShift(s, 0, 0, enteredPin.value)
       await router.replace(resolveLanding(s))
       return
@@ -264,6 +268,7 @@ async function doOpen() {
     // manager get the dashboard; everyone else gets the POS, so an ungranted
     // operator never flashes the financial dashboard then bounces (WAFI-058).
     await router.replace(resolveLanding(selectedStaff.value))
+    enteredPin.value = ''
   } finally {
     loading.value = false
   }
