@@ -4,9 +4,9 @@
 
 **Goal:** Close WAFI-202 by making `sales`, `sale_line_items`, `sale_payments`, `returns`, `return_line_items` append-only under RLS (no UPDATE/DELETE for `anon`/`authenticated`, strict staff-attribution on INSERT), backed by an automated pgTAP regression suite proving the invariant.
 
-**Architecture:** A single new RLS migration replaces the migration-015-inherited shop-scoped-only INSERT/UPDATE/DELETE policies on the five affected tables with attribution-aware INSERT policies and no UPDATE/DELETE policies at all (Postgres RLS defaults to deny when no policy exists for a command). A new pgTAP test file exercises the full matrix against a local Supabase stack.
+**Architecture:** A single new RLS migration replaces the migration-015-inherited shop-scoped-only INSERT/UPDATE/DELETE policies on the five affected tables with attribution-aware INSERT policies and no UPDATE/DELETE policies at all (Postgres RLS defaults to deny when no policy exists for a command). A pgTAP test file expresses the full matrix as executable assertions, written and manually traced against the policy text rather than run against a live database — **no Docker and no local/hosted Postgres instance is available in this environment**, so there is no execution proof (no red→green run) for this plan; correctness rests on careful manual tracing and review, documented inline.
 
-**Tech Stack:** PostgreSQL RLS policies, pgTAP (via Supabase CLI's `supabase test db`), Supabase CLI 2.x, Docker (for the local Supabase stack).
+**Tech Stack:** PostgreSQL RLS policies, pgTAP (syntax target only — `supabase test db` is not run in this plan; a human with Docker or a disposable Supabase project can run it later to get real execution proof).
 
 ## Global Constraints
 
@@ -14,6 +14,7 @@
 - `staff_id = auth_staff_id()` is strict — **no owner/manager exception** on INSERT for `sales` or `returns` (design decision, see spec's "no owner/manager exception" rationale). The only path to record a write under a different staff member's identity is `switch_active_operator()`.
 - **This migration must NOT be applied to the hosted production Supabase project (`eazyrdnvsiyaaccvjbhb`) as part of this plan.** Per the spec's "Blocking Prerequisite" section, WAFI-203 (operator-identity drift fix) must land first. This plan builds and merges the migration + tests to `main`; a separate, later action applies it to production once WAFI-203 ships.
 - `postgres`/`service_role` continue to bypass RLS entirely, unaffected by this change — do not add any policy that scopes those roles.
+- **No execution environment available:** this environment has no Docker and no reachable local/hosted Postgres instance to run migrations or pgTAP against. Every task that would normally "run and confirm" must instead perform a rigorous manual trace (read the exact policy SQL, walk each test's `WHERE`/`WITH CHECK` predicate by hand against the fixture data, write down the reasoning) and record explicitly in its report that this is unverified-by-execution. Do not claim a test "passes" — say what the manual trace concludes and why.
 
 ---
 
@@ -27,78 +28,47 @@
 
 ---
 
-### Task 1: Bring up a local Supabase dev stack and confirm existing migrations replay cleanly
+### Task 1: Verify fixture/schema consistency by reading migration files (no live DB available)
 
 **Files:**
-- Create: `supabase/config.toml` (via `supabase init`)
-- No test file for this task — it's an environment-verification task with a pass/fail check, not a code change.
+- No files created or modified — this is a read-only verification task whose output is a written record in the task report, consumed by Task 2's implementer.
 
 **Interfaces:**
-- Produces: a running local Supabase stack (Postgres + pgTAP extension available) that Task 2 and Task 4 depend on.
+- Produces: a confirmed column/constraint reference sheet for every table Task 2's fixtures touch, so Task 2 does not have to re-derive it and does not guess at column names.
 
-This project has never run `supabase init`/`supabase start` locally before (there's no `supabase/config.toml` in the repo today — everything so far has been applied by hand against the hosted project via the SQL editor). Confirming the full migration history replays cleanly on a fresh local instance is a prerequisite for writing pgTAP tests against it.
+There is no Docker, no native Postgres, and no reachable hosted instance in this environment, so "confirm migrations replay cleanly" cannot mean running `supabase db reset` here. Instead, this task confirms the same thing by reading the actual migration SQL directly — every table and column Task 2's fixtures will reference must be traced to the migration file that defines it, with special attention to any table whose schema was changed by more than one migration (a column added in one file, then referenced by a later file, can only be trusted if both are read together).
 
-- [ ] **Step 1: Initialize the Supabase CLI project config**
+- [ ] **Step 1: Trace every table Task 2's fixtures will touch to its defining migration(s)**
 
-Run: `cd "C:/Users/AnasBaajBlue10/testing/Wafi" && npx supabase init`
+For each table below, `grep -n "CREATE TABLE IF NOT EXISTS" supabase/migrations/*.sql` (or open the file directly) to find where it's defined, and read the full column list. Record the exact column names, types, and NOT NULL/CHECK constraints for each in your report:
 
-If prompted interactively (e.g., "Generate VS Code settings?"), answer `N` to all prompts — this repo doesn't need CLI-generated editor config.
+- `auth.users` — not defined in this repo (Supabase platform schema); only needs `instance_id`, `id`, `email`, `encrypted_password`, `email_confirmed_at`, `created_at`, `updated_at`, `aud`, `role` for a minimal valid fixture row (`crypt()`/`gen_salt()` from `pgcrypto`, already enabled by `045_switch_active_operator.sql`).
+- `public.shops` — `001_initial_schema.sql`, then `owner_user_id` added by `013_shops_owner_user_id.sql` (a real `REFERENCES auth.users(id)` foreign key — the fixture's `auth.users` row must exist first).
+- `public.staff` — `003_staff.sql` (`role` CHECK originally `('owner','cashier')` only), then `020_staff_role_manager.sql` widens the CHECK to `('owner','cashier','manager')` — confirm this widened constraint is what a fresh replay ends with (it drops and recreates the constraint, so the final state is the widened one).
+- `public.devices` — `001_initial_schema.sql` defines it with a `device_code` column; a later migration (`037_devices.sql`) also has a `CREATE TABLE IF NOT EXISTS public.devices` with a *different* column (`code` instead of `device_code`) — since the table already exists from 001, that later `CREATE TABLE IF NOT EXISTS` is a no-op for schema purposes (confirm this by checking it says `IF NOT EXISTS`, not `CREATE OR REPLACE` or an `ALTER TABLE`). Confirm `supabase/seed.sql` inserts into `devices (id, shop_id, device_code)` — this is the project's own proof of which shape is actually live. Record this finding explicitly in your report as "pre-existing schema-drift issue, out of scope for WAFI-202" — do not attempt to fix it.
+- `public.products` — `001_initial_schema.sql`.
+- `public.cashier_shifts` — `009_expand_domain_tables_for_sync.sql` (note `status` CHECK is `('open','closed')`, `opening_cash_usd` is `NOT NULL`).
+- `public.sales` — `001_initial_schema.sql`, then `staff_id` added (nullable) by a later migration, then `sync_status` added by `034_sales_sync_status.sql`. Confirm `staff_id` has no NOT NULL constraint (relevant context for why the strict INSERT policy is a deliberate choice, not an oversight — see the design spec's Blocking Prerequisite section).
+- `public.returns` — `009_expand_domain_tables_for_sync.sql` (note: no direct `staff_id` column — attribution runs through `shift_id` → `cashier_shifts.staff_id`).
 
-Expected: creates `supabase/config.toml` (and possibly `supabase/.gitignore`, `supabase/functions/`). Does **not** touch `supabase/migrations/` or `supabase/seed.sql` — verify with `git status` that only new files appear, nothing existing is modified.
+- [ ] **Step 2: Confirm the RLS helper functions' exact signatures**
 
-- [ ] **Step 2: Start the local stack**
+Read `supabase/migrations/054_auth_role_helpers.sql` in full. Record in your report the exact return type and body of `public.auth_shop_id()` (defined in `015_rls_tenant_scoping.sql`, not 054 — find it there), `public.auth_role()`, and `public.auth_staff_id()`. Task 2 and Task 3 both call these by name and depend on `auth_staff_id()` returning `NULL` (not erroring) when the JWT claims have no `staff_id` key — confirm this from the function body (`NULLIF(auth.jwt() ->> 'staff_id', '')::uuid`).
 
-Run: `npx supabase start`
+- [ ] **Step 3: Write the report**
 
-Expected: Docker containers pull/start (first run takes a few minutes), ending with a printed block showing `API URL`, `DB URL`, `Studio URL`, `anon key`, `service_role key`. Keep this output — you'll need the `DB URL` for later steps if you want to inspect the local DB directly with `psql`.
-
-If this fails with a Docker error, confirm Docker Desktop is running (`docker ps` should succeed, not error) before retrying.
-
-- [ ] **Step 3: Confirm all existing migrations replayed without error**
-
-Run: `npx supabase db reset`
-
-This drops and recreates the local database, replaying every file in `supabase/migrations/` in order, then running `supabase/seed.sql`.
-
-Expected: output ends with `Finished supabase db reset on branch main.` (or equivalent success message) and no `ERROR:` lines. If a migration fails, the command exits non-zero and prints which file/statement failed — stop and report the exact error rather than guessing a fix, since a failure here means the local stack can't be used for pgTAP testing until resolved (this would be a pre-existing repo issue unrelated to WAFI-202, not something to silently patch as part of this task).
-
-- [ ] **Step 4: Confirm pgTAP is available**
-
-Run: `npx supabase db psql -c "CREATE EXTENSION IF NOT EXISTS pgtap;"` (if `supabase db psql` isn't available in your CLI version, use `psql "$(npx supabase status -o json | node -e "process.stdin.once('data',d=>console.log(JSON.parse(d).DB_URL))")" -c "CREATE EXTENSION IF NOT EXISTS pgtap;"` instead, substituting the actual `DB URL` printed in Step 2 if the one-liner doesn't resolve cleanly on your shell)
-
-Expected: `CREATE EXTENSION` (or no output if it already existed) — no error. Supabase's local Postgres image ships pgTAP by default, so this should just confirm it, not install anything new.
-
-- [ ] **Step 5: Confirm the `devices` table's actual live column shape**
-
-Run: `npx supabase db psql -c "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='devices' ORDER BY ordinal_position;"`
-
-Expected: a column list including `device_code` (this is what `supabase/seed.sql:9` already inserts into — `INSERT INTO devices (id, shop_id, device_code) VALUES ...` — confirming this is the live shape a fresh migration replay produces; migration `037_devices.sql`'s `code`/`is_temporary` columns are a pre-existing, unrelated schema-drift issue in this repo and are out of scope here). Task 2's fixtures use `device_code`, matching this.
-
-- [ ] **Step 6: Commit the new config**
-
-```bash
-git add supabase/config.toml supabase/.gitignore
-git commit -m "chore: initialize local Supabase CLI stack for pgTAP testing
-
-Enables running the automated RLS regression suite (WAFI-202) via
-'supabase test db' against a local instance, rather than only the
-manual SQL-editor verification script this repo has relied on so far.
-
-Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
-```
-
-(If `supabase init` created additional files like `supabase/functions/.gitkeep`, include those too — check `git status` first.)
+No commit for this task (nothing was created or modified). Write a report to `.superpowers/sdd/task-1-report.md` containing the exact column lists, constraints, and function bodies gathered above, formatted so Task 2's implementer can copy column names directly rather than re-reading the migration files.
 
 ---
 
-### Task 2: Write the failing pgTAP regression suite (red)
+### Task 2: Write the pgTAP regression suite and manually trace it against the current (pre-fix) policies
 
 **Files:**
 - Create: `supabase/tests/wafi202_sales_immutability.test.sql`
 
 **Interfaces:**
-- Consumes: the local Supabase stack from Task 1; `public.auth_shop_id()`, `public.auth_role()`, `public.auth_staff_id()` (defined in `054_auth_role_helpers.sql`, already applied by Task 1's migration replay).
-- Produces: a pgTAP test file with 13 assertions, run via `supabase test db`. This task deliberately runs it *before* Task 3's migration exists, to prove the "Denied" assertions currently fail (the vulnerability is real) before the fix makes them pass.
+- Consumes: Task 1's report (`.superpowers/sdd/task-1-report.md`) for exact column names/constraints; `public.auth_shop_id()`, `public.auth_role()`, `public.auth_staff_id()` (defined in `015_rls_tenant_scoping.sql`/`054_auth_role_helpers.sql`).
+- Produces: a pgTAP test file with 13 assertions. **No execution is possible in this environment** — instead, this task manually traces each assertion against the *current* (pre-Task-3) policy SQL in `supabase/migrations/015_rls_tenant_scoping.sql` and `056_sales_domain_rls.sql`, to establish which assertions should currently fail (proving the vulnerability is real) before Task 3's migration exists.
 
 This test file is self-contained: it seeds its own fixture data (two shops, staff across owner/manager/cashier roles, a sale, a return) directly as `postgres` (bypassing RLS), then simulates each persona via `set_config('request.jwt.claims', ..., true)` + `SET LOCAL ROLE authenticated` — the exact pattern validated by hand against the hosted project during this investigation. The whole file runs in one transaction that never commits (`BEGIN`/`ROLLBACK`), so nothing it does persists.
 
@@ -393,25 +363,33 @@ SELECT * FROM finish();
 ROLLBACK;
 ```
 
-- [ ] **Step 2: Run the suite and confirm the expected tests currently FAIL**
+- [ ] **Step 2: Manually trace each assertion against the CURRENT (pre-fix) policies and record the expected result**
 
-Run: `npx supabase test db`
+No command to run — read `supabase/migrations/015_rls_tenant_scoping.sql`'s generated INSERT/UPDATE/DELETE policies (the `do $$ ... $$` loop, specifically the `_insert_all`/`_update_all`/`_delete_all` policy bodies: `shop_id = auth_shop_id()`, nothing else) and `056_sales_domain_rls.sql`'s SELECT-only override for `sales`/`sale_line_items`/`sale_payments`/`returns`/`return_line_items` (confirm its own comment, around line 112-120, stating INSERT/UPDATE/DELETE were left as migration-015's shape).
 
-Expected: pg_prove output showing `13 tests` planned. Tests 5, 6, 7, 8, 9, 11, 12 (the "Denied" UPDATE/DELETE cases) are expected to **FAIL** right now — because migration 064 doesn't exist yet, these tables still have the migration-015 shop-scoped-only UPDATE/DELETE policies, so the attempted writes actually succeed (row count 1, not 0). Tests 2, 3, 13 (the "Denied" INSERT-attribution cases) should also currently **FAIL**, since the existing `sales_insert_all`/`returns_insert_all` policies (migration 015 shape) check only `shop_id`, not attribution — so no exception is thrown where one is expected. Tests 1, 4, 10 (the "Allowed" cases) should already **PASS**, since basic shop-scoped INSERT already works today.
+For each of the 13 tests in the file you just wrote, write one line in your report: the test number, the exact policy predicate that governs it under the *current* (pre-Task-3) schema, and whether that predicate would currently allow or deny the attempted operation. You should conclude:
 
-Confirm the failure count and specific failing test numbers match this expectation before proceeding — if a *different* set of tests fails (e.g., an "Allowed" test fails, or a fixture INSERT itself errors), stop and diagnose that first; it likely means a fixture assumption (schema shape, column name) doesn't match what Task 1 found, not a policy issue.
+- Tests 1, 4, 10 ("Allowed" cases): predicate is `shop_id = auth_shop_id()` only, which the fixture data satisfies — these should currently succeed, matching their expected "Allowed" outcome. Record this as "consistent with current policy, no change in behavior expected from this test."
+- Tests 2, 3, 13 ("Denied" INSERT-attribution cases): the current INSERT policy checks only `shop_id`, never `staff_id` — trace through why the attempted INSERT's `shop_id` value satisfies the current predicate (test 13's cross-shop attempt is the one exception: its `shop_id` mismatches, so it *would* already be denied today for tenant-isolation reasons, even before Task 3's attribution fix — note this distinction explicitly, since it means test 13 is not actually proving the WAFI-202 gap the way tests 2 and 3 are, only confirming tenant isolation already held).
+- Tests 5, 6, 7, 8, 9, 11, 12 ("Denied" UPDATE/DELETE cases): the current UPDATE/DELETE policies check only `shop_id`, which the fixture rows satisfy — trace through why each of these would currently be **allowed** (row count 1, not the expected 0), confirming these are the assertions that currently fail, i.e. they are the direct proof of the WAFI-202 gap this plan closes.
 
-- [ ] **Step 3: Commit the failing test file**
+Write this full trace to `.superpowers/sdd/task-2-report.md` (this becomes part of your task report). Do not claim any test "passed" or "failed" as if a runner executed it — phrase every conclusion as "the manual trace concludes this would currently succeed/fail against production because <predicate reasoning>."
+
+- [ ] **Step 3: Commit the test file**
 
 ```bash
 cd "C:/Users/AnasBaajBlue10/testing/Wafi"
 git add supabase/tests/wafi202_sales_immutability.test.sql
-git commit -m "test(wafi-202): add failing pgTAP suite for sales/returns immutability
+git commit -m "test(wafi-202): add pgTAP suite for sales/returns immutability
 
-Proves the WAFI-202 gap with automated, re-runnable tests instead of
-manual SQL-editor inspection: 10 of 13 assertions currently fail
-against the migration-015-inherited shop-scoped-only INSERT/UPDATE/
-DELETE policies. Migration 064 (next commit) makes them pass.
+13 assertions covering the WAFI-202 test matrix. No execution
+environment is available in this session (no Docker, no reachable
+Postgres) -- correctness is established by manual trace against the
+current migration-015/056 policy predicates, recorded in
+.superpowers/sdd/task-2-report.md, not by a test run. A human with
+Docker or a disposable Supabase project should run 'supabase test db'
+to get real execution proof before this merges. Migration 064 (next
+commit) is the fix these tests are written against.
 
 Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 ```
@@ -554,19 +532,17 @@ CREATE POLICY return_line_items_insert_own ON public.return_line_items
 -- No UPDATE/DELETE policy: append-only.
 ```
 
-- [ ] **Step 2: Apply the migration locally and confirm it runs cleanly**
+- [ ] **Step 2: Manually re-trace all 13 assertions from Task 2 against THIS migration's policies**
 
-Run: `npx supabase db reset`
+No command to run — no execution environment is available. Re-do Task 2 Step 2's trace, this time against the policies you just wrote in Step 1 instead of the migration-015 shape. For each of the 13 tests, walk the exact `WITH CHECK`/absence-of-policy logic against the fixture data and confirm your trace concludes the expected outcome (Allowed/Denied) from the spec's test matrix. Pay specific attention to:
 
-Expected: replays all migrations including the new 064, ending in the same success message as Task 1 Step 3, no errors. (`db reset` re-runs everything from scratch each time, which is why Task 2's test file is idempotent/self-contained — it doesn't depend on any prior test run's leftover state.)
+- Tests 5-9, 11, 12 (UPDATE/DELETE "Denied" cases): confirm there is genuinely no UPDATE or DELETE policy at all for the relevant table in your migration — a missing policy is what makes Postgres deny the command entirely, so double check you did not accidentally leave a stray policy from copy-paste.
+- Tests 2, 3, 13 (INSERT-attribution "Denied" cases): confirm the `WITH CHECK` clause's `staff_id = public.auth_staff_id()` (or the `EXISTS` equivalent for child tables) genuinely evaluates false for the fixture claims used in that test — trace the actual UUID values, don't just assert it abstractly.
+- Tests 1, 4, 10 (Allowed cases): confirm the same `WITH CHECK` clause evaluates true for these fixtures.
 
-- [ ] **Step 3: Run the pgTAP suite and confirm all 13 tests now pass**
+Write this trace to `.superpowers/sdd/task-3-report.md`, structured as a direct comparison against Task 2's pre-fix trace (same 13 line items, this time showing the new predicate and new conclusion) so a reviewer can see exactly what changed for each test between Task 2 and Task 3. Phrase every conclusion as what the trace shows, not as an executed test result — this migration has not been run against a live database in this session.
 
-Run: `npx supabase test db`
-
-Expected: `13 tests` planned, `13 passed`, `0 failed`. If any test still fails, read pg_prove's diagnostic output for that specific test number — it prints the actual vs. expected value — and check the corresponding policy in `064_wafi202_sales_immutability.sql` against the failing assertion before changing anything else.
-
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
 git add supabase/migrations/064_wafi202_sales_immutability.sql
@@ -580,7 +556,12 @@ manager exception. Closes the gap confirmed via live exploit test
 against production, where a manager could tamper with completed sales
 and forge staff attribution.
 
-All 13 pgTAP assertions in wafi202_sales_immutability.test.sql now pass.
+All 13 pgTAP assertions in wafi202_sales_immutability.test.sql are
+manually traced against these policies in .superpowers/sdd/task-3-report.md
+and expected to pass -- no execution environment (Docker/Postgres) was
+available in this session to run them for real. A human with Docker or
+a disposable Supabase project should run 'supabase test db' before
+this merges to get actual execution proof.
 
 NOT applied to production yet -- gated on WAFI-203 (operator identity
 drift fix) per the design spec's blocking prerequisite.
