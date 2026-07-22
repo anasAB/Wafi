@@ -39,31 +39,58 @@ uses.
    `useDevices.ts::setActive` rather than adding a second, confusingly
    similar button.
 
+## Design correction (found while writing this spec)
+
+The original draft of this section proposed adding a new `auth_session_id`
+column and reading `auth.jwt() ->> 'session_id'` server-side. Reading the
+actual `device_sessions` schema and `useOperatorSwitch.ts` before writing
+the implementation plan found this was already solved, differently, by
+migration 048 (`048_session_id_active_role.sql`) — and the existing solution
+must be reused rather than duplicated:
+
+- `device_sessions` already has a `session_id uuid` column (with a partial
+  unique index, `WHERE session_id IS NOT NULL`), populated by
+  `switch_active_operator` on every PIN switch (success *or* failure).
+- `supabase-js`'s `Session` type does **not** expose `session_id` even
+  though GoTrue stamps it into every JWT — confirmed by this codebase's own
+  comment in `useOperatorSwitch.ts`. The client already has a working
+  decoder for it: `decodeSessionIdClaim(accessToken)`, exported from
+  `src/features/staff/composables/useOperatorSwitch.ts`. This must be
+  reused, not reimplemented, and `switch_active_operator` already takes
+  `p_session_id` as an explicit client-supplied parameter rather than
+  reading `auth.jwt()` server-side — so the new function below follows the
+  same convention for consistency, not `auth.jwt()`.
+
+This still doesn't make a new function redundant: `establishOperatorIdentity`
+has an `offline-same-identity` shortcut that returns early *without* calling
+`switch_active_operator` when the same operator resumes on a device that's
+still offline-trusted. That means `device_sessions.session_id` can go stale
+across a sign-out/sign-in cycle if the same operator resumes before any PIN
+switch happens again — so a dedicated call that updates `session_id` on
+every fresh sign-in (independent of PIN activity) is still needed for the
+revoke function to target the *current* session reliably.
+
 ## What's changing
 
 ### 1. New migration: `067_device_session_revocation.sql`
 
-Following the exact pattern of `045_switch_active_operator.sql` (tenant
-check via `d.shop_id = public.auth_shop_id()`, `SECURITY DEFINER`, `REVOKE
-ALL ... GRANT EXECUTE TO authenticated, anon` at the end):
+Following the exact pattern of `045_switch_active_operator.sql` /
+`048_session_id_active_role.sql` (tenant check via `d.shop_id =
+public.auth_shop_id()`, `SECURITY DEFINER`, `REVOKE ALL ... GRANT EXECUTE TO
+authenticated, anon` at the end). No schema change needed — reuses the
+existing `device_sessions.session_id` column.
 
-**Schema change:** add `auth_session_id uuid` to `device_sessions`
-(migration 044). This table is already server-only — not in `schema.ts`, not
-in `powersync.yaml`, RLS-locked to owner-read-only with zero client write
-policies (migration 044's own comment: "This is server-only state"). The
-`devices` table itself is `SELECT *`-synced to every device in the shop
-(confirmed in `powersync.yaml:41`), so `auth_session_id` must **not** go
-there — every other device would receive it.
-
-**Function 1 — `record_device_session(p_device_id uuid)` returns void:**
-called by a device to record its own current Supabase Auth session id.
-GoTrue JWTs include a native `session_id` claim (no custom
-`custom_access_token_hook` change needed — confirmed against the existing
-`auth.jwt()` pattern in migration 054).
+**Function 1 — `record_device_session_id(p_device_id uuid, p_session_id uuid)`
+returns void:** called by a device to record its own current session id,
+independent of PIN switching. Only ever touches `session_id`/`updated_at` —
+must not disturb `active_staff_id`/`active_role`/`failed_attempts`/
+`locked_until`, which belong to `switch_active_operator`.
 
 ```sql
-CREATE OR REPLACE FUNCTION public.record_device_session(p_device_id uuid)
-RETURNS void
+CREATE OR REPLACE FUNCTION public.record_device_session_id(
+  p_device_id  uuid,
+  p_session_id uuid
+) RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
@@ -79,35 +106,28 @@ BEGIN
     RETURN;  -- not this account's device; silently no-op, mirrors switch_active_operator's fail-closed style
   END IF;
 
-  INSERT INTO public.device_sessions (device_id, shop_id, auth_session_id, updated_at)
-  VALUES (p_device_id, v_shop_id, NULLIF(auth.jwt() ->> 'session_id', '')::uuid, now())
+  INSERT INTO public.device_sessions (device_id, shop_id, session_id, updated_at)
+  VALUES (p_device_id, v_shop_id, p_session_id, now())
   ON CONFLICT (device_id) DO UPDATE
-    SET auth_session_id = excluded.auth_session_id,
-        updated_at      = excluded.updated_at;
+    SET session_id = excluded.session_id,
+        updated_at = excluded.updated_at;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.record_device_session(uuid) FROM public;
-GRANT EXECUTE ON FUNCTION public.record_device_session(uuid) TO authenticated, anon;
+REVOKE ALL ON FUNCTION public.record_device_session_id(uuid, uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.record_device_session_id(uuid, uuid) TO authenticated, anon;
 ```
 
-Note: this `INSERT ... ON CONFLICT DO UPDATE` only ever touches
-`auth_session_id`/`updated_at` — it must not clobber `active_staff_id`/
-`active_role` written by `switch_active_operator`. The `excluded` columns
-referenced are exactly `auth_session_id`/`updated_at`, so this is safe by
-construction as long as the `INSERT` column list omits
-`active_staff_id`/`active_role` (Postgres fills omitted columns with their
-existing value on conflict only if the column has a default — since
-`active_role` has `NOT NULL DEFAULT 'cashier'`, a first-ever insert from
-this function would set it to the default rather than leaving it unset;
-this is fine because this function's `INSERT` only fires when no
-`device_sessions` row exists yet for that device, i.e. before any operator
-has ever switched — in that case there is no `active_role` to preserve).
+Note: on a first-ever `INSERT` for a device with no prior `device_sessions`
+row, `active_role` takes its column default (`'cashier'`) and
+`active_staff_id` is left `NULL` — there is no real operator-switch state
+yet to preserve in that case, so this is correct, matching the same
+first-insert behavior `switch_active_operator` itself already has.
 
 **Function 2 — `revoke_device_session(p_device_id uuid)` returns void:**
-owner-only (implicitly, since it requires the caller's `auth_shop_id()` to
-own the device — same tenant check as above), deletes the target device's
-`auth.sessions` row.
+callable by any device on the shop (tenant-checked, same as above), deletes
+the target device's `auth.sessions` row using whatever `session_id` is
+currently on record for it.
 
 ```sql
 CREATE OR REPLACE FUNCTION public.revoke_device_session(p_device_id uuid)
@@ -128,15 +148,16 @@ BEGIN
     RETURN;  -- not this account's device
   END IF;
 
-  SELECT ds.auth_session_id INTO v_session_id
+  SELECT ds.session_id INTO v_session_id
   FROM public.device_sessions ds
   WHERE ds.device_id = p_device_id;
 
   IF v_session_id IS NOT NULL THEN
     DELETE FROM auth.sessions WHERE id = v_session_id;
   END IF;
-  -- v_session_id NULL means this device never signed in (or never called
-  -- record_device_session) -- nothing to revoke, not an error.
+  -- v_session_id NULL means this device has no device_sessions row yet
+  -- (never switched an operator, never called record_device_session_id) --
+  -- nothing to revoke, not an error.
 END;
 $$;
 
@@ -160,11 +181,16 @@ needed for this design.
 
 In `src/store/device.store.ts`, the existing `onAuthStateChange` handler's
 `SIGNED_IN` branch (which already resolves `shopId` via `refreshShopId()`)
-gets one more call after `ensureDeviceRegistered()` succeeds: call
-`record_device_session(deviceId)` once the device's own id is known. Guard
-it the same way `lastSeenTouched` guards the existing heartbeat (once per
-app session is enough — the session id doesn't change again until the next
-sign-in).
+gets one more call after `ensureDeviceRegistered()` succeeds: read the
+current access token via `supabase.auth.getSession()`, decode its
+`session_id` via the existing, imported
+`decodeSessionIdClaim(accessToken)` (from `useOperatorSwitch.ts` — reused,
+not duplicated), and call `record_device_session_id(deviceId, sessionId)`.
+Guard it the same way `lastSeenTouched` guards the existing heartbeat (once
+per app session is enough — the session id doesn't change again until the
+next sign-in). If `decodeSessionIdClaim` returns `null` (no genuine claim —
+e.g. offline with only a cached session), skip the call rather than passing
+a null session id through.
 
 ### 3. Client: revoke on deactivate
 
