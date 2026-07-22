@@ -114,7 +114,11 @@ describe('WAFI-065 — one open shift per device (openShift guard)', () => {
     const res = await openShift(staffA, 10, 20, '1234')
 
     expect(res).toEqual({ status: 'identity-unconfirmed', reason: expect.any(String) })
-    expect(useSessionStore().activeStaff?.id).not.toBe('staff-A')
+    // Blocked identity establishment must leave local state untouched — not
+    // merely "not staff-A" (which a null activeStaff would trivially satisfy
+    // even if some OTHER wrong staff had been set).
+    expect(useSessionStore().activeStaff).toBeNull()
+    expect(useShiftStore().activeShiftId).toBeNull()
   })
 
   it('resumes fully offline when lastConfirmedOperatorId already matches the resuming operator', async () => {

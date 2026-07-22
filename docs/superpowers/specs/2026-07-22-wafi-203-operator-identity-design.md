@@ -53,6 +53,16 @@ yet").
 - `openShift`'s existing resume branch (`existing.staffId === staff.id`, same
   operator reopening their own already-open shift) makes no server call
   today and is not a new identity claim — no change needed there.
+
+  **Correction (post-implementation, final branch review):** this assumption
+  was wrong and has been superseded by commit `6461126`. A mid-shift switch
+  advances `lastConfirmedOperatorId`/the JWT `staff_id` claim to a *different*
+  staff member without touching the open shift's owner — so a later resume by
+  the shift's original owner IS a re-assertion of an identity the server may
+  no longer have confirmed, not a no-op. The resume branch now calls
+  `establishOperatorIdentity` exactly like the new-shift branch (still with
+  zero network cost in the common case, via the same-identity fast path).
+  Do not revert the resume branch to the no-check version described above.
 - Device registration already requires connectivity (to create the `devices`
   row). Requiring connectivity once more, the first time a *specific staff
   member* is ever confirmed as an operator on a *specific device*, is
@@ -160,7 +170,13 @@ successful switch, regardless of local lock-screen state.
 `lastConfirmedOperatorId` cached from before this ships. Their first
 shift-open after upgrading will require connectivity once, even for a
 returning cashier who was already confirmed under the old code path — a
-one-time cost, not a recurring one.
+one-time cost, not a recurring one. This applies to a device's first
+shift-*open* after upgrading; if a shift was already open at upgrade time,
+the same one-time online check-in is required at the first *resume* of that
+shift instead (the resume branch reconciles identity too, per the
+correction above) — offline in that narrow window returns
+`identity-unconfirmed` rather than silently proceeding, and resolves itself
+the next time the device is online.
 
 ### 4. Checkout-time fail-closed gate
 
