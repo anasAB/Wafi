@@ -155,6 +155,61 @@ Test matrix:
 - [ ] Manual verification script (`verify_wafi122_role_enforcement.sql`,
       updated to point at the automated suite) passes
 
+## Blocking Prerequisite (must land before this policy is enabled in production)
+
+**The authenticated JWT `staff_id` claim and the locally active operator must
+never diverge at synchronization time. The current offline fallback in
+`useOperatorSwitch.ts` violates this invariant and must be addressed before
+enabling strict attribution enforcement in production.**
+
+Two concrete gaps, discovered while designing this fix, both stem from the
+same root cause — operator identity is currently client-authoritative
+("switch locally, sync JWT best-effort") when it must be server-authoritative
+("JWT reflects identity, or identity hasn't changed yet"):
+
+1. **Identity drift on offline/failed switch.** `useOperatorSwitch.ts`'s
+   `switchTo()` calls `session.setActiveStaff(staff)` (updating local state
+   immediately) on every fallback path — undecodable `session_id`, RPC
+   network error, any other thrown error — explicitly by design, so a
+   network failure never blocks the local switch. `supabase.auth.
+   refreshSession()` (which mints a new JWT carrying the updated `staff_id`
+   claim) only runs on the RPC's success path. A sale created locally after
+   an offline/failed switch is queued with the new operator's `staff_id`,
+   but syncs later under a JWT whose `staff_id` claim never updated —
+   causing `staff_id = auth_staff_id()` to reject the row at sync time. This
+   is a predictable sync failure in exactly the offline/flaky-connectivity
+   scenarios WAFI-001's Sacred Rule #1 (offline-first) exists to handle.
+2. **No mandatory active-operator gate today.** All sampled production
+   `sales` rows currently have `staff_id = NULL`, and the cashier session
+   tested live during this investigation also carried a `null` `staff_id`
+   claim — meaning checkout is not currently gated behind selecting an
+   active operator at all for this shop. Under the strict policy, any
+   session with a null `staff_id` claim can never satisfy `staff_id =
+   auth_staff_id()` (`NULL = NULL` is `NULL`, not true) — so until the
+   client guarantees an active operator is selected before checkout is
+   reachable, this policy would block all new sales for this shop, not just
+   unauthorized ones.
+
+This is intentionally **not** treated as an unrelated follow-up bug. Per
+project review: weakening a security policy every time an adjacent subsystem
+turns out to be inconsistent is how RLS enforcement erodes into meaninglessness
+over successive tickets. The dependency runs the other direction — the
+adjacent subsystem must be fixed to meet the policy's bar, not the reverse.
+
+**Tracked as a new ticket (working title WAFI-203, "Operator Identity Must Be
+Server-Authoritative") requiring its own brainstorm/design session** before
+implementation, given the architectural options on the table (block identity
+changes entirely while offline vs. make the operator switch itself a signed,
+locally-queued, PowerSync-synchronized object) are non-trivial and
+consequential enough to need deliberate design, not just a quick patch.
+
+**Rollout sequencing:** the migration and pgTAP suite in this plan can be
+built, tested, and merged independently (they're self-contained and testable
+against a local Supabase stack without any client changes). The migration
+must not be applied to the production Supabase project — and the strict
+`staff_id = auth_staff_id()` policy must not go live — until WAFI-203 ships
+and is verified.
+
 ## Out of Scope
 
 - WAFI-201 (offline-sync confidentiality gap) — separate, already-accepted
