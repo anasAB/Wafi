@@ -6,7 +6,7 @@ INSERT INTO shops (id, name) VALUES
   ('00000000-0000-0000-0000-000000000001', 'محل الأخ — تجريبي')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO devices (id, shop_id, device_code) VALUES
+INSERT INTO devices (id, shop_id, code) VALUES
   ('00000000-0000-0000-0000-000000000002',
    '00000000-0000-0000-0000-000000000001', 'A')
 ON CONFLICT (id) DO NOTHING;

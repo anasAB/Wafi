@@ -19,6 +19,11 @@ SELECT plan(13);
 INSERT INTO auth.users (instance_id, id, email, encrypted_password, email_confirmed_at, created_at, updated_at, aud, role)
 VALUES ('00000000-0000-0000-0000-000000000000', 'a0000000-0000-0000-0000-000000000002', 'owner-a@wafi122.test', crypt('x', gen_salt('bf')), now(), now(), now(), 'authenticated', 'authenticated');
 
+-- provision_shop_for_new_user() (021_provision_shop_on_signup.sql) already
+-- auto-created a shop for this owner via an AFTER INSERT trigger on
+-- auth.users -- replace it with the fixed-id row the rest of this fixture
+-- (staff/products/sales below) hardcodes references to.
+DELETE FROM public.shops WHERE owner_user_id = 'a0000000-0000-0000-0000-000000000002';
 INSERT INTO public.shops (id, name, owner_user_id)
 VALUES ('a0000000-0000-0000-0000-000000000001', 'WAFI-122 Test Shop A', 'a0000000-0000-0000-0000-000000000002');
 
@@ -28,7 +33,7 @@ INSERT INTO public.staff (id, shop_id, name, pin_hash, role, permissions, is_act
   ('a0000000-0000-0000-0000-000000000005', 'a0000000-0000-0000-0000-000000000001', 'Cashier A1', 'x', 'cashier', '{}', true),
   ('a0000000-0000-0000-0000-000000000006', 'a0000000-0000-0000-0000-000000000001', 'Cashier A2', 'x', 'cashier', '{}', true);
 
-INSERT INTO public.devices (id, shop_id, device_code)
+INSERT INTO public.devices (id, shop_id, code)
 VALUES ('a0000000-0000-0000-0000-000000000007', 'a0000000-0000-0000-0000-000000000001', 'A');
 
 INSERT INTO public.products (id, shop_id, name_ar, price_usd)
@@ -66,6 +71,7 @@ INSERT INTO public.staff (id, shop_id, name, pin_hash, role, permissions, is_act
 INSERT INTO auth.users (instance_id, id, email, encrypted_password, email_confirmed_at, created_at, updated_at, aud, role)
 VALUES ('00000000-0000-0000-0000-000000000000', 'b0000000-0000-0000-0000-000000000002', 'owner-b@wafi122.test', crypt('x', gen_salt('bf')), now(), now(), now(), 'authenticated', 'authenticated');
 
+DELETE FROM public.shops WHERE owner_user_id = 'b0000000-0000-0000-0000-000000000002';
 INSERT INTO public.shops (id, name, owner_user_id)
 VALUES ('b0000000-0000-0000-0000-000000000001', 'WAFI-122 Test Shop B', 'b0000000-0000-0000-0000-000000000002');
 

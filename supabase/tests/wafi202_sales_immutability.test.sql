@@ -14,6 +14,11 @@ SELECT plan(16);
 INSERT INTO auth.users (instance_id, id, email, encrypted_password, email_confirmed_at, created_at, updated_at, aud, role)
 VALUES ('00000000-0000-0000-0000-000000000000', 'a0000000-0000-0000-0000-000000000002', 'owner-a@wafi202.test', crypt('x', gen_salt('bf')), now(), now(), now(), 'authenticated', 'authenticated');
 
+-- provision_shop_for_new_user() (021_provision_shop_on_signup.sql) already
+-- auto-created a shop for this owner via an AFTER INSERT trigger on
+-- auth.users -- replace it with the fixed-id row the rest of this fixture
+-- (staff/products/sales below) hardcodes references to.
+DELETE FROM public.shops WHERE owner_user_id = 'a0000000-0000-0000-0000-000000000002';
 INSERT INTO public.shops (id, name, owner_user_id)
 VALUES ('a0000000-0000-0000-0000-000000000001', 'WAFI-202 Test Shop A', 'a0000000-0000-0000-0000-000000000002');
 
@@ -23,7 +28,7 @@ INSERT INTO public.staff (id, shop_id, name, pin_hash, role, is_active) VALUES
   ('a0000000-0000-0000-0000-000000000005', 'a0000000-0000-0000-0000-000000000001', 'Cashier A1', 'x', 'cashier', true),
   ('a0000000-0000-0000-0000-000000000006', 'a0000000-0000-0000-0000-000000000001', 'Cashier A2', 'x', 'cashier', true);
 
-INSERT INTO public.devices (id, shop_id, device_code)
+INSERT INTO public.devices (id, shop_id, code)
 VALUES ('a0000000-0000-0000-0000-000000000007', 'a0000000-0000-0000-0000-000000000001', 'A');
 
 INSERT INTO public.products (id, shop_id, name_ar, price_usd)
@@ -45,13 +50,14 @@ VALUES ('a0000000-0000-0000-0000-00000000000b', 'a0000000-0000-0000-0000-0000000
 INSERT INTO auth.users (instance_id, id, email, encrypted_password, email_confirmed_at, created_at, updated_at, aud, role)
 VALUES ('00000000-0000-0000-0000-000000000000', 'b0000000-0000-0000-0000-000000000002', 'owner-b@wafi202.test', crypt('x', gen_salt('bf')), now(), now(), now(), 'authenticated', 'authenticated');
 
+DELETE FROM public.shops WHERE owner_user_id = 'b0000000-0000-0000-0000-000000000002';
 INSERT INTO public.shops (id, name, owner_user_id)
 VALUES ('b0000000-0000-0000-0000-000000000001', 'WAFI-202 Test Shop B', 'b0000000-0000-0000-0000-000000000002');
 
 INSERT INTO public.staff (id, shop_id, name, pin_hash, role, is_active)
 VALUES ('b0000000-0000-0000-0000-000000000003', 'b0000000-0000-0000-0000-000000000001', 'Cashier B1', 'x', 'cashier', true);
 
-INSERT INTO public.devices (id, shop_id, device_code)
+INSERT INTO public.devices (id, shop_id, code)
 VALUES ('b0000000-0000-0000-0000-000000000004', 'b0000000-0000-0000-0000-000000000001', 'A');
 
 -- Helper: executes dynamic SQL under whatever role/claims are currently
@@ -95,7 +101,7 @@ SET LOCAL ROLE authenticated;
 SELECT throws_ok(
   $$INSERT INTO public.sales (id, shop_id, device_id, device_sequence, display_sale_number, created_at, total_usd, total_syp, exchange_rate_at_sale, payment_method, staff_id, shift_id)
     VALUES ('a0000000-0000-0000-0000-00000000002a', 'a0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000007', 3, 'A-0003', now(), 10.00, 150000, 15000, 'cash_usd', 'a0000000-0000-0000-0000-000000000006', 'a0000000-0000-0000-0000-000000000009')$$,
-  '42501',
+  '42501', NULL,
   'Test 2: cashier inserts sale attributed to another cashier -- denied'
 );
 
@@ -113,7 +119,7 @@ SET LOCAL ROLE authenticated;
 SELECT throws_ok(
   $$INSERT INTO public.sales (id, shop_id, device_id, device_sequence, display_sale_number, created_at, total_usd, total_syp, exchange_rate_at_sale, payment_method, staff_id, shift_id)
     VALUES ('a0000000-0000-0000-0000-00000000003a', 'a0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000007', 4, 'A-0004', now(), 10.00, 150000, 15000, 'cash_usd', 'a0000000-0000-0000-0000-000000000005', 'a0000000-0000-0000-0000-000000000009')$$,
-  '42501',
+  '42501', NULL,
   'Test 3: manager inserts sale attributed to a cashier without switching operators -- denied'
 );
 
@@ -279,7 +285,7 @@ SET LOCAL ROLE authenticated;
 SELECT throws_ok(
   $$INSERT INTO public.sales (id, shop_id, device_id, device_sequence, display_sale_number, created_at, total_usd, total_syp, exchange_rate_at_sale, payment_method, staff_id, shift_id)
     VALUES ('a0000000-0000-0000-0000-00000000013a', 'a0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000007', 6, 'A-0006', now(), 10.00, 150000, 15000, 'cash_usd', 'b0000000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000009')$$,
-  '42501',
+  '42501', NULL,
   'Test 13: staff from shop B cannot insert a sale into shop A -- denied'
 );
 
@@ -297,7 +303,7 @@ SET LOCAL ROLE authenticated;
 SELECT throws_ok(
   $$INSERT INTO public.sale_line_items (id, sale_id, shop_id, product_id, quantity, unit_price_usd, line_total_usd)
     VALUES ('a0000000-0000-0000-0000-00000000014a', 'a0000000-0000-0000-0000-00000000000a', 'a0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000008', 1, 10.00, 10.00)$$,
-  '42501',
+  '42501', NULL,
   'Test 14: cashier inserts sale_line_item for a sale attributed to a different cashier -- denied'
 );
 

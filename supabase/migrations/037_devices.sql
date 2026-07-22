@@ -5,17 +5,29 @@
 -- that registers offline gets a unique temporary code (T-<random>) and
 -- reconciles to a permanent one on next sync (useDeviceRegistration.ts, Task 8).
 
-CREATE TABLE IF NOT EXISTS public.devices (
-  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  shop_id       uuid NOT NULL,
-  code          text NOT NULL,
-  is_temporary  boolean NOT NULL DEFAULT false,
-  registered_at timestamptz NOT NULL DEFAULT now(),
-  sync_status   text
-);
+-- public.devices already exists (001_initial_schema.sql: id, shop_id,
+-- device_code, registered_at, uq_device_code_per_shop unique(shop_id, device_code)).
+-- useDeviceRegistration.ts (and this migration's own policies/index below)
+-- were written against a `code` column, not `device_code` — rename to match
+-- what the application actually reads/writes, then add the new columns.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'devices' AND column_name = 'device_code'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'devices' AND column_name = 'code'
+  ) THEN
+    ALTER TABLE public.devices RENAME COLUMN device_code TO code;
+  END IF;
+END $$;
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_shop_code
-  ON public.devices (shop_id, code);
+ALTER TABLE public.devices ADD COLUMN IF NOT EXISTS is_temporary boolean NOT NULL DEFAULT false;
+ALTER TABLE public.devices ADD COLUMN IF NOT EXISTS sync_status text;
+
+-- uq_device_code_per_shop (001_initial_schema.sql) already enforces
+-- uniqueness on (shop_id, code) post-rename; no separate index needed.
 
 ALTER TABLE public.devices ENABLE ROW LEVEL SECURITY;
 
