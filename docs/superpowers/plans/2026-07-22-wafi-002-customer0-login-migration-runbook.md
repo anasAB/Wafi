@@ -3,9 +3,13 @@
 **Audience:** whoever has access to the brother's device and/or its deployment config.
 **Precondition:** Tasks 1–3 of the WAFI-002 auth gap-closing plan are merged
 and deployed — `devAuth.ts` is deleted, so no build can silently
-auto-sign-in anymore. This runbook is the human-executed step that must
-happen *before or at the same time as* that deploy reaches his device,
-otherwise he'll be logged out with no way back in.
+auto-sign-in anymore. Supabase's default session persistence means his
+existing signed-in session survives this deploy on its own — removing
+`devAuth.ts` does not log him out. The real risk window is narrower: this
+runbook's credential-confirmation step (step 2 below) should be done before
+the device ever needs a *fresh* sign-in (session cleared, refresh token
+expired, or a new/reset device) — that's the only point after this deploy
+where `/login` becomes load-bearing.
 
 ## Before touching the device
 
@@ -49,6 +53,11 @@ disabled/changed):
   fallback so his shop is never left unable to log in.
 - Investigate the credential mismatch (e.g. reset the password via the
   Supabase Auth dashboard, then retry from step 4 with the new password).
+- Note: this app is a PWA with a prompt-mode service worker that caches the
+  previous bundle — redeploying the prior (stub-intact) build may need a
+  second online reload on the device before the service worker actually
+  swaps back to it. Don't assume the rollback is live the instant it's
+  deployed; confirm the old build is actually running before relying on it.
 
 ## Done criteria
 
