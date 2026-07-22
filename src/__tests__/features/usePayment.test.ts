@@ -22,8 +22,10 @@ function setupTx(stockRow: { cost_price_usd: number; current_stock: number } = {
 }
 
 describe('usePayment', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     setActivePinia(createPinia())
+    const { useSessionStore } = await import('@/store/session.store')
+    useSessionStore().setActiveStaff({ id: 'default-op', name: 'موظف', role: 'cashier', permissions: {} } as any)
     const store = useSaleStore()
     store.clear()
     store.addLine({ productId: 'p1', nameAr: 'منتج', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10, availableStock: 99 })
@@ -270,6 +272,17 @@ describe('usePayment', () => {
     expect(salesInsert![1][salesInsert![1].length - 2]).toBe('op-7')
   })
 
+  it('refuses to confirm a sale with no active operator (WAFI-203)', async () => {
+    const { useSessionStore } = await import('@/store/session.store')
+    useSessionStore().clearSession()
+
+    const { selectMethod, confirm } = usePayment()
+    selectMethod('card')
+
+    await expect(confirm()).rejects.toThrow(/no active operator/i)
+    expect(db.writeTransaction).not.toHaveBeenCalled()
+  })
+
   it('attributes the sale to the active shift (shift_id) at confirm (WAFI-064)', async () => {
     const { useShiftStore } = await import('@/features/shifts/shift.store')
     useShiftStore().openShift('shift-99', { id: 'op-1', name: 'سامي' } as any)
@@ -341,8 +354,10 @@ describe('usePayment', () => {
   })
 
   describe('usePayment — installment method', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
       setActivePinia(createPinia())
+      const { useSessionStore } = await import('@/store/session.store')
+      useSessionStore().setActiveStaff({ id: 'default-op', name: 'موظف', role: 'cashier', permissions: {} } as any)
       const store = useSaleStore()
       store.clear()
       store.addLine({ productId: 'p1', nameAr: 'منتج', quantity: 1, unitPriceUsd: 10, lineTotalUsd: 10, availableStock: 99 })
@@ -384,8 +399,10 @@ describe('usePayment', () => {
   })
 
   describe('split payments', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
       setActivePinia(createPinia())
+      const { useSessionStore } = await import('@/store/session.store')
+      useSessionStore().setActiveStaff({ id: 'default-op', name: 'موظف', role: 'cashier', permissions: {} } as any)
       // Seed a large-enough sale so split legs aren't capped to zero by the remaining-owed guard.
       const store = useSaleStore()
       store.clear()

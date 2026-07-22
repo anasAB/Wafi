@@ -148,6 +148,13 @@ export function usePayment() {
   }
 
   async function confirm(customerId?: string): Promise<CompletedSale> {
+    // WAFI-203: a sale must always be attributable to a real operator — this
+    // is the last line of defense before the write, matching the fail-closed
+    // pattern already used by auth_permissions()/can() server-side. Both
+    // openShift and switchTo now require server-confirmed identity before
+    // setting this, so reaching here with no active operator means some
+    // other code path skipped that gate.
+    if (!sessionStore.activeStaff) throw new Error('No active operator — cannot complete sale')
     // Idempotency guard (WAFI-003): a confirm already in flight must not start a
     // second sale. Without this, a rapid double-tap or a held Enter writes a
     // duplicate sale row and burns a second receipt number. The catch path below

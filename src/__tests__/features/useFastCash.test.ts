@@ -21,8 +21,10 @@ function setupTx(stockRow = { cost_price_usd: 4, current_stock: 10 }) {
 }
 
 describe('useFastCash (WAFI-124)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     setActivePinia(createPinia())
+    const { useSessionStore } = await import('@/store/session.store')
+    useSessionStore().setActiveStaff({ id: 'default-op', name: 'موظف', role: 'cashier', permissions: {} } as any)
     localStorage.clear()
     vi.clearAllMocks()
     const store = useSaleStore()
