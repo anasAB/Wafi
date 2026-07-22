@@ -4,7 +4,7 @@
 -- Run via: npx supabase test db
 
 BEGIN;
-SELECT plan(13);
+SELECT plan(16);
 
 -- ============================================================
 -- Fixtures (seeded as postgres, bypassing RLS)
@@ -34,6 +34,9 @@ VALUES ('a0000000-0000-0000-0000-000000000009', 'a0000000-0000-0000-0000-0000000
 
 INSERT INTO public.sales (id, shop_id, device_id, device_sequence, display_sale_number, created_at, total_usd, total_syp, exchange_rate_at_sale, payment_method, staff_id, shift_id)
 VALUES ('a0000000-0000-0000-0000-00000000000a', 'a0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000007', 1, 'A-0001', now(), 10.00, 150000, 15000, 'cash_usd', 'a0000000-0000-0000-0000-000000000005', 'a0000000-0000-0000-0000-000000000009');
+
+INSERT INTO public.sale_line_items (id, sale_id, shop_id, product_id, quantity, unit_price_usd, line_total_usd)
+VALUES ('a0000000-0000-0000-0000-00000000001b', 'a0000000-0000-0000-0000-00000000000a', 'a0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000008', 1, 10.00, 10.00);
 
 INSERT INTO public.returns (id, shop_id, original_sale_id, refund_method, refund_amount_usd, refund_amount_syp, shift_id)
 VALUES ('a0000000-0000-0000-0000-00000000000b', 'a0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-00000000000a', 'cash_usd', 5.00, 75000, 'a0000000-0000-0000-0000-000000000009');
@@ -278,6 +281,56 @@ SELECT throws_ok(
     VALUES ('a0000000-0000-0000-0000-00000000013a', 'a0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000007', 6, 'A-0006', now(), 10.00, 150000, 15000, 'cash_usd', 'b0000000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000009')$$,
   '42501',
   'Test 13: staff from shop B cannot insert a sale into shop A -- denied'
+);
+
+RESET ROLE;
+
+-- ============================================================
+-- Test 14: Cashier inserts a sale_line_item for a sale they don't own
+-- -- Denied (child-table attribution is transitive through parent)
+-- ============================================================
+SELECT set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-0000-0000-000000000002","role":"authenticated","active_role":"cashier","staff_id":"a0000000-0000-0000-0000-000000000006"}',
+  true);
+SET LOCAL ROLE authenticated;
+
+SELECT throws_ok(
+  $$INSERT INTO public.sale_line_items (id, sale_id, shop_id, product_id, quantity, unit_price_usd, line_total_usd)
+    VALUES ('a0000000-0000-0000-0000-00000000014a', 'a0000000-0000-0000-0000-00000000000a', 'a0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000008', 1, 10.00, 10.00)$$,
+  '42501',
+  'Test 14: cashier inserts sale_line_item for a sale attributed to a different cashier -- denied'
+);
+
+RESET ROLE;
+
+-- ============================================================
+-- Test 15: Cashier updates a sale_line_item -- Denied
+-- ============================================================
+SELECT set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-0000-0000-000000000002","role":"authenticated","active_role":"cashier","staff_id":"a0000000-0000-0000-0000-000000000005"}',
+  true);
+SET LOCAL ROLE authenticated;
+
+SELECT is(
+  wafi202_row_count($$UPDATE public.sale_line_items SET unit_price_usd = 1 WHERE id = 'a0000000-0000-0000-0000-00000000001b'$$),
+  0,
+  'Test 15: cashier updates a sale_line_item -- denied'
+);
+
+RESET ROLE;
+
+-- ============================================================
+-- Test 16: Owner deletes a sale_line_item -- Denied
+-- ============================================================
+SELECT set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-0000-0000-000000000002","role":"authenticated","active_role":"owner","staff_id":"a0000000-0000-0000-0000-000000000003"}',
+  true);
+SET LOCAL ROLE authenticated;
+
+SELECT is(
+  wafi202_row_count($$DELETE FROM public.sale_line_items WHERE id = 'a0000000-0000-0000-0000-00000000001b'$$),
+  0,
+  'Test 16: owner deletes a sale_line_item -- denied'
 );
 
 RESET ROLE;

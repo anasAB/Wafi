@@ -1,4 +1,18 @@
 -- supabase/migrations/064_wafi202_sales_immutability.sql
+-- ============================================================
+-- !! DO NOT APPLY TO THE PRODUCTION SUPABASE PROJECT YET !!
+-- ============================================================
+-- This migration is gated on WAFI-203 ("Operator Identity Must Be
+-- Server-Authoritative"), which has not shipped. Applying this migration
+-- before WAFI-203 lands will REJECT EVERY NEW SALE for any shop whose
+-- devices don't yet have an active-operator JWT staff_id claim -- which is
+-- the current state of the pilot shop today (all sampled production
+-- `sales` rows have staff_id = NULL). The strict `staff_id =
+-- auth_staff_id()` INSERT policy below has no null/exception carve-out by
+-- design (see the design spec's Blocking Prerequisite section) -- do not
+-- add one to work around this; fix WAFI-203 first, then apply this
+-- migration.
+-- ============================================================
 -- WAFI-202: sales, sale_line_items, sale_payments, returns, return_line_items
 -- become append-only from the client's perspective (no UPDATE/DELETE for
 -- anon/authenticated), and INSERT requires strict staff attribution --
@@ -42,7 +56,7 @@ CREATE POLICY sales_insert_own ON public.sales
   FOR INSERT TO authenticated, anon
   WITH CHECK (
     shop_id = (SELECT public.auth_shop_id())
-    AND staff_id = public.auth_staff_id()
+    AND staff_id = (SELECT public.auth_staff_id())
   );
 -- No UPDATE/DELETE policy: sales is append-only.
 
@@ -59,7 +73,7 @@ CREATE POLICY sale_line_items_insert_own ON public.sale_line_items
     shop_id = (SELECT public.auth_shop_id())
     AND EXISTS (
       SELECT 1 FROM public.sales s
-      WHERE s.id = sale_line_items.sale_id AND s.staff_id = public.auth_staff_id()
+      WHERE s.id = sale_line_items.sale_id AND s.staff_id = (SELECT public.auth_staff_id())
     )
   );
 -- No UPDATE/DELETE policy: append-only.
@@ -77,7 +91,7 @@ CREATE POLICY sale_payments_insert_own ON public.sale_payments
     shop_id = (SELECT public.auth_shop_id())
     AND EXISTS (
       SELECT 1 FROM public.sales s
-      WHERE s.id = sale_payments.sale_id AND s.staff_id = public.auth_staff_id()
+      WHERE s.id = sale_payments.sale_id AND s.staff_id = (SELECT public.auth_staff_id())
     )
   );
 -- No UPDATE/DELETE policy: append-only.
@@ -97,7 +111,7 @@ CREATE POLICY returns_insert_own ON public.returns
     shop_id = (SELECT public.auth_shop_id())
     AND EXISTS (
       SELECT 1 FROM public.cashier_shifts cs
-      WHERE cs.id = returns.shift_id AND cs.staff_id = public.auth_staff_id()
+      WHERE cs.id = returns.shift_id AND cs.staff_id = (SELECT public.auth_staff_id())
     )
   );
 -- No UPDATE/DELETE policy: append-only.
@@ -116,7 +130,7 @@ CREATE POLICY return_line_items_insert_own ON public.return_line_items
     AND EXISTS (
       SELECT 1 FROM public.returns r
       JOIN public.cashier_shifts cs ON cs.id = r.shift_id
-      WHERE r.id = return_line_items.return_id AND cs.staff_id = public.auth_staff_id()
+      WHERE r.id = return_line_items.return_id AND cs.staff_id = (SELECT public.auth_staff_id())
     )
   );
 -- No UPDATE/DELETE policy: append-only.
