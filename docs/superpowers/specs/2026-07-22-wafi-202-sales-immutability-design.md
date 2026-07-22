@@ -10,12 +10,13 @@ those five tables kept the original migration-015 policies, which check only
 `shop_id`, with no staff-attribution or immutability guard. Tracked as
 WAFI-202.
 
-This gap was **confirmed via a live exploit test against the hosted project**
-(2026-07-21), not merely inferred from reading policy text: a manager-role
-session successfully changed `total_usd` on a completed sale it didn't create
-and forged `staff_id` attribution to the shop owner, via a direct PATCH to
-the Supabase REST API. Row was reverted immediately after the test; no
-lasting data impact.
+This gap was **validated through a controlled authorization test against the
+production schema, with all modified rows immediately restored** (2026-07-21),
+not merely inferred from reading policy text: a manager-role session
+successfully changed `total_usd` on a completed sale it didn't create and
+forged `staff_id` attribution to the shop owner, via a direct PATCH to the
+Supabase REST API. The row was reverted immediately after the test; there was
+no lasting data impact.
 
 **Precise scope** (narrower than a first static policy read suggested,
 because Postgres requires a row to pass a table's SELECT policy before an
@@ -41,7 +42,9 @@ UPDATE/DELETE policy is even consulted):
 This means all five tables can become genuinely **append-only** from the
 client's perspective with no functional carve-out needed, matching the
 "immutable financial history, append-only ledgers" invariant already stated
-in the project constitution.
+in the project constitution. Financial corrections are represented as new
+immutable events (returns, adjustments, settlements) rather than
+modifications of historical records.
 
 ## Design
 
@@ -59,23 +62,47 @@ For each of `sales`, `sale_line_items`, `sale_payments`, `returns`,
   policies (originally created by the migration-015 loop). No replacement
   policy is created for UPDATE or DELETE — Postgres RLS defaults to deny
   when no policy exists for a command, so these become fully denied to
-  `anon`/`authenticated`. `postgres`/`service_role` are unaffected (used only
-  for admin/support tooling, never by the app).
+  `anon`/`authenticated`. These restrictions apply only to `anon`/
+  `authenticated` application sessions — PostgreSQL superusers and
+  `service_role` continue to bypass RLS entirely, as designed, and remain
+  usable for admin/support tooling.
 - **Replace** `<table>_insert_all` with an attribution-aware `WITH CHECK`:
-  - `sales`: `shop_id = auth_shop_id() AND (staff_id = auth_staff_id() OR
-    auth_role() IN ('owner','manager'))`. The owner/manager exception
-    preserves existing product behavior (a manager can ring a sale on behalf
-    of a cashier during training/co-serve); a bare cashier can only insert a
-    sale attributed to themselves.
+  - `sales`: `shop_id = auth_shop_id() AND staff_id = auth_staff_id()` —
+    **no owner/manager exception.** A sale is always attributed to the
+    currently active operator, full stop. The system already has a secure,
+    audited path for "acting as another staff member": `switch_active_
+    operator()` (`045_switch_active_operator.sql`) is SECURITY DEFINER,
+    verifies the target staff's real PIN hash server-side, and is the sole
+    writer of `device_sessions.active_staff_id`/`active_role` — which the
+    custom access token hook then reads into the JWT's `staff_id`/
+    `active_role` claims. A manager who needs to ring a sale as a specific
+    cashier switches to that operator first, preserving an unbroken JWT →
+    active operator → `staff_id` → sale audit chain. Adding a second,
+    unauthenticated attribution path at the INSERT-policy level would
+    reopen exactly the kind of bypass this fix exists to close, and would
+    make `switch_active_operator()` partially redundant. If a reviewer asks
+    "why do we even have `switch_active_operator()`?" the answer must stay
+    "because it's the only way to change who a write is attributed to" —
+    not "well, actually, managers can also just skip it."
   - `sale_line_items` / `sale_payments`: attribution checked transitively
     through the parent `sales` row via the same `EXISTS` pattern migration
     056 already uses for their SELECT policies.
   - `returns`: same shape as `sales`, attributed via `shift_id` →
     `cashier_shifts.staff_id` (matching migration 056's existing
     `returns_select_own_or_manager` pattern, since `returns` has no direct
-    `staff_id` column).
+    `staff_id` column) — again with no owner/manager exception.
   - `return_line_items`: attribution checked transitively through the parent
     `returns` row.
+
+**Migration safety:** this migration only replaces policy definitions — it
+touches no table data, adds no columns, and rewrites no rows. Existing rows
+remain untouched. No locks are taken beyond the brief ones implied by
+`DROP POLICY`/`CREATE POLICY` (metadata-only operations, not table rewrites).
+
+**Rollback:** restore the original migration-015 INSERT/UPDATE/DELETE
+policies for these five tables (shop-scoped only, no attribution/
+immutability check). Policy-only rollback — no data migration and no schema
+rollback required.
 
 ### 2. Automated Regression Suite
 
@@ -92,16 +119,17 @@ Test matrix:
 |---|---|---|
 | 1 | Cashier inserts own sale | Allowed |
 | 2 | Cashier inserts sale with another staff_id | Denied |
-| 3 | Owner/manager inserts sale attributed to a cashier | Allowed |
-| 4 | Cashier updates own completed sale | Denied |
-| 5 | Owner updates any sale | Denied |
-| 6 | Manager forges staff_id via UPDATE | Denied (regression test for the exact exploit confirmed live) |
-| 7 | Cashier deletes sale | Denied |
-| 8 | Owner deletes sale | Denied |
-| 9 | Return creation (attributed via shift) | Allowed |
-| 10 | Return update | Denied |
-| 11 | Return delete | Denied |
-| 12 | Staff from shop B cannot insert/update/delete shop A's sale | Denied (cross-tenant regression, since these policies are being touched anyway) |
+| 3 | Owner/manager inserts sale attributed to a *different* staff_id without switching operators first | Denied (no INSERT-level exception exists — this is the regression test for the architectural question raised in review) |
+| 4 | Manager who has legitimately called `switch_active_operator()` to become cashier A inserts a sale as cashier A | Allowed (proves the correct path still works) |
+| 5 | Cashier updates own completed sale | Denied |
+| 6 | Owner updates any sale | Denied |
+| 7 | Manager forges staff_id via UPDATE | Denied (regression test for the exact exploit confirmed live) |
+| 8 | Cashier deletes sale | Denied |
+| 9 | Owner deletes sale | Denied |
+| 10 | Return creation (attributed via shift) | Allowed |
+| 11 | Return update | Denied |
+| 12 | Return delete | Denied |
+| 13 | Staff from shop B cannot insert/update/delete shop A's sale | Denied (cross-tenant regression, since these policies are being touched anyway) |
 
 ### 3. Housekeeping
 
@@ -112,6 +140,20 @@ Test matrix:
 - Update the WAFI-202 ticket doc and `WAFI_Production_Readiness_Plan_v3.md`'s
   WAFI-001 row to reflect "Fixed, regression-tested" once merged and the
   pgTAP suite passes in CI/locally.
+
+## Acceptance Criteria
+
+- [ ] Cashiers cannot modify historical sales
+- [ ] Managers cannot modify historical sales
+- [ ] No authenticated role can delete financial history (sales or returns)
+- [ ] Staff attribution cannot be forged on INSERT or UPDATE
+- [ ] The only way to record a sale/return as a different staff member is
+      via `switch_active_operator()` — no INSERT-level exception exists
+- [ ] Existing sale/return flow (normal cashier checkout, normal returns)
+      is unchanged for legitimate use
+- [ ] pgTAP suite (all 13 cases) passes
+- [ ] Manual verification script (`verify_wafi122_role_enforcement.sql`,
+      updated to point at the automated suite) passes
 
 ## Out of Scope
 
