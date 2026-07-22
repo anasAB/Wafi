@@ -118,5 +118,78 @@ SELECT ok(
 );
 RESET ROLE;
 
--- (Sections B and C continue below, added by later tasks. Do not COMMIT/
--- ROLLBACK or call finish() until the final task adds them.)
+-- ============================================================
+-- Section B: negative / edge cases (design spec Sections A-C mapping)
+-- ============================================================
+
+-- B1: Missing active_role claim entirely -- auth_role() must default to
+-- 'cashier' (fail closed), so staff SELECT must still be blocked.
+SELECT set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-0000-0000-000000000002","role":"authenticated"}', true);
+SET LOCAL ROLE authenticated;
+SELECT is(
+  (SELECT count(*) FROM public.staff)::int, 0,
+  'B1: missing active_role claim fails closed to cashier-level denial on staff'
+);
+RESET ROLE;
+
+-- B2: Missing staff_id claim (role present, staff_id absent) -- auth_staff_id()
+-- must be NULL; a cashier-role query with no staff_id sees zero of their
+-- "own" sales (staff_id = NULL never matches via `=`).
+SELECT set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-0000-0000-000000000002","role":"authenticated","active_role":"cashier"}', true);
+SET LOCAL ROLE authenticated;
+SELECT is(
+  (SELECT count(*) FROM public.sales)::int, 0,
+  'B2: missing staff_id claim sees zero "own" sales'
+);
+RESET ROLE;
+
+-- B3: Malformed (non-JSON) permissions on the claimed staff row -- can()
+-- must return false, not error.
+SELECT set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-0000-0000-000000000002","role":"authenticated","active_role":"manager","staff_id":"a0000000-0000-0000-0000-00000000000d"}', true);
+SET LOCAL ROLE authenticated;
+SELECT is(
+  public.can('can_view_reports'), false,
+  'B3: malformed permissions JSON -> can() is false, not an error'
+);
+RESET ROLE;
+
+-- B4: Deactivated staff (is_active = false) -- auth_permissions() excludes
+-- inactive staff by its own WHERE clause, so can() must deny even though the
+-- flag itself is true on the row.
+SELECT set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-0000-0000-000000000002","role":"authenticated","active_role":"manager","staff_id":"a0000000-0000-0000-0000-00000000000e"}', true);
+SET LOCAL ROLE authenticated;
+SELECT is(
+  public.can('can_manage_products'), false,
+  'B4: deactivated staff -> can() denies despite a true flag on the row'
+);
+RESET ROLE;
+
+-- B5: Manager with ALL permission flags explicitly false -- role floor alone
+-- (manager) is not enough; every permission-gated check must deny.
+SELECT set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-0000-0000-000000000002","role":"authenticated","active_role":"manager","staff_id":"a0000000-0000-0000-0000-00000000000f"}', true);
+SET LOCAL ROLE authenticated;
+SELECT is(
+  public.can('can_manage_products'), false,
+  'B5: manager with all flags false -> can() denies'
+);
+RESET ROLE;
+
+-- B6: Cross-tenant regression guard. Shop B's staff_id queried while the
+-- JWT's sub resolves auth_shop_id() to Shop A (via the owner mapping) --
+-- must return zero rows regardless of role/staff_id claims.
+SELECT set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-0000-0000-000000000002","role":"authenticated","active_role":"owner","staff_id":"a0000000-0000-0000-0000-000000000003"}', true);
+SET LOCAL ROLE authenticated;
+SELECT is(
+  (SELECT count(*) FROM public.staff WHERE id = 'b0000000-0000-0000-0000-000000000003'::uuid)::int, 0,
+  'B6: Shop B staff_id invisible under Shop A''s resolved tenant'
+);
+RESET ROLE;
+
+-- (Section C continues below, added by the final task. Do not COMMIT/
+-- ROLLBACK or call finish() until then.)
