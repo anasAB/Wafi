@@ -1,3 +1,14 @@
+-- WAFI-202 note: sales/sale_line_items/sale_payments/returns/
+-- return_line_items append-only + attribution enforcement now has an
+-- automated pgTAP regression suite --
+-- supabase/tests/wafi202_sales_immutability.test.sql, run via
+-- `supabase test db`. That suite is the primary verification method for
+-- those five tables' write policies going forward. This manual script
+-- remains useful as an additional pre-deploy sanity check against a real
+-- Supabase project (local pgTAP tests can't catch environment-specific
+-- drift, e.g. a hand-applied policy change that never made it into a
+-- migration file), but is no longer the *only* verification method.
+--
 -- Manual verification for WAFI-122's full role-enforcement scope, covering
 -- all 10 domain RLS migrations (053-062) built across Tasks 1-10. Run each
 -- block by hand in the Supabase SQL editor, against a project seeded with
