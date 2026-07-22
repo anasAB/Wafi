@@ -30,6 +30,15 @@ export const useDeviceStore = defineStore('device', () => {
   const deviceId   = ref<string>((import.meta.env.VITE_STUB_DEVICE_ID   ?? '') as string)
   const deviceCode = ref<string>((import.meta.env.VITE_STUB_DEVICE_CODE ?? '') as string)
 
+  // WAFI-203: the last staff id the SERVER confirmed as this device's active
+  // operator (set only on a successful switch_active_operator RPC call, in
+  // lockstep with the JWT's staff_id claim actually changing). Lets a
+  // returning/resuming operator re-establish their own identity fully
+  // offline, since the JWT already carries their id from the earlier
+  // confirmation — while a genuinely different identity still requires one
+  // successful round trip. See docs/superpowers/specs/2026-07-22-wafi-203-operator-identity-design.md.
+  const lastConfirmedOperatorId = ref<string | null>(null)
+
   // In-flight guard: ensureDeviceRegistered() is called from two uncoordinated
   // places (this store's own onAuthStateChange handler, and useSync on
   // connect/reconnect). Without this, two overlapping calls could both pass
@@ -166,9 +175,9 @@ export const useDeviceStore = defineStore('device', () => {
     void refreshShopId()
   })
 
-  return { shopId, deviceId, deviceCode, refreshShopId, ensureDeviceRegistered }
+  return { shopId, deviceId, deviceCode, lastConfirmedOperatorId, refreshShopId, ensureDeviceRegistered }
 }, {
   // Persist shopId plus the claimed device identity, so an offline cold-start
   // reuses this device's registered code instead of re-registering.
-  persist: { pick: ['shopId', 'deviceId', 'deviceCode'] },
+  persist: { pick: ['shopId', 'deviceId', 'deviceCode', 'lastConfirmedOperatorId'] },
 })

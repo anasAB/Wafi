@@ -37,6 +37,75 @@ export function decodeSessionIdClaim(accessToken: string): string | null {
   }
 }
 
+/** Thrown by `switchTo` when a genuinely new identity is attempted while
+ *  offline. The caller should show `message` and leave the previous
+ *  operator active — nothing local has changed. */
+export class OperatorSwitchBlockedError extends Error {}
+
+export type EstablishIdentityResult =
+  | { status: 'confirmed' }
+  | { status: 'offline-same-identity' }
+  | { status: 'blocked'; reason: string }
+
+const NEEDS_CONNECTIVITY_MESSAGE = 'تحتاج إلى اتصال بالإنترنت لتأكيد هويتك — حاول مرة أخرى'
+
+/**
+ * Establish `staff` as this device's server-confirmed active operator.
+ *
+ * WAFI-203: the JWT's `staff_id` claim and the locally-active operator must
+ * never diverge. If `staff` is already this device's last-confirmed
+ * identity, the JWT already carries their id from an earlier confirmation —
+ * safe to proceed with no network call. Otherwise this is a genuinely NEW
+ * identity for this device: it is only adopted once
+ * switch_active_operator + refreshSession have both succeeded. On any
+ * offline/network failure for a new identity, this returns `blocked` rather
+ * than applying anything locally — the caller must not set the active
+ * operator in that case.
+ */
+export async function establishOperatorIdentity(
+  staff: Staff,
+  pin: string,
+): Promise<EstablishIdentityResult> {
+  const device = useDeviceStore()
+
+  if (device.lastConfirmedOperatorId === staff.id) {
+    return { status: 'offline-same-identity' }
+  }
+
+  const { data: sessionData } = await supabase.auth.getSession()
+  const accessToken = sessionData?.session?.access_token
+  const sessionId = accessToken ? decodeSessionIdClaim(accessToken) : null
+
+  if (sessionId === null) {
+    // No genuine session_id to hand the RPC — see decodeSessionIdClaim's own
+    // header comment for why this must never be passed through as a value.
+    return { status: 'blocked', reason: NEEDS_CONNECTIVITY_MESSAGE }
+  }
+
+  try {
+    const { data: ok, error } = await supabase.rpc('switch_active_operator', {
+      p_device_id:  device.deviceId,
+      p_session_id: sessionId,
+      p_staff_id:   staff.id,
+      p_pin:        pin,
+    })
+
+    if (error) {
+      return { status: 'blocked', reason: NEEDS_CONNECTIVITY_MESSAGE }
+    }
+    if (!ok) {
+      throw new Error('server-side PIN verification failed')
+    }
+
+    await supabase.auth.refreshSession()
+    device.lastConfirmedOperatorId = staff.id
+    return { status: 'confirmed' }
+  } catch (e) {
+    if (e instanceof Error && /pin/i.test(e.message)) throw e
+    return { status: 'blocked', reason: NEEDS_CONNECTIVITY_MESSAGE }
+  }
+}
+
 /**
  * Switch the active operator without touching the cash shift.
  *
@@ -63,62 +132,9 @@ export function useOperatorSwitch() {
     const from = session.activeStaff
     if (from?.id === staff.id) return // no-op: same operator, nothing to record
 
-    const device = useDeviceStore()
-
-    try {
-      const { data: sessionData } = await supabase.auth.getSession()
-      const accessToken = sessionData?.session?.access_token
-      const sessionId = accessToken ? decodeSessionIdClaim(accessToken) : null
-
-      if (sessionId === null) {
-        // A failed/missing session_id decode must NEVER be sent to the RPC as
-        // a real value: `switch_active_operator`'s upsert is
-        // `ON CONFLICT (device_id) DO UPDATE SET session_id = excluded.session_id`,
-        // which unconditionally overwrites this device's stored session_id.
-        // If a previous successful switch had stamped a genuine, working
-        // session_id for this device, passing null here would silently
-        // regress device_sessions.session_id back to NULL and permanently
-        // break active_role stamping for that device (the Access Token
-        // Hook's lookup, keyed on the real session_id, would never match a
-        // NULL row again). Treat this exactly like the offline/network
-        // fallback below: set the active staff locally and leave the
-        // device's server-side role stale (but not clobbered) rather than
-        // calling the RPC with a bogus session_id.
-        session.setActiveStaff(staff)
-        await logOperatorSwitched(from?.id ?? null, from?.name ?? null, staff.id, staff.name)
-        return
-      }
-
-      const { data: ok, error } = await supabase.rpc('switch_active_operator', {
-        p_device_id:  device.deviceId,
-        p_session_id: sessionId,
-        p_staff_id:   staff.id,
-        p_pin:        pin,
-      })
-
-      if (error) {
-        // Offline-first: a transport/network error must not block the local
-        // operator switch — device_sessions.active_role simply stays stale
-        // until the next successful call. Best-effort sync-layer update, not
-        // a local authorization gate.
-        session.setActiveStaff(staff)
-        await logOperatorSwitched(from?.id ?? null, from?.name ?? null, staff.id, staff.name)
-        return
-      }
-
-      if (!ok) {
-        throw new Error('server-side PIN verification failed')
-      }
-
-      await supabase.auth.refreshSession()
-    } catch (e) {
-      if (e instanceof Error && /pin/i.test(e.message)) throw e
-      // Any other thrown error (e.g. a rejected promise from a transport
-      // failure surfacing as a throw rather than an `{ error }` result) is
-      // treated the same as the offline case above.
-      session.setActiveStaff(staff)
-      await logOperatorSwitched(from?.id ?? null, from?.name ?? null, staff.id, staff.name)
-      return
+    const result = await establishOperatorIdentity(staff, pin)
+    if (result.status === 'blocked') {
+      throw new OperatorSwitchBlockedError(result.reason)
     }
 
     session.setActiveStaff(staff) // shift state is intentionally untouched

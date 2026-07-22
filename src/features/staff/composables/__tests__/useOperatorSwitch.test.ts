@@ -87,18 +87,16 @@ describe('useOperatorSwitch', () => {
     expect(meta).toMatchObject({ from_staff_id: 's1', from_name: 'سامي', to_staff_id: 's2', to_name: 'أحمد' })
   })
 
-  describe('switch_active_operator RPC + forced session refresh (WAFI-122)', () => {
+  describe('establishOperatorIdentity (WAFI-203)', () => {
     const cashier = { id: 'staff-1', name: 'Ahmed', role: 'cashier', permissions: {} } as any
 
-    it('calls switch_active_operator with device_id/session_id/staff_id/pin, then refreshSession, then sets the active staff', async () => {
-      const { useSessionStore }   = await import('@/store/session.store')
-      const { useDeviceStore }    = await import('@/store/device.store')
-      const { useOperatorSwitch } = await import('@/features/staff/composables/useOperatorSwitch')
+    it('calls switch_active_operator with device_id/session_id/staff_id/pin, then refreshSession, then confirms', async () => {
+      const { useDeviceStore }            = await import('@/store/device.store')
+      const { establishOperatorIdentity } = await import('@/features/staff/composables/useOperatorSwitch')
 
       useDeviceStore().deviceId = 'device-1'
 
-      const { switchTo } = useOperatorSwitch()
-      await switchTo(cashier, '1234')
+      const result = await establishOperatorIdentity(cashier, '1234')
 
       expect(getSessionMock).toHaveBeenCalledOnce()
       expect(rpcMock).toHaveBeenCalledWith('switch_active_operator', {
@@ -108,59 +106,70 @@ describe('useOperatorSwitch', () => {
         p_pin: '1234',
       })
       expect(refreshSessionMock).toHaveBeenCalledOnce()
-      expect(useSessionStore().activeStaff?.id).toBe('staff-1')
+      expect(result).toEqual({ status: 'confirmed' })
+      expect(useDeviceStore().lastConfirmedOperatorId).toBe('staff-1')
     })
 
-    it('does not set the active staff or refresh the session if the RPC returns false (server-side PIN mismatch)', async () => {
+    it('skips the network entirely when staff.id already matches lastConfirmedOperatorId', async () => {
+      const { useDeviceStore }            = await import('@/store/device.store')
+      const { establishOperatorIdentity } = await import('@/features/staff/composables/useOperatorSwitch')
+
+      useDeviceStore().lastConfirmedOperatorId = 'staff-1'
+
+      const result = await establishOperatorIdentity(cashier, '1234')
+
+      expect(result).toEqual({ status: 'offline-same-identity' })
+      expect(getSessionMock).not.toHaveBeenCalled()
+      expect(rpcMock).not.toHaveBeenCalled()
+      expect(refreshSessionMock).not.toHaveBeenCalled()
+    })
+
+    it('throws on server-side PIN mismatch (RPC returns ok: false) — not treated as offline', async () => {
       rpcMock.mockResolvedValueOnce({ data: false, error: null })
-      const { useSessionStore }   = await import('@/store/session.store')
-      const { useOperatorSwitch } = await import('@/features/staff/composables/useOperatorSwitch')
+      const { establishOperatorIdentity } = await import('@/features/staff/composables/useOperatorSwitch')
 
-      const { switchTo } = useOperatorSwitch()
-      await expect(switchTo(cashier, '9999')).rejects.toThrow(/pin/i)
-
-      expect(refreshSessionMock).not.toHaveBeenCalled()
-      expect(useSessionStore().activeStaff).toBeNull()
-    })
-
-    it('does not block the switch on offline RPC failure — proceeds with client-side state only', async () => {
-      rpcMock.mockRejectedValueOnce(new Error('network error'))
-      const { useSessionStore }   = await import('@/store/session.store')
-      const { useOperatorSwitch } = await import('@/features/staff/composables/useOperatorSwitch')
-
-      const { switchTo } = useOperatorSwitch()
-      await switchTo(cashier, '1234')
-
-      expect(useSessionStore().activeStaff?.id).toBe('staff-1')
+      await expect(establishOperatorIdentity(cashier, '9999')).rejects.toThrow(/pin/i)
       expect(refreshSessionMock).not.toHaveBeenCalled()
     })
 
-    it('does not call the RPC (and does not refresh the session) when session_id decode fails, but still sets the active staff locally', async () => {
+    it('blocks (does not confirm) a NEW identity when the session_id claim cannot be decoded', async () => {
       getSessionMock.mockResolvedValueOnce({
         data: { session: { access_token: fakeAccessToken(null) } },
         error: null,
       })
-      const { useSessionStore }   = await import('@/store/session.store')
-      const { useOperatorSwitch } = await import('@/features/staff/composables/useOperatorSwitch')
+      const { useDeviceStore }            = await import('@/store/device.store')
+      const { establishOperatorIdentity } = await import('@/features/staff/composables/useOperatorSwitch')
 
-      const { switchTo } = useOperatorSwitch()
-      await switchTo(cashier, '1234')
+      const result = await establishOperatorIdentity(cashier, '1234')
 
+      expect(result.status).toBe('blocked')
       expect(rpcMock).not.toHaveBeenCalled()
       expect(refreshSessionMock).not.toHaveBeenCalled()
-      expect(useSessionStore().activeStaff?.id).toBe('staff-1')
+      expect(useDeviceStore().lastConfirmedOperatorId).toBeNull()
     })
 
-    it('does not block the switch when supabase.rpc resolves an error object instead of throwing', async () => {
-      rpcMock.mockResolvedValueOnce({ data: null, error: new Error('offline') })
-      const { useSessionStore }   = await import('@/store/session.store')
-      const { useOperatorSwitch } = await import('@/features/staff/composables/useOperatorSwitch')
+    it('blocks a NEW identity when the RPC rejects (network error)', async () => {
+      rpcMock.mockRejectedValueOnce(new Error('network error'))
+      const { useDeviceStore }            = await import('@/store/device.store')
+      const { establishOperatorIdentity } = await import('@/features/staff/composables/useOperatorSwitch')
 
-      const { switchTo } = useOperatorSwitch()
-      await switchTo(cashier, '1234')
+      const result = await establishOperatorIdentity(cashier, '1234')
 
-      expect(useSessionStore().activeStaff?.id).toBe('staff-1')
+      expect(result.status).toBe('blocked')
       expect(refreshSessionMock).not.toHaveBeenCalled()
+      expect(useDeviceStore().lastConfirmedOperatorId).toBeNull()
+    })
+
+    it('blocks a NEW identity when supabase.rpc resolves an error object instead of throwing', async () => {
+      rpcMock.mockResolvedValueOnce({ data: null, error: new Error('offline') })
+      const { useDeviceStore }            = await import('@/store/device.store')
+      const { establishOperatorIdentity } = await import('@/features/staff/composables/useOperatorSwitch')
+
+      const result = await establishOperatorIdentity(cashier, '1234')
+
+      expect(result.status).toBe('blocked')
+      expect(refreshSessionMock).not.toHaveBeenCalled()
+      expect(useDeviceStore().lastConfirmedOperatorId).toBeNull()
     })
   })
 })
