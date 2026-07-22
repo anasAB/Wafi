@@ -37,6 +37,14 @@ VALUES ('a0000000-0000-0000-0000-000000000008', 'a0000000-0000-0000-0000-0000000
 INSERT INTO public.cashier_shifts (id, shop_id, device_id, staff_id, opened_at, opening_cash_usd, status)
 VALUES ('a0000000-0000-0000-0000-000000000009', 'a0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000007', 'a0000000-0000-0000-0000-000000000005', now(), 0, 'open');
 
+-- One audit_log row for Shop A -- without this, A3 ("cashier cannot SELECT
+-- audit_log") would pass trivially against an empty table regardless of
+-- whether audit_log_select_owner_or_permission (061_audit_domain_rls.sql)
+-- actually filters anything. shop_id/staff_id are TEXT columns here (see
+-- 002_audit_log.sql), not UUID, so no cast is needed.
+INSERT INTO public.audit_log (shop_id, staff_id, staff_name, event, entity_type, entity_id)
+VALUES ('a0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000003', 'Owner A', 'shift.opened', 'cashier_shifts', 'a0000000-0000-0000-0000-000000000009');
+
 -- Sale by cashier-1
 INSERT INTO public.sales (id, shop_id, device_id, device_sequence, display_sale_number, created_at, total_usd, total_syp, exchange_rate_at_sale, payment_method, staff_id, shift_id)
 VALUES ('a0000000-0000-0000-0000-00000000000a', 'a0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000007', 1, 'A-0001', now(), 10.00, 150000, 15000, 'cash_usd', 'a0000000-0000-0000-0000-000000000005', 'a0000000-0000-0000-0000-000000000009');
@@ -224,5 +232,5 @@ SELECT is(
 );
 RESET ROLE;
 
-SELECT finish();
+SELECT * FROM finish();
 ROLLBACK;
