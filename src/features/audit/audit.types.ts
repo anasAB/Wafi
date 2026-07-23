@@ -6,6 +6,7 @@ export type AuditEvent =
   | 'product.updated'
   | 'product.deleted'
   | 'product.price_changed'
+  | 'product.imported'
   | 'expense.created'
   | 'expense.updated'
   | 'expense.deleted'

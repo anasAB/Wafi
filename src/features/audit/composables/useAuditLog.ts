@@ -290,6 +290,9 @@ export function useAuditLog() {
   const logProductDeleted = (productId: string, name: string) =>
     _log('product.deleted', 'product', productId, { name })
 
+  const logProductsImported = (insertedCount: number, skippedCount: number) =>
+    _log('product.imported', 'product', null, { insertedCount, skippedCount })
+
   const logProductPriceChanged = (
     productId: string, name: string, oldPrice: number, newPrice: number,
   ) => _log('product.price_changed', 'product', productId,
@@ -509,6 +512,7 @@ export function useAuditLog() {
     logProductCreated,
     logProductUpdated,
     logProductDeleted,
+    logProductsImported,
     logProductPriceChanged,
     logExpenseCreated,
     logExpenseUpdated,
