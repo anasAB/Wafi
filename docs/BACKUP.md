@@ -21,13 +21,16 @@ no, because there is nothing to restore from.
 ## Restore procedure
 
 Not applicable today — there is no backup to restore from on the current
-Free plan. If the project is upgraded to a tier that includes backups
-(Supabase's dashboard states Pro includes up to 7 days of scheduled
-backups, plus Point-in-Time Recovery as a separate capability), this
-section must be rewritten with the actual, concrete restore steps for
-whatever tier is active at that time — including whether restore happens
-via the dashboard's "Restore to new project" flow or another mechanism,
-and how long a restore takes in practice.
+Free plan. The same dashboard page's own upsell text states "Upgrade to
+the Pro Plan for up to 7 days of scheduled backups" (confirmed directly,
+not assumed) — a separate "Point in time" tab is also visible on that
+page, but its Pro-tier details were not explored since this project isn't
+on that tier. If the project is upgraded to a tier that includes backups,
+this section must be rewritten with the actual, concrete restore steps
+for whatever tier is active at that time — including whether restore
+happens via the dashboard's "Restore to new project" flow (also visible
+as a tab on the same page) or another mechanism, and how long a restore
+takes in practice.
 
 ## Last verified restore date
 
