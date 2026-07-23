@@ -53,6 +53,7 @@ const router = createRouter({
         { path: 'devices',        component: () => import('@/features/devices/DevicesScreen.vue') },
         { path: 'audit-log', component: () => import('@/features/audit/AuditLogPage.vue') },
         { path: 'recovery-codes', component: () => import('@/features/settings/screens/RecoveryCodesScreen.vue') },
+        { path: 'report-problem', component: () => import('@/features/settings/screens/ReportProblemScreen.vue') },
         { path: 'exports',   component: () => import('@/features/exports/ExportPage.vue') },
         { path: 'denominations', component: () => import('@/features/settings/screens/DenominationSettingsScreen.vue') },
         { path: 'discount-caps', component: () => import('@/features/pos/DiscountCapsSettingsScreen.vue') },
