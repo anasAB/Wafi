@@ -161,6 +161,13 @@ export const useDeviceStore = defineStore('device', () => {
     if (event === 'SIGNED_OUT') {
       shopId.value = FALLBACK_SHOP_ID
       lastUserId = null
+      // WAFI-003 fix: a fresh SIGNED_IN issues a new GoTrue session_id, and
+      // without clearing this guard refreshShopId() would never re-record it
+      // (record_device_session_id stays skipped), leaving device_sessions
+      // .session_id pointing at the now-dead prior session. A later
+      // revoke_device_session() would then delete that stale row instead of
+      // the actually-live one, silently failing to sign the device out.
+      sessionIdRecorded = false
       return
     }
     if (event === 'SIGNED_IN') {

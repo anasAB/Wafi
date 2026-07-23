@@ -93,6 +93,42 @@ describe('useDeviceStore', () => {
     expect(rpcMock).not.toHaveBeenCalledWith('record_device_session_id', expect.anything())
   })
 
+  it('re-records the device session id after a sign-out/sign-in cycle with a new session id', async () => {
+    const b64url = (obj: unknown) =>
+      btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+    const fakeAccessToken = (sessionId: string) =>
+      `${b64url({ alg: 'HS256' })}.${b64url({ session_id: sessionId })}.sig`
+
+    session.value = { access_token: fakeAccessToken('session-A'), user: { id: 'user-a' } }
+    vi.mocked(db.getOptional).mockResolvedValue({ id: 'shop-a' } as any)
+    registerDeviceMock.mockResolvedValue({ code: 'A' })
+
+    const { useDeviceStore } = await import('@/store/device.store')
+    const store = useDeviceStore()
+
+    authCb?.('SIGNED_IN')
+    await flush()
+    expect(rpcMock).toHaveBeenCalledWith('record_device_session_id', {
+      p_device_id:  store.deviceId,
+      p_session_id: 'session-A',
+    })
+
+    authCb?.('SIGNED_OUT')
+    rpcMock.mockClear()
+
+    // Same account signs back in (no page reload), issuing a fresh GoTrue
+    // session id — the guard set during the first login must have been reset
+    // on SIGNED_OUT so this re-triggers the recording, not a stale skip.
+    session.value = { access_token: fakeAccessToken('session-B'), user: { id: 'user-a' } }
+    authCb?.('SIGNED_IN')
+    await flush()
+
+    expect(rpcMock).toHaveBeenCalledWith('record_device_session_id', {
+      p_device_id:  store.deviceId,
+      p_session_id: 'session-B',
+    })
+  })
+
   it('scopes the shops lookup to the signed-in account (owner_user_id)', async () => {
     // The lookup must be filtered by the current account so a shops row left
     // locally by a previous account can never be adopted by a new one.
