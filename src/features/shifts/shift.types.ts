@@ -66,10 +66,11 @@ export function varianceLevel(variance: number, expected: number): VarianceLevel
 
 /** One operator's sales within a single shift (operator switching). */
 export interface OperatorSales {
-  staffId:    string | null   // null for sales rung before per-operator attribution
-  name:       string | null   // staff name, null when unattributed
-  salesCount: number
-  totalUsd:   number
+  staffId:      string | null   // null for sales rung before per-operator attribution
+  name:         string | null   // staff name, null when unattributed
+  salesCount:   number
+  totalUsd:     number
+  discountsUsd: number   // WAFI-100: this operator's line + sale discounts within the shift
 }
 
 export interface ZReportMetrics {
@@ -97,6 +98,7 @@ export interface ZReportMetrics {
   expectedSyp:     number
   actualSyp:       number
   varianceSyp:     number
+  totalDiscountsUsd: number   // WAFI-100: sum of line + sale discount_amount_usd this shift
   // duration
   durationMinutes: number
   // per-operator sales breakdown within this one shift (cash variance above stays

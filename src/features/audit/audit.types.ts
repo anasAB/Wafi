@@ -41,6 +41,7 @@ export type AuditEvent =
   | 'sync.dead_letter_discarded'
   | 'category.merged'
   | 'category.deleted_with_reassign'
+  | 'sale.discount_applied'
   | 'device.renamed'
   | 'device.deactivated'
   | 'device.reactivated'

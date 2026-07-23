@@ -21,7 +21,7 @@ export function useZReport() {
     try {
       const [countRow, revenueRow, cashUsdRow, cashSypRow, cardRow, creditRow,
              expUsdRow, expSypRow, refundUsdRow, refundSypRow,
-             creditPayUsdRow, creditPaySypRow] =
+             creditPayUsdRow, creditPaySypRow, discountRow] =
         await Promise.all([
           // Scope sales/payments by this DEVICE + the shift's time window (open →
           // close). The time window (rather than shift_id) catches sales rung
@@ -113,16 +113,40 @@ export function useZReport() {
                         AND created_at BETWEEN ? AND ?))`,
             [device.shopId, shift.id, shift.deviceId, shift.openedAt, closedAt]
           ),
+          // WAFI-100: line discounts + sale-level discounts, scoped by device + time
+          // window (same scoping as the sales totals above so the figure reconciles
+          // against totalRevenueUsd for this shift).
+          db.getOptional<{ total: number }>(
+            `SELECT COALESCE(SUM(sli.discount_amount_usd), 0) +
+                    COALESCE((SELECT SUM(sale_discount_amount_usd) FROM sales
+                              WHERE shop_id = ? AND device_id = ? AND created_at BETWEEN ? AND ?), 0) AS total
+             FROM sale_line_items sli
+             JOIN sales s ON s.id = sli.sale_id
+             WHERE s.shop_id = ? AND s.device_id = ? AND s.created_at BETWEEN ? AND ?`,
+            [device.shopId, shift.deviceId, shift.openedAt, closedAt,
+             device.shopId, shift.deviceId, shift.openedAt, closedAt],
+          ),
         ])
 
       // Per-operator breakdown: group this shift's sales by the operator who
       // completed each (sales.staff_id). Same device + time-window scoping as the
       // totals above so the per-operator sums reconcile to totalRevenueUsd. LEFT
       // JOIN keeps sales whose operator is unattributed (null staff_id).
+      // WAFI-100: line discounts are pre-summed per sale in `li` before joining, not
+      // referenced via a correlated subquery on s.id inside the GROUP BY below — a
+      // bare `s.id` there would be SQLite's "arbitrary row per group" pick, silently
+      // summing just one sale's line discounts per operator instead of all of them.
       const operatorRows = await db.getAll<OperatorSales>(
         `SELECT s.staff_id AS staffId, st.name AS name,
-                COUNT(*) AS salesCount, COALESCE(SUM(s.total_usd), 0) AS totalUsd
-         FROM sales s LEFT JOIN staff st ON st.id = s.staff_id
+                COUNT(*) AS salesCount, COALESCE(SUM(s.total_usd), 0) AS totalUsd,
+                COALESCE(SUM(s.sale_discount_amount_usd), 0) + COALESCE(SUM(li.lineDiscountUsd), 0) AS discountsUsd
+         FROM sales s
+         LEFT JOIN staff st ON st.id = s.staff_id
+         LEFT JOIN (
+           SELECT sale_id, SUM(discount_amount_usd) AS lineDiscountUsd
+           FROM sale_line_items
+           GROUP BY sale_id
+         ) li ON li.sale_id = s.id
          WHERE s.shop_id = ? AND s.device_id = ? AND s.created_at BETWEEN ? AND ?
          GROUP BY s.staff_id, st.name
          ORDER BY totalUsd DESC`,
@@ -201,6 +225,7 @@ export function useZReport() {
         expectedSyp:     recon.expectedSyp,
         actualSyp:       closingCashSyp,
         varianceSyp:     recon.varianceSyp,
+        totalDiscountsUsd: discountRow?.total ?? 0,
         durationMinutes: Math.floor(durationMs / 60_000),
         byOperator,
       }
@@ -243,6 +268,7 @@ export function useZReport() {
       '--------------------------------',
       `عدد الفواتير:   ${m.invoiceCount}`,
       `إجمالي:         ${fmtUsd(m.totalRevenueUsd)}`,
+      ...(m.totalDiscountsUsd > 0 ? [`إجمالي الخصومات: ${fmtUsd(m.totalDiscountsUsd)}`] : []),
       '--------------------------------',
       '     تفصيل طريقة الدفع',
       '--------------------------------',

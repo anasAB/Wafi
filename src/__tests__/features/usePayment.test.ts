@@ -10,6 +10,17 @@ import { db } from '@/data/powersync/db'
 // confirm() runs all its writes inside db.writeTransaction. This wires a tx.execute
 // spy whose SELECTs return the given product row (cost + stock); returns the spy so
 // tests can assert on the SQL/params passed to the transaction.
+// Finds a named column's positional index from an `INSERT INTO t (a, b, c) VALUES (...)`
+// string, so assertions survive new columns being added elsewhere in the list.
+function columnIndex(sql: string, column: string): number {
+  const match = sql.match(/\(([^)]+)\)\s*VALUES/i)
+  if (!match) throw new Error(`no column list found in: ${sql}`)
+  const columns = match[1].split(',').map(c => c.trim())
+  const index = columns.indexOf(column)
+  if (index === -1) throw new Error(`column ${column} not found in: ${match[1]}`)
+  return index
+}
+
 function setupTx(stockRow: { cost_price_usd: number; current_stock: number } = { cost_price_usd: 0, current_stock: 0 }) {
   const exec = vi.fn().mockImplementation(async (sql: unknown) => {
     if (typeof sql === 'string' && sql.trim().startsWith('SELECT')) {
@@ -268,8 +279,7 @@ describe('usePayment', () => {
       (c[0] as string).includes('INSERT INTO sales') && (c[0] as string).includes('staff_id')
     )
     expect(salesInsert).toBeDefined()
-    // staff_id is the second-to-last column/param of the sales INSERT (sync_status is last).
-    expect(salesInsert![1][salesInsert![1].length - 2]).toBe('op-7')
+    expect(salesInsert![1][columnIndex(salesInsert![0] as string, 'staff_id')]).toBe('op-7')
   })
 
   it('refuses to confirm a sale with no active operator (WAFI-203)', async () => {
@@ -317,8 +327,8 @@ describe('usePayment', () => {
       (c[0] as string).includes('INSERT INTO sales') && (c[0] as string).includes('staff_id')
     )
     expect(salesInsert).toBeDefined()
-    // staff_id (second-to-last param; sync_status is last) is the COMPLETER, not the shift opener.
-    expect(salesInsert![1][salesInsert![1].length - 2]).toBe('completer')
+    // staff_id is the COMPLETER, not the shift opener.
+    expect(salesInsert![1][columnIndex(salesInsert![0] as string, 'staff_id')]).toBe('completer')
   })
 
   it('confirm writes customer_id and is_credit=1 for credit sales', async () => {
@@ -523,6 +533,92 @@ describe('usePayment', () => {
         (c[0] as string).includes('INSERT INTO sale_payments')
       )
       expect(paymentInserts).toHaveLength(1)
+    })
+  })
+
+  describe('WAFI-100 — discount persistence + audit trail', () => {
+    it('persists line and sale discount fields on a discounted sale', async () => {
+      const store = useSaleStore()
+      store.clear()
+      store.addLine({
+        productId: 'p1', nameAr: 'قلم', quantity: 1,
+        unitPriceUsd: 10, unitCostUsd: 4, lineTotalUsd: 10,
+        availableStock: 10, listPriceUsd: 10,
+      })
+      store.setLockedRate(1)
+      store.applyLineDiscount('p1', { type: 'percent', value: 20 }) // net line = 8
+      store.applySaleDiscount({ type: 'fixed', value: 1 })          // net sale = 7
+      const tx = setupTx({ cost_price_usd: 4, current_stock: 10 })
+
+      const { selectMethod, confirm } = usePayment()
+      selectMethod('card')
+      await confirm()
+
+      const lineInsertCall = tx.mock.calls.find(c =>
+        (c[0] as string).includes('INSERT INTO sale_line_items') &&
+        (c[0] as string).includes('discount_type')
+      )
+      expect(lineInsertCall).toBeDefined()
+      expect(lineInsertCall![1]).toContain('percent')
+      expect(lineInsertCall![1]).toContain(2) // discount_amount_usd for this line (10 -> 8)
+
+      const salesInsert = tx.mock.calls.find(c =>
+        (c[0] as string).includes('INSERT INTO sales') &&
+        (c[0] as string).includes('sale_discount_type')
+      )
+      expect(salesInsert).toBeDefined()
+      expect(salesInsert![1]).toContain('fixed')
+      expect(salesInsert![1]).toContain(1) // sale_discount_amount_usd
+    })
+
+    it('writes a sale.discount_applied audit row per discounted line and for the sale-level discount', async () => {
+      const store = useSaleStore()
+      store.clear()
+      store.addLine({
+        productId: 'p1', nameAr: 'قلم', quantity: 1,
+        unitPriceUsd: 10, unitCostUsd: 4, lineTotalUsd: 10,
+        availableStock: 10, listPriceUsd: 10,
+      })
+      store.setLockedRate(1)
+      store.applyLineDiscount('p1', { type: 'percent', value: 20 }, /* pinApproved */ true)
+      store.applySaleDiscount({ type: 'fixed', value: 1 })
+      setupTx({ cost_price_usd: 4, current_stock: 10 })
+
+      const { selectMethod, confirm } = usePayment()
+      selectMethod('card')
+      await confirm()
+
+      const auditCalls = (db.execute as any).mock.calls.filter(
+        (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('INSERT INTO audit_log'),
+      )
+      // One for sale.completed, one for the discounted line, one for the sale discount.
+      expect(auditCalls.length).toBe(3)
+
+      const discountAuditCalls = auditCalls.filter((c: unknown[]) => c[1] && (c[1] as unknown[])[4] === 'sale.discount_applied')
+      expect(discountAuditCalls).toHaveLength(2)
+
+      const lineAudit = discountAuditCalls.find((c: unknown[]) => JSON.parse((c[1] as unknown[])[7] as string).pinApproval === true)
+      expect(lineAudit).toBeDefined()
+      const lineMeta = JSON.parse((lineAudit![1] as unknown[])[7] as string)
+      expect(lineMeta.discountType).toBe('percent')
+      expect(lineMeta.belowCost).toBe(false)
+
+      const saleAudit = discountAuditCalls.find((c: unknown[]) => JSON.parse((c[1] as unknown[])[7] as string).discountType === 'fixed')
+      expect(saleAudit).toBeDefined()
+      const saleMeta = JSON.parse((saleAudit![1] as unknown[])[7] as string)
+      expect(saleMeta.pinApproval).toBe(false)
+    })
+
+    it('does not write a discount audit row for a sale with no discount', async () => {
+      setupTx({ cost_price_usd: 0, current_stock: 10 })
+      const { selectMethod, confirm } = usePayment()
+      selectMethod('card')
+      await confirm()
+
+      const auditCalls = (db.execute as any).mock.calls.filter(
+        (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('INSERT INTO audit_log'),
+      )
+      expect(auditCalls).toHaveLength(1) // sale.completed only
     })
   })
 })

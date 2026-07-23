@@ -1,3 +1,6 @@
+import type { DiscountType } from '@/features/pos/discounts'
+import type { SaleDiscount } from '@/store/sale.store'
+
 export type PaymentMethod = 'cash_usd' | 'cash_syp' | 'card' | 'credit' | 'split' | 'installment'
 export type PaymentState  = 'method-selection' | 'amount-entry' | 'card-confirm' | 'credit-confirm' | 'installment-confirm' | 'confirming' | 'confirmed'
 
@@ -6,6 +9,13 @@ export interface SaleLine {
   quantity:     number
   unitPriceUsd: number
   lineTotalUsd: number
+  /** WAFI-100: carried through from sale.store's SaleLine so usePayment.confirm()
+   *  can persist discount fields and log the audit trail after the sale commits. */
+  discountType?:        DiscountType
+  discountValue?:       number
+  discountPinApproved?: boolean
+  unitCostUsd?:         number
+  listPriceUsd?:        number
 }
 
 export interface SplitPaymentEntry {
@@ -31,4 +41,5 @@ export interface CompletedSale {
   lines:                   SaleLine[]
   customerId?:             string
   splitPayments?:          SplitPaymentEntry[]
+  saleDiscount?:           SaleDiscount | null
 }

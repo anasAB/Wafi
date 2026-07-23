@@ -55,6 +55,7 @@ const router = createRouter({
         { path: 'recovery-codes', component: () => import('@/features/settings/screens/RecoveryCodesScreen.vue') },
         { path: 'exports',   component: () => import('@/features/exports/ExportPage.vue') },
         { path: 'denominations', component: () => import('@/features/settings/screens/DenominationSettingsScreen.vue') },
+        { path: 'discount-caps', component: () => import('@/features/pos/DiscountCapsSettingsScreen.vue') },
       ],
     },
     { path: '/reports',         component: () => import('@/features/dashboard/components/ReportsPage.vue'),      meta: { permission: 'can_view_reports', feature: 'reporting_pack' } },

@@ -18,7 +18,7 @@ export function usePayment() {
   const sessionStore   = useSessionStore()
   const { formatNumber } = useSaleNumber()
   const { clearDraft } = useSaleDraft()
-  const { logSaleCompleted } = useAuditLog()
+  const { logSaleCompleted, logDiscountApplied } = useAuditLog()
 
   const state          = ref<PaymentState>('method-selection')
   const isOpen         = ref(true)
@@ -216,11 +216,17 @@ export function usePayment() {
       customerId,
       splitPayments:          isSplit ? entries : undefined,
       lines:                  saleStore.lines.map(l => ({
-        nameAr:       l.nameAr,
-        quantity:     l.quantity,
-        unitPriceUsd: l.unitPriceUsd,
-        lineTotalUsd: l.lineTotalUsd,
+        nameAr:              l.nameAr,
+        quantity:            l.quantity,
+        unitPriceUsd:        l.unitPriceUsd,
+        lineTotalUsd:        l.lineTotalUsd,
+        discountType:        l.discountType,
+        discountValue:       l.discountValue,
+        discountPinApproved: l.discountPinApproved,
+        unitCostUsd:         l.unitCostUsd,
+        listPriceUsd:        l.listPriceUsd,
       })),
+      saleDiscount:           saleStore.saleDiscount,
     }
 
     try {
@@ -232,8 +238,9 @@ export function usePayment() {
             await tx.execute(
               `INSERT INTO sales (id, shop_id, device_id, device_sequence, display_sale_number,
                 created_at, total_usd, total_syp, exchange_rate_at_sale, payment_method,
-                amount_received, amount_received_currency, change_due, customer_id, is_credit, is_split, shift_id, staff_id, sync_status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                amount_received, amount_received_currency, change_due, customer_id, is_credit, is_split,
+                shift_id, staff_id, sale_discount_type, sale_discount_value, sale_discount_amount_usd, sync_status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [
                 saleId, deviceStore.shopId, deviceStore.deviceId,
                 saleSeq, displayNum, now,
@@ -245,6 +252,9 @@ export function usePayment() {
                 // (the cart can change hands via switch-operator). shift_id stays the
                 // cash-period link.
                 sessionStore.activeStaff?.id ?? null,
+                saleStore.saleDiscount?.type ?? null,
+                saleStore.saleDiscount?.value ?? null,
+                saleStore.saleDiscount?.amountUsd ?? 0,
                 'pending',
               ]
             )
@@ -268,10 +278,13 @@ export function usePayment() {
               // stock: never touch current_stock or write a stock_adjustments row.
               if (line.isOpenItem) {
                 await tx.execute(
-                  `INSERT INTO sale_line_items (id, sale_id, shop_id, product_id, quantity, unit_price_usd, unit_cost_usd, line_total_usd)
-                   VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
+                  `INSERT INTO sale_line_items
+                    (id, sale_id, shop_id, product_id, quantity, unit_price_usd, unit_cost_usd, line_total_usd,
+                     discount_type, discount_value, discount_amount_usd)
+                   VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
                   [uuidv4(), saleId, deviceStore.shopId, line.productId,
-                   line.quantity, line.unitPriceUsd, line.lineTotalUsd]
+                   line.quantity, line.unitPriceUsd, line.lineTotalUsd,
+                   line.discountType ?? null, line.discountValue ?? null, line.discountAmountUsd ?? 0]
                 )
                 continue
               }
@@ -293,10 +306,13 @@ export function usePayment() {
               const adjustNote   = oversoldBy > 0 ? `oversold:${oversoldBy}` : null
 
               await tx.execute(
-                `INSERT INTO sale_line_items (id, sale_id, shop_id, product_id, quantity, unit_price_usd, unit_cost_usd, line_total_usd)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                `INSERT INTO sale_line_items
+                  (id, sale_id, shop_id, product_id, quantity, unit_price_usd, unit_cost_usd, line_total_usd,
+                   discount_type, discount_value, discount_amount_usd)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [uuidv4(), saleId, deviceStore.shopId, line.productId,
-                 line.quantity, line.unitPriceUsd, unitCostUsd, line.lineTotalUsd]
+                 line.quantity, line.unitPriceUsd, unitCostUsd, line.lineTotalUsd,
+                 line.discountType ?? null, line.discountValue ?? null, line.discountAmountUsd ?? 0]
               )
               await tx.execute(
                 `UPDATE products SET current_stock = ?, updated_at = ?, sync_status = 'pending' WHERE id = ?`,
@@ -318,7 +334,41 @@ export function usePayment() {
           state.value           = 'confirmed'
           isOpen.value          = false
         },
-        () => logSaleCompleted(saleId, sale.totalUsd, sale.lines.length),
+        async () => {
+          await logSaleCompleted(saleId, sale.totalUsd, sale.lines.length)
+
+          // WAFI-100: one audit entry per discounted line, plus one for a
+          // sale-level discount if present. Reads from the captured `sale`
+          // snapshot (built before saleStore.clear() ran above), not the live
+          // store, which has already been wiped by this point.
+          for (const line of sale.lines) {
+            if (!line.discountType) continue
+            const base = line.listPriceUsd ?? line.unitPriceUsd
+            await logDiscountApplied(saleId, {
+              operatorId:    sessionStore.activeStaff?.id ?? null,
+              tierApplied:   'retail',
+              basePriceUsd:  base,
+              discountType:  line.discountType,
+              discountValue: line.discountValue ?? 0,
+              finalPriceUsd: line.unitPriceUsd,
+              pinApproval:   Boolean(line.discountPinApproved),
+              belowCost:     line.unitPriceUsd < (line.unitCostUsd ?? 0),
+            })
+          }
+          if (sale.saleDiscount) {
+            const sd = sale.saleDiscount
+            await logDiscountApplied(saleId, {
+              operatorId:    sessionStore.activeStaff?.id ?? null,
+              tierApplied:   'retail',
+              basePriceUsd:  sale.totalUsd + sd.amountUsd,
+              discountType:  sd.type,
+              discountValue: sd.value,
+              finalPriceUsd: sale.totalUsd,
+              pinApproval:   Boolean(sd.pinApproved),
+              belowCost:     false,
+            })
+          }
+        },
       )
       return sale
     } catch (err) {

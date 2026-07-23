@@ -3,6 +3,7 @@ import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { useSessionStore } from '@/store/session.store'
 import type { AuditEvent, AuditEntityType, AuditLog } from '@/features/audit/audit.types'
+import type { DiscountType } from '@/features/pos/discounts'
 
 type AuditRow = {
   id: string; shop_id: string; staff_id: string | null; staff_name: string
@@ -264,6 +265,22 @@ export function useAuditLog() {
   const logReturnProcessed = (returnId: string, saleId: string, refundUsd: number) =>
     _log('return.processed', 'return', returnId, { saleId, refundUsd })
 
+  // WAFI-100: a below-cost or PIN-approved discount is accountability-critical
+  // — a failed audit write must surface, not silently vanish (_logSensitive).
+  const logDiscountApplied = (
+    saleId: string,
+    meta: {
+      operatorId:    string | null
+      tierApplied:   'retail'
+      basePriceUsd:  number
+      discountType:  DiscountType
+      discountValue: number
+      finalPriceUsd: number
+      pinApproval:   boolean
+      belowCost:     boolean
+    },
+  ) => _logSensitive('sale.discount_applied', 'sale', saleId, meta)
+
   const logProductCreated = (productId: string, name: string) =>
     _log('product.created', 'product', productId, { name })
 
@@ -488,6 +505,7 @@ export function useAuditLog() {
     logSaleCompleted,
     logSaleDeleted,
     logReturnProcessed,
+    logDiscountApplied,
     logProductCreated,
     logProductUpdated,
     logProductDeleted,

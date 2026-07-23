@@ -158,4 +158,38 @@ describe('useZReport — shift/device scoping (multi-device)', () => {
     expect(sqlOf(mvCall!)).toMatch(/shift_id\s*=\s*\?/)
     expect(paramsOf(mvCall!)).toContain('shift-1')
   })
+
+  it('includes totalDiscountsUsd and per-operator discountsUsd in the metrics (WAFI-100)', async () => {
+    vi.mocked(db.getOptional).mockImplementation(async (sql: string) => {
+      if (/discount_amount_usd/.test(sql)) return { total: 15 } as any
+      return { total: 0, count: 0 } as any
+    })
+    vi.mocked(db.getAll).mockImplementation(async (sql: string) => {
+      if (/FROM sales\b/.test(sql) && /GROUP BY/.test(sql)) {
+        return [
+          { staffId: 's1', name: 'سامي', salesCount: 3, totalUsd: 120, discountsUsd: 10 },
+          { staffId: 's2', name: 'أحمد', salesCount: 2, totalUsd: 80, discountsUsd: 5 },
+        ] as any
+      }
+      return [] as any
+    })
+
+    const { compute } = useZReport()
+    const m = await compute(shift, 100, 0)
+
+    expect(m.totalDiscountsUsd).toBe(15)
+    expect(m.byOperator[0]).toHaveProperty('discountsUsd', 10)
+    expect(m.byOperator[1]).toHaveProperty('discountsUsd', 5)
+  })
+
+  it('scopes the discount-totals query to this device + time window', async () => {
+    const { compute } = useZReport()
+    await compute(shift, 0, 0)
+    const discountCall = vi.mocked(db.getOptional).mock.calls.find(
+      c => /discount_amount_usd/.test(sqlOf(c)),
+    )
+    expect(discountCall).toBeTruthy()
+    expect(sqlOf(discountCall!)).toMatch(/device_id\s*=\s*\?/)
+    expect(paramsOf(discountCall!)).toContain('device-A')
+  })
 })
