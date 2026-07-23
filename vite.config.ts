@@ -4,8 +4,28 @@ import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
+import { execSync } from 'node:child_process'
+import { readdirSync } from 'node:fs'
+
+function getHighestMigrationNumber(): number {
+  const files = readdirSync(path.resolve(__dirname, 'supabase/migrations'))
+  const numbers = files
+    .map(f => /^(\d+)_.+\.sql$/.exec(f))
+    .filter((m): m is RegExpExecArray => m !== null)
+    .map(m => parseInt(m[1], 10))
+  return numbers.length > 0 ? Math.max(...numbers) : 0
+}
+
+const gitSha = execSync('git rev-parse --short HEAD').toString().trim()
+const buildDate = new Date().toISOString()
+const migrationNumber = getHighestMigrationNumber()
 
 export default defineConfig({
+  define: {
+    __GIT_SHA__: JSON.stringify(gitSha),
+    __BUILD_DATE__: JSON.stringify(buildDate),
+    __MIGRATION_NUMBER__: JSON.stringify(migrationNumber),
+  },
   plugins: [
     vue(),
     tailwindcss(),
