@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import SourceStep from './components/SourceStep.vue'
+import MappingStep from './components/MappingStep.vue'
 import { autoDetectMapping } from './composables/useColumnMapping'
 import type { FieldMapping, RowStatus } from './import.types'
 
@@ -26,7 +27,13 @@ function onParsed(p: { headers: string[]; rawRows: Record<string, unknown>[] }) 
     <AppHeader title="استيراد المنتجات من Excel" :show-back="true" @back="router.back()" />
     <main class="wizard-body">
       <SourceStep v-if="step === 1" @parsed="onParsed" />
-      <!-- MappingStep (step 2), PreviewStep (step 3), ResultStep (step 4) wired in Tasks 9–10 -->
+      <MappingStep
+        v-else-if="step === 2 && mapping"
+        :headers="headers"
+        v-model="mapping"
+        @confirm="step = 3"
+      />
+      <!-- PreviewStep (step 3), ResultStep (step 4) wired in Task 10 -->
     </main>
   </div>
 </template>
