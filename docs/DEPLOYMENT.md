@@ -109,3 +109,8 @@ good as the backup verification actually performed — see
 `docs/BACKUP.md`, which documents this project's real, confirmed backup
 frequency, restore procedure, and last-verified-restore date (not a
 guess or a template placeholder).
+
+**As of the current release this path does not exist** — the production
+project is on Supabase's Free tier, which has no backup capability at
+all (confirmed directly against the dashboard, see `docs/BACKUP.md`). A
+data-loss event today has no restore path.
