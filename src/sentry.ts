@@ -5,16 +5,13 @@ const PII_FIELD_NAMES = new Set(['phone', 'customerName', 'nameAr', 'name'])
 const PHONE_LIKE_PATTERN = /\+?\d{9,}/g
 
 /**
- * Strips known-PII field values and any phone-number-shaped substring from
- * a Sentry event's `extra` data before it leaves the browser. This is real
- * Syrian shop customer data (names, phone numbers) going to Sentry's
- * (US-based) servers -- scrub first, not an afterthought.
+ * Redacts known-PII field names and any phone-number-shaped substring from
+ * a plain object, returning a new object. Shared by every scrubbing path
+ * below (event.extra, event.contexts.vue.propsData, breadcrumb.data).
  */
-export function scrubPiiBeforeSend(event: Sentry.ErrorEvent, _hint: Sentry.EventHint): Sentry.ErrorEvent {
-  if (!event.extra) return event
-
+function scrubObject(obj: Record<string, unknown>): Record<string, unknown> {
   const scrubbed: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(event.extra)) {
+  for (const [key, value] of Object.entries(obj)) {
     if (PII_FIELD_NAMES.has(key)) {
       scrubbed[key] = '[redacted]'
     } else if (typeof value === 'string') {
@@ -23,7 +20,56 @@ export function scrubPiiBeforeSend(event: Sentry.ErrorEvent, _hint: Sentry.Event
       scrubbed[key] = value
     }
   }
-  return { ...event, extra: scrubbed }
+  return scrubbed
+}
+
+/**
+ * Strips known-PII field values and any phone-number-shaped substring from
+ * a Sentry event before it leaves the browser. This is real Syrian shop
+ * customer data (names, phone numbers) going to Sentry's (US-based)
+ * servers -- scrub first, not an afterthought.
+ *
+ * Covers every channel Sentry actually populates:
+ * - `event.extra` -- our own explicit `Sentry.setExtra`/`captureException` context.
+ * - `event.contexts.vue.propsData` -- @sentry/vue's `attachProps` (default true)
+ *   attaches the erroring component's props verbatim. We disable attachProps
+ *   at init() as the primary defense (see initSentry), and scrub here too in
+ *   case some path still populates it.
+ * - `event.breadcrumbs[].message` / `.data` -- the default breadcrumbs
+ *   integration captures console/DOM/fetch data that can carry PII.
+ */
+export function scrubPiiBeforeSend(event: Sentry.ErrorEvent, _hint: Sentry.EventHint): Sentry.ErrorEvent {
+  const scrubbedEvent: Sentry.ErrorEvent = { ...event }
+
+  if (event.extra) {
+    scrubbedEvent.extra = scrubObject(event.extra)
+  }
+
+  const propsData = event.contexts?.vue?.propsData as Record<string, unknown> | undefined
+  if (propsData) {
+    scrubbedEvent.contexts = {
+      ...event.contexts,
+      vue: {
+        ...event.contexts?.vue,
+        propsData: scrubObject(propsData),
+      },
+    }
+  }
+
+  if (event.breadcrumbs) {
+    scrubbedEvent.breadcrumbs = event.breadcrumbs.map((breadcrumb) => {
+      const next = { ...breadcrumb }
+      if (typeof next.message === 'string') {
+        next.message = next.message.replace(PHONE_LIKE_PATTERN, '[redacted]')
+      }
+      if (next.data) {
+        next.data = scrubObject(next.data)
+      }
+      return next
+    })
+  }
+
+  return scrubbedEvent
 }
 
 /**
@@ -39,9 +85,17 @@ export function initSentry(app: App): void {
   }
   if (!import.meta.env.PROD) return
 
+  const environment = (import.meta.env.VITE_SENTRY_ENVIRONMENT as string | undefined) || 'production'
+
   Sentry.init({
     app,
     dsn,
+    environment,
+    // Cheapest, most robust fix for PII leaking via Vue component props:
+    // disable @sentry/vue's props-attachment channel entirely rather than
+    // relying solely on scrubbing after the fact (see scrubPiiBeforeSend
+    // doc comment for the defense-in-depth scrubbing that remains).
+    attachProps: false,
     beforeSend: scrubPiiBeforeSend,
   })
 }
