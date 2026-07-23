@@ -69,4 +69,26 @@ describe('useShift — WAFI-060 immutable close evidence', () => {
     expect(shift?.zReportData?.totalRevenueUsd).toBe(200)
     expect(shift?.openingCashSyp).toBe(50_000)
   })
+
+  it('parses a double-encoded z_report_data (JSONB-vs-text sync round-trip, same bug as audit_log.meta)', async () => {
+    // z_report_data is JSONB in Postgres but declared as text on the PowerSync
+    // client schema — a row synced through that mismatch arrives as a JSON
+    // string OF the JSON string, exactly like the audit_log.meta bug fixed by
+    // migration 031 (see useAuditLog.ts's parseMeta). Before this fix,
+    // JSON.parse(raw) would yield that string as-is (not the object), and
+    // reading .totalRevenueUsd off a string silently returns undefined,
+    // crashing ShiftDetailScreen's fmtUsd(undefined).toFixed().
+    vi.mocked(db.getOptional).mockResolvedValueOnce({
+      id: 'shift-7', shop_id: 's', device_id: 'd', staff_id: 'st',
+      opened_at: '2026-06-19T06:00:00Z', closed_at: '2026-06-19T14:00:00Z',
+      opening_cash_usd: 100, opening_cash_syp: 50_000,
+      closing_cash_usd: 195, closing_cash_syp: 500_000,
+      variance_usd: -15, variance_syp: 0, close_note: 'سلفة موظف',
+      force_closed_by: null, z_report_data: JSON.stringify(JSON.stringify(snapshot)), status: 'closed',
+    } as any)
+
+    const { loadShiftById } = useShift()
+    const shift = await loadShiftById('shift-7')
+    expect(shift?.zReportData?.totalRevenueUsd).toBe(200)
+  })
 })

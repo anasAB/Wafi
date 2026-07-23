@@ -22,11 +22,21 @@ import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 import { establishOperatorIdentity } from '@/features/staff/composables/useOperatorSwitch'
 
 /** Parse the stored Z-report JSON snapshot. Never throws — a corrupt/absent blob
- *  yields null so the UI falls back gracefully (live preview for an open shift). */
+ *  yields null so the UI falls back gracefully (live preview for an open shift).
+ *
+ *  z_report_data is JSONB in Postgres against a TEXT column on the client (same
+ *  mismatch migration 031 fixed for audit_log.meta), which double-encodes the
+ *  JSON string on every sync round-trip: JSON.parse would yield a *string*
+ *  holding the JSON text instead of the parsed object, and reading a field off
+ *  that string silently returns undefined rather than throwing — crashing
+ *  ShiftDetailScreen's fmtUsd(undefined).toFixed() well downstream of the real
+ *  cause. Parse twice when that happens, exactly like useAuditLog's parseMeta. */
 function parseZReport(raw: unknown): ZReportMetrics | null {
   if (typeof raw !== 'string' || raw.length === 0) return null
   try {
-    return JSON.parse(raw) as ZReportMetrics
+    let value: unknown = JSON.parse(raw)
+    if (typeof value === 'string') value = JSON.parse(value)
+    return (value && typeof value === 'object') ? (value as ZReportMetrics) : null
   } catch {
     return null
   }
