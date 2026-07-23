@@ -3,7 +3,7 @@ import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { useSessionStore } from '@/store/session.store'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
-import { executeFinancialWrite } from '@/features/staff-ledger/composables/executeFinancialWrite'
+import { executeFinancialWrite } from '@/composables/executeFinancialWrite'
 import type { StaffSettlement, StaffLedgerEntry } from '@/features/staff-ledger/staff-ledger.types'
 
 type StaffLedgerRowLocal = { id: string; entry_type: string; amount_usd: number }
@@ -204,6 +204,7 @@ export function useStaffSettlement() {
         settlementId, staffId, existingSettlementRow.period_month, finalAmountUsd,
         options.settlementCurrency, finalAmountUsd < 0,
       ),
+      'can_view_expenses',
     )
 
     // Build the result from the pre-write row plus the values we just wrote —
@@ -252,6 +253,7 @@ export function useStaffSettlement() {
         )
       },
       () => logStaffSettlementPaid(settlementId, staffId, options.paymentMethod),
+      'can_view_expenses',
     )
     const row = await db.getOptional<StaffSettlementRow>(
       `SELECT * FROM staff_settlements WHERE id = ?`, [settlementId],

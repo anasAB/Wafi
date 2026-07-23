@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useSessionStore } from '@/store/session.store'
-import { executeFinancialWrite } from '@/features/staff-ledger/composables/executeFinancialWrite'
+import { executeFinancialWrite } from '@/composables/executeFinancialWrite'
 import type { Staff } from '@/features/staff/staff.types'
 
 const grantedStaff: Staff = {
@@ -19,32 +19,44 @@ const cashierStaff: Staff = {
 describe('executeFinancialWrite', () => {
   beforeEach(() => { setActivePinia(createPinia()) })
 
-  it('runs the write and audit callback when the active staff has can_view_expenses', async () => {
+  it('runs the write and audit callback when the active staff has the required permission', async () => {
     useSessionStore().setActiveStaff(grantedStaff)
     const write = vi.fn().mockResolvedValue('result')
     const audit = vi.fn().mockResolvedValue(undefined)
 
-    const result = await executeFinancialWrite(write, audit)
+    const result = await executeFinancialWrite(write, audit, 'can_view_expenses')
 
     expect(result).toBe('result')
     expect(write).toHaveBeenCalledOnce()
     expect(audit).toHaveBeenCalledWith('result')
   })
 
-  it('throws and never calls write when the active staff lacks can_view_expenses', async () => {
+  it('throws and never calls write when the active staff lacks the required permission', async () => {
     useSessionStore().setActiveStaff(cashierStaff)
     const write = vi.fn()
     const audit = vi.fn()
 
-    await expect(executeFinancialWrite(write, audit)).rejects.toThrow(/permission/i)
+    await expect(executeFinancialWrite(write, audit, 'can_view_expenses')).rejects.toThrow(/permission/i)
     expect(write).not.toHaveBeenCalled()
     expect(audit).not.toHaveBeenCalled()
   })
 
-  it('throws when there is no active staff (fail closed)', async () => {
+  it('throws when there is no active staff and a permission is required (fail closed)', async () => {
     const write = vi.fn()
     const audit = vi.fn()
-    await expect(executeFinancialWrite(write, audit)).rejects.toThrow(/permission/i)
+    await expect(executeFinancialWrite(write, audit, 'can_view_expenses')).rejects.toThrow(/permission/i)
     expect(write).not.toHaveBeenCalled()
+  })
+
+  it('runs write and audit with no permission check when requiredPermission is omitted', async () => {
+    // No active staff at all -- still succeeds, since no permission was required.
+    const write = vi.fn().mockResolvedValue(42)
+    const audit = vi.fn().mockResolvedValue(undefined)
+
+    const result = await executeFinancialWrite(write, audit)
+
+    expect(result).toBe(42)
+    expect(write).toHaveBeenCalledOnce()
+    expect(audit).toHaveBeenCalledWith(42)
   })
 })

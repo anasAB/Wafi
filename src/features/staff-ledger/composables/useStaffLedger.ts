@@ -4,7 +4,7 @@ import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { useSessionStore } from '@/store/session.store'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
-import { executeFinancialWrite } from '@/features/staff-ledger/composables/executeFinancialWrite'
+import { executeFinancialWrite } from '@/composables/executeFinancialWrite'
 import type { StaffLedgerEntry, NewStaffLedgerEntry } from '@/features/staff-ledger/staff-ledger.types'
 
 type StaffLedgerRow = {
@@ -75,6 +75,7 @@ export function useStaffLedger() {
         })
       },
       (entry) => logStaffLedgerEntryCreated(entry.id, entry.staffId, entry.entryType, entry.amountUsd),
+      'can_view_expenses',
     )
   }
 
