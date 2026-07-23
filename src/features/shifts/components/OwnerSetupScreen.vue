@@ -1,11 +1,35 @@
 <script setup lang="ts">
-import { useRouter }  from 'vue-router'
-import StaffForm      from '@/features/staff/components/StaffForm.vue'
+import { ref }         from 'vue'
+import { useRouter }   from 'vue-router'
+import StaffForm       from '@/features/staff/components/StaffForm.vue'
+import ExchangeRateEditor from '@/features/exchange-rate/ExchangeRateEditor.vue'
+import { useDemoDataSeed } from '@/features/onboarding/composables/useDemoDataSeed'
+import { store } from '@/store'
 
 const router = useRouter()
+const { seedDemoProducts } = useDemoDataSeed()
 
-function onDone() {
-  router.push('/')
+const pinDone = ref(false)
+
+function onPinDone() {
+  pinDone.value = true  // reveal the (skippable) exchange-rate prompt
+}
+
+async function proceedToGoal() {
+  switch (store.startGoal) {
+    case 'sell':
+      router.push('/pos')
+      break
+    case 'inventory':
+      router.push('/products/add')
+      break
+    case 'explore':
+      await seedDemoProducts()
+      router.push('/onboarding')
+      break
+    default:
+      router.push('/')
+  }
 }
 </script>
 
@@ -13,8 +37,13 @@ function onDone() {
   <div class="lock-root" dir="rtl">
     <div class="lock-card">
       <h1 class="brand">وافي</h1>
-      <StaffForm force-role="owner" @done="onDone" />
+      <StaffForm v-if="!pinDone" force-role="owner" @done="onPinDone" />
     </div>
+    <ExchangeRateEditor
+      v-if="pinDone"
+      @close="proceedToGoal"
+      @saved="proceedToGoal"
+    />
   </div>
 </template>
 
