@@ -3,12 +3,13 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppHeader from '@/components/ui/AppHeader.vue'
+import { BUILD_INFO } from '@/version'
 
 const router = useRouter()
 const route  = useRoute()
 const { t }  = useI18n()
 
-const APP_VERSION = 'v0.1.0'
+const APP_VERSION = `v${BUILD_INFO.version}`
 
 // Settings is a list (mobile) / sidebar + panel (desktop). The sub-screens render
 // through a single <RouterView>, but it can only live in ONE branch or the child
@@ -283,7 +284,7 @@ watch(
       <div class="settings-card">
         <div class="about-row">
           <span class="nav-title">{{ t('personal.aboutVersionLabel') }}</span>
-          <span class="version-badge">{{ APP_VERSION }}</span>
+          <span class="version-badge" :title="`${BUILD_INFO.gitSha} · ${BUILD_INFO.buildDate} · migration ${BUILD_INFO.migrationNumber}`">{{ APP_VERSION }}</span>
         </div>
       </div>
 
@@ -453,7 +454,7 @@ watch(
           <!-- About row -->
           <div class="desktop-about-row">
             <span class="about-label">{{ t('settings.about') }}</span>
-            <span class="version-mono">{{ APP_VERSION }}</span>
+            <span class="version-mono" :title="`${BUILD_INFO.gitSha} · ${BUILD_INFO.buildDate} · migration ${BUILD_INFO.migrationNumber}`">{{ APP_VERSION }}</span>
           </div>
         </div>
       </nav>

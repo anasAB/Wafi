@@ -7,6 +7,7 @@ import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
 vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
 
 import SettingsPage from '@/pages/SettingsPage.vue'
+import { BUILD_INFO } from '@/version'
 
 // matchMedia is mocked (matches:false) in the test setup, so these run as "mobile".
 const ChildStub = { template: '<div class="child-stub">CHILD-SCREEN</div>' }
@@ -55,5 +56,10 @@ describe('SettingsPage — mobile child rendering', () => {
     const w = await mountAt('/settings/exports')
     expect(w.find('.desktop-nav').exists()).toBe(true)   // sidebar present
     expect(w.findAll('.child-stub')).toHaveLength(1)     // single mount, not double
+  })
+
+  it('shows the real build version (not a hardcoded placeholder)', async () => {
+    const w = await mountAt('/settings')
+    expect(w.text()).toContain(BUILD_INFO.version)
   })
 })
