@@ -8,11 +8,15 @@ import './style.css'
 import 'primeicons/primeicons.css'
 import App    from './App.vue'
 import router from './router'
+import { initSentry } from './sentry'
 
 const pinia = createPinia()
 pinia.use(piniaPluginPersistedstate)
 
-createApp(App)
+const app = createApp(App)
+initSentry(app)
+
+app
   .use(pinia)
   .use(router)
   .use(i18n)

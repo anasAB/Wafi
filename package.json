@@ -17,6 +17,7 @@
   "dependencies": {
     "@powersync/web": "^1.38.1",
     "@primeuix/themes": "^2.0.3",
+    "@sentry/vue": "^10.67.0",
     "@supabase/supabase-js": "^2.105.4",
     "@zxing/browser": "^0.2.0",
     "apexcharts": "^5.13.0",
