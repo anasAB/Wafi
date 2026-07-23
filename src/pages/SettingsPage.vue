@@ -244,6 +244,26 @@ watch(
           </svg>
         </button>
 
+        <!-- WAFI-100: discount caps -->
+        <button
+          type="button"
+          class="nav-row"
+          @click="router.push('/settings/discount-caps')"
+        >
+          <div class="nav-row-start">
+            <span class="nav-icon-wrap">
+              <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 6h.008v.008H6V6z" />
+              </svg>
+            </span>
+            <span class="nav-title">حدود الخصم</span>
+          </div>
+          <svg class="nav-arrow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+
         <!-- Sign out (disabled) -->
         <button type="button" class="nav-row nav-row--danger nav-row--last" disabled>
           <div class="nav-row-start">
@@ -403,6 +423,7 @@ watch(
             to="/settings/exports"
             class="desktop-nav-link"
             :class="route.path === '/settings/exports' ? 'desktop-nav-link--active' : ''"
+            style="border-bottom: 1px solid rgba(26,86,219,0.14)"
           >
             <div class="nav-row-start">
               <svg class="nav-icon-sm" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
@@ -411,6 +432,22 @@ watch(
               <span>{{ t('settings.dataExport') }}</span>
             </div>
             <span v-if="route.path === '/settings/exports'" class="active-dot" />
+          </RouterLink>
+
+          <!-- WAFI-100: discount caps -->
+          <RouterLink
+            to="/settings/discount-caps"
+            class="desktop-nav-link"
+            :class="route.path === '/settings/discount-caps' ? 'desktop-nav-link--active' : ''"
+          >
+            <div class="nav-row-start">
+              <svg class="nav-icon-sm" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 6h.008v.008H6V6z" />
+              </svg>
+              <span>حدود الخصم</span>
+            </div>
+            <span v-if="route.path === '/settings/discount-caps'" class="active-dot" />
           </RouterLink>
 
           <!-- About row -->
