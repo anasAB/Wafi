@@ -2,6 +2,7 @@ import { db }              from '@/data/powersync/db'
 import { useDeviceStore }  from '@/store/device.store'
 import { useSessionStore } from '@/store/session.store'
 import { useAuditLog }     from '@/features/audit/composables/useAuditLog'
+import { executeFinancialWrite } from '@/composables/executeFinancialWrite'
 import { useZReport }      from './useZReport'
 import type { CashierShift } from '../shift.types'
 import type {
@@ -66,13 +67,14 @@ export function useCashMovements() {
     if (input.currency === 'SYP' && !Number.isInteger(input.amount)) {
       throw new Error('مبلغ الليرة يجب أن يكون رقماً صحيحاً')
     }
-    const id = await insert({
-      shiftId: input.shift.id, direction: input.direction, category: input.category,
-      currency: input.currency, amount: input.amount, note: input.note ?? null,
-      voidsMovementId: null,
-    })
-    await logCashMovementRecorded(id, input.direction, input.category, input.currency, input.amount)
-    return id
+    return executeFinancialWrite(
+      () => insert({
+        shiftId: input.shift.id, direction: input.direction, category: input.category,
+        currency: input.currency, amount: input.amount, note: input.note ?? null,
+        voidsMovementId: null,
+      }),
+      (id) => logCashMovementRecorded(id, input.direction, input.category, input.currency, input.amount),
+    )
   }
 
   async function voidMovement(movementId: string, reasonNote: string): Promise<string> {
@@ -89,13 +91,14 @@ export function useCashMovements() {
     if (existingVoid) throw new Error('تم عكس هذه الحركة مسبقاً')
 
     const reverseDir: CashMovementDirection = orig.direction === 'in' ? 'out' : 'in'
-    const id = await insert({
-      shiftId: orig.shift_id, direction: reverseDir, category: orig.category,
-      currency: orig.currency, amount: orig.amount, note: reasonNote ?? null,
-      voidsMovementId: movementId,
-    })
-    await logCashMovementVoided(id, movementId, reasonNote ?? '')
-    return id
+    return executeFinancialWrite(
+      () => insert({
+        shiftId: orig.shift_id, direction: reverseDir, category: orig.category,
+        currency: orig.currency, amount: orig.amount, note: reasonNote ?? null,
+        voidsMovementId: movementId,
+      }),
+      (id) => logCashMovementVoided(id, movementId, reasonNote ?? ''),
+    )
   }
 
   async function listForShift(shiftId: string): Promise<CashMovement[]> {
