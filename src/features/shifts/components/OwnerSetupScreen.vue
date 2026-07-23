@@ -42,7 +42,6 @@ async function proceedToGoal() {
     <ExchangeRateEditor
       v-if="pinDone"
       @close="proceedToGoal"
-      @saved="proceedToGoal"
     />
   </div>
 </template>

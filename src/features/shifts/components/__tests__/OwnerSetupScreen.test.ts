@@ -68,4 +68,22 @@ describe('OwnerSetupScreen', () => {
     expect(pushMock).toHaveBeenCalledWith('/')
     expect(seedDemoProducts).not.toHaveBeenCalled()
   })
+
+  it('does not seed demo products twice when ExchangeRateEditor emits both saved and close on a real save (regression)', async () => {
+    store.startGoal = 'explore'
+    const wrapper = mount(OwnerSetupScreen, {
+      global: {
+        stubs: {
+          ExchangeRateEditor: {
+            template: '<div class="stub-rate-editor" @click="$emit(\'saved\'); $emit(\'close\')"></div>',
+          },
+        },
+      },
+    })
+    await wrapper.find('button').trigger('click')  // StaffForm stub emits 'done'
+    await wrapper.find('.stub-rate-editor').trigger('click')  // emits 'saved' then 'close', mirroring real save
+
+    expect(seedDemoProducts).toHaveBeenCalledTimes(1)
+    expect(pushMock).toHaveBeenCalledWith('/onboarding')
+  })
 })
