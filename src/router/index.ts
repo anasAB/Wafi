@@ -22,6 +22,7 @@ const router = createRouter({
     { path: '/products',          component: () => import('@/features/products/ProductsPage.vue'),     meta: { permission: 'can_manage_products' } },
     { path: '/products/add',      component: () => import('@/features/products/AddProductPage.vue'),   meta: { permission: 'can_manage_products' } },
     { path: '/products/:id/edit', component: () => import('@/features/products/EditProductPage.vue'),  meta: { permission: 'can_manage_products' } },
+    { path: '/products/import',   component: () => import('@/features/imports/ImportWizardPage.vue'),  meta: { permission: 'can_manage_products' } },
     { path: '/categories', component: () => import('@/features/categories/components/CategoriesManagementScreen.vue'), meta: { permission: 'can_manage_products' } },
     { path: '/expenses',          component: () => import('@/features/expenses/ExpenseListPage.vue'),  meta: { permission: 'can_view_expenses' } },
     // WAFI-138: staff ledger/settlement — reuses can_view_expenses (no new permission flag).
