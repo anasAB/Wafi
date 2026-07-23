@@ -10,7 +10,7 @@ const PHONE_LIKE_PATTERN = /\+?\d{9,}/g
  * Syrian shop customer data (names, phone numbers) going to Sentry's
  * (US-based) servers -- scrub first, not an afterthought.
  */
-export function scrubPiiBeforeSend(event: Sentry.Event): Sentry.Event {
+export function scrubPiiBeforeSend(event: Sentry.ErrorEvent, _hint: Sentry.EventHint): Sentry.ErrorEvent {
   if (!event.extra) return event
 
   const scrubbed: Record<string, unknown> = {}
