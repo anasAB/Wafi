@@ -7,6 +7,7 @@ import { useDeviceStore } from '@/store/device.store'
 import { useShiftStore } from '@/features/shifts/shift.store'
 import { useSessionStore } from '@/store/session.store'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
+import { executeFinancialWrite } from '@/composables/executeFinancialWrite'
 import { v4 as uuidv4 } from 'uuid'
 import type { PaymentMethod, PaymentState, CompletedSale, SplitPaymentEntry } from './payment.types'
 
@@ -223,98 +224,102 @@ export function usePayment() {
     }
 
     try {
-      // All writes for one sale run in a single transaction so a mid-way failure
-      // can't leave a sale row without its line items, payments, or stock movements.
-      await db.writeTransaction(async (tx) => {
-        await tx.execute(
-          `INSERT INTO sales (id, shop_id, device_id, device_sequence, display_sale_number,
-            created_at, total_usd, total_syp, exchange_rate_at_sale, payment_method,
-            amount_received, amount_received_currency, change_due, customer_id, is_credit, is_split, shift_id, staff_id, sync_status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            saleId, deviceStore.shopId, deviceStore.deviceId,
-            saleSeq, displayNum, now,
-            totalUsd.value, totalSyp.value, saleStore.lockedExchangeRate,
-            primaryMethod, totalReceived, 'USD', lastChange || null,
-            customerId ?? null, isCredit ? 1 : 0, isSplit ? 1 : 0,
-            shiftStore.activeShiftId,
-            // Attribution rule: the operator active at confirmation owns the sale
-            // (the cart can change hands via switch-operator). shift_id stays the
-            // cash-period link.
-            sessionStore.activeStaff?.id ?? null,
-            'pending',
-          ]
-        )
-
-        // Insert one row per payment entry into sale_payments
-        for (const entry of entries) {
-          await tx.execute(
-            `INSERT INTO sale_payments (id, sale_id, shop_id, method, amount_raw, currency,
-              amount_usd, exchange_rate, change_due, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-              uuidv4(), saleId, deviceStore.shopId, entry.method, entry.amountRaw,
-              entry.currency, entry.amountUsd, entry.exchangeRate,
-              entry.changeDue || null, now,
-            ]
-          )
-        }
-
-        for (const line of saleStore.lines) {
-          // WAFI-101 — open items are a hidden synthetic product with no real
-          // stock: never touch current_stock or write a stock_adjustments row.
-          if (line.isOpenItem) {
+      await executeFinancialWrite(
+        async () => {
+          // All writes for one sale run in a single transaction so a mid-way failure
+          // can't leave a sale row without its line items, payments, or stock movements.
+          await db.writeTransaction(async (tx) => {
             await tx.execute(
-              `INSERT INTO sale_line_items (id, sale_id, shop_id, product_id, quantity, unit_price_usd, unit_cost_usd, line_total_usd)
-               VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
-              [uuidv4(), saleId, deviceStore.shopId, line.productId,
-               line.quantity, line.unitPriceUsd, line.lineTotalUsd]
+              `INSERT INTO sales (id, shop_id, device_id, device_sequence, display_sale_number,
+                created_at, total_usd, total_syp, exchange_rate_at_sale, payment_method,
+                amount_received, amount_received_currency, change_due, customer_id, is_credit, is_split, shift_id, staff_id, sync_status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                saleId, deviceStore.shopId, deviceStore.deviceId,
+                saleSeq, displayNum, now,
+                totalUsd.value, totalSyp.value, saleStore.lockedExchangeRate,
+                primaryMethod, totalReceived, 'USD', lastChange || null,
+                customerId ?? null, isCredit ? 1 : 0, isSplit ? 1 : 0,
+                shiftStore.activeShiftId,
+                // Attribution rule: the operator active at confirmation owns the sale
+                // (the cart can change hands via switch-operator). shift_id stays the
+                // cash-period link.
+                sessionStore.activeStaff?.id ?? null,
+                'pending',
+              ]
             )
-            continue
-          }
 
-          const res = await tx.execute(
-            'SELECT cost_price_usd, current_stock FROM products WHERE id = ?',
-            [line.productId]
-          )
-          const row          = (res as any).rows?._array?.[0]
-          const unitCostUsd  = row?.cost_price_usd ?? 0
-          const currentStock = row?.current_stock ?? 0
-          // Clamp at 0: a sale must never drive on-hand stock negative (e.g. when
-          // the cart was built against stale stock, or an offline oversell).
-          const newStock     = Math.max(0, currentStock - line.quantity)
-          // When clamping drops fewer units than were sold, the count was stale.
-          // Mark the oversold quantity on the adjustment so reconciliation can see
-          // the gap between the line quantity and the recorded stock movement.
-          const oversoldBy   = line.quantity - (currentStock - newStock)
-          const adjustNote   = oversoldBy > 0 ? `oversold:${oversoldBy}` : null
+            // Insert one row per payment entry into sale_payments
+            for (const entry of entries) {
+              await tx.execute(
+                `INSERT INTO sale_payments (id, sale_id, shop_id, method, amount_raw, currency,
+                  amount_usd, exchange_rate, change_due, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                  uuidv4(), saleId, deviceStore.shopId, entry.method, entry.amountRaw,
+                  entry.currency, entry.amountUsd, entry.exchangeRate,
+                  entry.changeDue || null, now,
+                ]
+              )
+            }
 
-          await tx.execute(
-            `INSERT INTO sale_line_items (id, sale_id, shop_id, product_id, quantity, unit_price_usd, unit_cost_usd, line_total_usd)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [uuidv4(), saleId, deviceStore.shopId, line.productId,
-             line.quantity, line.unitPriceUsd, unitCostUsd, line.lineTotalUsd]
-          )
-          await tx.execute(
-            `UPDATE products SET current_stock = ?, updated_at = ?, sync_status = 'pending' WHERE id = ?`,
-            [newStock, now, line.productId]
-          )
-          await tx.execute(
-            `INSERT INTO stock_adjustments (id, shop_id, product_id, old_value, new_value, reason, notes, created_at, device_id)
-             VALUES (?, ?, ?, ?, ?, 'sale', ?, ?, ?)`,
-            [uuidv4(), deviceStore.shopId, line.productId, currentStock, newStock, adjustNote, now, deviceStore.deviceId]
-          )
-        }
-      })
+            for (const line of saleStore.lines) {
+              // WAFI-101 — open items are a hidden synthetic product with no real
+              // stock: never touch current_stock or write a stock_adjustments row.
+              if (line.isOpenItem) {
+                await tx.execute(
+                  `INSERT INTO sale_line_items (id, sale_id, shop_id, product_id, quantity, unit_price_usd, unit_cost_usd, line_total_usd)
+                   VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
+                  [uuidv4(), saleId, deviceStore.shopId, line.productId,
+                   line.quantity, line.unitPriceUsd, line.lineTotalUsd]
+                )
+                continue
+              }
 
-      // Write succeeded — only now commit the sequence advance (WAFI-004).
-      saleStore.incrementSequence()
-      await clearDraft()
-      saleStore.clear()
-      pendingPayments.value = []
-      state.value           = 'confirmed'
-      isOpen.value          = false
-      await logSaleCompleted(saleId, sale.totalUsd, sale.lines.length)
+              const res = await tx.execute(
+                'SELECT cost_price_usd, current_stock FROM products WHERE id = ?',
+                [line.productId]
+              )
+              const row          = (res as any).rows?._array?.[0]
+              const unitCostUsd  = row?.cost_price_usd ?? 0
+              const currentStock = row?.current_stock ?? 0
+              // Clamp at 0: a sale must never drive on-hand stock negative (e.g. when
+              // the cart was built against stale stock, or an offline oversell).
+              const newStock     = Math.max(0, currentStock - line.quantity)
+              // When clamping drops fewer units than were sold, the count was stale.
+              // Mark the oversold quantity on the adjustment so reconciliation can see
+              // the gap between the line quantity and the recorded stock movement.
+              const oversoldBy   = line.quantity - (currentStock - newStock)
+              const adjustNote   = oversoldBy > 0 ? `oversold:${oversoldBy}` : null
+
+              await tx.execute(
+                `INSERT INTO sale_line_items (id, sale_id, shop_id, product_id, quantity, unit_price_usd, unit_cost_usd, line_total_usd)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                [uuidv4(), saleId, deviceStore.shopId, line.productId,
+                 line.quantity, line.unitPriceUsd, unitCostUsd, line.lineTotalUsd]
+              )
+              await tx.execute(
+                `UPDATE products SET current_stock = ?, updated_at = ?, sync_status = 'pending' WHERE id = ?`,
+                [newStock, now, line.productId]
+              )
+              await tx.execute(
+                `INSERT INTO stock_adjustments (id, shop_id, product_id, old_value, new_value, reason, notes, created_at, device_id)
+                 VALUES (?, ?, ?, ?, ?, 'sale', ?, ?, ?)`,
+                [uuidv4(), deviceStore.shopId, line.productId, currentStock, newStock, adjustNote, now, deviceStore.deviceId]
+              )
+            }
+          })
+
+          // Write succeeded — only now commit the sequence advance (WAFI-004).
+          saleStore.incrementSequence()
+          await clearDraft()
+          saleStore.clear()
+          pendingPayments.value = []
+          state.value           = 'confirmed'
+          isOpen.value          = false
+        },
+        () => logSaleCompleted(saleId, sale.totalUsd, sale.lines.length),
+      )
       return sale
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Payment failed'
