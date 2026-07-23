@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid'
+import { executeFinancialWrite } from '@/composables/executeFinancialWrite'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { useSessionStore } from '@/store/session.store'
@@ -50,58 +51,60 @@ export function useInstallmentPlan() {
       input.totalAmountUsd, input.downPaymentUsd, input.termCount, input.termFrequency, input.startDate,
     )
 
-    await db.writeTransaction(async (tx) => {
-      await tx.execute(
-        `INSERT INTO installment_plans
-           (id, shop_id, customer_id, sale_id, total_amount_usd, down_payment_usd,
-            term_count, term_frequency, start_date, status, created_at, created_by, sync_status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, 'pending')`,
-        [
-          planId, device.shopId, input.customerId, input.saleId,
-          input.totalAmountUsd, input.downPaymentUsd, input.termCount,
-          input.termFrequency, input.startDate, now, createdBy,
-        ],
-      )
+    return executeFinancialWrite(
+      async () => {
+        await db.writeTransaction(async (tx) => {
+          await tx.execute(
+            `INSERT INTO installment_plans
+               (id, shop_id, customer_id, sale_id, total_amount_usd, down_payment_usd,
+                term_count, term_frequency, start_date, status, created_at, created_by, sync_status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, 'pending')`,
+            [
+              planId, device.shopId, input.customerId, input.saleId,
+              input.totalAmountUsd, input.downPaymentUsd, input.termCount,
+              input.termFrequency, input.startDate, now, createdBy,
+            ],
+          )
 
-      for (const due of schedule) {
-        await tx.execute(
-          `INSERT INTO installment_dues
-             (id, plan_id, shop_id, due_date, amount_due_usd, amount_paid_usd, status, sync_status)
-           VALUES (?, ?, ?, ?, ?, 0, 'pending', 'pending')`,
-          [uuidv4(), planId, device.shopId, due.dueDate, due.amountDueUsd],
-        )
-      }
+          for (const due of schedule) {
+            await tx.execute(
+              `INSERT INTO installment_dues
+                 (id, plan_id, shop_id, due_date, amount_due_usd, amount_paid_usd, status, sync_status)
+               VALUES (?, ?, ?, ?, ?, 0, 'pending', 'pending')`,
+              [uuidv4(), planId, device.shopId, due.dueDate, due.amountDueUsd],
+            )
+          }
 
-      // Down payment posts as an immediate payment against the customer's ledger
-      // balance, reusing the existing customer_payments table (Epic 4) so the
-      // balance/statement/Z-report queries pick it up with no changes. due_id is
-      // left null — the down payment isn't collected against any single
-      // scheduled due, it's the plan's own initiation payment.
-      if (input.downPaymentUsd > 0) {
-        // WAFI-120: cash down payment enters the drawer → carries shift + device.
-        const shiftStore = useShiftStore()
-        await tx.execute(
-          `INSERT INTO customer_payments
-             (id, shop_id, customer_id, sale_id, due_id, amount_usd, currency, amount_raw,
-              method, exchange_rate_at_payment, notes, paid_at, created_at, shift_id, device_id, sync_status)
-           VALUES (?, ?, ?, ?, NULL, ?, 'USD', ?, 'cash', NULL, NULL, ?, ?, ?, ?, 'pending')`,
-          [
-            uuidv4(), device.shopId, input.customerId, input.saleId,
-            input.downPaymentUsd, input.downPaymentUsd, today, now,
-            shiftStore.activeShiftId, device.deviceId,
-          ],
-        )
-      }
-    })
-
-    await logInstallmentPlanCreated(planId, input.customerId, input.totalAmountUsd, input.downPaymentUsd, input.termCount)
-
-    return {
-      planId, shopId: device.shopId, customerId: input.customerId, saleId: input.saleId,
-      totalAmountUsd: input.totalAmountUsd, downPaymentUsd: input.downPaymentUsd,
-      termCount: input.termCount, termFrequency: input.termFrequency, startDate: input.startDate,
-      status: 'active', createdAt: now, createdBy,
-    }
+          // Down payment posts as an immediate payment against the customer's ledger
+          // balance, reusing the existing customer_payments table (Epic 4) so the
+          // balance/statement/Z-report queries pick it up with no changes. due_id is
+          // left null — the down payment isn't collected against any single
+          // scheduled due, it's the plan's own initiation payment.
+          if (input.downPaymentUsd > 0) {
+            // WAFI-120: cash down payment enters the drawer → carries shift + device.
+            const shiftStore = useShiftStore()
+            await tx.execute(
+              `INSERT INTO customer_payments
+                 (id, shop_id, customer_id, sale_id, due_id, amount_usd, currency, amount_raw,
+                  method, exchange_rate_at_payment, notes, paid_at, created_at, shift_id, device_id, sync_status)
+               VALUES (?, ?, ?, ?, NULL, ?, 'USD', ?, 'cash', NULL, NULL, ?, ?, ?, ?, 'pending')`,
+              [
+                uuidv4(), device.shopId, input.customerId, input.saleId,
+                input.downPaymentUsd, input.downPaymentUsd, today, now,
+                shiftStore.activeShiftId, device.deviceId,
+              ],
+            )
+          }
+        })
+        return {
+          planId, shopId: device.shopId, customerId: input.customerId, saleId: input.saleId,
+          totalAmountUsd: input.totalAmountUsd, downPaymentUsd: input.downPaymentUsd,
+          termCount: input.termCount, termFrequency: input.termFrequency, startDate: input.startDate,
+          status: 'active' as const, createdAt: now, createdBy,
+        }
+      },
+      (plan) => logInstallmentPlanCreated(plan.planId, input.customerId, input.totalAmountUsd, input.downPaymentUsd, input.termCount),
+    )
   }
 
   async function recordDuePayment(dueId: string, amountUsd: number): Promise<void> {
@@ -129,52 +132,59 @@ export function useInstallmentPlan() {
     // WAFI-120: cash installment collection enters the drawer → shift + device.
     const shiftStore = useShiftStore()
     const deviceStore = useDeviceStore()
-    await db.writeTransaction(async (tx) => {
-      await tx.execute(
-        `INSERT INTO customer_payments
-           (id, shop_id, customer_id, sale_id, due_id, amount_usd, currency, amount_raw,
-            method, exchange_rate_at_payment, notes, paid_at, created_at, shift_id, device_id, sync_status)
-         VALUES (?, ?, ?, ?, ?, ?, 'USD', ?, 'cash', NULL, NULL, ?, ?, ?, ?, 'pending')`,
-        [uuidv4(), due.shop_id, due.customer_id, due.sale_id, dueId, amountUsd, amountUsd, today, now,
-         shiftStore.activeShiftId, deviceStore.deviceId],
-      )
-
-      await tx.execute(
-        `UPDATE installment_dues SET amount_paid_usd = ?, status = '${newStatus}' WHERE id = ?`,
-        [newPaid, dueId],
-      )
-
-      if (newStatus === 'paid') {
-        const remaining = await tx.execute(
-          `SELECT COUNT(*) as count FROM installment_dues
-           WHERE plan_id = ? AND id != ? AND status = 'pending'`,
-          [due.plan_id, dueId],
-        )
-        const remainingCount = (remaining as any).rows?._array?.[0]?.count ?? 0
-        if (remainingCount === 0) {
+    await executeFinancialWrite(
+      async () => {
+        await db.writeTransaction(async (tx) => {
           await tx.execute(
-            `UPDATE installment_plans SET status = 'completed' WHERE id = ?`,
-            [due.plan_id],
+            `INSERT INTO customer_payments
+               (id, shop_id, customer_id, sale_id, due_id, amount_usd, currency, amount_raw,
+                method, exchange_rate_at_payment, notes, paid_at, created_at, shift_id, device_id, sync_status)
+             VALUES (?, ?, ?, ?, ?, ?, 'USD', ?, 'cash', NULL, NULL, ?, ?, ?, ?, 'pending')`,
+            [uuidv4(), due.shop_id, due.customer_id, due.sale_id, dueId, amountUsd, amountUsd, today, now,
+             shiftStore.activeShiftId, deviceStore.deviceId],
           )
-        }
-      }
-    })
 
-    await logInstallmentPaymentRecorded(dueId, due.plan_id, amountUsd)
+          await tx.execute(
+            `UPDATE installment_dues SET amount_paid_usd = ?, status = '${newStatus}' WHERE id = ?`,
+            [newPaid, dueId],
+          )
+
+          if (newStatus === 'paid') {
+            const remaining = await tx.execute(
+              `SELECT COUNT(*) as count FROM installment_dues
+               WHERE plan_id = ? AND id != ? AND status = 'pending'`,
+              [due.plan_id, dueId],
+            )
+            const remainingCount = (remaining as any).rows?._array?.[0]?.count ?? 0
+            if (remainingCount === 0) {
+              await tx.execute(
+                `UPDATE installment_plans SET status = 'completed' WHERE id = ?`,
+                [due.plan_id],
+              )
+            }
+          }
+        })
+      },
+      () => logInstallmentPaymentRecorded(dueId, due.plan_id, amountUsd),
+    )
   }
 
   async function cancelPlan(planId: string): Promise<void> {
-    await db.writeTransaction(async (tx) => {
-      await tx.execute(
-        `UPDATE installment_dues SET status = 'voided' WHERE plan_id = ? AND status = 'pending'`,
-        [planId],
-      )
-      await tx.execute(
-        `UPDATE installment_plans SET status = 'cancelled' WHERE id = ?`,
-        [planId],
-      )
-    })
-    await logInstallmentPlanCancelled(planId)
+    await executeFinancialWrite(
+      async () => {
+        await db.writeTransaction(async (tx) => {
+          await tx.execute(
+            `UPDATE installment_dues SET status = 'voided' WHERE plan_id = ? AND status = 'pending'`,
+            [planId],
+          )
+          await tx.execute(
+            `UPDATE installment_plans SET status = 'cancelled' WHERE id = ?`,
+            [planId],
+          )
+        })
+      },
+      () => logInstallmentPlanCancelled(planId),
+    )
   }
 
   async function loadActivePlanForCustomer(
