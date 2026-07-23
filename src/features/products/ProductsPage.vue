@@ -107,6 +107,11 @@ async function confirmDelete() {
           >بدء جرد</button>
           <button
             type="button"
+            class="btn-secondary"
+            @click="router.push('/products/import')"
+          >استيراد من Excel</button>
+          <button
+            type="button"
             class="btn-primary"
             @click="openAdd()"
           >
