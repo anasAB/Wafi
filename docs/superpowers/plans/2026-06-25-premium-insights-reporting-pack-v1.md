@@ -65,6 +65,25 @@ These are requirements, enforced by named tests in the tasks below:
 
 ---
 
+## Architectural notes (from PO review, 2026-07-27)
+
+- **`useProfitTrend` returns data, not chart config.** It already returns plain `ProfitTrendPoint[]` (bucket + `profitUsd`); the cumulative-sum transform is chart-specific and belongs in `ProfitCumulativeChart.vue` (Task 4), not in the composable. Keep it that way as this plan is built — do not let chart-shaping logic (running sums, category labels) leak into `useProfitTrend` itself, so Daily Summary/Business Intelligence features can consume the same points later without inheriting chart assumptions.
+- **Refund timing (explicit, so nobody "fixes" this later): return-date recognition, not sale-date.** `useDashboardMetrics`'s refund query filters on `returns.created_at` (`DATE(created_at,'localtime')`), not the original sale's date. A June 2 sale refunded on June 20 reduces **June 20's** revenue and reverses **June 20's** COGS — June 2 is unaffected. This applies identically to the PoP comparison, the cumulative chart, and the drill-down sheet (Task 6), since all three reuse this same engine query shape. This is the existing, Tier-1-verified v0 behavior — this plan does not change it, only documents it.
+- **Currency basis:** all calculations (`useDashboardMetrics`, `useProfitTrend`, PoP, anomalies, donut) operate on normalized USD values already computed by the accounting engine. SYP is a presentation-layer-only conversion (existing `useCurrency`/display formatting) and must never be reintroduced into a WHERE clause, SUM, or comparison.
+- **Performance constraint (document now, no code change required today):** every metric query must be O(n) over the selected period's date range — a single scan per source table (`sales`, `returns`, `expenses`), no per-row loops in JS across the full history. At today's volumes (single shop, <10k rows/year) this is already true; flag it explicitly so it stays true as shops accumulate years of data. Do not add report caching in this plan — see Future Scope below.
+- **Anomaly thresholds as configuration.** Task 7 must define these as a single exported object, not inline literals:
+  ```ts
+  export const REPORT_RULES = {
+    expenseRatioWarning: 0.30,
+    refundRatioWarning: 0.10,
+    minRevenueUsd: 50, // ANOMALY_MIN_REVENUE_USD, tune with the brother
+  } as const
+  ```
+  Task 7's implementation and tests reference this object, not bare numeric literals, so future tuning happens in one place.
+- **Foundation ticket dependency (open, not yet created):** longer-term, `useDashboardMetrics` should be formalized as the single shared metric engine contract consumed by Dashboard, Reports, and the future Daily Summary/Business Intelligence work (tracked in the v3 roadmap's Macro-Phase 2, e.g. WAFI-140/143/144/146 "Dashboard 2.0"). **Do not reuse the number WAFI-146 for this** — it is already assigned to "Dashboard 2.0" in `WAFI_Production_Readiness_Plan_v3.md`. This plan does not block on that ticket existing; it's a scope note for whoever picks up the architecture-hardening track next.
+
+---
+
 ### Task 1: Previous-period resolver + elapsed-day clamping
 
 **Files:** Modify `src/features/dashboard/composables/periodUtils.ts`; Test `src/features/dashboard/composables/__tests__/periodUtils.previous.test.ts`
@@ -115,7 +134,7 @@ These are requirements, enforced by named tests in the tasks below:
 
 **Produces:** ApexCharts **area** chart. Input: `points: ProfitTrendPoint[]` (from `useProfitTrend`). Series = **running cumulative sum** of `profitUsd`, starting from 0. Smooth fill; brand-blue stroke/gradient; emits `point-select(index)` for drill-down. Negative cumulative dips render naturally (a down day flattens/dips the line).
 
-- [ ] **Step 1: Failing test** — points `[{1/6:50},{2/6:108},{3/6:-20}]` → series data `[50,158,138]` (cumulative); categories `['1/6','2/6','3/6']`; chart `type` is `'area'`; clicking a marker emits `point-select` with the index.
+- [ ] **Step 1: Failing test** — points `[{1/6:50},{2/6:108},{3/6:-20}]` → series data `[50,158,138]` (cumulative); categories `['1/6','2/6','3/6']`; chart `type` is `'area'`; clicking a marker emits `point-select` with the index. **Also test a deep negative dip**: points `[{d1:100},{d2:-500},{d3:50}]` → series `[100,-400,-350]` — assert the chart renders (no throw/NaN) and the series values are correct; ApexCharts handles negative values natively but this locks the cumulative-sum math itself.
 - [ ] **Step 2:** FAIL. **Step 3:** implement (ApexCharts `area`, `dataPointSelection` → emit; `as const` on literal option fields for `ApexOptions` typing, per the v0 chart's lesson). **Step 4:** PASS. **Step 5:** delete the bar chart + test; Commit `feat(reports): cumulative profit area chart (retire bar chart)`.
 
 ---
@@ -147,7 +166,7 @@ These are requirements, enforced by named tests in the tasks below:
 
 **Files:** Modify `ReportsPage.vue` (or a `useReportAnomalies` computed); Test `src/__tests__/features/ReportAnomalies.test.ts`
 
-**Produces:** yellow banners, shown only when triggered AND period revenue ≥ floor (`ANOMALY_MIN_REVENUE_USD`, start at e.g. 50 — tune with the brother):
+**Produces:** yellow banners, shown only when triggered AND period revenue ≥ floor. All three thresholds come from the `REPORT_RULES` config object (see Architectural notes above) — no inline numeric literals in the implementation or tests:
 - expenses > 30% of gross income → *"⚠️ مصاريفك مرتفعة بشكل غير معتاد هذه الفترة."*
 - returns > 10% of gross income → *"⚠️ المرتجعات أعلى من المعتاد."*
 
@@ -214,3 +233,10 @@ PDF / P&L export (screenshots suffice for v1), multi-year / imported-history pro
 ## Success metrics (from PRD §10)
 
 Attach rate >15% in 60 days; weekly `/reports` visits among premium users; drill-down + donut-filter interaction counts. Instrument these when analytics lands (do not block v1.0 on them).
+
+**Time to first insight:** can the owner answer "how much profit did I make yesterday?" within 5 seconds of opening `/reports`? This is the actual product goal behind the headline/breakdown design — worth validating informally during the customer #0 legibility check (see SHIP BLOCKER above), even though it isn't a metric the app can instrument itself yet.
+
+## Future Scope (not this plan)
+
+- **Report caching** — a `ReportCache { period, hash, lastUpdated, metrics }` layer to avoid recomputing on every `/reports` visit. Not needed at current data volumes; revisit once a shop has years of sales/expense history (see the O(n)-per-query performance note above).
+- **Metric engine formalization** — see the foundation-ticket note in Architectural notes above.
