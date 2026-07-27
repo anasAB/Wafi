@@ -36,6 +36,7 @@ const period      = ref<ReportPeriod>('month')
 const customStart = ref('')
 const customEnd   = ref('')
 const showProfitInfo = ref(false)
+const showCashMovementInfo = ref(false)
 const previousProfitUsd = ref<number | null>(null)
 const previousInvoiceCount = ref(0)
 const chartBucket = ref<'day' | 'month'>('day')
@@ -356,6 +357,23 @@ onMounted(() => { reload(); deadStock.load() })
           <li><span>− {{ t('reports.expenses') }}</span><span dir="ltr">${{ metrics.expensesUsd.value.toFixed(2) }}</span></li>
           <li class="total"><span>= {{ t('reports.profit') }}</span><span dir="ltr">${{ metrics.profitUsd.value.toFixed(2) }}</span></li>
         </ul>
+
+        <div class="cash-movement-note-row">
+          <button
+            type="button"
+            class="info-btn"
+            data-test="cash-movement-info"
+            :aria-expanded="showCashMovementInfo"
+            @click="showCashMovementInfo = !showCashMovementInfo"
+          >ⓘ</button>
+          <span>{{ t('reports.cashMovementFootnote') }}</span>
+          <RouterLink to="/shifts/history" class="cash-movement-link" data-test="cash-movement-link">
+            {{ t('reports.viewCashMovements') }}
+          </RouterLink>
+        </div>
+        <p v-if="showCashMovementInfo" data-test="cash-movement-info-text" class="profit-info-note">
+          {{ t('reports.cashMovementInfo') }}
+        </p>
       </div>
 
       <section v-else-if="activeTab === 'expenses'" class="report-body" data-test="expenses-tab-panel">
@@ -789,6 +807,22 @@ onMounted(() => { reload(); deadStock.load() })
 .caveat {
   margin: 0; padding: 10px 12px; border-radius: 10px; font-size: 0.85rem; color: #FCD34D;
   background: rgba(234, 179, 8, 0.08); border: 1px solid rgba(234, 179, 8, 0.25);
+}
+
+.cash-movement-note-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.77rem;
+  color: #93A3B8;
+  flex-wrap: wrap;
+}
+
+.cash-movement-link {
+  margin-inline-start: auto;
+  color: #60A5FA;
+  font-weight: 600;
+  text-decoration: none;
 }
 
 .chart-card { padding: 8px 8px 0; }

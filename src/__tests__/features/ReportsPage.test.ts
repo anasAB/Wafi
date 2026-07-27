@@ -39,6 +39,28 @@ describe('ReportsPage', () => {
     expect(w.text()).toContain('250')             // profit headline 500-200-50
   })
 
+  it('shows a cash-movement exclusion note with tooltip and a link to shift history', async () => {
+    vi.mocked(db.getOptional).mockImplementation(async (sql: string) => {
+      if (/SUM\(total_usd\)/.test(sql)) return { total: 500 } as any
+      if (/as cogs/.test(sql) && /sale_line_items/.test(sql) && !/return/.test(sql)) return { cogs: 200 } as any
+      if (/FROM expenses/.test(sql))    return { total: 50 } as any
+      if (/COUNT\(\*\) as count FROM sales/.test(sql)) return { count: 7 } as any
+      return { total: 0, cogs: 0, count: 0 } as any
+    })
+    const w = mountPage()
+    await flushPromises()
+
+    const infoBtn = w.get('[data-test="cash-movement-info"]')
+    expect(w.find('[data-test="cash-movement-info-text"]').exists()).toBe(false)
+    await infoBtn.trigger('click')
+    expect(w.get('[data-test="cash-movement-info-text"]').text()).toContain(
+      'حركات الصندوق',
+    )
+
+    const link = w.get('[data-test="cash-movement-link"]')
+    expect(link.attributes('to')).toBe('/shifts/history')
+  })
+
   it('shows the empty state when the period has no sales', async () => {
     vi.mocked(db.getOptional).mockResolvedValue({ total: 0, cogs: 0, count: 0 } as any)
     const w = mountPage()
