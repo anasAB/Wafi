@@ -39,14 +39,17 @@ DROP POLICY IF EXISTS expenses_insert_all ON public.expenses;
 DROP POLICY IF EXISTS expenses_update_all ON public.expenses;
 DROP POLICY IF EXISTS expenses_delete_all ON public.expenses;
 
+DROP POLICY IF EXISTS expenses_select_owner_manager ON public.expenses;
 CREATE POLICY expenses_select_owner_manager ON public.expenses
   FOR SELECT TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()) AND public.auth_role() IN ('owner','manager'));
 
+DROP POLICY IF EXISTS expenses_insert_owner_manager ON public.expenses;
 CREATE POLICY expenses_insert_owner_manager ON public.expenses
   FOR INSERT TO authenticated, anon
   WITH CHECK (shop_id = (SELECT public.auth_shop_id()) AND public.auth_role() IN ('owner','manager'));
 
+DROP POLICY IF EXISTS expenses_update_owner_manager ON public.expenses;
 CREATE POLICY expenses_update_owner_manager ON public.expenses
   FOR UPDATE TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()) AND public.auth_role() IN ('owner','manager'))
@@ -60,15 +63,18 @@ DROP POLICY IF EXISTS customers_insert_all ON public.customers;
 DROP POLICY IF EXISTS customers_update_all ON public.customers;
 DROP POLICY IF EXISTS customers_delete_all ON public.customers;
 
+DROP POLICY IF EXISTS customers_insert_permission ON public.customers;
 CREATE POLICY customers_insert_permission ON public.customers
   FOR INSERT TO authenticated, anon
   WITH CHECK (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_customers'));
 
+DROP POLICY IF EXISTS customers_update_permission ON public.customers;
 CREATE POLICY customers_update_permission ON public.customers
   FOR UPDATE TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_customers'))
   WITH CHECK (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_customers'));
 
+DROP POLICY IF EXISTS customers_delete_permission ON public.customers;
 CREATE POLICY customers_delete_permission ON public.customers
   FOR DELETE TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_customers'));
@@ -82,6 +88,7 @@ DROP POLICY IF EXISTS customer_payments_insert_all ON public.customer_payments;
 DROP POLICY IF EXISTS customer_payments_update_all ON public.customer_payments;
 DROP POLICY IF EXISTS customer_payments_delete_all ON public.customer_payments;
 
+DROP POLICY IF EXISTS customer_payments_insert_permission ON public.customer_payments;
 CREATE POLICY customer_payments_insert_permission ON public.customer_payments
   FOR INSERT TO authenticated, anon
   WITH CHECK (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_customers'));
@@ -94,10 +101,12 @@ CREATE POLICY customer_payments_insert_permission ON public.customer_payments
 DROP POLICY IF EXISTS installment_plans_insert_all ON public.installment_plans;
 DROP POLICY IF EXISTS installment_plans_update_all ON public.installment_plans;
 
+DROP POLICY IF EXISTS installment_plans_insert_permission ON public.installment_plans;
 CREATE POLICY installment_plans_insert_permission ON public.installment_plans
   FOR INSERT TO authenticated, anon
   WITH CHECK (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_customers'));
 
+DROP POLICY IF EXISTS installment_plans_update_owner_manager ON public.installment_plans;
 CREATE POLICY installment_plans_update_owner_manager ON public.installment_plans
   FOR UPDATE TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()) AND public.auth_role() IN ('owner','manager'))
@@ -109,6 +118,7 @@ CREATE POLICY installment_plans_update_owner_manager ON public.installment_plans
 
 DROP POLICY IF EXISTS installment_dues_update_all ON public.installment_dues;
 
+DROP POLICY IF EXISTS installment_dues_update_owner_manager ON public.installment_dues;
 CREATE POLICY installment_dues_update_owner_manager ON public.installment_dues
   FOR UPDATE TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()) AND public.auth_role() IN ('owner','manager'))

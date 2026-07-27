@@ -13,6 +13,7 @@
 
 DROP POLICY IF EXISTS cashier_shifts_select_all ON public.cashier_shifts;
 
+DROP POLICY IF EXISTS cashier_shifts_select_own_or_manager ON public.cashier_shifts;
 CREATE POLICY cashier_shifts_select_own_or_manager ON public.cashier_shifts
   FOR SELECT TO authenticated, anon
   USING (
@@ -30,6 +31,7 @@ CREATE POLICY cashier_shifts_select_own_or_manager ON public.cashier_shifts
 
 DROP POLICY IF EXISTS cash_movements_select_all ON public.cash_movements;
 
+DROP POLICY IF EXISTS cash_movements_select_own_or_manager ON public.cash_movements;
 CREATE POLICY cash_movements_select_own_or_manager ON public.cash_movements
   FOR SELECT TO authenticated, anon
   USING (
@@ -64,15 +66,18 @@ CREATE POLICY denomination_configs_select_all ON public.denomination_configs
   FOR SELECT TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()));
 
+DROP POLICY IF EXISTS denomination_configs_insert_owner ON public.denomination_configs;
 CREATE POLICY denomination_configs_insert_owner ON public.denomination_configs
   FOR INSERT TO authenticated, anon
   WITH CHECK (shop_id = (SELECT public.auth_shop_id()) AND public.auth_role() = 'owner');
 
+DROP POLICY IF EXISTS denomination_configs_update_owner ON public.denomination_configs;
 CREATE POLICY denomination_configs_update_owner ON public.denomination_configs
   FOR UPDATE TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()) AND public.auth_role() = 'owner')
   WITH CHECK (shop_id = (SELECT public.auth_shop_id()) AND public.auth_role() = 'owner');
 
+DROP POLICY IF EXISTS denomination_configs_delete_owner ON public.denomination_configs;
 CREATE POLICY denomination_configs_delete_owner ON public.denomination_configs
   FOR DELETE TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()) AND public.auth_role() = 'owner');

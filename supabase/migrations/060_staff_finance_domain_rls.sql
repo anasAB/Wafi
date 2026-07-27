@@ -25,9 +25,11 @@ DROP POLICY IF EXISTS staff_ledger_insert_all ON public.staff_ledger;
 DROP POLICY IF EXISTS staff_ledger_update_all ON public.staff_ledger;
 DROP POLICY IF EXISTS staff_ledger_delete_all ON public.staff_ledger;
 
+DROP POLICY IF EXISTS staff_ledger_select_permission ON public.staff_ledger;
 CREATE POLICY staff_ledger_select_permission ON public.staff_ledger
   FOR SELECT TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_view_staff_ledger'));
+DROP POLICY IF EXISTS staff_ledger_insert_permission ON public.staff_ledger;
 CREATE POLICY staff_ledger_insert_permission ON public.staff_ledger
   FOR INSERT TO authenticated, anon
   WITH CHECK (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_view_staff_ledger'));
@@ -38,12 +40,15 @@ DROP POLICY IF EXISTS staff_settlements_insert_all ON public.staff_settlements;
 DROP POLICY IF EXISTS staff_settlements_update_all ON public.staff_settlements;
 DROP POLICY IF EXISTS staff_settlements_delete_all ON public.staff_settlements;
 
+DROP POLICY IF EXISTS staff_settlements_select_permission ON public.staff_settlements;
 CREATE POLICY staff_settlements_select_permission ON public.staff_settlements
   FOR SELECT TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_view_staff_ledger'));
+DROP POLICY IF EXISTS staff_settlements_insert_permission ON public.staff_settlements;
 CREATE POLICY staff_settlements_insert_permission ON public.staff_settlements
   FOR INSERT TO authenticated, anon
   WITH CHECK (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_view_staff_ledger'));
+DROP POLICY IF EXISTS staff_settlements_update_draft_only ON public.staff_settlements;
 CREATE POLICY staff_settlements_update_draft_only ON public.staff_settlements
   FOR UPDATE TO authenticated, anon
   USING (

@@ -8,6 +8,7 @@
 
 DROP POLICY IF EXISTS audit_log_select_all ON public.audit_log;
 
+DROP POLICY IF EXISTS audit_log_select_owner_or_permission ON public.audit_log;
 CREATE POLICY audit_log_select_owner_or_permission ON public.audit_log
   FOR SELECT TO authenticated, anon
   USING (

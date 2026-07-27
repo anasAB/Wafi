@@ -46,6 +46,12 @@ DROP POLICY IF EXISTS staff_select_all ON public.staff;
 DROP POLICY IF EXISTS staff_insert_all ON public.staff;
 DROP POLICY IF EXISTS staff_update_all ON public.staff;
 DROP POLICY IF EXISTS staff_delete_all ON public.staff;
+-- Also drop this migration's own target names, so re-running it against an
+-- environment where it already landed via a prior, untracked apply (e.g.
+-- production -- see WAFI-001 closeout, 2026-07-26) is idempotent too.
+DROP POLICY IF EXISTS staff_select_owner_manager ON public.staff;
+DROP POLICY IF EXISTS staff_insert_owner ON public.staff;
+DROP POLICY IF EXISTS staff_update_owner ON public.staff;
 
 CREATE POLICY staff_select_owner_manager ON public.staff
   FOR SELECT TO authenticated, anon
@@ -81,6 +87,8 @@ CREATE POLICY staff_update_owner ON public.staff
 -- specified below.
 DROP POLICY IF EXISTS devices_insert_all ON public.devices;
 DROP POLICY IF EXISTS devices_update_all ON public.devices;
+DROP POLICY IF EXISTS devices_insert_owner ON public.devices;
+DROP POLICY IF EXISTS devices_update_owner ON public.devices;
 
 CREATE POLICY devices_insert_owner ON public.devices
   FOR INSERT TO authenticated, anon

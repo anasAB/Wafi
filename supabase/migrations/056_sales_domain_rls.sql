@@ -46,6 +46,7 @@ DROP POLICY IF EXISTS sale_payments_select_all ON public.sale_payments;
 DROP POLICY IF EXISTS returns_select_all ON public.returns;
 DROP POLICY IF EXISTS return_line_items_select_all ON public.return_line_items;
 
+DROP POLICY IF EXISTS sales_select_own_or_manager ON public.sales;
 CREATE POLICY sales_select_own_or_manager ON public.sales
   FOR SELECT TO authenticated, anon
   USING (
@@ -56,6 +57,7 @@ CREATE POLICY sales_select_own_or_manager ON public.sales
     )
   );
 
+DROP POLICY IF EXISTS sale_line_items_select_own_or_manager ON public.sale_line_items;
 CREATE POLICY sale_line_items_select_own_or_manager ON public.sale_line_items
   FOR SELECT TO authenticated, anon
   USING (
@@ -69,6 +71,7 @@ CREATE POLICY sale_line_items_select_own_or_manager ON public.sale_line_items
     )
   );
 
+DROP POLICY IF EXISTS sale_payments_select_own_or_manager ON public.sale_payments;
 CREATE POLICY sale_payments_select_own_or_manager ON public.sale_payments
   FOR SELECT TO authenticated, anon
   USING (
@@ -82,6 +85,7 @@ CREATE POLICY sale_payments_select_own_or_manager ON public.sale_payments
     )
   );
 
+DROP POLICY IF EXISTS returns_select_own_or_manager ON public.returns;
 CREATE POLICY returns_select_own_or_manager ON public.returns
   FOR SELECT TO authenticated, anon
   USING (
@@ -95,6 +99,7 @@ CREATE POLICY returns_select_own_or_manager ON public.returns
     )
   );
 
+DROP POLICY IF EXISTS return_line_items_select_own_or_manager ON public.return_line_items;
 CREATE POLICY return_line_items_select_own_or_manager ON public.return_line_items
   FOR SELECT TO authenticated, anon
   USING (
@@ -125,6 +130,7 @@ DROP POLICY IF EXISTS return_reasons_insert_all ON public.return_reasons;
 DROP POLICY IF EXISTS return_reasons_update_all ON public.return_reasons;
 DROP POLICY IF EXISTS return_reasons_delete_all ON public.return_reasons;
 
+DROP POLICY IF EXISTS return_reasons_insert_permission ON public.return_reasons;
 CREATE POLICY return_reasons_insert_permission ON public.return_reasons
   FOR INSERT TO authenticated, anon
   WITH CHECK (
@@ -132,6 +138,7 @@ CREATE POLICY return_reasons_insert_permission ON public.return_reasons
     AND public.can('can_manage_products')
   );
 
+DROP POLICY IF EXISTS return_reasons_update_permission ON public.return_reasons;
 CREATE POLICY return_reasons_update_permission ON public.return_reasons
   FOR UPDATE TO authenticated, anon
   USING (
@@ -143,6 +150,7 @@ CREATE POLICY return_reasons_update_permission ON public.return_reasons
     AND public.can('can_manage_products')
   );
 
+DROP POLICY IF EXISTS return_reasons_delete_permission ON public.return_reasons;
 CREATE POLICY return_reasons_delete_permission ON public.return_reasons
   FOR DELETE TO authenticated, anon
   USING (

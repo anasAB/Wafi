@@ -44,6 +44,7 @@ DROP POLICY IF EXISTS sales_insert_all ON public.sales;
 DROP POLICY IF EXISTS sales_update_all ON public.sales;
 DROP POLICY IF EXISTS sales_delete_all ON public.sales;
 
+DROP POLICY IF EXISTS sales_insert_own ON public.sales;
 CREATE POLICY sales_insert_own ON public.sales
   FOR INSERT TO authenticated, anon
   WITH CHECK (
@@ -59,6 +60,7 @@ DROP POLICY IF EXISTS sale_line_items_insert_all ON public.sale_line_items;
 DROP POLICY IF EXISTS sale_line_items_update_all ON public.sale_line_items;
 DROP POLICY IF EXISTS sale_line_items_delete_all ON public.sale_line_items;
 
+DROP POLICY IF EXISTS sale_line_items_insert_own ON public.sale_line_items;
 CREATE POLICY sale_line_items_insert_own ON public.sale_line_items
   FOR INSERT TO authenticated, anon
   WITH CHECK (
@@ -77,6 +79,7 @@ DROP POLICY IF EXISTS sale_payments_insert_all ON public.sale_payments;
 DROP POLICY IF EXISTS sale_payments_update_all ON public.sale_payments;
 DROP POLICY IF EXISTS sale_payments_delete_all ON public.sale_payments;
 
+DROP POLICY IF EXISTS sale_payments_insert_own ON public.sale_payments;
 CREATE POLICY sale_payments_insert_own ON public.sale_payments
   FOR INSERT TO authenticated, anon
   WITH CHECK (
@@ -97,6 +100,7 @@ DROP POLICY IF EXISTS returns_insert_all ON public.returns;
 DROP POLICY IF EXISTS returns_update_all ON public.returns;
 DROP POLICY IF EXISTS returns_delete_all ON public.returns;
 
+DROP POLICY IF EXISTS returns_insert_own ON public.returns;
 CREATE POLICY returns_insert_own ON public.returns
   FOR INSERT TO authenticated, anon
   WITH CHECK (
@@ -115,6 +119,7 @@ DROP POLICY IF EXISTS return_line_items_insert_all ON public.return_line_items;
 DROP POLICY IF EXISTS return_line_items_update_all ON public.return_line_items;
 DROP POLICY IF EXISTS return_line_items_delete_all ON public.return_line_items;
 
+DROP POLICY IF EXISTS return_line_items_insert_own ON public.return_line_items;
 CREATE POLICY return_line_items_insert_own ON public.return_line_items
   FOR INSERT TO authenticated, anon
   WITH CHECK (

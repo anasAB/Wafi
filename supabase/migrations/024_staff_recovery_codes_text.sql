@@ -16,10 +16,24 @@
 -- data loss: a JSON string scalar (the corrupted owner row) yields its inner
 -- array text, and a JSONB array (the '[]' default rows) yields '[]'. Both become
 -- clean, parseable TEXT.
-ALTER TABLE public.staff ALTER COLUMN recovery_codes DROP DEFAULT;
-ALTER TABLE public.staff
-  ALTER COLUMN recovery_codes TYPE text USING recovery_codes #>> '{}';
-ALTER TABLE public.staff ALTER COLUMN recovery_codes SET DEFAULT '[]';
+--
+-- Guarded on the column's current type: some environments (e.g. production —
+-- see WAFI-001 closeout, 2026-07-26) already have this column as TEXT via an
+-- undocumented hand-patch that predates this migration file ever being pushed
+-- there. The #>> jsonb operator errors against an already-TEXT column, so only
+-- run the jsonb->text conversion when the column is still jsonb.
+DO $$
+BEGIN
+  IF (
+    SELECT data_type FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'staff' AND column_name = 'recovery_codes'
+  ) = 'jsonb' THEN
+    ALTER TABLE public.staff ALTER COLUMN recovery_codes DROP DEFAULT;
+    ALTER TABLE public.staff
+      ALTER COLUMN recovery_codes TYPE text USING recovery_codes #>> '{}';
+  END IF;
+  ALTER TABLE public.staff ALTER COLUMN recovery_codes SET DEFAULT '[]';
+END $$;
 
 -- A table rewrite via ALTER TYPE is DDL and may not emit per-row logical-
 -- replication events, so existing devices could keep the old (double-encoded)

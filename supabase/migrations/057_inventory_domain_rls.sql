@@ -24,13 +24,16 @@ DROP POLICY IF EXISTS products_insert_all ON public.products;
 DROP POLICY IF EXISTS products_update_all ON public.products;
 DROP POLICY IF EXISTS products_delete_all ON public.products;
 
+DROP POLICY IF EXISTS products_insert_permission ON public.products;
 CREATE POLICY products_insert_permission ON public.products
   FOR INSERT TO authenticated, anon
   WITH CHECK (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_products'));
+DROP POLICY IF EXISTS products_update_permission ON public.products;
 CREATE POLICY products_update_permission ON public.products
   FOR UPDATE TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_products'))
   WITH CHECK (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_products'));
+DROP POLICY IF EXISTS products_delete_permission ON public.products;
 CREATE POLICY products_delete_permission ON public.products
   FOR DELETE TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_products'));
@@ -40,13 +43,16 @@ CREATE POLICY products_delete_permission ON public.products
 DROP POLICY IF EXISTS categories_insert_all ON public.categories;
 DROP POLICY IF EXISTS categories_update_all ON public.categories;
 DROP POLICY IF EXISTS categories_delete_all ON public.categories;
+DROP POLICY IF EXISTS categories_insert_permission ON public.categories;
 CREATE POLICY categories_insert_permission ON public.categories
   FOR INSERT TO authenticated, anon
   WITH CHECK (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_products'));
+DROP POLICY IF EXISTS categories_update_permission ON public.categories;
 CREATE POLICY categories_update_permission ON public.categories
   FOR UPDATE TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_products'))
   WITH CHECK (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_products'));
+DROP POLICY IF EXISTS categories_delete_permission ON public.categories;
 CREATE POLICY categories_delete_permission ON public.categories
   FOR DELETE TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_products'));
@@ -54,13 +60,16 @@ CREATE POLICY categories_delete_permission ON public.categories
 DROP POLICY IF EXISTS subcategories_insert_all ON public.subcategories;
 DROP POLICY IF EXISTS subcategories_update_all ON public.subcategories;
 DROP POLICY IF EXISTS subcategories_delete_all ON public.subcategories;
+DROP POLICY IF EXISTS subcategories_insert_permission ON public.subcategories;
 CREATE POLICY subcategories_insert_permission ON public.subcategories
   FOR INSERT TO authenticated, anon
   WITH CHECK (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_products'));
+DROP POLICY IF EXISTS subcategories_update_permission ON public.subcategories;
 CREATE POLICY subcategories_update_permission ON public.subcategories
   FOR UPDATE TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_products'))
   WITH CHECK (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_products'));
+DROP POLICY IF EXISTS subcategories_delete_permission ON public.subcategories;
 CREATE POLICY subcategories_delete_permission ON public.subcategories
   FOR DELETE TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_products'));
@@ -70,6 +79,7 @@ CREATE POLICY subcategories_delete_permission ON public.subcategories
 DROP POLICY IF EXISTS stock_adjustments_insert_all ON public.stock_adjustments;
 DROP POLICY IF EXISTS stock_adjustments_update_all ON public.stock_adjustments;
 DROP POLICY IF EXISTS stock_adjustments_delete_all ON public.stock_adjustments;
+DROP POLICY IF EXISTS stock_adjustments_insert_permission ON public.stock_adjustments;
 CREATE POLICY stock_adjustments_insert_permission ON public.stock_adjustments
   FOR INSERT TO authenticated, anon
   WITH CHECK (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_inventory'));
@@ -80,13 +90,16 @@ CREATE POLICY stock_adjustments_insert_permission ON public.stock_adjustments
 DROP POLICY IF EXISTS suppliers_insert_all ON public.suppliers;
 DROP POLICY IF EXISTS suppliers_update_all ON public.suppliers;
 DROP POLICY IF EXISTS suppliers_delete_all ON public.suppliers;
+DROP POLICY IF EXISTS suppliers_insert_permission ON public.suppliers;
 CREATE POLICY suppliers_insert_permission ON public.suppliers
   FOR INSERT TO authenticated, anon
   WITH CHECK (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_suppliers'));
+DROP POLICY IF EXISTS suppliers_update_permission ON public.suppliers;
 CREATE POLICY suppliers_update_permission ON public.suppliers
   FOR UPDATE TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_suppliers'))
   WITH CHECK (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_suppliers'));
+DROP POLICY IF EXISTS suppliers_delete_permission ON public.suppliers;
 CREATE POLICY suppliers_delete_permission ON public.suppliers
   FOR DELETE TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_suppliers'));
@@ -94,9 +107,11 @@ CREATE POLICY suppliers_delete_permission ON public.suppliers
 DROP POLICY IF EXISTS stock_receivings_insert_all ON public.stock_receivings;
 DROP POLICY IF EXISTS stock_receivings_update_all ON public.stock_receivings;
 DROP POLICY IF EXISTS stock_receivings_delete_all ON public.stock_receivings;
+DROP POLICY IF EXISTS stock_receivings_insert_permission ON public.stock_receivings;
 CREATE POLICY stock_receivings_insert_permission ON public.stock_receivings
   FOR INSERT TO authenticated, anon
   WITH CHECK (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_suppliers'));
+DROP POLICY IF EXISTS stock_receivings_update_permission ON public.stock_receivings;
 CREATE POLICY stock_receivings_update_permission ON public.stock_receivings
   FOR UPDATE TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_suppliers'))
@@ -105,9 +120,11 @@ CREATE POLICY stock_receivings_update_permission ON public.stock_receivings
 
 DROP POLICY IF EXISTS stock_receiving_line_items_insert_all ON public.stock_receiving_line_items;
 DROP POLICY IF EXISTS stock_receiving_line_items_update_all ON public.stock_receiving_line_items;
+DROP POLICY IF EXISTS stock_receiving_line_items_insert_permission ON public.stock_receiving_line_items;
 CREATE POLICY stock_receiving_line_items_insert_permission ON public.stock_receiving_line_items
   FOR INSERT TO authenticated, anon
   WITH CHECK (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_suppliers'));
+DROP POLICY IF EXISTS stock_receiving_line_items_update_permission ON public.stock_receiving_line_items;
 CREATE POLICY stock_receiving_line_items_update_permission ON public.stock_receiving_line_items
   FOR UPDATE TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_suppliers'))
@@ -116,9 +133,11 @@ CREATE POLICY stock_receiving_line_items_update_permission ON public.stock_recei
 -- stock_take_sessions/stock_take_lines: can_manage_stock_take.
 DROP POLICY IF EXISTS stock_take_sessions_insert_all ON public.stock_take_sessions;
 DROP POLICY IF EXISTS stock_take_sessions_update_all ON public.stock_take_sessions;
+DROP POLICY IF EXISTS stock_take_sessions_insert_permission ON public.stock_take_sessions;
 CREATE POLICY stock_take_sessions_insert_permission ON public.stock_take_sessions
   FOR INSERT TO authenticated, anon
   WITH CHECK (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_stock_take'));
+DROP POLICY IF EXISTS stock_take_sessions_update_permission ON public.stock_take_sessions;
 CREATE POLICY stock_take_sessions_update_permission ON public.stock_take_sessions
   FOR UPDATE TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_stock_take'))
@@ -126,9 +145,11 @@ CREATE POLICY stock_take_sessions_update_permission ON public.stock_take_session
 
 DROP POLICY IF EXISTS stock_take_lines_insert_all ON public.stock_take_lines;
 DROP POLICY IF EXISTS stock_take_lines_update_all ON public.stock_take_lines;
+DROP POLICY IF EXISTS stock_take_lines_insert_permission ON public.stock_take_lines;
 CREATE POLICY stock_take_lines_insert_permission ON public.stock_take_lines
   FOR INSERT TO authenticated, anon
   WITH CHECK (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_stock_take'));
+DROP POLICY IF EXISTS stock_take_lines_update_permission ON public.stock_take_lines;
 CREATE POLICY stock_take_lines_update_permission ON public.stock_take_lines
   FOR UPDATE TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()) AND public.can('can_manage_stock_take'))

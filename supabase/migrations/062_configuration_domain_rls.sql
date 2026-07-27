@@ -21,9 +21,11 @@ DROP POLICY IF EXISTS receipt_settings_delete_all ON public.receipt_settings;
 CREATE POLICY receipt_settings_select_all ON public.receipt_settings
   FOR SELECT TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()));
+DROP POLICY IF EXISTS receipt_settings_insert_owner ON public.receipt_settings;
 CREATE POLICY receipt_settings_insert_owner ON public.receipt_settings
   FOR INSERT TO authenticated, anon
   WITH CHECK (shop_id = (SELECT public.auth_shop_id()) AND public.auth_role() = 'owner');
+DROP POLICY IF EXISTS receipt_settings_update_owner ON public.receipt_settings;
 CREATE POLICY receipt_settings_update_owner ON public.receipt_settings
   FOR UPDATE TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()) AND public.auth_role() = 'owner')
@@ -37,6 +39,7 @@ DROP POLICY IF EXISTS exchange_rates_delete_all ON public.exchange_rates;
 CREATE POLICY exchange_rates_select_all ON public.exchange_rates
   FOR SELECT TO authenticated, anon
   USING (shop_id = (SELECT public.auth_shop_id()));
+DROP POLICY IF EXISTS exchange_rates_insert_owner ON public.exchange_rates;
 CREATE POLICY exchange_rates_insert_owner ON public.exchange_rates
   FOR INSERT TO authenticated, anon
   WITH CHECK (shop_id = (SELECT public.auth_shop_id()) AND public.auth_role() = 'owner');

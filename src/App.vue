@@ -34,9 +34,14 @@ const { locked: idleLocked, unlock: unlockIdle } = useIdleLock()
 const appReady  = ref(false)
 const hasStaff  = ref(false)
 
-const showSidebar = computed(() => true)
+const PUBLIC_PATHS = ['/welcome', '/login', '/signup', '/forgot-password']
+
+const isPublicRoute = computed(() => PUBLIC_PATHS.includes(route.path))
+
+const showSidebar = computed(() => !isPublicRoute.value)
 
 const showBottomNav = computed(() => {
+  if (isPublicRoute.value)                              return false
   if (route.path === '/pos/confirmation')                  return false
   if (route.path === '/products/add')                      return false
   if (/^\/products\/[^/]+\/edit$/.test(route.path))       return false
@@ -146,7 +151,7 @@ watch(
   <template v-else>
     <!-- Single login gate: pick staff → PIN → opening cash opens the shift and
          establishes the session identity (audit + permissions) in one step. -->
-    <LockScreen v-if="hasStaff && !shiftStore.isShiftOpen" />
+    <LockScreen v-if="!isPublicRoute && hasStaff && !shiftStore.isShiftOpen" />
 
     <!-- Normal app shell -->
     <div

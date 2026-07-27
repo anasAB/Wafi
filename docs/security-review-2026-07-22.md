@@ -20,6 +20,8 @@
 ### Overall Risk Assessment
 **Medium** - Two confirmed RLS gaps allow same-shop staff to tamper with or misattribute cash/shift records via direct API calls; no cross-tenant, remote-code-execution, or credential-exposure issues were confirmed. Both findings are narrowly scoped, already have an established fix pattern elsewhere in the same migration series, and do not affect sales/returns financial immutability (which was independently hardened and verified).
 
+**Update (2026-07-26):** Both findings are fixed (migration 068), verified via a real pgTAP run (39/39 assertions across WAFI-122/WAFI-202/WAFI-003/WAFI-001-hardening, no regressions), **and migration 068 is now applied to the production Supabase project** — confirmed directly via `pg_policies`, matching the migration's exact policy names and `qual`/`with_check` expressions. Both findings are closed. See per-finding `Status` lines above.
+
 ---
 
 # Vuln 1: Stale permissive RLS policy leaves `cashier_shifts` UPDATE/DELETE open to any shop staff
@@ -36,9 +38,9 @@
 4. Alternatively, send `DELETE /rest/v1/cashier_shifts?id=eq.<other-staff-shift-id>` and observe the row is deleted.
 **Recommendation:** Add explicit UPDATE and DELETE policies on `cashier_shifts` mirroring the ownership check already used for SELECT (`staff_id = auth_staff_id()` for the shift's own cashier, or `auth_role() IN ('owner','manager')`), and explicitly `DROP POLICY cashier_shifts_update_all` and `DROP POLICY cashier_shifts_delete_all` before adding the replacements — do not merely add a new restrictive policy alongside the old permissive one, since permissive policies are OR'd together. If the shift-lifecycle model intends shifts to be append-only/closed-only-through-a-controlled-workflow, consider disallowing client-side UPDATE/DELETE entirely and requiring a dedicated close-shift RPC instead.
 **References:** CWE-863: https://cwe.mitre.org/data/definitions/863.html · OWASP Top 10 A01:2021 – Broken Access Control · Postgres RLS docs on permissive vs. restrictive policies
-**Status:** Open
-**Assignee:** TBD
-**Due Date:** TBD
+**Status:** Fixed, verified, and deployed — `supabase/migrations/068_wafi001_cash_shift_hardening.sql` drops the stale `cashier_shifts_update_all`/`cashier_shifts_delete_all` policies and replaces them with the recommended ownership-or-manager check, exactly as recommended. Regression coverage in `supabase/tests/wafi001_cash_shift_hardening.test.sql` (Tests 1-5) executed 2026-07-26 against a real Postgres (disposable Supabase project, full migration history 001-068 applied, pgTAP 1.3.3) — **all 5 assertions pass**. Applied to the production Supabase project 2026-07-26 and independently confirmed via `pg_policies` — the stale policies are gone and `cashier_shifts_update_own_or_manager`/`cashier_shifts_delete_own_or_manager` exist with the exact expected `qual`/`with_check` bodies.
+**Assignee:** N/A — closed
+**Due Date:** N/A — closed 2026-07-26
 
 ---
 
@@ -56,9 +58,9 @@
 4. Repeat against `POST /rest/v1/cashier_shifts` with a different staff member's id in `staff_id`.
 **Recommendation:** Extend the WAFI-202 attribution pattern already used in migration 064 to these two tables' INSERT `WITH CHECK` clauses: add `staff_id = (SELECT public.auth_staff_id())`, consistent with the sales-domain treatment.
 **References:** CWE-863: https://cwe.mitre.org/data/definitions/863.html · OWASP Top 10 A01:2021 – Broken Access Control · Internal ticket WAFI-202
-**Status:** Open (tracked internally as WAFI-202, but not yet remediated for these two tables)
-**Assignee:** TBD
-**Due Date:** TBD
+**Status:** Fixed, verified, and deployed — `supabase/migrations/068_wafi001_cash_shift_hardening.sql` adds `staff_id = (SELECT public.auth_staff_id())` to both tables' INSERT `WITH CHECK`, exactly as recommended. Regression coverage in `supabase/tests/wafi001_cash_shift_hardening.test.sql` (Tests 6-10) executed 2026-07-26 against a real Postgres (disposable Supabase project, full migration history 001-068 applied, pgTAP 1.3.3) — **all 5 assertions pass**. Applied to the production Supabase project 2026-07-26 and independently confirmed via `pg_policies` — `cashier_shifts_insert_all`/`cash_movements_insert_all` exist with the exact expected staff-attribution `with_check` body.
+**Assignee:** N/A — closed
+**Due Date:** N/A — closed 2026-07-26
 
 ---
 

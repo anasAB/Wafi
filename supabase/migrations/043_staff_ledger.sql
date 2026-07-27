@@ -13,14 +13,29 @@
 --
 -- See docs/superpowers/specs/2026-07-19-wafi-138-staff-ledger-settlement-design.md
 
-CREATE TYPE public.staff_ledger_entry_type AS ENUM
-  ('advance', 'bonus', 'penalty', 'carry_forward', 'write_off', 'correction');
+-- Postgres has no CREATE TYPE IF NOT EXISTS; guard each one explicitly so this
+-- is safe to re-run against an environment (e.g. production — see WAFI-001
+-- closeout, 2026-07-26) where these types already exist via prior, untracked
+-- application of this migration's intent.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'staff_ledger_entry_type') THEN
+    CREATE TYPE public.staff_ledger_entry_type AS ENUM
+      ('advance', 'bonus', 'penalty', 'carry_forward', 'write_off', 'correction');
+  END IF;
 
-CREATE TYPE public.staff_ledger_source_type AS ENUM ('manual', 'shift', 'settlement');
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'staff_ledger_source_type') THEN
+    CREATE TYPE public.staff_ledger_source_type AS ENUM ('manual', 'shift', 'settlement');
+  END IF;
 
-CREATE TYPE public.staff_settlement_status AS ENUM ('draft', 'finalized', 'paid');
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'staff_settlement_status') THEN
+    CREATE TYPE public.staff_settlement_status AS ENUM ('draft', 'finalized', 'paid');
+  END IF;
 
-CREATE TYPE public.staff_settlement_payment_method AS ENUM ('cash', 'bank', 'other');
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'staff_settlement_payment_method') THEN
+    CREATE TYPE public.staff_settlement_payment_method AS ENUM ('cash', 'bank', 'other');
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS public.staff_settlements (
   id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
