@@ -53,7 +53,7 @@ BEGIN
   -- above and permanently brick the owner account with a blank name and a
   -- PIN hash for the empty string. Reject unconditionally, regardless of
   -- which client or code path is calling.
-  IF p_pin IS NULL OR p_pin = '' OR trim(p_staff_name) = '' THEN
+  IF p_pin IS NULL OR p_pin = '' OR p_staff_name IS NULL OR trim(p_staff_name) = '' THEN
     RETURN 'invalid_state';
   END IF;
 
@@ -109,6 +109,12 @@ BEGIN
 END;
 $$;
 
--- Mirrors switch_active_operator's grants exactly (migration 045).
+-- Narrower than switch_active_operator's grants (migration 045): this
+-- function creates an owner identity and only ever needs to run for a
+-- signed-in owner post-signup -- auth_shop_id() resolves to NULL for an
+-- unauthenticated (anon) caller, so anon would always get 'invalid_state'
+-- anyway, but there's no reason to grant EXECUTE on an identity-creating
+-- SECURITY DEFINER function to anon when nothing legitimate ever calls it
+-- that way (flagged in final whole-branch review, 2026-07-27).
 REVOKE ALL ON FUNCTION public.bootstrap_owner_identity(uuid, uuid, text, text) FROM public;
-GRANT EXECUTE ON FUNCTION public.bootstrap_owner_identity(uuid, uuid, text, text) TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION public.bootstrap_owner_identity(uuid, uuid, text, text) TO authenticated;
