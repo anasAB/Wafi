@@ -116,5 +116,12 @@ $$;
 -- anyway, but there's no reason to grant EXECUTE on an identity-creating
 -- SECURITY DEFINER function to anon when nothing legitimate ever calls it
 -- that way (flagged in final whole-branch review, 2026-07-27).
+-- REVOKE ALL FROM public only revokes the implicit public-role grant; it
+-- does NOT revoke the explicit `TO anon` grant this function's original
+-- version made. Re-runnable environments (like production, where an
+-- earlier version of this migration already ran) need that explicit grant
+-- pulled back too, or the anon EXECUTE right silently survives a
+-- CREATE OR REPLACE.
 REVOKE ALL ON FUNCTION public.bootstrap_owner_identity(uuid, uuid, text, text) FROM public;
+REVOKE ALL ON FUNCTION public.bootstrap_owner_identity(uuid, uuid, text, text) FROM anon;
 GRANT EXECUTE ON FUNCTION public.bootstrap_owner_identity(uuid, uuid, text, text) TO authenticated;
