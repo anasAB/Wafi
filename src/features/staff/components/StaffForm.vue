@@ -5,12 +5,32 @@ import PinPad             from './PinPad.vue'
 import type { StaffRole, StaffPermissions, Staff } from '../staff.types'
 import { DEFAULT_CASHIER_PERMISSIONS }      from '../staff.types'
 
-const props = defineProps<{ editStaff?: Staff; forceRole?: StaffRole }>()
-const emit  = defineEmits<{ done: [] }>()
+const props = defineProps<{
+  editStaff?: Staff
+  forceRole?: StaffRole
+  // Owner-bootstrap rewiring (design doc 2026-07-26): when forceRole ===
+  // 'owner' and this is a NEW staff member, the parent (OwnerSetupScreen)
+  // drives saving/submitError itself via the bootstrap_owner_identity RPC,
+  // instead of this component's own internal saving/submitError refs.
+  saving?: boolean
+  submitError?: string
+}>()
+const emit  = defineEmits<{ done: []; submit: [name: string, pin: string] }>()
 
 const { createStaff, updateStaffPin, updateStaff } = useStaff()
 
 const isEdit = computed(() => !!props.editStaff)
+
+// Owner-bootstrap case: forceRole 'owner' + new staff. In this one case the
+// parent owns saving/submitError state (passed in as props) instead of this
+// component's own internal refs.
+const isOwnerBootstrap = computed(() => props.forceRole === 'owner' && !props.editStaff)
+
+// Effective saving/error state: for the owner-bootstrap case, the parent
+// drives these via props (its own bootstrapOwner() call); every other case
+// keeps using this component's own internal refs.
+const effectiveSaving      = computed(() => isOwnerBootstrap.value ? !!props.saving : saving.value)
+const effectiveSubmitError = computed(() => isOwnerBootstrap.value ? (props.submitError ?? '') : submitError.value)
 
 // step: 'info' → 'pin' → 'confirm'. Both add and edit start on 'info'; in edit
 // mode the owner can change name/role/permissions and optionally the PIN.
@@ -94,6 +114,16 @@ function onPin(pin: string) {
 }
 
 async function saveStaff(pin: string) {
+  // Owner-bootstrap case (design doc 2026-07-26): the very first owner's
+  // staff/devices rows must go through bootstrap_owner_identity() on the
+  // server, not this local-only createStaff() write path, which can never
+  // sync up via PowerSync for a brand-new owner. The parent
+  // (OwnerSetupScreen) owns saving/submitError state for this one case.
+  if (isOwnerBootstrap.value) {
+    emit('submit', name.value, pin)
+    return
+  }
+
   saving.value = true
   try {
     if (props.editStaff) {
@@ -224,7 +254,7 @@ async function saveStaff(pin: string) {
         <p class="pin-step-sub">لحماية الحساب، أدخل الرقم السري ثم أكده</p>
       </div>
       <p v-if="pinError" class="pin-error">{{ pinError }}</p>
-      <p v-if="submitError" class="pin-error">{{ submitError }}</p>
+      <p v-if="effectiveSubmitError" class="pin-error">{{ effectiveSubmitError }}</p>
       <PinPad ref="pinPadRef" @complete="onPin" />
 
       <button
@@ -232,6 +262,7 @@ async function saveStaff(pin: string) {
         @click="step = 'info'; firstPin = ''; pinError = ''"
         class="btn-back"
         type="button"
+        :disabled="effectiveSaving"
       >
         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />

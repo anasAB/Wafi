@@ -4,15 +4,59 @@ import { useRouter }   from 'vue-router'
 import StaffForm       from '@/features/staff/components/StaffForm.vue'
 import ExchangeRateEditor from '@/features/exchange-rate/ExchangeRateEditor.vue'
 import { useDemoDataSeed } from '@/features/onboarding/composables/useDemoDataSeed'
+import { useOwnerBootstrap } from '@/features/staff/composables/useOwnerBootstrap'
 import { store } from '@/store'
 
 const router = useRouter()
 const { seedDemoProducts } = useDemoDataSeed()
+const { bootstrapOwner, resumePendingBootstrap } = useOwnerBootstrap()
 
-const pinDone = ref(false)
+const pinDone   = ref(false)
+const bootstrapping = ref(false)
+const timedOut  = ref(false)
+const bootstrapError = ref('')
 
-function onPinDone() {
-  pinDone.value = true  // reveal the (skippable) exchange-rate prompt
+// Design doc §"Client-side change": the very first owner's staff row is
+// created server-side via bootstrap_owner_identity(), not through
+// StaffForm's normal local-write path -- see useOwnerBootstrap.ts for why.
+async function handleOwnerSetup(name: string, pin: string) {
+  bootstrapping.value = true
+  timedOut.value = false
+  bootstrapError.value = ''
+  try {
+    const result = await bootstrapOwner(name, pin)
+    if (result.status === 'done') {
+      pinDone.value = true
+    } else if (result.status === 'timeout') {
+      timedOut.value = true
+    } else {
+      bootstrapError.value = 'تحتاج إلى اتصال بالإنترنت لإكمال الإعداد الأول'
+    }
+  } finally {
+    bootstrapping.value = false
+  }
+}
+
+async function retrySync() {
+  timedOut.value = false
+  bootstrapping.value = true
+  try {
+    const result = await resumePendingBootstrap()
+    if (result.status === 'done') pinDone.value = true
+    else if (result.status === 'timeout') timedOut.value = true
+    else if (result.status === 'needs-connectivity') bootstrapError.value = 'تحتاج إلى اتصال بالإنترنت لإكمال الإعداد الأول'
+  } finally {
+    bootstrapping.value = false
+  }
+}
+
+function continueLater() {
+  // Leaves the PendingBootstrap record in place -- resumed automatically on
+  // next launch per the design doc's Lifecycle section (out of scope for
+  // this task: the boot-time auto-resume check is a separate concern from
+  // this screen's own retry button, and belongs at the router/App.vue level,
+  // not here).
+  router.push('/')
 }
 
 async function proceedToGoal() {
@@ -37,7 +81,20 @@ async function proceedToGoal() {
   <div class="lock-root" dir="rtl">
     <div class="lock-card">
       <h1 class="brand">وافي</h1>
-      <StaffForm v-if="!pinDone" force-role="owner" @done="onPinDone" />
+
+      <StaffForm
+        v-if="!pinDone && !timedOut"
+        force-role="owner"
+        :saving="bootstrapping"
+        :submit-error="bootstrapError"
+        @submit="handleOwnerSetup"
+      />
+
+      <div v-if="timedOut" class="bootstrap-timeout">
+        <p>لا يزال قيد المزامنة — يمكنك المحاولة مرة أخرى أو المتابعة لاحقاً</p>
+        <button class="bootstrap-retry-btn" type="button" @click="retrySync">إعادة المحاولة</button>
+        <button class="bootstrap-continue-later-btn" type="button" @click="continueLater">المتابعة لاحقاً</button>
+      </div>
     </div>
     <ExchangeRateEditor
       v-if="pinDone"
@@ -82,5 +139,32 @@ async function proceedToGoal() {
   line-height: 1;
   font-weight: 800;
   margin-bottom: 1rem;
+}
+
+.bootstrap-timeout {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 1rem;
+  text-align: center;
+  color: #E8EDF5;
+}
+.bootstrap-retry-btn, .bootstrap-continue-later-btn {
+  height: 42px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: 'Tajawal', system-ui, sans-serif;
+  border: none;
+}
+.bootstrap-retry-btn {
+  color: white;
+  background: linear-gradient(135deg, #1A56DB, #1248B3);
+}
+.bootstrap-continue-later-btn {
+  color: #60A5FA;
+  background: rgba(26,86,219,0.12);
+  border: 1px solid rgba(26,86,219,0.30);
 }
 </style>
