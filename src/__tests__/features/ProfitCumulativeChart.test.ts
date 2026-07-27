@@ -32,6 +32,20 @@ describe('ProfitCumulativeChart', () => {
     ])
   })
 
+  it('renders correctly through a deep negative cumulative dip', () => {
+    const w = mountChart([
+      { label: '1/6', profitUsd: 100, bucketKey: '2026-06-01' },
+      { label: '2/6', profitUsd: -500, bucketKey: '2026-06-02' },
+      { label: '3/6', profitUsd: 50, bucketKey: '2026-06-03' },
+    ])
+    const apex = w.findComponent(ApexStub)
+    expect(apex.props('series')[0].data).toEqual([
+      { x: new Date('2026-06-01T00:00:00').getTime(), y: 100 },
+      { x: new Date('2026-06-02T00:00:00').getTime(), y: -400 },
+      { x: new Date('2026-06-03T00:00:00').getTime(), y: -350 },
+    ])
+  })
+
   it('emits point-select when a data point is selected', async () => {
     const w = mountChart([
       { label: '1/6', profitUsd: 20, bucketKey: '2026-06-01' },
