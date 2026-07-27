@@ -21,7 +21,7 @@ CREATE OR REPLACE FUNCTION public.bootstrap_owner_identity(
 ) RETURNS text
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = public, extensions, pg_temp
 AS $$
 DECLARE
   v_shop_id  uuid;
