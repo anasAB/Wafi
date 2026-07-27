@@ -44,39 +44,51 @@ BEGIN
     RETURN 'already_bootstrapped';
   END IF;
 
-  v_code := public.allocate_device_code(v_shop_id);
-  v_salt := encode(gen_random_bytes(16), 'hex');
-  -- Same hash formula switch_active_operator() (migration 045) verifies
-  -- against, so a PIN set here works immediately for a normal operator
-  -- switch later.
-  v_hash := encode(digest(v_salt || p_pin, 'sha256'), 'hex');
+  BEGIN
+    v_code := public.allocate_device_code(v_shop_id);
+    v_salt := encode(gen_random_bytes(16), 'hex');
+    -- Same hash formula switch_active_operator() (migration 045) verifies
+    -- against, so a PIN set here works immediately for a normal operator
+    -- switch later.
+    v_hash := encode(digest(v_salt || p_pin, 'sha256'), 'hex');
 
-  INSERT INTO public.devices (id, shop_id, code, is_temporary, registered_at, sync_status)
-  VALUES (p_device_id, v_shop_id, v_code, false, now(), 'synced')
-  ON CONFLICT (id) DO NOTHING;
+    INSERT INTO public.devices (id, shop_id, code, is_temporary, registered_at, sync_status)
+    VALUES (p_device_id, v_shop_id, v_code, false, now(), 'synced')
+    ON CONFLICT (id) DO NOTHING;
 
-  -- Owner permissions are never client-supplied -- hardcoded to the same
-  -- all-true set as OWNER_PERMISSIONS in src/features/staff/staff.types.ts.
-  INSERT INTO public.staff (id, shop_id, name, pin_hash, pin_salt, role, permissions, is_active, created_at)
-  VALUES (
-    p_staff_id, v_shop_id, p_staff_name, v_hash, v_salt, 'owner',
-    '{"can_view_reports":true,"can_manage_products":true,"can_manage_customers":true,'
-    '"can_view_expenses":true,"can_manage_settings":true,"can_manage_inventory":true,'
-    '"can_manage_suppliers":true,"can_manage_stock_take":true,"can_view_staff_ledger":true}',
-    true, now()
-  )
-  ON CONFLICT (id) DO NOTHING;
+    -- Owner permissions are never client-supplied -- hardcoded to the same
+    -- all-true set as OWNER_PERMISSIONS in src/features/staff/staff.types.ts.
+    INSERT INTO public.staff (id, shop_id, name, pin_hash, pin_salt, role, permissions, is_active, created_at)
+    VALUES (
+      p_staff_id, v_shop_id, p_staff_name, v_hash, v_salt, 'owner',
+      '{"can_view_reports":true,"can_manage_products":true,"can_manage_customers":true,'
+      '"can_view_expenses":true,"can_manage_settings":true,"can_manage_inventory":true,'
+      '"can_manage_suppliers":true,"can_manage_stock_take":true,"can_view_staff_ledger":true}',
+      true, now()
+    )
+    ON CONFLICT (id) DO NOTHING;
 
-  INSERT INTO public.device_sessions (device_id, shop_id, active_staff_id, active_role, updated_at)
-  VALUES (p_device_id, v_shop_id, p_staff_id, 'owner', now())
-  ON CONFLICT (device_id) DO UPDATE
-    SET active_staff_id = excluded.active_staff_id,
-        active_role     = excluded.active_role,
-        updated_at      = excluded.updated_at;
+    INSERT INTO public.device_sessions (device_id, shop_id, active_staff_id, active_role, updated_at)
+    VALUES (p_device_id, v_shop_id, p_staff_id, 'owner', now())
+    ON CONFLICT (device_id) DO UPDATE
+      SET active_staff_id = excluded.active_staff_id,
+          active_role     = excluded.active_role,
+          updated_at      = excluded.updated_at;
 
-  UPDATE public.shops SET bootstrap_completed_at = now() WHERE id = v_shop_id;
+    UPDATE public.shops SET bootstrap_completed_at = now() WHERE id = v_shop_id;
 
-  RETURN 'success';
+    RETURN 'success';
+  EXCEPTION
+    WHEN unique_violation THEN
+      -- Two concurrent bootstrap calls (e.g. a double-tap firing overlapping
+      -- requests) can both pass the completion-marker gate above before
+      -- either commits. Only one INSERT into public.staff can satisfy
+      -- uq_staff_one_active_owner_per_shop (partial unique index on
+      -- shop_id WHERE role='owner' AND is_active=true, migration 003); the
+      -- loser hits unique_violation here instead of raising to the caller.
+      -- Treat it the same as the sequential-retry case.
+      RETURN 'already_bootstrapped';
+  END;
 END;
 $$;
 
