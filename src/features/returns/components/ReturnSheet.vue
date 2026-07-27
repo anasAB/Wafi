@@ -10,7 +10,7 @@ import type { RefundMethod, ReturnLine } from '../returns.types'
 const props = defineProps<{ saleId: string; saleNumber: string }>()
 const emit  = defineEmits<{ (e: 'close'): void; (e: 'confirmed'): void }>()
 
-const { lines, refundMethod, reason, notes, hasCustomer, customerName, refundTotalUsd, refundTotalSyp, canConfirm, load, confirm } =
+const { lines, refundMethod, reason, notes, hasCustomer, customerName, refundTotalUsd, refundTotalSyp, saleDiscountAppliedUsd, canConfirm, load, confirm } =
   useReturnSheet(props.saleId)
 const { reasons, loadReasons } = useReturnReasons()
 
@@ -127,6 +127,11 @@ async function handleConfirm() {
 
         <!-- Fixed footer -->
         <div class="sheet-footer">
+          <!-- WAFI-011: a whole-sale discount lowers the refund below qty × unit
+               price — show that explicitly so it never reads as a calculation error. -->
+          <p v-if="saleDiscountAppliedUsd > 0" class="sale-discount-note" data-test="sale-discount-note">
+            يشمل خصماً على الفاتورة بقيمة ${{ saleDiscountAppliedUsd.toFixed(2) }} تم توزيعه على الأصناف المرجعة
+          </p>
           <div class="refund-total-row">
             <span class="refund-total-label">إجمالي الاسترداد</span>
             <span class="refund-total-value" dir="ltr">
@@ -350,6 +355,16 @@ async function handleConfirm() {
   border-top: 1px solid rgba(26,86,219,0.14);
   padding: 12px 16px 14px;
   background: linear-gradient(180deg, rgba(8,14,24,0.96), rgba(6,9,15,0.98));
+}
+.sale-discount-note {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #93A3B8;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
 }
 .refund-total-row {
   display: flex;

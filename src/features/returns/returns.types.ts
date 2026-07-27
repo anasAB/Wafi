@@ -5,7 +5,11 @@ export interface ReturnLine {
   productName:        string
   originalQty:        number   // qty from original sale_line_items
   alreadyReturnedQty: number   // qty already returned in prior returns on this sale
-  unitPriceUsd:       number   // snapshot from sale_line_items
+  unitPriceUsd:       number   // snapshot from sale_line_items (net of any per-line discount)
+  /** WAFI-011 — this line's per-unit share of the sale's whole-cart discount,
+   *  prorated by this line's share of the original cart total. 0 when the sale
+   *  had no sale-level discount. */
+  saleDiscountShareUsd: number
   selected:           boolean
   qtyToReturn:        number   // 1 .. (originalQty - alreadyReturnedQty)
   restock:            boolean  // add back to stock on confirm

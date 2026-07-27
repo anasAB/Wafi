@@ -19,14 +19,31 @@ export function useReturnSheet(saleId: string) {
   const customerName = ref<string | null>(null)   // original sale's customer (#8)
   const exchangeRate = ref(1)                       // rate at load, for SYP display (#7)
 
+  // WAFI-011: a whole-sale (footer-level) discount is never baked into
+  // sale_line_items.unit_price_usd (only per-line discounts are) — so refunding
+  // qtyToReturn * unitPriceUsd alone over-refunds the customer relative to what
+  // they actually paid whenever a sale-level discount was applied at checkout.
+  function netUnitRefund(l: ReturnLine): number {
+    return Math.max(0, l.unitPriceUsd - l.saleDiscountShareUsd)
+  }
+
   const refundTotalUsd = computed(() =>
     lines.value
       .filter(l => l.selected)
-      .reduce((sum, l) => sum + l.qtyToReturn * l.unitPriceUsd, 0),
+      .reduce((sum, l) => sum + l.qtyToReturn * netUnitRefund(l), 0),
   )
 
   // Refund total in SYP, so the footer can show the amount in the selected currency.
   const refundTotalSyp = computed(() => Math.round(refundTotalUsd.value * exchangeRate.value))
+
+  // WAFI-011: the portion of the refund total that's the prorated whole-sale
+  // discount, so the sheet can show an explicit breakdown line instead of a
+  // total that silently differs from qty * unit price with no explanation.
+  const saleDiscountAppliedUsd = computed(() =>
+    lines.value
+      .filter(l => l.selected)
+      .reduce((sum, l) => sum + l.qtyToReturn * l.saleDiscountShareUsd, 0),
+  )
 
   const canConfirm = computed(() =>
     lines.value.some(l => l.selected) && refundMethod.value !== null,
@@ -37,7 +54,7 @@ export function useReturnSheet(saleId: string) {
 
     // 1. Fetch sale header + the customer it was sold to (#8)
     const saleResult = await db.execute(
-      `SELECT s.id, s.display_sale_number, s.customer_id, c.name AS customer_name
+      `SELECT s.id, s.display_sale_number, s.customer_id, c.name AS customer_name, s.sale_discount_amount_usd
        FROM sales s LEFT JOIN customers c ON c.id = s.customer_id
        WHERE s.id = ?`,
       [saleId],
@@ -47,6 +64,7 @@ export function useReturnSheet(saleId: string) {
     customerId.value   = sale.customer_id ?? null
     customerName.value = sale.customer_name ?? null
     hasCustomer.value  = !!sale.customer_id
+    const saleDiscountAmountUsd: number = sale.sale_discount_amount_usd ?? 0
 
     // Current exchange rate, so the refund total can be shown in SYP (#7)
     const rateResult = await db.execute(
@@ -77,6 +95,13 @@ export function useReturnSheet(saleId: string) {
     )
     const returnedMap = new Map(returnedRows.map(r => [r.product_id, r.already_returned]))
 
+    // WAFI-011: prorate the whole-sale discount across the ORIGINAL cart (every
+    // line, before dropping already-fully-returned ones) by each line's share of
+    // the original cart total — a line that's already been fully returned still
+    // needs to count toward the denominator, or the remaining lines would absorb
+    // a larger share of the discount than they actually carried at checkout.
+    const originalCartTotalUsd = lineRows.reduce((sum, row) => sum + row.quantity * row.unit_price_usd, 0)
+
     lines.value = lineRows
       // Drop lines that have already been fully returned — they have nothing
       // left to refund, and showing them lets the owner refund the same unit twice.
@@ -85,12 +110,17 @@ export function useReturnSheet(saleId: string) {
         const alreadyReturnedQty = returnedMap.get(row.product_id) ?? 0
         const remaining          = row.quantity - alreadyReturnedQty
         const isOpenItem = row.created_via === 'open_item'
+        const lineOriginalTotalUsd = row.quantity * row.unit_price_usd
+        const saleDiscountShareUsd = originalCartTotalUsd > 0
+          ? (saleDiscountAmountUsd * (lineOriginalTotalUsd / originalCartTotalUsd)) / row.quantity
+          : 0
         return {
           productId:          row.product_id,
           productName:        row.product_name,
           originalQty:        row.quantity,
           alreadyReturnedQty,
           unitPriceUsd:       row.unit_price_usd,
+          saleDiscountShareUsd,
           selected:           false,
           qtyToReturn:        Math.min(1, remaining),
           restock:            !isOpenItem,
@@ -128,7 +158,7 @@ export function useReturnSheet(saleId: string) {
       }
     }
 
-    const refundAmountUsd = selectedLines.reduce((sum, l) => sum + l.qtyToReturn * l.unitPriceUsd, 0)
+    const refundAmountUsd = selectedLines.reduce((sum, l) => sum + l.qtyToReturn * netUnitRefund(l), 0)
     const refundAmountSyp = Math.round(refundAmountUsd * exchangeRate)
 
     const returnId  = uuidv4()
@@ -184,5 +214,5 @@ export function useReturnSheet(saleId: string) {
     )
   }
 
-  return { lines, refundMethod, reason, notes, hasCustomer, customerName, refundTotalUsd, refundTotalSyp, canConfirm, load, confirm }
+  return { lines, refundMethod, reason, notes, hasCustomer, customerName, refundTotalUsd, refundTotalSyp, saleDiscountAppliedUsd, canConfirm, load, confirm }
 }
