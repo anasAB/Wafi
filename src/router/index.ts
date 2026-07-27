@@ -85,7 +85,8 @@ const router = createRouter({
 // so an unhandled rejection here would surface as a process-level error in
 // any file that merely imports the router (e.g. any test importing
 // './router') even though nothing about that failure is fatal to boot.
-resumeBootstrapIfPending().catch(() => {
+resumeBootstrapIfPending().catch((e) => {
+  console.warn('[bootstrap-resume] failed to resume a pending owner bootstrap at boot:', e)
   // Resume is best-effort; a failure here just means the pending bootstrap
   // (if any) stays pending and will be retried on the next boot or by the
   // owner-setup screen itself.
