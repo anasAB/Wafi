@@ -6,6 +6,7 @@ import { useFlagsStore } from '@/features/flags/flags.store'
 import type { FlagKey } from '@/features/flags/flagRegistry'
 import type { StaffPermissions } from '@/features/staff/staff.types'
 import { supabase } from '@/data/supabase/client'
+import { resumeBootstrapIfPending } from './bootstrap-resume'
 
 const SHIFT_OPEN_REDIRECT = '/shifts/history'
 
@@ -74,6 +75,20 @@ const router = createRouter({
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
   scrollBehavior: () => ({ top: 0 }),
+})
+
+// One-time boot check (not per-navigation): if a previous owner-bootstrap
+// attempt was left incomplete (crash, closed tab, or server success with
+// local hydration never finishing), resume it automatically here rather than
+// inside the beforeEach guard below, which runs on every navigation.
+// .catch() is required, not cosmetic: this call is unawaited at module load,
+// so an unhandled rejection here would surface as a process-level error in
+// any file that merely imports the router (e.g. any test importing
+// './router') even though nothing about that failure is fatal to boot.
+resumeBootstrapIfPending().catch(() => {
+  // Resume is best-effort; a failure here just means the pending bootstrap
+  // (if any) stays pending and will be retried on the next boot or by the
+  // owner-setup screen itself.
 })
 
 // Enforce staff permissions on navigation. to.meta merges all matched records'
