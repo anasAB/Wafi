@@ -168,5 +168,8 @@ export default {
     estimated: 'Some products have no cost — profit is estimated and may be lower',
     invalidRange: 'Start date must be before the end date',
     from: 'From', to: 'To',
+    cashMovementFootnote: 'Cash movements are not counted toward profit.',
+    cashMovementInfo: 'Cash movements (pay-in, pay-out) are pure cash transfers, not income or expense — that is why they do not appear in this report. See shift history to view them.',
+    viewCashMovements: 'View cash movements',
   },
 }
