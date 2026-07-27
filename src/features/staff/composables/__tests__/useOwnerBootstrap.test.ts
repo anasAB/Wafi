@@ -88,6 +88,18 @@ describe('useOwnerBootstrap', () => {
     expect(callBootstrapMock).not.toHaveBeenCalled()
   })
 
+  it('resumePendingBootstrap: clears the pending record when the RPC returns invalid_state (unlike the timeout case, which keeps it)', async () => {
+    const { useBootstrapStore } = await import('@/features/staff/bootstrap.store')
+    useBootstrapStore().start('device-1', 'staff-1')
+    callBootstrapMock.mockResolvedValue('invalid_state')
+
+    const { useOwnerBootstrap } = await import('@/features/staff/composables/useOwnerBootstrap')
+    const result = await useOwnerBootstrap().resumePendingBootstrap()
+
+    expect(result).toEqual({ status: 'needs-connectivity' })
+    expect(useBootstrapStore().pending).toBeNull()
+  })
+
   it('resumePendingBootstrap: re-runs the RPC with the persisted ids and no PIN, without re-prompting', async () => {
     const { useBootstrapStore } = await import('@/features/staff/bootstrap.store')
     useBootstrapStore().start('device-1', 'staff-1')

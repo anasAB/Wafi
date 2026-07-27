@@ -5,6 +5,7 @@ import {
   callBootstrapOwnerIdentity,
   BOOTSTRAP_SUCCESS,
   BOOTSTRAP_ALREADY_COMPLETE,
+  BOOTSTRAP_INVALID_STATE,
 } from '@/data/supabase/bootstrap'
 import { useBootstrapStore } from '@/features/staff/bootstrap.store'
 import { useDeviceStore } from '@/store/device.store'
@@ -98,18 +99,26 @@ export function useOwnerBootstrap() {
     try {
       // No PIN re-entry: if the RPC already ran server-side, it returns
       // BOOTSTRAP_ALREADY_COMPLETE regardless of the PIN sent. If it never
-      // ran, an empty PIN would fail -- but this path only exists for
-      // resuming a bootstrap that IS pending, meaning the RPC call was
-      // already attempted at least once; a fresh attempt with no PIN is
-      // only ever reached here after the RPC already succeeded once
-      // (design doc case 3) or the app is retrying case 2, in which case
-      // the owner is prompted for the PIN again by the caller before this
-      // is invoked with a real PIN -- resumePendingBootstrap itself never
-      // has a PIN to send, by design (PendingBootstrap holds no pin field).
+      // ran, the server's invalid_state guard (migration 069) rejects the
+      // blank name/PIN rather than silently creating a bricked owner --
+      // handled below by clearing the stale pending record.
       result = await callBootstrapOwnerIdentity({
         deviceId: pending.deviceId, staffId: pending.staffId, staffName: '', pin: '',
       })
     } catch {
+      // Found in final whole-branch review: an invalid_state/thrown result
+      // here means the RPC never actually completed server-side for this
+      // pending record and never can via this blank-credential resume path
+      // -- it genuinely needs a human to re-enter a PIN. Clear the stale
+      // record so the owner-setup screen falls back to its normal
+      // no-pending state and re-prompts from scratch, instead of retrying
+      // an unrecoverable resume forever on every future boot.
+      bootstrapStore.clear()
+      return { status: 'needs-connectivity' }
+    }
+
+    if (result === BOOTSTRAP_INVALID_STATE) {
+      bootstrapStore.clear()
       return { status: 'needs-connectivity' }
     }
 
