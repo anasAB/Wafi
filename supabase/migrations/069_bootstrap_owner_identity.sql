@@ -44,6 +44,19 @@ BEGIN
     RETURN 'already_bootstrapped';
   END IF;
 
+  -- Structural guard against a blank-credential bootstrap (found in final
+  -- whole-branch review): a client bug (or any future/malicious caller) can
+  -- reach this function with an empty name/PIN while bootstrap_completed_at
+  -- is still NULL server-side (e.g. resumePendingBootstrap() replaying a
+  -- PendingBootstrap record whose RPC call never actually reached the
+  -- server). Without this check, that call would sail through the gate
+  -- above and permanently brick the owner account with a blank name and a
+  -- PIN hash for the empty string. Reject unconditionally, regardless of
+  -- which client or code path is calling.
+  IF p_pin IS NULL OR p_pin = '' OR trim(p_staff_name) = '' THEN
+    RETURN 'invalid_state';
+  END IF;
+
   v_code := public.allocate_device_code(v_shop_id);
   v_salt := encode(gen_random_bytes(16), 'hex');
   -- Same hash formula switch_active_operator() (migration 045) verifies

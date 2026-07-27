@@ -5,7 +5,7 @@
 -- Docker, unavailable in this environment.
 
 BEGIN;
-SELECT plan(10);
+SELECT plan(12);
 
 -- ============================================================
 -- Fixtures: a fresh shop with NO staff/devices/device_sessions rows yet --
@@ -157,6 +157,45 @@ SELECT is(
 );
 
 RESET ROLE;
+
+-- ============================================================
+-- Test 10/11: blank PIN or blank staff name against a fresh, not-yet-
+-- bootstrapped shop returns 'invalid_state' and creates NO staff row --
+-- guards against the final-review finding where a resumed bootstrap with
+-- empty credentials could otherwise brick the owner account (migration
+-- 069's added guard, ahead of the existing bootstrap_completed_at gate).
+-- A third, never-touched shop is used so this can't be confused with shop
+-- A's already-bootstrapped state from Test 8.
+-- ============================================================
+INSERT INTO auth.users (instance_id, id, email, encrypted_password, email_confirmed_at, created_at, updated_at, aud, role)
+VALUES ('00000000-0000-0000-0000-000000000000', 'c0000000-0000-0000-0000-000000000002', 'owner-c@bootstrap.test', crypt('x', gen_salt('bf')), now(), now(), now(), 'authenticated', 'authenticated');
+DELETE FROM public.shops WHERE owner_user_id = 'c0000000-0000-0000-0000-000000000002';
+INSERT INTO public.shops (id, name, owner_user_id)
+VALUES ('c0000000-0000-0000-0000-000000000001', 'Bootstrap Test Shop C', 'c0000000-0000-0000-0000-000000000002');
+
+SELECT set_config('request.jwt.claims',
+  '{"sub":"c0000000-0000-0000-0000-000000000002","role":"authenticated"}',
+  true);
+SET LOCAL ROLE authenticated;
+
+SELECT is(
+  public.bootstrap_owner_identity(
+    'c0000000-0000-0000-0000-000000000007'::uuid,
+    'c0000000-0000-0000-0000-000000000003'::uuid,
+    '',
+    ''
+  ),
+  'invalid_state',
+  'Test 10: blank staff name + blank pin against a fresh shop returns invalid_state'
+);
+
+RESET ROLE;
+
+SELECT is(
+  (SELECT count(*)::int FROM public.staff WHERE id = 'c0000000-0000-0000-0000-000000000003'),
+  0,
+  'Test 11: no staff row was created for the rejected invalid_state call'
+);
 
 SELECT * FROM finish();
 ROLLBACK;
