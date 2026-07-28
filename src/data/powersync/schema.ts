@@ -54,6 +54,7 @@ const sales = new Table({
   sale_discount_value:      column.real,   // WAFI-100
   sale_discount_amount_usd: column.real,   // WAFI-100
   sync_status:              column.text,
+  source:                   column.text,   // WAFI-008: 'pos' | 'import' | 'seed'
 })
 
 const sale_line_items = new Table({

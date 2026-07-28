@@ -4,6 +4,23 @@ import { useDeviceStore } from '@/store/device.store'
 import { getDateRange } from './periodUtils'
 import type { Period } from './periodUtils'
 
+// WAFI-008: optional source filter, inert by default (undefined = no filter,
+// today's exact behavior — the only value any code path produces is 'pos').
+// Reserved for a future sales-import/demo-seed feature; see
+// docs/superpowers/specs/2026-07-28-wafi-008-data-source-tagging-design.md.
+export interface MetricsOptions {
+  sources?: string[]
+}
+
+// Builds " AND <alias>.source IN (?, ?, ...)" + its bind params, or an empty
+// clause/no params when no filter is requested — so every call site stays a
+// no-op change when `sources` is omitted.
+function sourceFilter(alias: string, sources?: string[]): { clause: string; params: string[] } {
+  if (!sources || sources.length === 0) return { clause: '', params: [] }
+  const placeholders = sources.map(() => '?').join(', ')
+  return { clause: ` AND ${alias}.source IN (${placeholders})`, params: sources }
+}
+
 export function useDashboardMetrics() {
   const device           = useDeviceStore()
   const revenueUsd       = ref(0)
@@ -28,30 +45,37 @@ export function useDashboardMetrics() {
   // The query body, parameterised by an explicit local-time date range. Both the
   // period loader (home dashboard) and the explicit-range loader (reports screen)
   // call this — one profit engine, no second calculation.
-  async function run(start: string, end: string) {
+  async function run(start: string, end: string, options?: MetricsOptions) {
+    const sales    = sourceFilter('sales', options?.sources)
+    const s        = sourceFilter('s', options?.sources)
+
     const [revRow, cogsRow, expRow, refundRow, cogsReversalRow, missingRow, countRow, costlessRow] = await Promise.all([
       db.getOptional<{ total: number }>(
         `SELECT COALESCE(SUM(total_usd), 0) as total
-         FROM sales WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?`,
-        [device.shopId, start, end]
+         FROM sales WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?${sales.clause}`,
+        [device.shopId, start, end, ...sales.params]
       ),
       db.getOptional<{ cogs: number }>(
         `SELECT COALESCE(SUM(sli.quantity * COALESCE(sli.unit_cost_usd, 0)), 0) as cogs
          FROM sale_line_items sli
          JOIN sales s ON sli.sale_id = s.id
-         WHERE s.shop_id = ? AND DATE(s.created_at, 'localtime') BETWEEN ? AND ?`,
-        [device.shopId, start, end]
+         WHERE s.shop_id = ? AND DATE(s.created_at, 'localtime') BETWEEN ? AND ?${s.clause}`,
+        [device.shopId, start, end, ...s.params]
       ),
       db.getOptional<{ total: number }>(
         `SELECT COALESCE(SUM(amount_usd), 0) as total
          FROM expenses WHERE shop_id = ? AND expense_date BETWEEN ? AND ?`,
         [device.shopId, start, end]
       ),
-      // Refunds reduce revenue (money handed back to the customer).
+      // Refunds reduce revenue (money handed back to the customer). Joined to
+      // the original sale so a source filter also excludes refunds against an
+      // excluded sale (e.g. a return on an imported sale, once that exists).
       db.getOptional<{ total: number }>(
-        `SELECT COALESCE(SUM(refund_amount_usd), 0) as total
-         FROM returns WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?`,
-        [device.shopId, start, end]
+        `SELECT COALESCE(SUM(r.refund_amount_usd), 0) as total
+         FROM returns r
+         JOIN sales s ON s.id = r.original_sale_id
+         WHERE r.shop_id = ? AND DATE(r.created_at, 'localtime') BETWEEN ? AND ?${s.clause}`,
+        [device.shopId, start, end, ...s.params]
       ),
       // Restocked returns reverse COGS at the original sale's unit cost (un-restocked
       // items stay in COGS — they are a loss, not recovered inventory). The cost is
@@ -63,13 +87,14 @@ export function useDashboardMetrics() {
         `SELECT COALESCE(SUM(rli.qty_returned * COALESCE(c.unit_cost_usd, 0)), 0) as cogs
          FROM return_line_items rli
          JOIN returns r ON r.id = rli.return_id
+         JOIN sales s ON s.id = r.original_sale_id
          LEFT JOIN (
            SELECT sale_id, product_id, AVG(unit_cost_usd) as unit_cost_usd
            FROM sale_line_items
            GROUP BY sale_id, product_id
          ) c ON c.sale_id = r.original_sale_id AND c.product_id = rli.product_id
-         WHERE r.shop_id = ? AND rli.restock = 1 AND DATE(r.created_at, 'localtime') BETWEEN ? AND ?`,
-        [device.shopId, start, end]
+         WHERE r.shop_id = ? AND rli.restock = 1 AND DATE(r.created_at, 'localtime') BETWEEN ? AND ?${s.clause}`,
+        [device.shopId, start, end, ...s.params]
       ),
       db.getOptional<{ count: number }>(
         `SELECT COUNT(*) as count FROM products
@@ -79,8 +104,8 @@ export function useDashboardMetrics() {
       ),
       db.getOptional<{ count: number }>(
         `SELECT COUNT(*) as count FROM sales
-         WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?`,
-        [device.shopId, start, end]
+         WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?${sales.clause}`,
+        [device.shopId, start, end, ...sales.params]
       ),
       // WAFI-054: count distinct sales IN THE PERIOD whose profit is distorted by
       // a missing cost. A sale counts when it has ≥1 line with no/zero unit cost
@@ -90,7 +115,7 @@ export function useDashboardMetrics() {
       // and localtime boundary as revenue/COGS so the signal matches the headline.
       db.getOptional<{ count: number }>(
         `SELECT COUNT(*) as count FROM sales s
-         WHERE s.shop_id = ? AND DATE(s.created_at, 'localtime') BETWEEN ? AND ?
+         WHERE s.shop_id = ? AND DATE(s.created_at, 'localtime') BETWEEN ? AND ?${s.clause}
            AND EXISTS (
              SELECT 1 FROM sale_line_items sli
              WHERE sli.sale_id = s.id
@@ -104,7 +129,7 @@ export function useDashboardMetrics() {
                   JOIN returns r ON r.id = rli.return_id
                   WHERE r.original_sale_id = s.id), 0
                )`,
-        [device.shopId, start, end]
+        [device.shopId, start, end, ...s.params]
       ),
     ])
 
@@ -117,13 +142,13 @@ export function useDashboardMetrics() {
     costlessSalesInPeriod.value = costlessRow?.count ?? 0
   }
 
-  async function load(period: Period) {
+  async function load(period: Period, options?: MetricsOptions) {
     const { start, end } = getDateRange(period)
-    await run(start, end)
+    await run(start, end, options)
   }
 
-  async function loadRange(start: string, end: string) {
-    await run(start, end)
+  async function loadRange(start: string, end: string, options?: MetricsOptions) {
+    await run(start, end, options)
   }
 
   return {
