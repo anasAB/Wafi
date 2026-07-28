@@ -282,6 +282,23 @@ describe('usePayment', () => {
     expect(salesInsert![1][columnIndex(salesInsert![0] as string, 'staff_id')]).toBe('op-7')
   })
 
+  // WAFI-008: every sale rung through this path is a live POS sale — the
+  // insert must set 'source' explicitly (not rely on the column default),
+  // matching this insert's existing convention for every other column.
+  it('tags every sale rung through this path with source = pos', async () => {
+    const tx = setupTx({ cost_price_usd: 0, current_stock: 10 })
+
+    const { selectMethod, confirm } = usePayment()
+    selectMethod('card')
+    await confirm()
+
+    const salesInsert = tx.mock.calls.find(c =>
+      (c[0] as string).includes('INSERT INTO sales') && (c[0] as string).includes('source')
+    )
+    expect(salesInsert).toBeDefined()
+    expect(salesInsert![1][columnIndex(salesInsert![0] as string, 'source')]).toBe('pos')
+  })
+
   it('refuses to confirm a sale with no active operator (WAFI-203)', async () => {
     const { useSessionStore } = await import('@/store/session.store')
     useSessionStore().clearSession()

@@ -239,8 +239,8 @@ export function usePayment() {
               `INSERT INTO sales (id, shop_id, device_id, device_sequence, display_sale_number,
                 created_at, total_usd, total_syp, exchange_rate_at_sale, payment_method,
                 amount_received, amount_received_currency, change_due, customer_id, is_credit, is_split,
-                shift_id, staff_id, sale_discount_type, sale_discount_value, sale_discount_amount_usd, sync_status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                shift_id, staff_id, sale_discount_type, sale_discount_value, sale_discount_amount_usd, sync_status, source)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [
                 saleId, deviceStore.shopId, deviceStore.deviceId,
                 saleSeq, displayNum, now,
@@ -256,6 +256,11 @@ export function usePayment() {
                 saleStore.saleDiscount?.value ?? null,
                 saleStore.saleDiscount?.amountUsd ?? 0,
                 'pending',
+                // WAFI-008: every sale rung through this path is a live POS sale.
+                // Set explicitly, not left to the column default, matching this
+                // insert's existing convention of listing every business-meaningful
+                // column rather than depending on a schema default.
+                'pos',
               ]
             )
 
