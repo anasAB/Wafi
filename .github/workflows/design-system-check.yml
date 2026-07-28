@@ -1,0 +1,29 @@
+name: Design System Check
+
+# WAFI-005 freeze enforcement (docs/architecture/DESIGN_SYSTEM.md §9).
+# Informational only — continue-on-error keeps this from blocking a merge,
+# matching the design doc's "flag, not hard-block" rule. This is the first
+# CI workflow in this repo; scoped to exactly this one check, not a general
+# CI rollout (see the WAFI-005 design doc's §4 implementation-dependency note).
+
+on:
+  pull_request:
+    paths:
+      - '**.vue'
+      - '**.css'
+
+jobs:
+  design-system-colors:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Check for undocumented color literals
+        continue-on-error: true
+        run: node scripts/check-design-system-colors.mjs
