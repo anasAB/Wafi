@@ -17,6 +17,12 @@ export interface StaffPermissions {
   can_manage_suppliers:  boolean
   can_manage_stock_take: boolean
   can_view_staff_ledger: boolean
+  // WAFI-018: structurally owner-only — deliberately absent from the manager
+  // custom-override set in permissionsForRole below, unlike can_view_reports/
+  // can_view_expenses. Per-employee margin is the kind of number that creates
+  // shop-floor friction if a manager can see it about peers, so it is never
+  // owner-grantable to a manager, only ever true via the owner short-circuit.
+  can_view_staff_performance: boolean
 }
 
 export const DEFAULT_CASHIER_PERMISSIONS: StaffPermissions = {
@@ -29,6 +35,7 @@ export const DEFAULT_CASHIER_PERMISSIONS: StaffPermissions = {
   can_manage_suppliers:  false,
   can_manage_stock_take: false,
   can_view_staff_ledger: false,
+  can_view_staff_performance: false,
 }
 
 export const OWNER_PERMISSIONS: StaffPermissions = {
@@ -41,6 +48,7 @@ export const OWNER_PERMISSIONS: StaffPermissions = {
   can_manage_suppliers:  true,
   can_manage_stock_take: true,
   can_view_staff_ledger: true,
+  can_view_staff_performance: true,
 }
 
 // A manager runs the floor: products + customers, open/close shifts, ring sales.
@@ -58,6 +66,7 @@ export const MANAGER_PERMISSIONS: StaffPermissions = {
   can_manage_suppliers:  true,
   can_manage_stock_take: true,
   can_view_staff_ledger: false,
+  can_view_staff_performance: false,
 }
 
 /**
@@ -89,9 +98,17 @@ export function permissionsForRole(
       can_view_reports:      Boolean(custom?.can_view_reports),
       can_view_expenses:     Boolean(custom?.can_view_expenses),
       can_view_staff_ledger: Boolean(custom?.can_view_staff_ledger),
+      // Deliberately NOT read from `custom` — see the field comment on
+      // StaffPermissions. A manager can never hold this, even via an
+      // owner-granted override, unlike can_view_reports/can_view_expenses.
+      can_view_staff_performance: false,
     }
   }
-  return { ...DEFAULT_CASHIER_PERMISSIONS, ...custom }
+  // Same owner-only carve-out as the manager branch above: a cashier's stored
+  // custom permissions could in principle contain can_view_staff_performance
+  // (e.g. stale data, a future UI bug) — override it back to false regardless
+  // of what `custom` says, rather than trusting the spread.
+  return { ...DEFAULT_CASHIER_PERMISSIONS, ...custom, can_view_staff_performance: false }
 }
 
 export interface Staff {
