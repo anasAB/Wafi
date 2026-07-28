@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '@/data/powersync/db'
+import { SupabaseConnector } from '@/data/powersync/connector'
 import { supabase } from '@/data/supabase/client'
 import {
   callBootstrapOwnerIdentity,
@@ -48,6 +49,22 @@ export function useOwnerBootstrap() {
 
   async function finishAfterServerSuccess(staffId: string, opts: PollOptions): Promise<BootstrapOutcome> {
     await supabase.auth.refreshSession()
+
+    // The refreshed session carries claims PowerSync's existing connection was
+    // opened without (e.g. the new device_sessions row this RPC just created).
+    // Re-calling connect() forces fetchCredentials() to run again with the
+    // fresh token instead of relying on the SDK to notice on its own — found
+    // live: without this, a brand-new device's first sync could sit waiting
+    // indefinitely (or past the poll window below) for rows that already
+    // exist server-side. Swallow a failure here the same way db.ts's initial
+    // connect() does — offline/unreachable should fall through to the normal
+    // poll-timeout path, not throw out of the bootstrap flow.
+    try {
+      await db.connect(new SupabaseConnector())
+    } catch {
+      // Falls through to the poll below, which will simply time out if the
+      // reconnect genuinely can't reach the server.
+    }
 
     const arrived = await pollForLocalStaffRow(staffId, opts)
     if (!arrived) {

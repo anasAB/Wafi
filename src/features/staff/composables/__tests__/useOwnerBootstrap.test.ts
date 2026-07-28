@@ -47,6 +47,39 @@ describe('useOwnerBootstrap', () => {
     expect(useBootstrapStore().pending).toBeNull()
   })
 
+  // A brand-new device's first-ever sync (or any stale connection) can't be
+  // relied on to notice a refreshed session on its own — found live in
+  // production (2026-07-28): the RPC fully succeeded server-side (staff/
+  // devices/device_sessions rows all existed), but the client sat on
+  // "still syncing" past the poll window because nothing told PowerSync to
+  // re-fetch credentials with the new token. Reconnecting explicitly closes
+  // that gap.
+  it('bootstrapOwner: reconnects PowerSync (fetching fresh credentials) after refreshing the session, before polling', async () => {
+    callBootstrapMock.mockResolvedValue('success')
+    const { db } = await import('@/data/powersync/db')
+    vi.mocked(db.getOptional).mockResolvedValue({ id: 'staff-1' } as any)
+
+    const { useOwnerBootstrap } = await import('@/features/staff/composables/useOwnerBootstrap')
+    await useOwnerBootstrap().bootstrapOwner('Owner', '1234')
+
+    expect(db.connect).toHaveBeenCalled()
+    const refreshOrder = refreshSessionMock.mock.invocationCallOrder[0]
+    const connectOrder = vi.mocked(db.connect).mock.invocationCallOrder[0]
+    expect(connectOrder).toBeGreaterThan(refreshOrder)
+  })
+
+  it('bootstrapOwner: a PowerSync reconnect failure does not throw — falls through to the normal poll/timeout path', async () => {
+    callBootstrapMock.mockResolvedValue('success')
+    const { db } = await import('@/data/powersync/db')
+    vi.mocked(db.connect).mockRejectedValueOnce(new Error('offline'))
+    vi.mocked(db.getOptional).mockResolvedValue({ id: 'staff-1' } as any)
+
+    const { useOwnerBootstrap } = await import('@/features/staff/composables/useOwnerBootstrap')
+    const result = await useOwnerBootstrap().bootstrapOwner('Owner', '1234')
+
+    expect(result).toEqual({ status: 'done' })
+  })
+
   it('bootstrapOwner: treats already_bootstrapped exactly like success', async () => {
     callBootstrapMock.mockResolvedValue('already_bootstrapped')
     const { db } = await import('@/data/powersync/db')
