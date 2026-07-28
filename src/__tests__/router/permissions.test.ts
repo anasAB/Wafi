@@ -49,6 +49,37 @@ describe('isRouteAllowed — staff ledger/settlement routes (WAFI-138)', () => {
   })
 })
 
+// WAFI-018: can_view_staff_performance is structurally owner-only — unlike
+// can_view_reports/can_view_expenses, it is never present in a manager's
+// custom-override set (permissionsForRole), so no owner grant can widen it.
+describe('isRouteAllowed — staff performance route (WAFI-018 owner-only)', () => {
+  it('denies a manager even with a stale/tampered stored permission trying to grant it', () => {
+    // canUserDo derives effective permissions via permissionsForRole, which
+    // never reads can_view_staff_performance from the manager's custom set —
+    // so even a stored `true` here cannot leak through.
+    const granted = staff('manager', {
+      ...MANAGER_PERMISSIONS,
+      can_view_reports: true,
+      can_view_expenses: true,
+      can_view_staff_performance: true,
+    })
+    expect(isRouteAllowed('can_view_staff_performance', granted)).toBe(false)
+  })
+
+  it('denies a cashier with a stale/tampered stored permission trying to grant it', () => {
+    const granted = staff('cashier', {
+      ...DEFAULT_CASHIER_PERMISSIONS,
+      can_view_reports: true,
+      can_view_staff_performance: true,
+    })
+    expect(isRouteAllowed('can_view_staff_performance', granted)).toBe(false)
+  })
+
+  it('allows the owner', () => {
+    expect(isRouteAllowed('can_view_staff_performance', staff('owner', OWNER_PERMISSIONS))).toBe(true)
+  })
+})
+
 // WAFI-058 supersedes the "manager always sees reports" half of WAFI-013:
 // financials are Owner-only by default and owner-grantable per manager.
 describe('isRouteAllowed — manager role (WAFI-058 default-off financials)', () => {

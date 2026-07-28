@@ -5,6 +5,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useCan } from '@/composables/useCan'
 import AppDatePicker from '@/components/ui/AppDatePicker.vue'
 import { getReportRange, bucketForRange, getPreviousReportRange } from '../composables/periodUtils'
 import type { ReportPeriod } from '../composables/periodUtils'
@@ -23,6 +24,9 @@ import ExpenseDonutChart from './ExpenseDonutChart.vue'
 import TopExpensesList from './TopExpensesList.vue'
 
 const { t } = useI18n()
+const { can } = useCan()
+// WAFI-018: structurally owner-only, never granted to a manager (permissionsForRole).
+const canViewStaffPerformance = can('can_view_staff_performance')
 const metrics = useDashboardMetrics()
 const previousMetrics = useDashboardMetrics()
 const trend   = useProfitTrend()
@@ -227,6 +231,13 @@ onMounted(() => { reload(); deadStock.load() })
 <template>
   <section class="reports-page" dir="rtl">
     <h1 class="page-title">{{ t('reports.title') }}</h1>
+
+    <RouterLink
+      v-if="canViewStaffPerformance"
+      to="/reports/staff"
+      data-test="staff-performance-link"
+      class="staff-performance-link"
+    >أداء الموظفين ←</RouterLink>
 
     <div class="period-toggle">
       <button data-test="period-week"    :class="{ active: period === 'week' }"    @click="selectPeriod('week')">{{ t('reports.week') }}</button>
@@ -493,6 +504,14 @@ onMounted(() => { reload(); deadStock.load() })
   color: #E8EDF5;
 }
 .page-title { font-size: 1.15rem; font-weight: 800; margin: 0; }
+
+.staff-performance-link {
+  align-self: flex-start;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #60A5FA;
+  text-decoration: none;
+}
 
 .period-toggle { display: flex; gap: 8px; flex-wrap: wrap; }
 .period-toggle button {
