@@ -32,6 +32,9 @@ const router = createRouter({
     { path: '/staff/:staffId/settlement/:settlementId',      component: () => import('@/features/staff-ledger/views/SettlementDetailView.vue'),  meta: { permission: 'can_view_expenses' }, props: true },
     { path: '/customers',         component: () => import('@/features/customers/CustomersPage.vue'),       meta: { permission: 'can_manage_customers' } },
     { path: '/customers/collections', component: () => import('@/features/customers/CollectionsWorklistPage.vue'), meta: { permission: 'can_view_reports' } },
+    // WAFI-017: coexists with /customers/collections (does not replace it) —
+    // see docs/superpowers/specs/2026-07-28-wafi-017-money-owed-design.md §7.
+    { path: '/customers/money-owed', component: () => import('@/features/customers/MoneyOwedPage.vue'), meta: { permission: 'can_view_reports' } },
     { path: '/customers/:id',     component: () => import('@/features/customers/CustomerDetailPage.vue'),  meta: { permission: 'can_manage_customers' } },
     { path: '/installments',      component: () => import('@/features/installments/InstallmentsDuePage.vue'), meta: { permission: 'can_manage_customers' } },
     { path: '/suppliers',         component: () => import('@/features/suppliers/SuppliersPage.vue'),       meta: { permission: 'can_manage_products' } },

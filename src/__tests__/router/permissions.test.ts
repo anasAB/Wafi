@@ -49,6 +49,30 @@ describe('isRouteAllowed — staff ledger/settlement routes (WAFI-138)', () => {
   })
 })
 
+// WAFI-017: /customers/money-owed gates on can_view_reports, matching the
+// existing /customers/collections precedent exactly (not owner-only like
+// WAFI-018's staff performance route — see the design doc §8).
+describe('isRouteAllowed — money owed route (WAFI-017, same gate as Collections)', () => {
+  it('denies a default (ungranted) manager, same as the Collections worklist', () => {
+    expect(isRouteAllowed('can_view_reports', staff('manager', MANAGER_PERMISSIONS))).toBe(false)
+  })
+
+  it('allows a reports-granted manager, same as the Collections worklist', () => {
+    const granted = staff('manager', { ...MANAGER_PERMISSIONS, can_view_reports: true })
+    expect(isRouteAllowed('can_view_reports', granted)).toBe(true)
+  })
+
+  it('allows the owner', () => {
+    expect(isRouteAllowed('can_view_reports', staff('owner', OWNER_PERMISSIONS))).toBe(true)
+  })
+
+  it('denies a cashier lacking can_view_reports and would fail closed onto the POS via resolveLanding', () => {
+    const cashier = staff('cashier')
+    expect(isRouteAllowed('can_view_reports', cashier)).toBe(false)
+    expect(resolveLanding(cashier)).toBe('/pos')
+  })
+})
+
 // WAFI-058 supersedes the "manager always sees reports" half of WAFI-013:
 // financials are Owner-only by default and owner-grantable per manager.
 describe('isRouteAllowed — manager role (WAFI-058 default-off financials)', () => {

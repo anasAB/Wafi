@@ -98,6 +98,10 @@ function handleStatementCancel() {
     <AppHeader title="متابعة التحصيل" :show-back="true" @back="router.back()" />
 
     <main class="page-main">
+      <RouterLink to="/customers/money-owed" data-testid="money-owed-link" class="money-owed-link">
+        عرض المبالغ المستحقة (دين + أقساط) ←
+      </RouterLink>
+
       <!-- Sort options -->
       <div class="sort-row">
         <button type="button" class="sort-chip" :class="{ active: sort === 'balance_desc' }" @click="setSort('balance_desc')">الأكبر رصيداً</button>
@@ -187,6 +191,15 @@ function handleStatementCancel() {
 }
 
 .page-main { flex: 1; padding: 1rem 1rem 6rem; max-width: 42rem; margin: 0 auto; width: 100%; }
+
+.money-owed-link {
+  display: block;
+  margin-bottom: 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #60A5FA;
+  text-decoration: none;
+}
 
 .sort-row { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
 
