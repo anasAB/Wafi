@@ -154,7 +154,7 @@ export function useReturnSheet(saleId: string) {
     const returnId  = uuidv4()
     const now       = new Date().toISOString()
 
-    const { cancelledPlanId, warning } = await executeFinancialWrite(
+    const { warning } = await executeFinancialWrite(
       async () => {
         let cancelledPlanId: string | null = null
         let warning: ConfirmResult['warning']
@@ -307,12 +307,14 @@ export function useReturnSheet(saleId: string) {
 
         return { cancelledPlanId, warning }
       },
-      ({ cancelledPlanId }) => Promise.all([
-        logReturnProcessed(returnId, saleId, refundAmountUsd),
-        cancelledPlanId
-          ? logInstallmentPlanCancelled(cancelledPlanId, { reason: 'sale_returned', returnId })
-          : Promise.resolve(),
-      ]),
+      async ({ cancelledPlanId }) => {
+        await Promise.all([
+          logReturnProcessed(returnId, saleId, refundAmountUsd),
+          cancelledPlanId
+            ? logInstallmentPlanCancelled(cancelledPlanId, { reason: 'sale_returned', returnId })
+            : Promise.resolve(),
+        ])
+      },
     )
 
     return { warning }

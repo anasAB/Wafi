@@ -251,8 +251,8 @@ async function doOpen() {
   try {
     const result = await openShift(
       selectedStaff.value,
-      parseFloat(openingCashUsd.value) || 0,
-      parseFloat(openingCashSyp.value) || 0,
+      parseFloat(String(openingCashUsd.value)) || 0,
+      parseFloat(String(openingCashSyp.value)) || 0,
       enteredPin.value,
       openingUseTally.value ? { usd: openingUsdBreakdown.value, syp: openingSypBreakdown.value } : null,
     )
