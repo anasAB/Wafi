@@ -9,7 +9,20 @@ vi.mock('@/data/supabase/bootstrap', async () => {
   return { ...actual, callBootstrapOwnerIdentity: (...args: unknown[]) => callBootstrapMock(...args) }
 })
 
+// Builds a decodable (unsigned) fake JWT carrying a `session_id` claim, same
+// shape decodeSessionIdClaim() expects — see device.store.test.ts for the
+// same helper pattern.
+const b64url = (obj: unknown) =>
+  btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+const fakeAccessToken = (sessionId: string) =>
+  `${b64url({ alg: 'HS256' })}.${b64url({ session_id: sessionId })}.sig`
+
 const refreshSessionMock = vi.fn().mockResolvedValue({ data: {}, error: null })
+const getSessionMock = vi.fn().mockResolvedValue({
+  data: { session: { access_token: fakeAccessToken('session-xyz') } },
+  error: null,
+})
+const rpcMock = vi.fn().mockResolvedValue({ data: null, error: null })
 const devicesMaybeSingleMock = vi.fn().mockResolvedValue({ data: { code: 'A' }, error: null })
 const devicesEqMock = vi.fn().mockReturnValue({ maybeSingle: devicesMaybeSingleMock })
 const devicesSelectMock = vi.fn().mockReturnValue({ eq: devicesEqMock })
@@ -22,9 +35,10 @@ vi.mock('@/data/supabase/client', () => ({
       // it's unrelated to what this file is testing, so a no-op subscription
       // stub is enough to let the store construct (see useOperatorSwitch.test.ts).
       onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
-      getSession: () => Promise.resolve({ data: { session: null }, error: null }),
+      getSession: (...args: unknown[]) => getSessionMock(...args),
     },
     from: (...args: unknown[]) => fromMock(...args),
+    rpc: (...args: unknown[]) => rpcMock(...args),
   },
 }))
 
@@ -33,6 +47,11 @@ describe('useOwnerBootstrap', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     refreshSessionMock.mockResolvedValue({ data: {}, error: null })
+    getSessionMock.mockResolvedValue({
+      data: { session: { access_token: fakeAccessToken('session-xyz') } },
+      error: null,
+    })
+    rpcMock.mockResolvedValue({ data: null, error: null })
     devicesMaybeSingleMock.mockResolvedValue({ data: { code: 'A' }, error: null })
   })
 
@@ -117,6 +136,45 @@ describe('useOwnerBootstrap', () => {
 
     expect(result).toEqual({ status: 'done' })
     expect(useDeviceStore().deviceId).toBe(callBootstrapMock.mock.calls[0][0].deviceId)
+  })
+
+  // Found live (2026-07-29): the custom access-token hook resolves the JWT's
+  // active_role claim by looking up device_sessions BY session_id, but
+  // bootstrap_owner_identity's INSERT never sets session_id on the row it
+  // creates. Every owner-gated write (devices, denomination_configs,
+  // exchange_rates, audit_log) kept failing RLS long after a "successful"
+  // bootstrap, with correct device identity and a correct PIN, because the
+  // session token never actually carried active_role: 'owner'.
+  it('bootstrapOwner: stamps this session_id onto the bootstrap-created device BEFORE refreshing the session', async () => {
+    callBootstrapMock.mockResolvedValue('success')
+    const { db } = await import('@/data/powersync/db')
+    vi.mocked(db.getOptional).mockResolvedValue({ id: 'staff-1' } as any)
+
+    const { useOwnerBootstrap } = await import('@/features/staff/composables/useOwnerBootstrap')
+    await useOwnerBootstrap().bootstrapOwner('Owner', '1234')
+
+    const rpcDeviceId = callBootstrapMock.mock.calls[0][0].deviceId
+    expect(rpcMock).toHaveBeenCalledWith('record_device_session_id', {
+      p_device_id: rpcDeviceId,
+      p_session_id: 'session-xyz',
+    })
+
+    const stampOrder   = rpcMock.mock.invocationCallOrder[0]
+    const refreshOrder = refreshSessionMock.mock.invocationCallOrder[0]
+    expect(stampOrder).toBeLessThan(refreshOrder)
+  })
+
+  it('bootstrapOwner: a failure stamping session_id does not fail bootstrap — falls through to refreshSession as before', async () => {
+    callBootstrapMock.mockResolvedValue('success')
+    const { db } = await import('@/data/powersync/db')
+    vi.mocked(db.getOptional).mockResolvedValue({ id: 'staff-1' } as any)
+    rpcMock.mockRejectedValueOnce(new Error('offline'))
+
+    const { useOwnerBootstrap } = await import('@/features/staff/composables/useOwnerBootstrap')
+    const result = await useOwnerBootstrap().bootstrapOwner('Owner', '1234')
+
+    expect(result).toEqual({ status: 'done' })
+    expect(refreshSessionMock).toHaveBeenCalled()
   })
 
   // A brand-new device's first-ever sync (or any stale connection) can't be

@@ -10,6 +10,7 @@ import {
 } from '@/data/supabase/bootstrap'
 import { useBootstrapStore } from '@/features/staff/bootstrap.store'
 import { useDeviceStore } from '@/store/device.store'
+import { decodeSessionIdClaim } from '@/features/staff/composables/useOperatorSwitch'
 
 export type BootstrapOutcome =
   | { status: 'done' }
@@ -69,6 +70,42 @@ export function useOwnerBootstrap() {
       // actually needs; deviceCode is a display/label value and can lag.
     }
 
+    // The custom access-token hook (migration 048) resolves the JWT's
+    // `active_role` claim by looking up device_sessions WHERE session_id =
+    // <this token's own session_id claim> — NOT by device_id. But
+    // bootstrap_owner_identity's INSERT (migration 069) never sets
+    // session_id on the row it creates (it only sets active_role='owner').
+    // A NULL session_id can never match any lookup, so the hook falls back
+    // to 'cashier' forever for this row, no matter how many times the
+    // session gets refreshed afterward. Found live (2026-07-29): every
+    // owner-gated write (devices, denomination_configs, exchange_rates,
+    // audit_log, ...) kept failing RLS minutes after a successful bootstrap,
+    // with no PIN or device-identity problem in sight — this is why.
+    //
+    // device.store.ts separately has a record_device_session_id call
+    // (refreshShopId's one-shot `sessionIdRecorded` guard), but it can fire
+    // before deviceStore.deviceId is corrected above (it's triggered
+    // independently, off SIGNED_IN) — stamping session_id onto the WRONG
+    // device row and then never retrying, since it only ever runs once per
+    // app session. This bootstrap flow must stamp it directly onto the
+    // correct row itself, unconditionally, rather than depending on that
+    // one-shot mechanism having landed correctly.
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const accessToken = sessionData?.session?.access_token
+      const sessionId = accessToken ? decodeSessionIdClaim(accessToken) : null
+      if (sessionId) {
+        await supabase.rpc('record_device_session_id', { p_device_id: deviceId, p_session_id: sessionId })
+      }
+    } catch {
+      // Best-effort — if this fails, the subsequent refreshSession() below
+      // will simply carry the same stale 'cashier' claim it would have
+      // without this fix, no worse than before.
+    }
+
+    // Must run AFTER the session_id stamp above: the hook resolves
+    // `active_role` at token-issuance time, so a refresh before the row is
+    // findable by session_id would still mint a 'cashier'-defaulted token.
     await supabase.auth.refreshSession()
 
     // The refreshed session carries claims PowerSync's existing connection was
