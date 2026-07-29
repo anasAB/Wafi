@@ -5,6 +5,24 @@ vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
 
 import { useReturnSheet } from '../useReturnSheet'
 import { db } from '@/data/powersync/db'
+import { useSessionStore } from '@/store/session.store'
+import type { Staff } from '@/features/staff/staff.types'
+
+const OWNER_STAFF: Staff = {
+  id: 'staff-owner', shopId: 'shop-1', name: 'مالك', pinHash: 'x', pinSalt: null,
+  role: 'owner',
+  permissions: {
+    can_view_reports: true, can_manage_products: true,
+    can_manage_customers: true, can_view_expenses: true, can_manage_settings: true,
+    can_manage_inventory: true, can_manage_suppliers: true, can_manage_stock_take: true,
+    can_view_staff_ledger: true, can_view_staff_performance: true,
+  },
+  isActive: true, createdAt: '2026-01-01T00:00:00Z',
+}
+
+const CASHIER_STAFF: Staff = {
+  ...OWNER_STAFF, id: 'staff-cashier', name: 'كاشير', role: 'cashier',
+}
 
 describe('useReturnSheet — WAFI-100 discounted-line refund', () => {
   beforeEach(() => {
@@ -140,6 +158,12 @@ describe('useReturnSheet — WAFI-010 installment plan integration', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    // These tests exercise the plan-cancellation path, which is gated to
+    // owner/manager (RLS on installment_plans/installment_dues restricts
+    // those UPDATEs to owner/manager — see review finding #3). Default to
+    // an owner here; the dedicated role-gate test below overrides with a
+    // cashier.
+    useSessionStore().setActiveStaff(OWNER_STAFF)
   })
 
   /**
@@ -353,6 +377,10 @@ describe('useReturnSheet — WAFI-010 installment plan integration', () => {
     expect(calls.some(sql => sql.includes('UPDATE installment_plans') && sql.includes(`'cancelled'`))).toBe(true)
   })
 
+  // Note: `db.writeTransaction` is mocked as a bare function call with no real
+  // rollback/isolation semantics — this test verifies branching logic only
+  // (that `planCancelSucceeds: false` suppresses the audit log), not actual
+  // concurrent-transaction durability/isolation.
   it('does not re-cancel or re-audit-log a plan that a concurrent transaction already cancelled', async () => {
     mockLoad([{ product_id: 'p1', product_name: 'قلم', quantity: 1, unit_price_usd: 10 }])
     const txExecute = mockTx({
@@ -381,6 +409,10 @@ describe('useReturnSheet — WAFI-010 installment plan integration', () => {
     )
   })
 
+  // Note: `db.writeTransaction` is a bare mocked function call, so there is no
+  // real rollback here — this test only verifies that a thrown error
+  // propagates out of confirm() and that no audit log call happened, not true
+  // transactional atomicity/rollback.
   it('propagates a mid-transaction failure without logging any audit event (atomicity)', async () => {
     mockLoad([{ product_id: 'p1', product_name: 'قلم', quantity: 1, unit_price_usd: 10 }])
     const txExecute = vi.fn().mockImplementation(async (sql: string) => {
@@ -399,5 +431,71 @@ describe('useReturnSheet — WAFI-010 installment plan integration', () => {
       expect.stringContaining('INSERT INTO audit_log'),
       expect.anything(),
     )
+  })
+
+  it('picks the active plan over a cancelled one when a sale has multiple installment_plans rows', async () => {
+    // No UNIQUE(sale_id) constraint on installment_plans (see migration 033) —
+    // a sale can have a stale cancelled plan plus a re-issued active one. The
+    // real DB applies the query's ORDER BY (active first, then most-recent),
+    // so the mock returns them already in that order; assert both that the
+    // active row wins AND that the query text itself carries the ordering
+    // that makes this deterministic rather than an accident of row insertion order.
+    mockLoad([{ product_id: 'p1', product_name: 'قلم', quantity: 1, unit_price_usd: 10 }])
+    const txExecute = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM sale_line_items') && sql.includes('WHERE sale_id')) {
+        return { rows: { _array: [{ product_id: 'p1', quantity: 1 }] } }
+      }
+      if (sql.includes('FROM return_line_items') && sql.includes('JOIN returns')) {
+        return { rows: { _array: [{ product_id: 'p1', returned_qty: 1 }] } }
+      }
+      if (sql.includes('FROM installment_plans') && sql.includes('WHERE sale_id')) {
+        expect(sql).toContain('ORDER BY')
+        expect(sql).toContain(`WHEN 'active' THEN 0`)
+        // Simulates the DB-ordered result: active plan first despite a
+        // cancelled row also existing for this sale.
+        return { rows: { _array: [{ id: 'plan-active', status: 'active' }, { id: 'plan-old', status: 'cancelled' }] } }
+      }
+      if (sql.includes('UPDATE installment_plans') && sql.includes('RETURNING id')) {
+        return { rows: { _array: [{ id: 'plan-active' }] } }
+      }
+      return { rows: { _array: [] } }
+    })
+    vi.mocked(db.writeTransaction).mockImplementation(async (fn: any) => { await fn({ execute: txExecute }) })
+
+    const sheet = useReturnSheet('sale-1')
+    await sheet.load()
+    sheet.lines.value[0].selected = true
+    sheet.refundMethod.value = 'cash_usd'
+
+    const result = await sheet.confirm()
+
+    expect(result.warning).toBeUndefined()
+    const calls = txExecute.mock.calls.map((c: any[]) => ({ sql: c[0] as string, params: c[1] }))
+    const planUpdate = calls.find(c => c.sql.includes('UPDATE installment_plans') && c.sql.includes(`'cancelled'`))
+    expect(planUpdate).toBeDefined()
+    expect(planUpdate!.params).toContain('plan-active')
+  })
+
+  it('does not attempt to cancel an active plan on a full-sale return when the active staff is a cashier — warns instead', async () => {
+    useSessionStore().setActiveStaff(CASHIER_STAFF)
+    mockLoad([{ product_id: 'p1', product_name: 'قلم', quantity: 1, unit_price_usd: 10 }])
+    const txExecute = mockTx({
+      plan: { id: 'plan-1', status: 'active' },
+      saleLineRows: [{ product_id: 'p1', quantity: 1 }],
+      returnedRows: [{ product_id: 'p1', returned_qty: 1 }], // full-sale return
+    })
+    vi.mocked(db.writeTransaction).mockImplementation(async (fn: any) => { await fn({ execute: txExecute }) })
+
+    const sheet = useReturnSheet('sale-1')
+    await sheet.load()
+    sheet.lines.value[0].selected = true
+    sheet.refundMethod.value = 'cash_usd'
+
+    const result = await sheet.confirm()
+
+    expect(result.warning).toEqual({ type: 'plan_requires_manual_review', planStatus: 'active' })
+    const calls = txExecute.mock.calls.map((c: any[]) => c[0] as string)
+    expect(calls.some(sql => sql.includes('UPDATE installment_plans'))).toBe(false)
+    expect(calls.some(sql => sql.includes('UPDATE installment_dues'))).toBe(false)
   })
 })

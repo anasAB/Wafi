@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
+import { useSessionStore } from '@/store/session.store'
 import { useShiftStore } from '@/features/shifts/shift.store'
 import { v4 as uuidv4 } from 'uuid'
 import type { ReturnLine, RefundMethod, ConfirmResult } from '../returns.types'
@@ -219,9 +220,14 @@ export function useReturnSheet(saleId: string) {
           // here rather than trusting `lines.value` (populated at sheet-load time) —
           // a second, concurrent return sheet on the same sale would otherwise miss
           // that the combined effect of both returns is a full-sale return.
+          // Aggregate-vs-aggregate: GROUP BY product_id here even though
+          // sale.store.ts's addLine() currently enforces at most one
+          // sale_line_items row per product_id per sale — harden the
+          // comparison so it doesn't rely on an invariant that lives in a
+          // different file two layers away.
           const originalRows = await tx.execute(
-            `SELECT product_id, quantity FROM sale_line_items WHERE sale_id = ?`,
-            [saleId],
+            `SELECT product_id, SUM(quantity) AS quantity FROM sale_line_items WHERE sale_id = ? AND shop_id = ? GROUP BY product_id`,
+            [saleId, shopId],
           )
           const returnedRows = await tx.execute(
             `SELECT rli.product_id, SUM(rli.qty_returned) AS returned_qty
@@ -242,18 +248,38 @@ export function useReturnSheet(saleId: string) {
           // WAFI-010: plan lookup, deliberately unfiltered by status — see
           // useReturnSheet's design spec §2 for why filtering in SQL would risk
           // silently absorbing a future plan status into the wrong branch.
+          // ORDER BY prioritizes a non-terminal plan (active, then defaulted)
+          // and the most recent row — a sale can have more than one
+          // installment_plans row (e.g. a cancelled one plus a re-issued
+          // active one; no UNIQUE(sale_id) constraint exists), and picking an
+          // arbitrary row would risk silently no-op'ing on a genuinely active
+          // plan.
           const planRows = await tx.execute(
-            `SELECT id, status FROM installment_plans WHERE sale_id = ?`,
-            [saleId],
+            `SELECT id, status FROM installment_plans WHERE sale_id = ? AND shop_id = ?
+             ORDER BY CASE status WHEN 'active' THEN 0 WHEN 'defaulted' THEN 1 ELSE 2 END, created_at DESC
+             LIMIT 1`,
+            [saleId, shopId],
           )
           const plan = (planRows as any).rows?._array?.[0] as { id: string; status: string } | undefined
 
           if (plan) {
-            if (plan.status === 'active' && isFullSaleReturn) {
+            // WAFI-010 review #3: installment_plans/installment_dues UPDATEs are
+            // restricted by server RLS to owner/manager (migration 059). A
+            // cashier's auto-cancel would sync-reject and land in
+            // sync_dead_letter while the returns insert + audit row DO sync —
+            // a phantom cancellation with no server-side effect. Gate on role
+            // instead of attempting a write RLS will reject.
+            const activeRole = useSessionStore().activeStaff?.role
+            const canMutatePlan = activeRole === 'owner' || activeRole === 'manager'
+
+            if (plan.status === 'active' && isFullSaleReturn && canMutatePlan) {
               const cancelled = await cancelPlanWithinTx(tx, plan.id)
               if (cancelled) cancelledPlanId = plan.id
             } else if (plan.status !== 'completed' && plan.status !== 'cancelled') {
-              // Covers 'active'+partial, 'defaulted' (any completeness), and any
+              // Covers 'active'+partial, 'defaulted' (any completeness), a
+              // cashier attempting an otherwise-qualifying full-sale return
+              // (still reads planStatus as 'active' — the warning's purpose is
+              // "needs manual review", true here for a role reason), and any
               // unrecognized future status — normative per the design spec's
               // decision table: only completed/cancelled ever suppress the warning.
               warning = { type: 'plan_requires_manual_review', planStatus: plan.status }
