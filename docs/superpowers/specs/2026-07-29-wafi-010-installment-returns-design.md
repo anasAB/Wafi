@@ -104,17 +104,27 @@ stale outside state:
 ```ts
 // useInstallmentPlan.ts
 async function cancelPlanWithinTx(tx: Transaction, planId: string): Promise<boolean> {
-  const dueResult = await tx.execute(
+  await tx.execute(
     `UPDATE installment_dues SET status = 'voided' WHERE plan_id = ? AND status = 'pending'`,
     [planId],
   )
   const planResult = await tx.execute(
-    `UPDATE installment_plans SET status = 'cancelled' WHERE id = ? AND status = 'active'`,
+    `UPDATE installment_plans SET status = 'cancelled' WHERE id = ? AND status = 'active' RETURNING id`,
     [planId],
   )
-  return (planResult as any).rowsAffected > 0
+  return (planResult.rows?._array.length ?? 0) > 0
 }
 ```
+
+**Why `RETURNING id` + `rows._array.length`, not `rowsAffected`:** PowerSync's
+`QueryResult.rowsAffected` is explicitly documented as unreliable for this purpose —
+"`rowsAffected` may be `0` for successful `UPDATE`/`DELETE` statements... use a
+`RETURNING` clause and inspect `rows` when you need to confirm which rows changed"
+(`@powersync/common`'s `DBAdapter.ts`, `QueryResult` type), a consequence of PowerSync's
+client-side JSON-view storage layer. Relying on `rowsAffected` here would risk the exact
+bug this ticket exists to prevent: the plan is genuinely cancelled in the database, but
+the helper reports `false`, so the caller never logs `installment_plan.cancelled` for a
+cancellation that actually happened.
 
 `cancelPlanWithinTx`'s guard is `status = 'active'` only — **not** `IN ('active',
 'defaulted')`. The decision table (§3) says `defaulted` plans are never auto-cancelled;
