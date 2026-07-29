@@ -3,12 +3,13 @@ import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { useShiftStore } from '@/features/shifts/shift.store'
 import { v4 as uuidv4 } from 'uuid'
-import type { ReturnLine, RefundMethod } from '../returns.types'
+import type { ReturnLine, RefundMethod, ConfirmResult } from '../returns.types'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 import { executeFinancialWrite } from '@/composables/executeFinancialWrite'
+import { cancelPlanWithinTx } from '@/features/installments/composables/useInstallmentPlan'
 
 export function useReturnSheet(saleId: string) {
-  const { logReturnProcessed } = useAuditLog()
+  const { logReturnProcessed, logInstallmentPlanCancelled } = useAuditLog()
 
   const lines        = ref<ReturnLine[]>([])
   const refundMethod = ref<RefundMethod | null>(null)
@@ -129,7 +130,7 @@ export function useReturnSheet(saleId: string) {
       })
   }
 
-  async function confirm(): Promise<void> {
+  async function confirm(): Promise<ConfirmResult> {
     if (!refundMethod.value || !lines.value.some(l => l.selected)) {
       throw new Error('confirm() called without valid state')
     }
@@ -164,8 +165,11 @@ export function useReturnSheet(saleId: string) {
     const returnId  = uuidv4()
     const now       = new Date().toISOString()
 
-    await executeFinancialWrite(
+    const { cancelledPlanId, warning } = await executeFinancialWrite(
       async () => {
+        let cancelledPlanId: string | null = null
+        let warning: ConfirmResult['warning']
+
         await db.writeTransaction(async (tx) => {
           // Insert returns row (shift_id links cash refunds to the open shift for the Z-report)
           await tx.execute(
@@ -208,10 +212,65 @@ export function useReturnSheet(saleId: string) {
           // credit count), so no customer_payments row is written here. Doing so would
           // double-count the return — and a negative payment would wrongly INCREASE the
           // balance under the `sales - payments` formula.
+
+          // WAFI-010: recompute whether this return, taken together with every return
+          // already committed for this sale (INCLUDING the one just inserted above),
+          // exhausts every original line item. Deliberately re-read from the database
+          // here rather than trusting `lines.value` (populated at sheet-load time) —
+          // a second, concurrent return sheet on the same sale would otherwise miss
+          // that the combined effect of both returns is a full-sale return.
+          const originalRows = await tx.execute(
+            `SELECT product_id, quantity FROM sale_line_items WHERE sale_id = ?`,
+            [saleId],
+          )
+          const returnedRows = await tx.execute(
+            `SELECT rli.product_id, SUM(rli.qty_returned) AS returned_qty
+             FROM return_line_items rli
+             JOIN returns r ON r.id = rli.return_id
+             WHERE r.original_sale_id = ?
+             GROUP BY rli.product_id`,
+            [saleId],
+          )
+          const returnedMap = new Map<string, number>(
+            ((returnedRows as any).rows?._array ?? []).map((r: any) => [r.product_id, r.returned_qty]),
+          )
+          const isFullSaleReturn = ((originalRows as any).rows?._array ?? []).every(
+            (row: any) => (returnedMap.get(row.product_id) ?? 0) >= row.quantity,
+          )
+
+          // WAFI-010: plan lookup, deliberately unfiltered by status — see
+          // useReturnSheet's design spec §2 for why filtering in SQL would risk
+          // silently absorbing a future plan status into the wrong branch.
+          const planRows = await tx.execute(
+            `SELECT id, status FROM installment_plans WHERE sale_id = ?`,
+            [saleId],
+          )
+          const plan = (planRows as any).rows?._array?.[0] as { id: string; status: string } | undefined
+
+          if (plan) {
+            if (plan.status === 'active' && isFullSaleReturn) {
+              const cancelled = await cancelPlanWithinTx(tx, plan.id)
+              if (cancelled) cancelledPlanId = plan.id
+            } else if (plan.status !== 'completed' && plan.status !== 'cancelled') {
+              // Covers 'active'+partial, 'defaulted' (any completeness), and any
+              // unrecognized future status — normative per the design spec's
+              // decision table: only completed/cancelled ever suppress the warning.
+              warning = { type: 'plan_requires_manual_review', planStatus: plan.status }
+            }
+          }
         })
+
+        return { cancelledPlanId, warning }
       },
-      () => logReturnProcessed(returnId, saleId, refundAmountUsd),
+      ({ cancelledPlanId, warning }) => {
+        logReturnProcessed(returnId, saleId, refundAmountUsd)
+        return cancelledPlanId
+          ? logInstallmentPlanCancelled(cancelledPlanId, { reason: 'sale_returned', returnId })
+          : Promise.resolve()
+      },
     )
+
+    return { warning }
   }
 
   return { lines, refundMethod, reason, notes, hasCustomer, customerName, refundTotalUsd, refundTotalSyp, saleDiscountAppliedUsd, canConfirm, load, confirm }
