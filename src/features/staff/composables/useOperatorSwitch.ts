@@ -2,6 +2,7 @@ import { supabase } from '@/data/supabase/client'
 import { useDeviceStore } from '@/store/device.store'
 import { useSessionStore } from '@/store/session.store'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
+import { reconnectPowerSync } from '@/data/powersync/db'
 import type { Staff } from '@/features/staff/staff.types'
 
 /**
@@ -98,6 +99,16 @@ export async function establishOperatorIdentity(
     }
 
     await supabase.auth.refreshSession()
+
+    // The refreshed session carries the new active_role/staff_id claims
+    // PowerSync's already-open connection was established without — it won't
+    // notice on its own until its cached token nears expiry. Without this,
+    // any write queued after the switch (e.g. denomination_configs, which is
+    // owner-only) is uploaded under the stale pre-switch claims and gets
+    // rejected by RLS server-side even though the local session looks correct.
+    // See useOwnerBootstrap.ts's identical call for the same root cause.
+    await reconnectPowerSync()
+
     device.lastConfirmedOperatorId = staff.id
     return { status: 'confirmed' }
   } catch (e) {
