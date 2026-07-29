@@ -66,7 +66,7 @@ describe('useDeviceStore', () => {
 
     session.value = { access_token: fakeAccessToken('session-xyz'), user: { id: 'user-a' } }
     vi.mocked(db.getOptional).mockResolvedValue({ id: 'shop-a' } as any)
-    registerDeviceMock.mockResolvedValue({ code: 'A' })
+    registerDeviceMock.mockResolvedValue({ id: 'device-a', code: 'A', isTemporary: false })
 
     const { useDeviceStore } = await import('@/store/device.store')
     const store = useDeviceStore()
@@ -85,7 +85,7 @@ describe('useDeviceStore', () => {
 
     session.value = { access_token: fakeAccessTokenNoClaim(), user: { id: 'user-a' } }
     vi.mocked(db.getOptional).mockResolvedValue({ id: 'shop-a' } as any)
-    registerDeviceMock.mockResolvedValue({ code: 'A' })
+    registerDeviceMock.mockResolvedValue({ id: 'device-a', code: 'A', isTemporary: false })
 
     const { useDeviceStore } = await import('@/store/device.store')
     await useDeviceStore().refreshShopId()
@@ -101,7 +101,7 @@ describe('useDeviceStore', () => {
 
     session.value = { access_token: fakeAccessToken('session-A'), user: { id: 'user-a' } }
     vi.mocked(db.getOptional).mockResolvedValue({ id: 'shop-a' } as any)
-    registerDeviceMock.mockResolvedValue({ code: 'A' })
+    registerDeviceMock.mockResolvedValue({ id: 'device-a', code: 'A', isTemporary: false })
 
     const { useDeviceStore } = await import('@/store/device.store')
     const store = useDeviceStore()
@@ -258,7 +258,7 @@ describe('useDeviceStore', () => {
   })
 
   it('only registers once when ensureDeviceRegistered is called concurrently', async () => {
-    let resolveRegister: (v: { code: string; isTemporary: boolean }) => void
+    let resolveRegister: (v: { id: string; code: string; isTemporary: boolean }) => void
     registerDeviceMock.mockImplementation(() => new Promise(resolve => { resolveRegister = resolve }))
 
     const { useDeviceStore } = await import('@/store/device.store')
@@ -272,10 +272,29 @@ describe('useDeviceStore', () => {
 
     expect(registerDeviceMock).toHaveBeenCalledTimes(1)
 
-    resolveRegister!({ code: 'B', isTemporary: false })
+    resolveRegister!({ id: 'device-b', code: 'B', isTemporary: false })
     await Promise.all([p1, p2])
 
     expect(registerDeviceMock).toHaveBeenCalledTimes(1)
     expect(store.deviceCode).toBe('B')
+    expect(store.deviceId).toBe('device-b')
+  })
+
+  it('adopts registerDevice\'s own id rather than generating a separate one', async () => {
+    // Regression guard: device.store.ts previously generated its own uuidv4()
+    // for deviceId while useDeviceRegistration.ts generated a DIFFERENT one
+    // for the actual devices.id row — the two never matched, so every later
+    // switch_active_operator lookup targeted a device that didn't exist.
+    // Found live 2026-07-29 alongside the devices-RLS incident.
+    registerDeviceMock.mockResolvedValue({ id: 'the-real-device-id', code: 'C', isTemporary: false })
+
+    const { useDeviceStore } = await import('@/store/device.store')
+    const store = useDeviceStore()
+    store.shopId = 'shop-a'
+    store.deviceCode = ''
+
+    await store.ensureDeviceRegistered()
+
+    expect(store.deviceId).toBe('the-real-device-id')
   })
 })

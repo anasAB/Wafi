@@ -1,6 +1,5 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { v4 as uuidv4 } from 'uuid'
 import { supabase } from '@/data/supabase/client'
 import { db } from '@/data/powersync/db'
 import { SupabaseConnector } from '@/data/powersync/connector'
@@ -71,8 +70,11 @@ export const useDeviceStore = defineStore('device', () => {
 
     registrationInFlight = (async () => {
       const { registerDevice } = useDeviceRegistration()
-      const id = uuidv4()
-      const { code } = await registerDevice(shopId.value)
+      // registerDevice mints its own id and is the sole source of truth for
+      // it — adopting a separately-generated id here would diverge from the
+      // actual devices.id row it registered, breaking every later
+      // switch_active_operator lookup (found live 2026-07-29).
+      const { id, code } = await registerDevice(shopId.value)
       deviceId.value = id
       deviceCode.value = code
     })()

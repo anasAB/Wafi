@@ -4,43 +4,49 @@ import { supabase } from '@/data/supabase/client'
 
 /**
  * Claims a device row for the current shop. Tries the server-allocated
- * permanent letter code (A/B/C...) first via the `allocate_device_code` RPC;
- * if that RPC is unreachable (offline first-run, or PowerSync hasn't synced
- * a connection yet), falls back to a locally-generated temporary `T-xxxx`
- * code so the device can keep working offline. The temp code is expected to
- * be reconciled to a permanent one once connectivity returns (later task).
+ * permanent letter code (A/B/C...) first via the `register_device` RPC — a
+ * SECURITY DEFINER function (migration 072) that creates the `devices` row
+ * directly, bypassing `devices`' owner-only INSERT RLS
+ * (055_identity_domain_rls.sql). This must NOT be a plain client-side INSERT:
+ * `switch_active_operator()` requires the device row to already exist before
+ * `active_role` can become `'owner'`, so gating this on role (or on RLS,
+ * which amounts to the same thing) is a circular dependency that permanently
+ * blocks login on a fresh device — found live 2026-07-29, see 072's own
+ * comment for the full incident.
+ *
+ * If the RPC is unreachable (offline first-run, or PowerSync hasn't synced a
+ * connection yet), falls back to a locally-generated temporary `T-xxxx` code
+ * so the device can keep working offline. The temp code is expected to be
+ * reconciled to a permanent one once connectivity returns (later task).
+ *
+ * Returns the actual `devices.id` this call registered (or generated for the
+ * temp-code fallback) — the caller must adopt THIS id, not one it generated
+ * itself, or the two diverge and every later `switch_active_operator` call
+ * looks up a device that doesn't exist (found live 2026-07-29 alongside the
+ * RLS issue above).
  */
 export function useDeviceRegistration() {
-  async function registerDevice(shopId: string): Promise<{ code: string; isTemporary: boolean }> {
-    let allocatedCode: string | undefined
-    try {
-      const { data, error } = await supabase.rpc('allocate_device_code', { p_shop_id: shopId })
-      if (error) throw error
-      allocatedCode = data ?? undefined
-    } catch {
-      // Offline or the allocator RPC is unreachable — fall through to a temp code.
-    }
+  async function registerDevice(shopId: string): Promise<{ id: string; code: string; isTemporary: boolean }> {
+    const id = uuidv4()
 
-    if (allocatedCode) {
-      // A permanent code was successfully allocated — the INSERT is NOT
-      // wrapped in the try/catch above. If it fails here, that's a real bug
-      // (not an offline/unreachable-allocator condition) and must propagate
-      // rather than being silently swallowed into a second, temp-code row.
-      await db.execute(
-        `INSERT INTO devices (id, shop_id, code, is_temporary, registered_at, sync_status)
-         VALUES (?, ?, ?, ?, ?, 'pending')`,
-        [uuidv4(), shopId, allocatedCode, 0, new Date().toISOString()]
-      )
-      return { code: allocatedCode, isTemporary: false }
+    try {
+      const { data: code, error } = await supabase.rpc('register_device', { p_device_id: id })
+      if (error) throw error
+      if (code) return { id, code, isTemporary: false }
+      // code is null: auth_shop_id() resolved to NULL server-side (not
+      // actually offline — a real, if unexpected, state) — fall through to
+      // the temp-code path the same way an unreachable RPC would.
+    } catch {
+      // Offline or the RPC is unreachable — fall through to a temp code.
     }
 
     const tempCode = `T-${Math.random().toString(36).slice(2, 8).toUpperCase()}`
     await db.execute(
       `INSERT INTO devices (id, shop_id, code, is_temporary, registered_at, sync_status)
        VALUES (?, ?, ?, ?, ?, 'pending')`,
-      [uuidv4(), shopId, tempCode, 1, new Date().toISOString()]
+      [id, shopId, tempCode, 1, new Date().toISOString()]
     )
-    return { code: tempCode, isTemporary: true }
+    return { id, code: tempCode, isTemporary: true }
   }
 
   return { registerDevice }

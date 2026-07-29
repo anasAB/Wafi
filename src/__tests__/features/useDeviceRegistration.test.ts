@@ -19,19 +19,23 @@ describe('useDeviceRegistration', () => {
     vi.clearAllMocks()
   })
 
-  it('registers a permanent code when the allocator succeeds', async () => {
+  it('registers a permanent code via the register_device RPC without a local INSERT', async () => {
     rpcMock.mockResolvedValueOnce({ data: 'B', error: null })
 
     const { registerDevice } = useDeviceRegistration()
     const result = await registerDevice('shop1')
 
-    expect(rpcMock).toHaveBeenCalledWith('allocate_device_code', { p_shop_id: 'shop1' })
-    expect(result).toEqual({ code: 'B', isTemporary: false })
+    expect(rpcMock).toHaveBeenCalledWith('register_device', { p_device_id: result.id })
+    expect(result).toEqual({ id: result.id, code: 'B', isTemporary: false })
+    // register_device is SECURITY DEFINER and creates the row directly
+    // server-side — a client-side INSERT here would be redundant and, since
+    // devices INSERT is owner-only RLS, can fail for a non-owner session
+    // (the exact bug this RPC exists to avoid).
     const insertCall = vi.mocked(db.execute).mock.calls.find(([sql]) => /INSERT INTO devices/.test(sql))
-    expect(insertCall![1]).toEqual(expect.arrayContaining(['shop1', 'B', 0]))
+    expect(insertCall).toBeUndefined()
   })
 
-  it('falls back to a temporary code when the allocator is unreachable (offline)', async () => {
+  it('falls back to a temporary code when the RPC is unreachable (offline)', async () => {
     rpcMock.mockRejectedValueOnce(new Error('offline'))
 
     const { registerDevice } = useDeviceRegistration()
@@ -40,18 +44,36 @@ describe('useDeviceRegistration', () => {
     expect(result.isTemporary).toBe(true)
     expect(result.code).toMatch(/^T-/)
     const insertCall = vi.mocked(db.execute).mock.calls.find(([sql]) => /INSERT INTO devices/.test(sql))
-    expect(insertCall![1]).toEqual(expect.arrayContaining(['shop1', result.code, 1]))
+    expect(insertCall![1]).toEqual(expect.arrayContaining([result.id, 'shop1', result.code, 1]))
   })
 
-  it('propagates an error when the permanent-code INSERT fails after a successful allocation, without falling back to a temp code', async () => {
-    rpcMock.mockResolvedValueOnce({ data: 'B', error: null })
-    vi.mocked(db.execute).mockRejectedValueOnce(new Error('insert failed'))
+  it('falls back to a temporary code when the RPC returns an error', async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: { message: 'boom' } })
 
     const { registerDevice } = useDeviceRegistration()
+    const result = await registerDevice('shop1')
 
-    await expect(registerDevice('shop1')).rejects.toThrow('insert failed')
-    // Only the one (failed) INSERT attempt — no second temp-code fallback insert.
-    const insertCalls = vi.mocked(db.execute).mock.calls.filter(([sql]) => /INSERT INTO devices/.test(sql))
-    expect(insertCalls).toHaveLength(1)
+    expect(result.isTemporary).toBe(true)
+    expect(result.code).toMatch(/^T-/)
+  })
+
+  it('falls back to a temporary code when the RPC returns null (auth_shop_id unresolved server-side)', async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: null })
+
+    const { registerDevice } = useDeviceRegistration()
+    const result = await registerDevice('shop1')
+
+    expect(result.isTemporary).toBe(true)
+    expect(result.code).toMatch(/^T-/)
+  })
+
+  it('returns the same id it registered, for the caller to adopt', async () => {
+    rpcMock.mockResolvedValueOnce({ data: 'B', error: null })
+
+    const { registerDevice } = useDeviceRegistration()
+    const result = await registerDevice('shop1')
+
+    expect(rpcMock).toHaveBeenCalledWith('register_device', { p_device_id: result.id })
+    expect(result.id).toBeTruthy()
   })
 })
