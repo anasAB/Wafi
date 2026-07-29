@@ -266,6 +266,18 @@ describe('useAuditLog — installment events', () => {
       expect.arrayContaining(['installment_plan.cancelled', 'installment_plan', 'plan-1']),
     )
   })
+
+  it('logInstallmentPlanCancelled records reason and returnId in meta when provided', async () => {
+    const { logInstallmentPlanCancelled } = useAuditLog()
+    await logInstallmentPlanCancelled('plan-1', { reason: 'sale_returned', returnId: 'return-1' })
+    expect(db.execute).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO audit_log'),
+      expect.arrayContaining([
+        'installment_plan.cancelled', 'installment_plan', 'plan-1',
+        JSON.stringify({ reason: 'sale_returned', returnId: 'return-1' }),
+      ]),
+    )
+  })
 })
 
 describe('useAuditLog — sensitive events surface write failures (WAFI-014)', () => {
