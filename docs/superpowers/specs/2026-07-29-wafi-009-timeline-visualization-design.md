@@ -17,8 +17,9 @@ units of real shrinkage plus a 3-unit sale mid-count, or something else entirely
 
 ## Data source — verified, not assumed
 
-There is **no single unified inventory-movement ledger** in this codebase. Confirmed by
-reading every write path directly:
+Inventory movements are currently distributed across multiple persistence sources
+rather than stored in a single movement ledger. Confirmed by reading every write path
+directly:
 
 | Movement | Writes to | Confirmed at |
 |---|---|---|
@@ -29,28 +30,89 @@ reading every write path directly:
 | Supplier receiving | `stock_receiving_line_items` + direct `products.current_stock` write — **no `stock_adjustments` row** | `useReceivingSheet.ts:92-110` |
 
 A timeline built off `stock_adjustments` alone would silently omit every supplier
-delivery — worse than no timeline, since it would present itself as complete. The
-correct query is a `UNION` of two sources, normalized to one shape.
+delivery — worse than no timeline, since it would present itself as complete.
 
-```sql
-SELECT created_at AS ts, reason, (new_value - old_value) AS delta
-FROM stock_adjustments
-WHERE product_id = ? AND reason != 'stocktake'
-  AND created_at >= ? AND created_at <= ?
+**This must not be a UNION query embedded inside the stock-take feature.** Writing
+`stock_adjustments UNION stock_receiving_line_items` directly inside
+`useStockTakeVariance.ts` encodes "here is the complete list of inventory-movement
+sources" into a screen that has no business owning that knowledge. Six months from now,
+someone adding an inventory-transfer feature or a recipe-consumption feature has no
+reason to remember that a stock-take review screen also needs updating — and won't.
 
-UNION ALL
+**Fix: extract a shared query into the products/inventory domain**, consumed by (not
+duplicated inside) the stock-take feature:
 
-SELECT sr.received_at AS ts, 'receiving' AS reason, srl.qty_received AS delta
-FROM stock_receiving_line_items srl
-JOIN stock_receivings sr ON sr.id = srl.receiving_id
-WHERE srl.product_id = ?
-  AND sr.received_at >= ? AND sr.received_at <= ?
+```ts
+// src/features/products/composables/useInventoryMovements.ts
+export interface InventoryMovement {
+  id: string          // tie-breaker for deterministic ordering (see below)
+  timestamp: string
+  reason: string
+  delta: number
+}
 
-ORDER BY ts ASC
+export function useInventoryMovements() {
+  async function getMovements(
+    productId: string, windowStart: string, windowEnd: string,
+  ): Promise<InventoryMovement[]> {
+    return db.getAll<InventoryMovement>(
+      `SELECT id, created_at AS timestamp, reason, (new_value - old_value) AS delta
+       FROM stock_adjustments
+       WHERE product_id = ? AND reason != 'stocktake'
+         AND created_at >= ? AND created_at <= ?
+
+       UNION ALL
+
+       SELECT srl.id, sr.received_at AS timestamp, 'receiving' AS reason, srl.qty_received AS delta
+       FROM stock_receiving_line_items srl
+       JOIN stock_receivings sr ON sr.id = srl.receiving_id
+       WHERE srl.product_id = ?
+         AND sr.received_at >= ? AND sr.received_at <= ?
+
+       ORDER BY timestamp ASC, id ASC`,
+      [productId, windowStart, windowEnd, productId, windowStart, windowEnd],
+    )
+  }
+  return { getMovements }
+}
 ```
 
-(Six bound params: `productId, windowStart, windowEnd` repeated for both halves of the
-union — `db.getAll` takes a flat params array in this codebase's convention.)
+This is the ONE place that knows every inventory-movement source. When a future feature
+adds a new stock-affecting write path, it extends this function's UNION — every
+consumer (this stock-take screen, and any future one — e.g. a per-product activity
+view) picks up the new source automatically, with zero changes to the stock-take
+feature itself. `useStockTakeVariance.ts` calls `getMovements()` and layers the
+stock-take-specific arithmetic (`netMovementDelta`, `unexplainedVariance`) on top; it
+does not know or care what sources fed the list.
+
+**Ordering invariant:** `ORDER BY timestamp ASC, id ASC`, not `timestamp` alone. SQLite
+timestamp columns here are ISO strings without guaranteed sub-second uniqueness — two
+movements written in the same millisecond (plausible: a receiving confirmed right after
+a sale) would otherwise sort in a query-plan-dependent, effectively random order,
+making the UI's displayed sequence flicker between renders. `id` (every table's implicit
+PowerSync primary key, a UUID, present even though never declared in `schema.ts`'s
+column list) gives a stable secondary key. This does not claim to recover the *true*
+sub-millisecond chronological order between two ties — only that the displayed order is
+deterministic and stable across repeated queries.
+
+**Delta invariant — document why, not just what:** `delta = new_value − old_value` for
+`stock_adjustments` rows is derived from the row's own before/after state, not from
+`reason`. This is intentional: `old_value`/`new_value` are the canonical record of what
+actually happened to `current_stock` at that moment, while `reason` is a label. A future
+maintainer must not "simplify" this into a `reason`-keyed sign table (e.g. `sale → -qty`,
+`return → +qty`) — that would duplicate business logic that already lives correctly in
+each write path's own delta computation, and would silently diverge the moment any write
+path's sign convention changes without this code being touched.
+
+**Receiving sign invariant:** `stock_receiving_line_items.qty_received` is treated as
+always positive (a receiving only ever adds stock in this codebase today — confirmed,
+`useReceivingSheet.ts` has no negative-quantity or correction path). If a future ticket
+introduces a receiving correction/negative-quantity path, this UNION's `qty_received AS
+delta` line must be revisited — it is not automatically sign-correct.
+
+**Receiving timestamp:** `stock_receivings` has exactly one timestamp column,
+`received_at` (confirmed against `schema.ts:355-365` — no separate `created_at`/
+`confirmed_at`), so there is no ambiguity about which column is inventory-effective.
 
 ## Window boundary — fixed, not live
 
@@ -93,31 +155,35 @@ estimate.
 
 ## Composable
 
-New: `useStockTakeVariance.ts` (or added to the existing `stock-take/composables/`
-directory — final filename is a planning-time call, not a design decision). Shape:
+`src/features/products/composables/useInventoryMovements.ts` (shared, above) supplies
+raw movements. The stock-take-specific layer — `useStockTakeVariance.ts`, in
+`stock-take/composables/` — consumes it and adds the stock-take-only arithmetic:
 
 ```ts
-export interface MovementEntry {
-  timestamp: string
-  reason: string        // 'sale' | 'return' | 'damaged' | 'lost' | 'other' | 'receiving' | anything future
-  delta: number
-}
-
 export interface LineMovements {
-  entries: MovementEntry[]
+  entries: InventoryMovement[]
   netMovementDelta: number
   unexplainedVariance: number
 }
 
 function useStockTakeVariance() {
-  const cache = new Map<string, LineMovements>()   // keyed by productId — one fetch per line per review session
+  const { getMovements } = useInventoryMovements()
+  // Keyed by `${productId}:${windowStart}:${windowEnd}`, not productId alone — the
+  // window is fixed per review-screen mount today (see "Window boundary" above), but
+  // this key shape means a future feature that re-runs the query with a different
+  // window (e.g. a "refresh" affordance) gets a correct cache miss instead of silently
+  // serving a stale window's result under the same product's cache slot.
+  const cache = new Map<string, LineMovements>()
 
   async function loadMovements(
     productId: string, variance: number, windowStart: string, windowEnd: string,
   ): Promise<LineMovements> {
-    if (cache.has(productId)) return cache.get(productId)!
-    // ... run the UNION query, compute netMovementDelta, unexplainedVariance ...
-    cache.set(productId, result)
+    const key = `${productId}:${windowStart}:${windowEnd}`
+    if (cache.has(key)) return cache.get(key)!
+    const entries = await getMovements(productId, windowStart, windowEnd)
+    const netMovementDelta = entries.reduce((sum, e) => sum + e.delta, 0)
+    const result: LineMovements = { entries, netMovementDelta, unexplainedVariance: variance - netMovementDelta }
+    cache.set(key, result)
     return result
   }
 
@@ -181,11 +247,23 @@ discipline (WAFI-010's decision-table fallback is the precedent).
 8. A movement timestamped exactly at `session.startedAt` — included (`>=`).
 9. A movement timestamped exactly at `reviewedAt` (the window's upper bound) —
    included (`<=`).
-10. An unrecognized `reason` value — renders with the generic fallback icon/label,
+10. A movement timestamped one second before `session.startedAt` — **excluded**.
+11. A movement timestamped one second after `reviewedAt` — **excluded**. (Together with
+    8-9, this verifies both edges of the boundary are correct, not just that something
+    inside the window is included.)
+12. An unrecognized `reason` value — renders with the generic fallback icon/label,
     does not crash, still contributes correctly to `netMovementDelta`.
-11. Expand → collapse → expand the same line twice — second expand does not issue a
+13. Two movements with identical timestamps (down to whatever precision the stored ISO
+    string carries) — order is deterministic and stable across repeated calls (assert
+    by running the query twice and comparing the returned order), not merely "doesn't
+    crash."
+14. A receiving-only case (no `stock_adjustments` rows at all for this product in the
+    window) — the union's second half alone still produces a correct, non-empty result;
+    proves the fix for the `stock_adjustments`-only gap end-to-end, not just at the SQL
+    level.
+15. Expand → collapse → expand the same line twice — second expand does not issue a
     second SQL query (cache hit) — assert via a mock call-count.
-12. Two different lines expanded in sequence — each gets its own cache entry; expanding
+16. Two different lines expanded in sequence — each gets its own cache entry; expanding
     line B does not evict or corrupt line A's cached result.
 
 ## Explicitly out of scope
