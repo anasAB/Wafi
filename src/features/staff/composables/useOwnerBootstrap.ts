@@ -47,7 +47,28 @@ export function useOwnerBootstrap() {
   const bootstrapStore = useBootstrapStore()
   const deviceStore    = useDeviceStore()
 
-  async function finishAfterServerSuccess(staffId: string, opts: PollOptions): Promise<BootstrapOutcome> {
+  async function finishAfterServerSuccess(deviceId: string, staffId: string, opts: PollOptions): Promise<BootstrapOutcome> {
+    // Found live (2026-07-29): ensureDeviceRegistered() (device.store.ts) fires
+    // on SIGNED_IN, racing ahead of this bootstrap flow, and generates its OWN
+    // deviceId for a plain client-side `INSERT INTO devices` that fails RLS
+    // for a not-yet-bootstrapped shop (auth_role() isn't 'owner' yet). That
+    // race is a separate, pre-existing bug this doesn't fix, but its
+    // side-effect must be undone here regardless of whether it fired: this
+    // RPC call (bootstrap_owner_identity) is the one that ACTUALLY created a
+    // valid devices row server-side, using THIS deviceId — so this device's
+    // local identity must point at it, not at whatever ensureDeviceRegistered()
+    // left behind (a different, non-existent-server-side id). Without this,
+    // every subsequent switch_active_operator call looks up a device that was
+    // never actually created, and fails exactly like a wrong PIN would.
+    deviceStore.deviceId = deviceId
+    try {
+      const { data } = await supabase.from('devices').select('code').eq('id', deviceId).maybeSingle()
+      if (data?.code) deviceStore.deviceCode = data.code
+    } catch {
+      // Best-effort — deviceId is the piece switch_active_operator's lookup
+      // actually needs; deviceCode is a display/label value and can lag.
+    }
+
     await supabase.auth.refreshSession()
 
     // The refreshed session carries claims PowerSync's existing connection was
@@ -103,7 +124,7 @@ export function useOwnerBootstrap() {
       return { status: 'needs-connectivity' }
     }
 
-    return finishAfterServerSuccess(staffId, opts)
+    return finishAfterServerSuccess(deviceId, staffId, opts)
   }
 
   async function resumePendingBootstrap(opts: PollOptions = {}): Promise<ResumeOutcome> {
@@ -143,7 +164,7 @@ export function useOwnerBootstrap() {
       return { status: 'needs-connectivity' }
     }
 
-    return finishAfterServerSuccess(pending.staffId, opts)
+    return finishAfterServerSuccess(pending.deviceId, pending.staffId, opts)
   }
 
   return { bootstrapOwner, resumePendingBootstrap }
