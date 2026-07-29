@@ -3,7 +3,7 @@ import { setActivePinia, createPinia } from 'pinia'
 
 vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
 
-import { useInstallmentPlan } from '@/features/installments/composables/useInstallmentPlan'
+import { useInstallmentPlan, cancelPlanWithinTx } from '@/features/installments/composables/useInstallmentPlan'
 import { db } from '@/data/powersync/db'
 import { useSessionStore } from '@/store/session.store'
 import type { Staff } from '@/features/staff/staff.types'
@@ -205,6 +205,35 @@ describe('useInstallmentPlan.cancelPlan', () => {
 
     const { cancelPlan } = useInstallmentPlan()
     await cancelPlan('plan-1')
+
+    expect(db.execute).not.toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO audit_log'),
+      expect.anything(),
+    )
+  })
+
+  it('refuses to cancel a defaulted plan: attempts the guarded UPDATE but never flips it or audit-logs', async () => {
+    // Simulate a plan whose status is 'defaulted': the WHERE status = 'active'
+    // clause excludes it, so RETURNING yields zero rows.
+    const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [] } })
+
+    // Exercise cancelPlanWithinTx directly to assert on the guard SQL itself.
+    const cancelled = await cancelPlanWithinTx({ execute: txExecute }, 'plan-defaulted')
+    expect(cancelled).toBe(false)
+
+    const planUpdateCall = txExecute.mock.calls.find(
+      (c: any[]) => (c[0] as string).includes('UPDATE installment_plans'),
+    )
+    expect(planUpdateCall).toBeDefined()
+    expect(planUpdateCall![0] as string).toContain(`status = 'active'`)
+    expect(planUpdateCall![0] as string).not.toContain('defaulted')
+
+    // And through cancelPlan, confirm the defaulted plan is never audit-logged.
+    vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => { await fn({ execute: vi.fn().mockResolvedValue({ rows: { _array: [] } }) }) })
+    vi.mocked(db.execute).mockResolvedValue({ rows: { _array: [] } } as any)
+
+    const { cancelPlan } = useInstallmentPlan()
+    await cancelPlan('plan-defaulted')
 
     expect(db.execute).not.toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO audit_log'),
