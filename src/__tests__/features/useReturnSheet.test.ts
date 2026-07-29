@@ -115,6 +115,20 @@ describe('useReturnSheet — over-refund guard', () => {
       .mockResolvedValueOnce([{ product_id: 'p1', product_name: 'iPhone', quantity: 2, unit_price_usd: 500 }] as any)
       .mockResolvedValueOnce([{ product_id: 'p1', already_returned: 1 }] as any)
     vi.mocked(db.execute).mockResolvedValue({ rows: { _array: [{ rate: 12500 }] } } as any)
+    // The guard is now re-validated from a fresh in-transaction read (WAFI-010
+    // §8), not from the sheet-load snapshot above — mock that fresh read to
+    // report the same "1 already returned" state so this test still exercises
+    // a genuine rejection.
+    vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => {
+      await fn({
+        execute: vi.fn().mockImplementation(async (sql: string) => {
+          if (sql.includes('FROM return_line_items') && sql.includes('JOIN returns')) {
+            return { rows: { _array: [{ product_id: 'p1', returned_qty: 1 }] } }
+          }
+          return { rows: { _array: [] } }
+        }),
+      })
+    })
     const sheet = useReturnSheet(SALE_ID)
     await sheet.load()
     sheet.lines.value[0].selected = true
@@ -233,8 +247,10 @@ describe('useReturnSheet — confirm()', () => {
   })
 
   it('updates product stock and inserts stock_adjustment when restock=true', async () => {
-    // txExecute: SELECT current_stock returns 0, rest succeed
+    // txExecute: fresh over-return guard read (WAFI-010) returns none-returned,
+    // then INSERT returns, INSERT return_line_items, SELECT current_stock returns 0, rest succeed
     const txExecute = vi.fn()
+      .mockResolvedValueOnce({ rows: { _array: [] } })  // pre-insert over-return guard read
       .mockResolvedValueOnce({ rows: { _array: [] } })  // INSERT returns
       .mockResolvedValueOnce({ rows: { _array: [] } })  // INSERT return_line_items
       .mockResolvedValueOnce({ rows: { _array: [{ current_stock: 0 }] } })  // SELECT current_stock

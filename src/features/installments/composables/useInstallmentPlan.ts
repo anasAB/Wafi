@@ -198,6 +198,17 @@ export function useInstallmentPlan() {
     )
   }
 
+  /**
+   * Manual owner-initiated cancellation. Silently a no-op (`Promise<void>`
+   * gives the caller no signal) if `planId` isn't currently `active` —
+   * `cancelPlanWithinTx`'s guard (WAFI-010) is structural and applies here
+   * too. Not a live concern today: the one UI call site
+   * (`InstallmentPlanSection.vue`) only ever loads a plan via
+   * `loadActivePlanForCustomer`, which itself filters to `status = 'active'`
+   * — so this path can't currently be reached with a non-active plan. Would
+   * need a return-value/error surfaced to the caller if this composable is
+   * ever wired up to a screen that can load a non-active plan.
+   */
   async function cancelPlan(planId: string): Promise<void> {
     await executeFinancialWrite(
       async () => {

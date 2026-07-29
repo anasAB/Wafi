@@ -148,18 +148,6 @@ export function useReturnSheet(saleId: string) {
 
     const selectedLines = lines.value.filter(l => l.selected)
 
-    // Data-layer guard: never refund/restock more than what is still returnable.
-    // The UI clamps too, but the write path must not depend on the UI being correct.
-    for (const line of selectedLines) {
-      const remaining = line.originalQty - line.alreadyReturnedQty
-      if (line.qtyToReturn < 1 || line.qtyToReturn > remaining) {
-        throw new Error(
-          `Cannot return more than remaining for ${line.productName}: ` +
-          `requested ${line.qtyToReturn}, remaining ${remaining}`,
-        )
-      }
-    }
-
     const refundAmountUsd = selectedLines.reduce((sum, l) => sum + l.qtyToReturn * netUnitRefund(l), 0)
     const refundAmountSyp = Math.round(refundAmountUsd * exchangeRate)
 
@@ -172,6 +160,36 @@ export function useReturnSheet(saleId: string) {
         let warning: ConfirmResult['warning']
 
         await db.writeTransaction(async (tx) => {
+          // Data-layer guard: never refund/restock more than what is still returnable.
+          // Pre-existing guard, hardened here: it used to compare against
+          // `line.alreadyReturnedQty`, a count frozen at sheet-load time — if a
+          // second return sheet on the same sale committed in between, this
+          // check would pass on stale data and this transaction would insert
+          // an over-return (over-refund + over-restock) for that product.
+          // Read the true already-returned quantity fresh, inside this
+          // transaction, right before validating.
+          const preInsertReturnedRows = await tx.execute(
+            `SELECT rli.product_id, SUM(rli.qty_returned) AS returned_qty
+             FROM return_line_items rli
+             JOIN returns r ON r.id = rli.return_id
+             WHERE r.original_sale_id = ?
+             GROUP BY rli.product_id`,
+            [saleId],
+          )
+          const freshReturnedMap = new Map<string, number>(
+            ((preInsertReturnedRows as any).rows?._array ?? []).map((r: any) => [r.product_id, r.returned_qty]),
+          )
+          for (const line of selectedLines) {
+            const freshAlreadyReturned = freshReturnedMap.get(line.productId) ?? 0
+            const remaining = line.originalQty - freshAlreadyReturned
+            if (line.qtyToReturn < 1 || line.qtyToReturn > remaining) {
+              throw new Error(
+                `Cannot return more than remaining for ${line.productName}: ` +
+                `requested ${line.qtyToReturn}, remaining ${remaining}`,
+              )
+            }
+          }
+
           // Insert returns row (shift_id links cash refunds to the open shift for the Z-report)
           await tx.execute(
             `INSERT INTO returns (id, shop_id, original_sale_id, created_at, refund_method, refund_amount_usd, refund_amount_syp, exchange_rate_at_return, reason, notes, shift_id, sync_status)
@@ -216,10 +234,21 @@ export function useReturnSheet(saleId: string) {
 
           // WAFI-010: recompute whether this return, taken together with every return
           // already committed for this sale (INCLUDING the one just inserted above),
-          // exhausts every original line item. Deliberately re-read from the database
-          // here rather than trusting `lines.value` (populated at sheet-load time) —
-          // a second, concurrent return sheet on the same sale would otherwise miss
-          // that the combined effect of both returns is a full-sale return.
+          // exhausts every original line item. Deliberately computed from a fresh
+          // database read rather than trusting `lines.value` (populated at
+          // sheet-load time) — a second, concurrent return sheet on the same
+          // sale would otherwise miss that the combined effect of both returns
+          // is a full-sale return.
+          //
+          // Reuses `freshReturnedMap` (read above, pre-insert) instead of
+          // re-querying return_line_items a second time: we are the ones who
+          // just inserted exactly `line.qtyToReturn` more of each selected
+          // product in this same transaction, so incrementing in-memory by
+          // those same amounts is equivalent to re-reading, without the
+          // second round-trip.
+          for (const line of selectedLines) {
+            freshReturnedMap.set(line.productId, (freshReturnedMap.get(line.productId) ?? 0) + line.qtyToReturn)
+          }
           // Aggregate-vs-aggregate: GROUP BY product_id here even though
           // sale.store.ts's addLine() currently enforces at most one
           // sale_line_items row per product_id per sale — harden the
@@ -229,20 +258,9 @@ export function useReturnSheet(saleId: string) {
             `SELECT product_id, SUM(quantity) AS quantity FROM sale_line_items WHERE sale_id = ? AND shop_id = ? GROUP BY product_id`,
             [saleId, shopId],
           )
-          const returnedRows = await tx.execute(
-            `SELECT rli.product_id, SUM(rli.qty_returned) AS returned_qty
-             FROM return_line_items rli
-             JOIN returns r ON r.id = rli.return_id
-             WHERE r.original_sale_id = ?
-             GROUP BY rli.product_id`,
-            [saleId],
-          )
-          const returnedMap = new Map<string, number>(
-            ((returnedRows as any).rows?._array ?? []).map((r: any) => [r.product_id, r.returned_qty]),
-          )
           const originalRowsArray = (originalRows as any).rows?._array ?? []
           const isFullSaleReturn = originalRowsArray.length > 0 && originalRowsArray.every(
-            (row: any) => (returnedMap.get(row.product_id) ?? 0) >= row.quantity,
+            (row: any) => (freshReturnedMap.get(row.product_id) ?? 0) >= row.quantity,
           )
 
           // WAFI-010: plan lookup, deliberately unfiltered by status — see

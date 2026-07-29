@@ -195,6 +195,14 @@ describe('useReturnSheet — WAFI-010 installment plan integration', () => {
    * is the row returned by the plan lookup (or undefined for "no plan").
    * `saleLineRows`/`returnedRows` back the in-transaction full-sale-return
    * recomputation (independent of mockLoad's sheet-open-time snapshot).
+   *
+   * `returnedRows` represents the PRE-insert already-returned quantity —
+   * i.e. what's in `return_line_items` BEFORE this confirm() call's own
+   * insert. The over-return guard reads this first; confirm() then
+   * increments it in-memory by exactly what it inserts to derive the
+   * post-insert total for the full-sale-return check. If a test wants "this
+   * return is what completes the sale," the fixture's returnedRows should
+   * NOT already include this return's own qtyToReturn.
    */
   function mockTx(opts: {
     plan?: { id: string; status: string }
@@ -224,7 +232,7 @@ describe('useReturnSheet — WAFI-010 installment plan integration', () => {
     const txExecute = mockTx({
       plan: { id: 'plan-1', status: 'active' },
       saleLineRows: [{ product_id: 'p1', quantity: 1 }],
-      returnedRows: [{ product_id: 'p1', returned_qty: 1 }], // this return covers the only unit
+      returnedRows: [], // nothing returned before this transaction -- this return covers the only unit
     })
     vi.mocked(db.writeTransaction).mockImplementation(async (fn: any) => { await fn({ execute: txExecute }) })
 
@@ -264,7 +272,7 @@ describe('useReturnSheet — WAFI-010 installment plan integration', () => {
     const txExecute = mockTx({
       plan,
       saleLineRows: [{ product_id: 'p1', quantity: 1 }],
-      returnedRows: [{ product_id: 'p1', returned_qty: 1 }],
+      returnedRows: [],
     })
     vi.mocked(db.writeTransaction).mockImplementation(async (fn: any) => { await fn({ execute: txExecute }) })
 
@@ -284,7 +292,7 @@ describe('useReturnSheet — WAFI-010 installment plan integration', () => {
     const txExecute = mockTx({
       plan: { id: 'plan-1', status: 'active' },
       saleLineRows: [{ product_id: 'p1', quantity: 2 }],
-      returnedRows: [{ product_id: 'p1', returned_qty: 1 }], // 1 of 2 returned -> not full
+      returnedRows: [], // nothing returned before this transaction; it returns 1 of 2 -> not full
     })
     vi.mocked(db.writeTransaction).mockImplementation(async (fn: any) => { await fn({ execute: txExecute }) })
 
@@ -305,7 +313,7 @@ describe('useReturnSheet — WAFI-010 installment plan integration', () => {
     const txExecute = mockTx({
       plan: { id: 'plan-1', status: 'defaulted' },
       saleLineRows: [{ product_id: 'p1', quantity: 1 }],
-      returnedRows: [{ product_id: 'p1', returned_qty: 1 }],
+      returnedRows: [],
     })
     vi.mocked(db.writeTransaction).mockImplementation(async (fn: any) => { await fn({ execute: txExecute }) })
 
@@ -325,7 +333,7 @@ describe('useReturnSheet — WAFI-010 installment plan integration', () => {
     const txExecute = mockTx({
       plan: { id: 'plan-1', status: 'paused' },
       saleLineRows: [{ product_id: 'p1', quantity: 1 }],
-      returnedRows: [{ product_id: 'p1', returned_qty: 1 }],
+      returnedRows: [],
     })
     vi.mocked(db.writeTransaction).mockImplementation(async (fn: any) => { await fn({ execute: txExecute }) })
 
@@ -354,10 +362,11 @@ describe('useReturnSheet — WAFI-010 installment plan integration', () => {
         { product_id: 'a', quantity: 1 },
         { product_id: 'b', quantity: 1 },
       ],
-      // Reflects BOTH the prior return of A and this return's insert of B.
+      // Pre-insert state: reflects only the PRIOR, already-committed return of
+      // A -- B's own return_line_items row doesn't exist yet until THIS
+      // transaction inserts it a few lines into confirm().
       returnedRows: [
         { product_id: 'a', returned_qty: 1 },
-        { product_id: 'b', returned_qty: 1 },
       ],
     })
     vi.mocked(db.writeTransaction).mockImplementation(async (fn: any) => { await fn({ execute: txExecute }) })
@@ -386,7 +395,7 @@ describe('useReturnSheet — WAFI-010 installment plan integration', () => {
     const txExecute = mockTx({
       plan: { id: 'plan-1', status: 'active' }, // lookup still sees 'active' snapshot pre-race
       saleLineRows: [{ product_id: 'p1', quantity: 1 }],
-      returnedRows: [{ product_id: 'p1', returned_qty: 1 }],
+      returnedRows: [],
       planCancelSucceeds: false, // but the guarded UPDATE matches zero rows (already cancelled)
     })
     vi.mocked(db.writeTransaction).mockImplementation(async (fn: any) => { await fn({ execute: txExecute }) })
@@ -407,6 +416,36 @@ describe('useReturnSheet — WAFI-010 installment plan integration', () => {
       expect.stringContaining('INSERT INTO audit_log'),
       expect.arrayContaining(['installment_plan.cancelled']),
     )
+  })
+
+  it('rejects an over-return caught only by a fresh in-transaction re-read, not the stale sheet-load snapshot', async () => {
+    // Sheet was loaded when 0 units of a 2-unit line had been returned, so
+    // `alreadyReturnedQty` (stale) says "2 remaining" and the cashier selects
+    // qtyToReturn=1 -- valid from that stale point of view. Between load and
+    // confirm(), a second return sheet on the same sale committed and
+    // returned BOTH units. The over-return guard must catch this from a
+    // fresh read taken inside confirm()'s own transaction, not from
+    // `line.alreadyReturnedQty`.
+    mockLoad([{ product_id: 'p1', product_name: 'قلم', quantity: 2, unit_price_usd: 10 }])
+    const txExecute = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM return_line_items') && sql.includes('JOIN returns')) {
+        // Fresh read: both units already returned by a concurrent transaction.
+        return { rows: { _array: [{ product_id: 'p1', returned_qty: 2 }] } }
+      }
+      return { rows: { _array: [] } }
+    })
+    vi.mocked(db.writeTransaction).mockImplementation(async (fn: any) => { await fn({ execute: txExecute }) })
+
+    const sheet = useReturnSheet('sale-1')
+    await sheet.load()
+    sheet.lines.value[0].selected = true
+    sheet.lines.value[0].qtyToReturn = 1
+    sheet.refundMethod.value = 'cash_usd'
+
+    await expect(sheet.confirm()).rejects.toThrow('Cannot return more than remaining')
+    // No return should have been inserted once the fresh check rejected it.
+    const calls = txExecute.mock.calls.map((c: any[]) => c[0] as string)
+    expect(calls.some(sql => sql.includes('INSERT INTO returns'))).toBe(false)
   })
 
   // Note: `db.writeTransaction` is a bare mocked function call, so there is no
@@ -446,7 +485,7 @@ describe('useReturnSheet — WAFI-010 installment plan integration', () => {
         return { rows: { _array: [{ product_id: 'p1', quantity: 1 }] } }
       }
       if (sql.includes('FROM return_line_items') && sql.includes('JOIN returns')) {
-        return { rows: { _array: [{ product_id: 'p1', returned_qty: 1 }] } }
+        return { rows: { _array: [] } } // nothing returned before this transaction
       }
       if (sql.includes('FROM installment_plans') && sql.includes('WHERE sale_id')) {
         expect(sql).toContain('ORDER BY')
@@ -482,7 +521,7 @@ describe('useReturnSheet — WAFI-010 installment plan integration', () => {
     const txExecute = mockTx({
       plan: { id: 'plan-1', status: 'active' },
       saleLineRows: [{ product_id: 'p1', quantity: 1 }],
-      returnedRows: [{ product_id: 'p1', returned_qty: 1 }], // full-sale return
+      returnedRows: [], // full-sale return once this transaction's own insert lands
     })
     vi.mocked(db.writeTransaction).mockImplementation(async (fn: any) => { await fn({ execute: txExecute }) })
 
