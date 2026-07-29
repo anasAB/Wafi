@@ -22,3 +22,15 @@ export const db = {
     dataFlowStatus: { downloading: false, uploading: false },
   },
 }
+
+// Mirrors db.ts's reconnectPowerSync(): calls db.connect() and swallows any
+// rejection, same as the real implementation, so tests that mock
+// db.connect to reject (simulating an offline/racing reconnect) still see
+// resumePendingBootstrap/bootstrapOwner fall through to the poll path.
+export const reconnectPowerSync = vi.fn().mockImplementation(async () => {
+  try {
+    await db.connect()
+  } catch {
+    // swallow, matching real reconnectPowerSync semantics
+  }
+})
