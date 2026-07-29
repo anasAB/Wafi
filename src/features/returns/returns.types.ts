@@ -42,3 +42,17 @@ export interface ReturnDetailRecord {
   notes:           string | null
   lines:           ReturnDetailLine[]
 }
+
+/**
+ * WAFI-010: confirm() no longer just succeeds or throws — when the sale being
+ * returned has an installment plan that this return did NOT adjust (a partial
+ * return, a defaulted plan, or any future plan status other than active-full),
+ * confirm() still succeeds (the refund itself is never blocked) but reports
+ * that the plan needs manual review.
+ */
+export interface ConfirmResult {
+  warning?: {
+    type: 'plan_requires_manual_review'
+    planStatus: string
+  }
+}
