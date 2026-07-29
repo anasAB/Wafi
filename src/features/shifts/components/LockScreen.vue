@@ -55,8 +55,13 @@ function onOpeningSypTally(payload: { total: number; breakdown: DenominationBrea
   openingCashSyp.value = String(payload.total)
   openingSypBreakdown.value = payload.breakdown
 }
-const openingCashSyp = ref('')
-const openingCashUsd = ref('')
+// Native <input type="number"> + v-model auto-casts the bound value to a JS
+// Number the moment a digit is typed (Vue 3's vModelText directive does this
+// regardless of the .number modifier), so the runtime value here is sometimes
+// a number even though these start out as strings — make the union visible to
+// the type checker (see confirmOpen()'s String(...) coercion below).
+const openingCashSyp = ref<string | number>('')
+const openingCashUsd = ref<string | number>('')
 // Previous shift's closing cash, shown as a hint above the inputs (epic Story 5.3).
 const lastClosed     = ref<CashierShift | null>(null)
 // Empty-input guard: an empty count is allowed but must be a deliberate "continue
