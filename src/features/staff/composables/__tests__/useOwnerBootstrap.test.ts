@@ -105,7 +105,7 @@ describe('useOwnerBootstrap', () => {
     expect(devicesEqMock).toHaveBeenCalledWith('id', rpcDeviceId)
   })
 
-  it('resumePendingBootstrap: also syncs deviceStore.deviceId/deviceCode to the persisted pending deviceId', async () => {
+  it('resumePendingBootstrap: also syncs deviceStore.deviceId/deviceCode to the persisted pending deviceId when the device row exists server-side', async () => {
     const { useBootstrapStore } = await import('@/features/staff/bootstrap.store')
     useBootstrapStore().start('device-from-pending', 'staff-1')
     callBootstrapMock.mockResolvedValue('already_bootstrapped')
@@ -124,18 +124,57 @@ describe('useOwnerBootstrap', () => {
     expect(devicesEqMock).toHaveBeenCalledWith('id', 'device-from-pending')
   })
 
-  it('bootstrapOwner: a failure fetching the device code does not fail bootstrap — deviceId is still synced', async () => {
+  // Critical fix, found in final whole-branch review: the RPC returns
+  // 'already_bootstrapped' BEFORE it inserts into public.devices (migration
+  // 069), so a fresh deviceId minted client-side for this call may have NO
+  // corresponding devices row server-side. Previously, deviceStore.deviceId
+  // got clobbered with this never-created id regardless, so every subsequent
+  // switch_active_operator lookup failed indistinguishably from a wrong PIN.
+  it('resumePendingBootstrap: does NOT adopt the pending deviceId into deviceStore when no devices row exists server-side for it (already_bootstrapped path)', async () => {
+    const { useBootstrapStore } = await import('@/features/staff/bootstrap.store')
+    useBootstrapStore().start('device-from-pending', 'staff-1')
+    callBootstrapMock.mockResolvedValue('already_bootstrapped')
+    const { db } = await import('@/data/powersync/db')
+    vi.mocked(db.getOptional).mockResolvedValue(undefined)
+    // Simulates the real 'already_bootstrapped' scenario: the RPC returned
+    // before this deviceId's devices row was ever inserted, so the lookup
+    // finds nothing.
+    devicesMaybeSingleMock.mockResolvedValue({ data: null, error: null })
+
+    const { useDeviceStore } = await import('@/store/device.store')
+    useDeviceStore().deviceId = 'stale-id'
+    useDeviceStore().deviceCode = 'stale-code'
+
+    const { useOwnerBootstrap } = await import('@/features/staff/composables/useOwnerBootstrap')
+    const result = await useOwnerBootstrap().resumePendingBootstrap({ pollIntervalMs: 1, pollTimeoutMs: 5 })
+
+    // deviceStore must be left untouched -- adopting the unconfirmed id would
+    // be worse than staying stale, since it would break every future
+    // switch_active_operator call.
+    expect(useDeviceStore().deviceId).toBe('stale-id')
+    expect(useDeviceStore().deviceCode).toBe('stale-code')
+    expect(result).toEqual({ status: 'timeout' })
+  })
+
+  // Updated in final whole-branch review fix wave: a network failure on the
+  // devices-table lookup means we could NOT confirm the device row exists
+  // server-side, so deviceId must NOT be adopted (same reasoning as the
+  // 'already_bootstrapped'-with-no-row case above) -- an unconfirmed id is
+  // exactly as dangerous to adopt as a confirmed-absent one. Bootstrap still
+  // reports 'done' since the local staff row did arrive.
+  it('bootstrapOwner: a failure fetching the device code does not fail bootstrap, but also does not adopt the unconfirmed deviceId', async () => {
     callBootstrapMock.mockResolvedValue('success')
     const { db } = await import('@/data/powersync/db')
     vi.mocked(db.getOptional).mockResolvedValue({ id: 'staff-1' } as any)
     devicesMaybeSingleMock.mockRejectedValueOnce(new Error('offline'))
 
     const { useDeviceStore } = await import('@/store/device.store')
+    useDeviceStore().deviceId = 'stale-id'
     const { useOwnerBootstrap } = await import('@/features/staff/composables/useOwnerBootstrap')
     const result = await useOwnerBootstrap().bootstrapOwner('Owner', '1234')
 
     expect(result).toEqual({ status: 'done' })
-    expect(useDeviceStore().deviceId).toBe(callBootstrapMock.mock.calls[0][0].deviceId)
+    expect(useDeviceStore().deviceId).toBe('stale-id')
   })
 
   // Found live (2026-07-29): the custom access-token hook resolves the JWT's
@@ -206,6 +245,27 @@ describe('useOwnerBootstrap', () => {
 
     const { useOwnerBootstrap } = await import('@/features/staff/composables/useOwnerBootstrap')
     const result = await useOwnerBootstrap().bootstrapOwner('Owner', '1234')
+
+    expect(result).toEqual({ status: 'done' })
+  })
+
+  // Newly-live boot-time path: resumeBootstrapIfPending() now runs from
+  // main.ts alongside db.ts's own module-level db.connect() and
+  // device.store.ts's SIGNED_IN handler. Confirms resumePendingBootstrap()
+  // doesn't throw/hang when db.connect() is already in-flight/racing/rejected
+  // from a concurrent caller -- it should fall through to the normal
+  // poll-and-timeout path, same as the existing bootstrapOwner reconnect-
+  // failure test above.
+  it('resumePendingBootstrap: a PowerSync reconnect failure (racing with a concurrent db.connect caller) does not throw — falls through to the normal poll/timeout path', async () => {
+    const { useBootstrapStore } = await import('@/features/staff/bootstrap.store')
+    useBootstrapStore().start('device-1', 'staff-1')
+    callBootstrapMock.mockResolvedValue('success')
+    const { db } = await import('@/data/powersync/db')
+    vi.mocked(db.connect).mockRejectedValueOnce(new Error('already connecting'))
+    vi.mocked(db.getOptional).mockResolvedValue({ id: 'staff-1' } as any)
+
+    const { useOwnerBootstrap } = await import('@/features/staff/composables/useOwnerBootstrap')
+    const result = await useOwnerBootstrap().resumePendingBootstrap()
 
     expect(result).toEqual({ status: 'done' })
   })

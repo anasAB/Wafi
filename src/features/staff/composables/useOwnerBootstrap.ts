@@ -1,6 +1,5 @@
 import { v4 as uuidv4 } from 'uuid'
-import { db } from '@/data/powersync/db'
-import { SupabaseConnector } from '@/data/powersync/connector'
+import { db, reconnectPowerSync } from '@/data/powersync/db'
 import { supabase } from '@/data/supabase/client'
 import {
   callBootstrapOwnerIdentity,
@@ -61,13 +60,22 @@ export function useOwnerBootstrap() {
     // left behind (a different, non-existent-server-side id). Without this,
     // every subsequent switch_active_operator call looks up a device that was
     // never actually created, and fails exactly like a wrong PIN would.
-    deviceStore.deviceId = deviceId
     try {
       const { data } = await supabase.from('devices').select('code').eq('id', deviceId).maybeSingle()
-      if (data?.code) deviceStore.deviceCode = data.code
-    } catch {
-      // Best-effort — deviceId is the piece switch_active_operator's lookup
-      // actually needs; deviceCode is a display/label value and can lag.
+      if (data) {
+        deviceStore.deviceId = deviceId
+        if (data.code) deviceStore.deviceCode = data.code
+      }
+      // else: this deviceId was never created server-side (e.g. the
+      // 'already_bootstrapped' path returns before the devices INSERT) -- do
+      // NOT adopt it into deviceStore, or every subsequent
+      // switch_active_operator call will look up a device that doesn't
+      // exist, indistinguishable from a wrong PIN. Leaving deviceStore.deviceId
+      // as whatever it was before is closer to correct than clobbering it.
+    } catch (err) {
+      // Could not confirm the device row exists -- do not adopt an
+      // unconfirmed id either; that's exactly the bug this guards against.
+      console.warn('[useOwnerBootstrap] devices lookup failed:', err)
     }
 
     // The custom access-token hook (migration 048) resolves the JWT's
@@ -97,10 +105,11 @@ export function useOwnerBootstrap() {
       if (sessionId) {
         await supabase.rpc('record_device_session_id', { p_device_id: deviceId, p_session_id: sessionId })
       }
-    } catch {
+    } catch (err) {
       // Best-effort — if this fails, the subsequent refreshSession() below
       // will simply carry the same stale 'cashier' claim it would have
       // without this fix, no worse than before.
+      console.warn('[useOwnerBootstrap] record_device_session_id failed:', err)
     }
 
     // Must run AFTER the session_id stamp above: the hook resolves
@@ -117,12 +126,7 @@ export function useOwnerBootstrap() {
     // exist server-side. Swallow a failure here the same way db.ts's initial
     // connect() does — offline/unreachable should fall through to the normal
     // poll-timeout path, not throw out of the bootstrap flow.
-    try {
-      await db.connect(new SupabaseConnector())
-    } catch {
-      // Falls through to the poll below, which will simply time out if the
-      // reconnect genuinely can't reach the server.
-    }
+    await reconnectPowerSync()
 
     const arrived = await pollForLocalStaffRow(staffId, opts)
     if (!arrived) {
