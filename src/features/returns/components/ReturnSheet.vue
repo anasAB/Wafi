@@ -17,6 +17,7 @@ const { reasons, loadReasons } = useReturnReasons()
 const loading        = ref(false)
 const toast          = ref<string | null>(null)
 const toastType      = ref<'info' | 'error'>('info')
+const toastAutoDismiss = ref(true)
 const confirmed      = ref(false)
 const selectedReason = ref('')
 
@@ -46,11 +47,21 @@ async function handleConfirm() {
   if (!canConfirm.value) return
   loading.value = true
   try {
-    await confirm()
+    const result = await confirm()
     emit('confirmed')
-    emit('close')
+    if (result.warning) {
+      // WAFI-010: the refund succeeded, but the sale's installment plan needs
+      // manual review — keep the sheet open (don't emit 'close') so the
+      // warning stays visible until the cashier explicitly dismisses it.
+      toastType.value    = 'info'
+      toastAutoDismiss.value = false
+      toast.value = `تم تنفيذ المرتجع، لكن هذه الفاتورة لديها خطة تقسيط (${result.warning.planStatus === 'defaulted' ? 'متعثرة' : result.warning.planStatus}) لم يتم تعديلها — يرجى المراجعة اليدوية.`
+    } else {
+      emit('close')
+    }
   } catch (e) {
     toastType.value = 'error'
+    toastAutoDismiss.value = true
     toast.value     = e instanceof Error ? e.message : 'حدث خطأ'
   } finally {
     loading.value = false
@@ -178,7 +189,13 @@ async function handleConfirm() {
     </div>
   </div>
 
-  <AppToast v-if="toast" :message="toast" :type="toastType" @dismiss="toast = null" />
+  <AppToast
+    v-if="toast"
+    :message="toast"
+    :type="toastType"
+    :auto-dismiss="toastAutoDismiss"
+    @dismiss="toast = null; if (!toastAutoDismiss) emit('close')"
+  />
 </template>
 
 <style scoped>
