@@ -6,7 +6,6 @@ import { useFlagsStore } from '@/features/flags/flags.store'
 import type { FlagKey } from '@/features/flags/flagRegistry'
 import type { StaffPermissions } from '@/features/staff/staff.types'
 import { supabase } from '@/data/supabase/client'
-import { resumeBootstrapIfPending } from './bootstrap-resume'
 
 const SHIFT_OPEN_REDIRECT = '/shifts/history'
 
@@ -83,20 +82,15 @@ const router = createRouter({
   scrollBehavior: () => ({ top: 0 }),
 })
 
-// One-time boot check (not per-navigation): if a previous owner-bootstrap
-// attempt was left incomplete (crash, closed tab, or server success with
-// local hydration never finishing), resume it automatically here rather than
-// inside the beforeEach guard below, which runs on every navigation.
-// .catch() is required, not cosmetic: this call is unawaited at module load,
-// so an unhandled rejection here would surface as a process-level error in
-// any file that merely imports the router (e.g. any test importing
-// './router') even though nothing about that failure is fatal to boot.
-resumeBootstrapIfPending().catch((e) => {
-  console.warn('[bootstrap-resume] failed to resume a pending owner bootstrap at boot:', e)
-  // Resume is best-effort; a failure here just means the pending bootstrap
-  // (if any) stays pending and will be retried on the next boot or by the
-  // owner-setup screen itself.
-})
+// The one-time boot check for an incomplete owner-bootstrap attempt is
+// invoked from main.ts, AFTER `app.use(pinia)` -- not from here. This module
+// is imported by main.ts before `createPinia()` even runs (ES module imports
+// evaluate before the importing module's own top-level code), so calling
+// resumeBootstrapIfPending() at THIS module's top level would hit
+// "getActivePinia() was called but there was no active Pinia" on every
+// single boot (caught silently by main.ts's .catch(), which is why this went
+// unnoticed -- the resume safety net was never actually running). See
+// bootstrap-resume.ts for the resume logic itself.
 
 // Enforce staff permissions on navigation. to.meta merges all matched records'
 // meta, so settings children inherit the parent's permission. An unauthorized

@@ -9,15 +9,29 @@ import 'primeicons/primeicons.css'
 import App    from './App.vue'
 import router from './router'
 import { initSentry } from './sentry'
+import { resumeBootstrapIfPending } from './router/bootstrap-resume'
 
 const pinia = createPinia()
 pinia.use(piniaPluginPersistedstate)
 
 const app = createApp(App)
 initSentry(app)
+app.use(pinia)
+
+// Must run only after app.use(pinia) above -- resumeBootstrapIfPending()
+// calls Pinia stores internally, and this file's own top-level imports
+// (including './router', which used to make this exact call itself) are all
+// evaluated before this line runs. .catch() is required, not cosmetic: this
+// call is unawaited, so an unhandled rejection here would surface as a
+// process-level error rather than the best-effort background check it is.
+resumeBootstrapIfPending().catch((e) => {
+  console.warn('[bootstrap-resume] failed to resume a pending owner bootstrap at boot:', e)
+  // Resume is best-effort; a failure here just means the pending bootstrap
+  // (if any) stays pending and will be retried on the next boot or by the
+  // owner-setup screen itself.
+})
 
 app
-  .use(pinia)
   .use(router)
   .use(i18n)
   .use(PrimeVue, {
