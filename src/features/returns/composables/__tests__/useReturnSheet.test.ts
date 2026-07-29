@@ -231,10 +231,14 @@ describe('useReturnSheet — WAFI-010 installment plan integration', () => {
     )
   })
 
-  it('leaves a completed/cancelled plan (or no plan) untouched, no warning', async () => {
+  it.each([
+    ['no plan', undefined],
+    ['a completed plan', { id: 'plan-1', status: 'completed' }],
+    ['a cancelled plan', { id: 'plan-1', status: 'cancelled' }],
+  ] as const)('leaves %s untouched, no warning', async (_label, plan) => {
     mockLoad([{ product_id: 'p1', product_name: 'قلم', quantity: 1, unit_price_usd: 10 }])
     const txExecute = mockTx({
-      plan: undefined,
+      plan,
       saleLineRows: [{ product_id: 'p1', quantity: 1 }],
       returnedRows: [{ product_id: 'p1', returned_qty: 1 }],
     })

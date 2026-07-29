@@ -234,7 +234,8 @@ export function useReturnSheet(saleId: string) {
           const returnedMap = new Map<string, number>(
             ((returnedRows as any).rows?._array ?? []).map((r: any) => [r.product_id, r.returned_qty]),
           )
-          const isFullSaleReturn = ((originalRows as any).rows?._array ?? []).every(
+          const originalRowsArray = (originalRows as any).rows?._array ?? []
+          const isFullSaleReturn = originalRowsArray.length > 0 && originalRowsArray.every(
             (row: any) => (returnedMap.get(row.product_id) ?? 0) >= row.quantity,
           )
 
@@ -262,12 +263,12 @@ export function useReturnSheet(saleId: string) {
 
         return { cancelledPlanId, warning }
       },
-      ({ cancelledPlanId, warning }) => {
-        logReturnProcessed(returnId, saleId, refundAmountUsd)
-        return cancelledPlanId
+      ({ cancelledPlanId }) => Promise.all([
+        logReturnProcessed(returnId, saleId, refundAmountUsd),
+        cancelledPlanId
           ? logInstallmentPlanCancelled(cancelledPlanId, { reason: 'sale_returned', returnId })
-          : Promise.resolve()
-      },
+          : Promise.resolve(),
+      ]),
     )
 
     return { warning }
