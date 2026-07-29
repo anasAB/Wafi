@@ -36,6 +36,27 @@ function rowToDue(r: DueRow): InstallmentDue {
   }
 }
 
+/**
+ * Voids every still-pending due on the plan and marks the plan cancelled, but
+ * ONLY if the plan is currently 'active' — a `defaulted` plan is never
+ * auto-cancelled by this helper, regardless of caller (WAFI-010). Returns
+ * whether a cancellation actually happened, so callers know whether to
+ * audit-log. Uses RETURNING + rows._array.length rather than rowsAffected,
+ * since PowerSync's rowsAffected is documented as unreliable for conditional
+ * UPDATEs under its client-side JSON-view storage layer.
+ */
+export async function cancelPlanWithinTx(tx: any, planId: string): Promise<boolean> {
+  await tx.execute(
+    `UPDATE installment_dues SET status = 'voided' WHERE plan_id = ? AND status = 'pending'`,
+    [planId],
+  )
+  const planResult = await tx.execute(
+    `UPDATE installment_plans SET status = 'cancelled' WHERE id = ? AND status = 'active' RETURNING id`,
+    [planId],
+  )
+  return (planResult.rows?._array?.length ?? 0) > 0
+}
+
 export function useInstallmentPlan() {
   const device  = useDeviceStore()
   const session = useSessionStore()
@@ -172,18 +193,15 @@ export function useInstallmentPlan() {
   async function cancelPlan(planId: string): Promise<void> {
     await executeFinancialWrite(
       async () => {
+        let cancelled = false
         await db.writeTransaction(async (tx) => {
-          await tx.execute(
-            `UPDATE installment_dues SET status = 'voided' WHERE plan_id = ? AND status = 'pending'`,
-            [planId],
-          )
-          await tx.execute(
-            `UPDATE installment_plans SET status = 'cancelled' WHERE id = ?`,
-            [planId],
-          )
+          cancelled = await cancelPlanWithinTx(tx, planId)
         })
+        return cancelled
       },
-      () => logInstallmentPlanCancelled(planId),
+      (cancelled) => cancelled
+        ? logInstallmentPlanCancelled(planId, { reason: 'manual' })
+        : Promise.resolve(),
     )
   }
 

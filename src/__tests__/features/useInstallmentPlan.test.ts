@@ -163,8 +163,17 @@ describe('useInstallmentPlan.cancelPlan', () => {
     vi.clearAllMocks()
   })
 
+  function mockTxExecute() {
+    return vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes('UPDATE installment_plans') && sql.includes('RETURNING id')) {
+        return { rows: { _array: [{ id: 'plan-1' }] } }
+      }
+      return { rows: { _array: [] } }
+    })
+  }
+
   it('voids every still-pending due and cancels the plan', async () => {
-    const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [] } })
+    const txExecute = mockTxExecute()
     vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => { await fn({ execute: txExecute }) })
 
     const { cancelPlan } = useInstallmentPlan()
@@ -175,8 +184,8 @@ describe('useInstallmentPlan.cancelPlan', () => {
     expect(calls.some(sql => sql.includes('UPDATE installment_plans') && sql.includes(`'cancelled'`))).toBe(true)
   })
 
-  it('writes an installment_plan.cancelled audit row', async () => {
-    vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => { await fn({ execute: vi.fn().mockResolvedValue({ rows: { _array: [] } }) }) })
+  it('writes an installment_plan.cancelled audit row with reason "manual" by default', async () => {
+    vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => { await fn({ execute: mockTxExecute() }) })
     vi.mocked(db.execute).mockResolvedValue({ rows: { _array: [] } } as any)
 
     const { cancelPlan } = useInstallmentPlan()
@@ -184,7 +193,22 @@ describe('useInstallmentPlan.cancelPlan', () => {
 
     expect(db.execute).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO audit_log'),
-      expect.arrayContaining(['installment_plan.cancelled', 'installment_plan', 'plan-1']),
+      expect.arrayContaining(['installment_plan.cancelled', 'installment_plan', 'plan-1', JSON.stringify({ reason: 'manual' })]),
+    )
+  })
+
+  it('does not cancel dues or audit-log when the plan is not active (e.g. already cancelled/defaulted)', async () => {
+    // The plan UPDATE's WHERE clause matches zero rows -> RETURNING yields no rows.
+    const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [] } })
+    vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => { await fn({ execute: txExecute }) })
+    vi.mocked(db.execute).mockResolvedValue({ rows: { _array: [] } } as any)
+
+    const { cancelPlan } = useInstallmentPlan()
+    await cancelPlan('plan-1')
+
+    expect(db.execute).not.toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO audit_log'),
+      expect.anything(),
     )
   })
 })
