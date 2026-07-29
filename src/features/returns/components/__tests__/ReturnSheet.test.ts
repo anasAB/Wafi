@@ -79,4 +79,47 @@ describe('ReturnSheet — WAFI-010 plan-warning handling', () => {
     await wrapper.find('.toast-close').trigger('click')
     expect(wrapper.emitted('close')).toBeTruthy()
   })
+
+  it('hides the confirm/cancel buttons after a successful confirm() with a warning, preventing a duplicate refund', async () => {
+    const confirmImpl = vi.fn().mockResolvedValue({ warning: { type: 'plan_requires_manual_review', planStatus: 'active' } })
+    vi.mocked(useReturnSheet).mockReturnValue(stubSheet(confirmImpl) as any)
+    const wrapper = mount(ReturnSheet, { props: { saleId: 'sale-1', saleNumber: '1' } })
+    await flushPromises()
+
+    await wrapper.find('.btn-confirm').trigger('click')
+    await flushPromises()
+
+    expect(confirmImpl).toHaveBeenCalledTimes(1)
+    // The confirm/cancel action row must be gone — a still-enabled confirm
+    // button would let the cashier tap it again and insert a second
+    // returns/return_line_items row, a second refund, and a second restock
+    // for the same units (the bug this fix closes).
+    expect(wrapper.find('.btn-confirm').exists()).toBe(false)
+    expect(wrapper.find('.sheet-actions').exists()).toBe(false)
+    expect(wrapper.find('.post-confirm').exists()).toBe(true)
+
+    // Even if something in the DOM still exposed a confirm affordance,
+    // confirm() must not fire a second time.
+    expect(confirmImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it('resets toastAutoDismiss to true when confirm() throws, so a later error toast auto-dismisses', async () => {
+    const sheet = stubSheet(async () => { throw new Error('فشل الاتصال') })
+    vi.mocked(useReturnSheet).mockReturnValue(sheet as any)
+    const wrapper = mount(ReturnSheet, { props: { saleId: 'sale-1', saleNumber: '1' } })
+    await flushPromises()
+
+    await wrapper.find('.btn-confirm').trigger('click')
+    await flushPromises()
+
+    const toastEl = wrapper.find('.toast--error')
+    expect(toastEl.exists()).toBe(true)
+    // toastAutoDismiss must be reset to true in the catch branch (it's set to
+    // false only in the warning branch) — otherwise a later warning's
+    // dismiss-triggers-close wiring would leak into a plain error toast.
+    // Dismissing this error toast must NOT emit 'close', unlike the
+    // warning-toast case asserted above.
+    await wrapper.find('.toast-close').trigger('click')
+    expect(wrapper.emitted('close')).toBeFalsy()
+  })
 })

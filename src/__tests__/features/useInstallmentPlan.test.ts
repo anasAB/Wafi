@@ -210,6 +210,11 @@ describe('useInstallmentPlan.cancelPlan', () => {
       expect.stringContaining('INSERT INTO audit_log'),
       expect.anything(),
     )
+    // The dues-void must never run when the plan-status guard rejects the
+    // flip — otherwise dues get voided with no plan-status change and no
+    // audit trail (the original bug this order-inversion fixes).
+    const calls = txExecute.mock.calls.map((c: any[]) => c[0] as string)
+    expect(calls.some(sql => sql.includes('UPDATE installment_dues'))).toBe(false)
   })
 
   it('refuses to cancel a defaulted plan: attempts the guarded UPDATE but never flips it or audit-logs', async () => {

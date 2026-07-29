@@ -46,15 +46,23 @@ function rowToDue(r: DueRow): InstallmentDue {
  * UPDATEs under its client-side JSON-view storage layer.
  */
 export async function cancelPlanWithinTx(tx: any, planId: string): Promise<boolean> {
-  await tx.execute(
-    `UPDATE installment_dues SET status = 'voided' WHERE plan_id = ? AND status = 'pending'`,
-    [planId],
-  )
+  // Guarded plan-status flip FIRST — only void dues if this actually flipped
+  // an 'active' plan to 'cancelled'. Running the dues-void unconditionally
+  // (as before) meant a non-active plan (e.g. 'defaulted') could have its
+  // entire pending-dues schedule voided with no plan-status change and no
+  // audit trail, since callers only audit-log when this returns true.
   const planResult = await tx.execute(
     `UPDATE installment_plans SET status = 'cancelled' WHERE id = ? AND status = 'active' RETURNING id`,
     [planId],
   )
-  return (planResult.rows?._array?.length ?? 0) > 0
+  const cancelled = (planResult.rows?._array?.length ?? 0) > 0
+  if (!cancelled) return false
+
+  await tx.execute(
+    `UPDATE installment_dues SET status = 'voided' WHERE plan_id = ? AND status = 'pending'`,
+    [planId],
+  )
+  return true
 }
 
 export function useInstallmentPlan() {

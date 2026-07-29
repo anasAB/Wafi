@@ -43,19 +43,37 @@ const REFUND_METHODS: { value: RefundMethod; label: string }[] = [
   { value: 'transfer',      label: 'حوالة'         },
 ]
 
+// WAFI-010 review #4: translate known plan statuses; never interpolate a raw
+// English/enum token into the Arabic sentence for an unrecognized status.
+function planStatusLabel(status: string): string {
+  if (status === 'defaulted') return ' (متعثرة)'
+  if (status === 'active')    return ' (نشطة)'
+  return ''
+}
+
+function dismissToast() {
+  toast.value = null
+  if (!toastAutoDismiss.value) emit('close')
+}
+
 async function handleConfirm() {
   if (!canConfirm.value) return
   loading.value = true
   try {
     const result = await confirm()
     emit('confirmed')
+    confirmed.value = true
     if (result.warning) {
       // WAFI-010: the refund succeeded, but the sale's installment plan needs
       // manual review — keep the sheet open (don't emit 'close') so the
       // warning stays visible until the cashier explicitly dismisses it.
+      // `confirmed` is still set above so the confirm/cancel buttons are
+      // replaced by the post-confirm (print) block underneath the toast —
+      // the return already succeeded, so re-showing an enabled confirm
+      // button would allow a duplicate refund/restock (see WAFI-010 review).
       toastType.value    = 'info'
       toastAutoDismiss.value = false
-      toast.value = `تم تنفيذ المرتجع، لكن هذه الفاتورة لديها خطة تقسيط (${result.warning.planStatus === 'defaulted' ? 'متعثرة' : result.warning.planStatus}) لم يتم تعديلها — يرجى المراجعة اليدوية.`
+      toast.value = `تم تنفيذ المرتجع، لكن هذه الفاتورة لديها خطة تقسيط${planStatusLabel(result.warning.planStatus)} لم يتم تعديلها — يرجى المراجعة اليدوية.`
     } else {
       emit('close')
     }
@@ -194,7 +212,7 @@ async function handleConfirm() {
     :message="toast"
     :type="toastType"
     :auto-dismiss="toastAutoDismiss"
-    @dismiss="toast = null; if (!toastAutoDismiss) emit('close')"
+    @dismiss="dismissToast"
   />
 </template>
 
