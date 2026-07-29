@@ -118,8 +118,8 @@ role-enforcement posture, conditional on §3's two items being completed.
 
 | Role | Name | Signature | Date |
 |---|---|---|---|
-| CEO | | | |
-| CTO | | | |
+| CEO |Anas | YES | 28-07-2026 |
+| CTO | MO | YES | 28-07-2026|
 
 **Once §3's remaining condition is met** (migration 068 applied to production), update
 the `WAFI_Production_Readiness_Plan_v3.md` status table's WAFI-001 row to reflect that,
