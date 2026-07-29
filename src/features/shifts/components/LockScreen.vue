@@ -225,8 +225,14 @@ async function onConflictResolved() {
 // raises the confirm-with-zero prompt instead of silently opening at 0.
 function confirmOpen() {
   if (!selectedStaff.value) return
-  const sypBlank = openingCashSyp.value.trim() === ''
-  const usdBlank = openingCashUsd.value.trim() === ''
+  // Native <input type="number"> auto-casts v-model's bound value to a JS
+  // Number the moment a digit is typed (Vue 3's vModelText directive does
+  // this regardless of the .number modifier) — even though these refs are
+  // declared/initialized as strings. String(...) handles both cases; a
+  // genuinely blank field stays '' either way (Vue's number cast leaves an
+  // empty string alone rather than coercing it to NaN).
+  const sypBlank = String(openingCashSyp.value).trim() === ''
+  const usdBlank = String(openingCashUsd.value).trim() === ''
   if (sypBlank || usdBlank) {
     confirmZero.value = true
     return
