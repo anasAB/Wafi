@@ -6,7 +6,7 @@ import { db } from '@/data/powersync/db'
 import { SupabaseConnector } from '@/data/powersync/connector'
 import { useDeviceRegistration } from '@/features/devices/composables/useDeviceRegistration'
 import { touchDeviceLastSeen } from '@/features/devices/composables/useDevices'
-import { decodeSessionIdClaim, decodeActiveRoleClaim } from '@/features/staff/composables/useOperatorSwitch'
+import { decodeSessionIdClaim } from '@/features/staff/composables/useOperatorSwitch'
 
 // Dev/transition fallback: until the owner's shop row has synced locally, fall
 // back to a configured shop so the app stays usable. In production (no
@@ -63,20 +63,6 @@ export const useDeviceStore = defineStore('device', () => {
    * prior registration or the dev/test env stub), and against registering
    * before a shop has resolved (there's nothing to register the device
    * under yet — refreshShopId() calls this again once shopId is set).
-   *
-   * Also guards against a doomed registration attempt: `devices` INSERT is
-   * owner-only server-side (055_identity_domain_rls.sql), but this fires as
-   * soon as the `shops` row syncs on SIGNED_IN — which happens before the
-   * JWT's `active_role` claim is `'owner'` for a brand-new signup (bootstrap
-   * hasn't run yet) or a returning owner's fresh session on a device they
-   * haven't PIN-confirmed yet on this login. Without this check, that first
-   * attempt always fails RLS (403) and the device never gets a real chance
-   * to retry, since `deviceCode` stays empty either way — found live,
-   * 2026-07-29 (see useOwnerBootstrap.ts's `finishAfterServerSuccess` comment
-   * for the fuller race this is one side of). `refreshShopId()` re-runs on
-   * every PowerSync reconnect (see useSync.ts's `statusChanged` handler), so
-   * once `active_role` becomes `'owner'` this naturally retries with no
-   * extra plumbing needed.
    */
   async function ensureDeviceRegistered(): Promise<void> {
     if (deviceCode.value) return  // already registered (or stubbed) on this device
@@ -84,11 +70,6 @@ export const useDeviceStore = defineStore('device', () => {
     if (registrationInFlight) return registrationInFlight  // a registration is already in progress
 
     registrationInFlight = (async () => {
-      const { data: sessionData } = await supabase.auth.getSession()
-      const accessToken = sessionData?.session?.access_token
-      const activeRole = accessToken ? decodeActiveRoleClaim(accessToken) : null
-      if (activeRole !== 'owner') return  // would fail RLS — retried on the next reconnect
-
       const { registerDevice } = useDeviceRegistration()
       const id = uuidv4()
       const { code } = await registerDevice(shopId.value)

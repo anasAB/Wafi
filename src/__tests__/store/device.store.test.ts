@@ -62,7 +62,7 @@ describe('useDeviceStore', () => {
     const b64url = (obj: unknown) =>
       btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
     const fakeAccessToken = (sessionId: string) =>
-      `${b64url({ alg: 'HS256' })}.${b64url({ session_id: sessionId, active_role: 'owner' })}.sig`
+      `${b64url({ alg: 'HS256' })}.${b64url({ session_id: sessionId })}.sig`
 
     session.value = { access_token: fakeAccessToken('session-xyz'), user: { id: 'user-a' } }
     vi.mocked(db.getOptional).mockResolvedValue({ id: 'shop-a' } as any)
@@ -97,7 +97,7 @@ describe('useDeviceStore', () => {
     const b64url = (obj: unknown) =>
       btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
     const fakeAccessToken = (sessionId: string) =>
-      `${b64url({ alg: 'HS256' })}.${b64url({ session_id: sessionId, active_role: 'owner' })}.sig`
+      `${b64url({ alg: 'HS256' })}.${b64url({ session_id: sessionId })}.sig`
 
     session.value = { access_token: fakeAccessToken('session-A'), user: { id: 'user-a' } }
     vi.mocked(db.getOptional).mockResolvedValue({ id: 'shop-a' } as any)
@@ -258,13 +258,6 @@ describe('useDeviceStore', () => {
   })
 
   it('only registers once when ensureDeviceRegistered is called concurrently', async () => {
-    const b64url = (obj: unknown) =>
-      btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-    session.value = {
-      access_token: `${b64url({ alg: 'HS256' })}.${b64url({ active_role: 'owner' })}.sig`,
-      user: { id: 'user-a' },
-    }
-
     let resolveRegister: (v: { code: string; isTemporary: boolean }) => void
     registerDeviceMock.mockImplementation(() => new Promise(resolve => { resolveRegister = resolve }))
 
@@ -277,10 +270,6 @@ describe('useDeviceStore', () => {
     const p1 = store.ensureDeviceRegistered()
     const p2 = store.ensureDeviceRegistered()
 
-    // The active_role check now runs (and awaits getSession()) inside the
-    // in-flight IIFE itself, so registerDeviceMock isn't called until that
-    // microtask settles — flush it before asserting the dedup held.
-    await flush()
     expect(registerDeviceMock).toHaveBeenCalledTimes(1)
 
     resolveRegister!({ code: 'B', isTemporary: false })
@@ -288,29 +277,5 @@ describe('useDeviceStore', () => {
 
     expect(registerDeviceMock).toHaveBeenCalledTimes(1)
     expect(store.deviceCode).toBe('B')
-  })
-
-  it('does not attempt registration when the JWT active_role claim is not owner', async () => {
-    // devices INSERT is owner-only server-side (055_identity_domain_rls.sql);
-    // attempting it under any other/absent active_role is a guaranteed RLS
-    // rejection, found live 2026-07-29 as spurious devices 403s right after
-    // sign-in, before bootstrap/operator-switch has minted an owner token.
-    const b64url = (obj: unknown) =>
-      btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-    session.value = {
-      access_token: `${b64url({ alg: 'HS256' })}.${b64url({ active_role: 'cashier' })}.sig`,
-      user: { id: 'user-a' },
-    }
-    registerDeviceMock.mockResolvedValue({ code: 'A', isTemporary: false })
-
-    const { useDeviceStore } = await import('@/store/device.store')
-    const store = useDeviceStore()
-    store.shopId = 'shop-a'
-    store.deviceCode = ''
-
-    await store.ensureDeviceRegistered()
-
-    expect(registerDeviceMock).not.toHaveBeenCalled()
-    expect(store.deviceCode).toBe('')
   })
 })

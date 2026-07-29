@@ -6,13 +6,19 @@ import { reconnectPowerSync } from '@/data/powersync/db'
 import type { Staff } from '@/features/staff/staff.types'
 
 /**
- * Decode a Supabase access-token JWT's payload into an object.
+ * Decode the `session_id` claim out of a Supabase access-token JWT's payload.
  *
  * This does NOT verify the token's signature — it doesn't need to. The token
- * came straight out of our own authenticated SDK session; callers are reading
- * claims off it, not re-authenticating with it.
+ * came straight out of our own authenticated SDK session; we are reading a
+ * claim off it, not re-authenticating with it. `@supabase/supabase-js`'s
+ * `Session` object has no top-level `session_id` field (checked against the
+ * installed `@supabase/auth-js` types: `Session` exposes `access_token`/
+ * `refresh_token`/etc. but not `session_id`), even though `session_id` is a
+ * real claim Supabase stamps into every JWT payload by default (see the
+ * `JWTClaims`/`RequiredClaims` types in the same package). So the client must
+ * pull it out of the JWT itself. See ADR-009's Design Correction.
  */
-function decodeJwtPayload(accessToken: string): Record<string, unknown> | null {
+export function decodeSessionIdClaim(accessToken: string): string | null {
   try {
     const payloadSegment = accessToken.split('.')[1]
     if (!payloadSegment) return null
@@ -25,41 +31,11 @@ function decodeJwtPayload(accessToken: string): Record<string, unknown> | null {
         .map(c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0'))
         .join(''),
     )
-    return JSON.parse(json) as Record<string, unknown>
+    const payload = JSON.parse(json) as { session_id?: string }
+    return payload.session_id ?? null
   } catch {
     return null
   }
-}
-
-/**
- * Decode the `session_id` claim out of a Supabase access-token JWT's payload.
- *
- * `@supabase/supabase-js`'s `Session` object has no top-level `session_id`
- * field (checked against the installed `@supabase/auth-js` types: `Session`
- * exposes `access_token`/`refresh_token`/etc. but not `session_id`), even
- * though `session_id` is a real claim Supabase stamps into every JWT payload
- * by default (see the `JWTClaims`/`RequiredClaims` types in the same
- * package). So the client must pull it out of the JWT itself. See ADR-009's
- * Design Correction.
- */
-export function decodeSessionIdClaim(accessToken: string): string | null {
-  const payload = decodeJwtPayload(accessToken)
-  const sessionId = payload?.session_id
-  return typeof sessionId === 'string' ? sessionId : null
-}
-
-/**
- * Decode the `active_role` claim out of a Supabase access-token JWT's
- * payload — the same claim `auth_role()` reads server-side (migration
- * 054_auth_role_helpers.sql), defaulting to `'cashier'` there when absent.
- * Used client-side to avoid attempting writes RLS will certainly reject
- * (e.g. device self-registration, owner-only) instead of discovering that
- * via a failed round trip.
- */
-export function decodeActiveRoleClaim(accessToken: string): string | null {
-  const payload = decodeJwtPayload(accessToken)
-  const activeRole = payload?.active_role
-  return typeof activeRole === 'string' ? activeRole : null
 }
 
 /** Thrown by `switchTo` when a genuinely new identity is attempted while
