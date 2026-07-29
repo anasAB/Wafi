@@ -5,6 +5,7 @@ import AppHeader from '@/components/ui/AppHeader.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { useStockTake } from '@/features/stock-take/composables/useStockTake'
 import { useStockTakeVariance, type LineMovements } from '@/features/stock-take/composables/useStockTakeVariance'
+import { useDeviceStore } from '@/store/device.store'
 
 const route = useRoute()
 const router = useRouter()
@@ -12,6 +13,7 @@ const sessionId = route.params.id as string
 
 const { loadSession, currentSession, reviewLines, totalShrinkageValueUsd, confirmSession } = useStockTake()
 const { loadMovements } = useStockTakeVariance()
+const device = useDeviceStore()
 const loading = ref(true)
 const confirming = ref(false)
 
@@ -37,6 +39,7 @@ const alreadyCompleted = ref(false)
 const expandedProductId = ref<string | null>(null)
 const movementsByProduct = ref<Map<string, LineMovements>>(new Map())
 const loadingMovements = ref<Set<string>>(new Set())
+const movementErrors = ref<Set<string>>(new Set())
 
 const REASON_DISPLAY: Record<string, { icon: string; label: string }> = {
   sale:      { icon: '🛒', label: 'بيع' },
@@ -63,9 +66,12 @@ async function toggleExpand(line: { id: string; productId: string; variance: num
   loadingMovements.value.add(line.productId)
   try {
     const result = await loadMovements(
-      line.productId, line.variance ?? 0, currentSession.value.startedAt, reviewedAt.value,
+      line.productId, line.variance ?? 0, currentSession.value.startedAt, reviewedAt.value, device.shopId,
     )
     movementsByProduct.value.set(line.productId, result)
+    movementErrors.value.delete(line.productId)
+  } catch {
+    movementErrors.value.add(line.productId)
   } finally {
     loadingMovements.value.delete(line.productId)
   }
@@ -124,7 +130,15 @@ function finalStock(line: { liveStock: number; variance: number | null }): numbe
 
         <div v-else class="line-list">
           <div v-for="line in reviewLines" :key="line.id">
-            <div class="line-card" @click="toggleExpand(line)">
+            <div
+              class="line-card"
+              role="button"
+              tabindex="0"
+              :aria-expanded="expandedProductId === line.productId"
+              @click="toggleExpand(line)"
+              @keydown.enter="toggleExpand(line)"
+              @keydown.space.prevent="toggleExpand(line)"
+            >
               <div class="line-info">
                 <span class="line-name">{{ line.productNameAr }}</span>
                 <span class="line-variance">الفرق: {{ line.variance }}</span>
@@ -140,12 +154,16 @@ function finalStock(line: { liveStock: number; variance: number | null }): numbe
                 {{ line.varianceValueUsd.toFixed(2) }} $
               </span>
               <span v-else class="line-value line-value-muted">—</span>
+              <span class="line-chevron" :class="{ 'line-chevron--open': expandedProductId === line.productId }">▾</span>
             </div>
 
             <div v-if="expandedProductId === line.productId" class="timeline-panel">
               <div v-if="loadingMovements.has(line.productId)" class="timeline-loading">
                 <div class="spinner-sm" />
               </div>
+              <p v-else-if="movementErrors.has(line.productId)" class="timeline-error" role="alert">
+                تعذّر تحميل الحركات. أغلق الصف وأعد فتحه للمحاولة مرة أخرى.
+              </p>
               <template v-else-if="movementsByProduct.get(line.productId)">
                 <EmptyState
                   v-if="movementsByProduct.get(line.productId)!.entries.length === 0"
@@ -154,7 +172,7 @@ function finalStock(line: { liveStock: number; variance: number | null }): numbe
                 />
                 <div v-else class="movement-list">
                   <div v-for="entry in movementsByProduct.get(line.productId)!.entries" :key="entry.id" class="movement-row">
-                    <span class="movement-time">{{ new Date(entry.timestamp).toLocaleTimeString('ar', { hour: '2-digit', minute: '2-digit' }) }}</span>
+                    <span class="movement-time">{{ new Date(entry.timestamp).toLocaleTimeString('ar-SY-u-nu-latn', { hour: '2-digit', minute: '2-digit' }) }}</span>
                     <span class="movement-reason">{{ reasonDisplay(entry.reason).icon }} {{ reasonDisplay(entry.reason).label }}</span>
                     <span class="movement-delta" :class="entry.delta < 0 ? 'loss' : 'gain'">{{ entry.delta > 0 ? '+' : '' }}{{ entry.delta }}</span>
                   </div>
@@ -291,7 +309,16 @@ function finalStock(line: { liveStock: number; variance: number | null }): numbe
   border-radius: 0.875rem;
   background: #0D1828;
   border: 1px solid rgba(255, 255, 255, 0.07);
+  cursor: pointer;
 }
+.line-card:focus-visible { outline: 2px solid rgba(96,165,250,0.7); outline-offset: 2px; }
+.line-chevron {
+  flex-shrink: 0;
+  color: #637285;
+  font-size: 0.75rem;
+  transition: transform 0.15s;
+}
+.line-chevron--open { transform: rotate(180deg); color: #93B4F0; }
 .line-info { display: flex; flex-direction: column; gap: 0.125rem; min-width: 0; }
 .line-name {
   font-size: 0.875rem;
@@ -333,6 +360,13 @@ function finalStock(line: { liveStock: number; variance: number | null }): numbe
   margin-top: -0.5rem;
 }
 .timeline-loading { display: flex; justify-content: center; padding: 0.75rem 0; }
+.timeline-error {
+  margin: 0;
+  padding: 0.625rem 0;
+  font-size: 0.8125rem;
+  color: #FBBF24;
+  text-align: center;
+}
 .spinner-sm {
   width: 18px; height: 18px; border-radius: 9999px;
   border: 2px solid rgba(26, 86, 219, 0.28); border-top-color: #1A56DB;

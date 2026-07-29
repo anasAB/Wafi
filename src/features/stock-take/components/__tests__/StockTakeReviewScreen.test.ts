@@ -18,6 +18,7 @@ vi.mock('@/features/stock-take/composables/useStockTakeVariance', () => ({
 import StockTakeReviewScreen from '../StockTakeReviewScreen.vue'
 import { useStockTake } from '../../composables/useStockTake'
 import { useStockTakeVariance } from '../../composables/useStockTakeVariance'
+import { useDeviceStore } from '@/store/device.store'
 
 function stubStockTake(overrides: Partial<Record<string, any>> = {}) {
   return {
@@ -37,6 +38,7 @@ describe('StockTakeReviewScreen — WAFI-009 variance timeline', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    useDeviceStore().shopId = 'shop-1'
   })
 
   it('does not show timeline content until a line is expanded', async () => {
@@ -72,14 +74,14 @@ describe('StockTakeReviewScreen — WAFI-009 variance timeline', () => {
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
 
-    expect(loadMovements).toHaveBeenCalledWith('p1', -13, '2026-07-29T10:00:00Z', expect.any(String))
+    expect(loadMovements).toHaveBeenCalledWith('p1', -13, '2026-07-29T10:00:00Z', expect.any(String), 'shop-1')
     expect(wrapper.text()).toContain('بيع')
     expect(wrapper.text()).toContain('مرتجع')
     expect(wrapper.text()).toContain('صافي الحركة')
     expect(wrapper.text()).toContain('الفرق غير المفسّر')
   })
 
-  it('does not call loadMovements a second time when the same line is collapsed and re-expanded', async () => {
+  it('calls loadMovements on every expand, delegating de-duplication to the composable cache', async () => {
     vi.mocked(useStockTake).mockReturnValue(stubStockTake() as any)
     const loadMovements = vi.fn().mockResolvedValue({ entries: [], netMovementDelta: 0, unexplainedVariance: -13 })
     vi.mocked(useStockTakeVariance).mockReturnValue({ loadMovements } as any)
@@ -115,6 +117,33 @@ describe('StockTakeReviewScreen — WAFI-009 variance timeline', () => {
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
 
+    expect(wrapper.text()).toContain('لا توجد حركات')
+  })
+
+  it('shows a retryable error message instead of a blank panel when loadMovements rejects', async () => {
+    vi.mocked(useStockTake).mockReturnValue(stubStockTake() as any)
+    const loadMovements = vi.fn().mockRejectedValueOnce(new Error('db unavailable'))
+    vi.mocked(useStockTakeVariance).mockReturnValue({ loadMovements } as any)
+
+    const wrapper = mount(StockTakeReviewScreen)
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    await wrapper.find('.line-card').trigger('click')
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('تعذّر تحميل الحركات')
+
+    // Retry: collapse and re-expand, this time the load succeeds.
+    loadMovements.mockResolvedValueOnce({ entries: [], netMovementDelta: 0, unexplainedVariance: -13 })
+    await wrapper.find('.line-card').trigger('click')   // collapse
+    await wrapper.vm.$nextTick()
+    await wrapper.find('.line-card').trigger('click')   // re-expand
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).not.toContain('تعذّر تحميل الحركات')
     expect(wrapper.text()).toContain('لا توجد حركات')
   })
 
@@ -163,6 +192,44 @@ describe('StockTakeReviewScreen — WAFI-009 variance timeline', () => {
     await wrapper.vm.$nextTick()
     // Both lines currently show the same stubbed "no movements" text, so
     // assert via call count instead of text presence/absence.
-    expect(loadMovements).toHaveBeenCalledWith('p2', -2, expect.any(String), expect.any(String))
+    expect(loadMovements).toHaveBeenCalledWith('p2', -2, expect.any(String), expect.any(String), 'shop-1')
+  })
+
+  it('narrows the movement window to the session completedAt when it is already set', async () => {
+    vi.mocked(useStockTake).mockReturnValue(stubStockTake({
+      currentSession: ref({ id: 'session-1', startedAt: '2026-07-29T10:00:00Z', completedAt: '2026-07-29T11:00:00Z', status: 'completed' }),
+    }) as any)
+    const loadMovements = vi.fn().mockResolvedValue({ entries: [], netMovementDelta: 0, unexplainedVariance: -13 })
+    vi.mocked(useStockTakeVariance).mockReturnValue({ loadMovements } as any)
+
+    const wrapper = mount(StockTakeReviewScreen)
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    await wrapper.find('.line-card').trigger('click')
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    expect(loadMovements).toHaveBeenCalledWith('p1', -13, '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z', 'shop-1')
+  })
+
+  it('uses a freshly-captured mount-time timestamp (not a fixed completedAt) when the session is not yet completed', async () => {
+    vi.mocked(useStockTake).mockReturnValue(stubStockTake({
+      currentSession: ref({ id: 'session-1', startedAt: '2026-07-29T10:00:00Z', completedAt: null, status: 'in_progress' }),
+    }) as any)
+    const loadMovements = vi.fn().mockResolvedValue({ entries: [], netMovementDelta: 0, unexplainedVariance: -13 })
+    vi.mocked(useStockTakeVariance).mockReturnValue({ loadMovements } as any)
+
+    const wrapper = mount(StockTakeReviewScreen)
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    await wrapper.find('.line-card').trigger('click')
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    const calledWindowEnd = loadMovements.mock.calls[0][3]
+    expect(calledWindowEnd).not.toBe('2026-07-29T11:00:00Z')
+    expect(calledWindowEnd).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
   })
 })
