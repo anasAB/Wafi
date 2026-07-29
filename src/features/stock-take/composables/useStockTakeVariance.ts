@@ -24,13 +24,13 @@ export function useStockTakeVariance() {
   const cache = new Map<string, LineMovements>()
 
   async function loadMovements(
-    productId: string, variance: number, windowStart: string, windowEnd: string,
+    productId: string, variance: number, windowStart: string, windowEnd: string, shopId: string,
   ): Promise<LineMovements> {
     const key = `${productId}:${windowStart}:${windowEnd}`
     const cached = cache.get(key)
     if (cached) return cached
 
-    const entries = await getMovements(productId, windowStart, windowEnd)
+    const entries = await getMovements(productId, windowStart, windowEnd, shopId)
     const netMovementDelta = entries.reduce((sum, e) => sum + e.delta, 0)
     const result: LineMovements = {
       entries,

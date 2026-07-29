@@ -34,12 +34,12 @@ export interface InventoryMovement {
  */
 export function useInventoryMovements() {
   async function getMovements(
-    productId: string, windowStart: string, windowEnd: string,
+    productId: string, windowStart: string, windowEnd: string, shopId: string,
   ): Promise<InventoryMovement[]> {
     return db.getAll<InventoryMovement>(
       `SELECT id, created_at AS timestamp, reason, (new_value - old_value) AS delta
        FROM stock_adjustments
-       WHERE product_id = ? AND reason != 'stocktake'
+       WHERE product_id = ? AND shop_id = ? AND reason != 'stocktake'
          AND created_at >= ? AND created_at <= ?
 
        UNION ALL
@@ -47,11 +47,11 @@ export function useInventoryMovements() {
        SELECT srl.id, sr.received_at AS timestamp, 'receiving' AS reason, srl.qty_received AS delta
        FROM stock_receiving_line_items srl
        JOIN stock_receivings sr ON sr.id = srl.receiving_id
-       WHERE srl.product_id = ?
+       WHERE srl.product_id = ? AND srl.shop_id = ?
          AND sr.received_at >= ? AND sr.received_at <= ?
 
        ORDER BY timestamp ASC, id ASC`,
-      [productId, windowStart, windowEnd, productId, windowStart, windowEnd],
+      [productId, shopId, windowStart, windowEnd, productId, shopId, windowStart, windowEnd],
     )
   }
 

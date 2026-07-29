@@ -17,11 +17,11 @@ describe('useInventoryMovements', () => {
     ] as any)
 
     const { getMovements } = useInventoryMovements()
-    const result = await getMovements('p1', '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z')
+    const result = await getMovements('p1', '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z', 'shop-1')
 
     expect(db.getAll).toHaveBeenCalledWith(
       expect.stringContaining('FROM stock_adjustments'),
-      ['p1', '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z', 'p1', '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z'],
+      ['p1', 'shop-1', '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z', 'p1', 'shop-1', '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z'],
     )
     const sql = vi.mocked(db.getAll).mock.calls[0][0] as string
     expect(sql).toContain('UNION ALL')
@@ -38,7 +38,7 @@ describe('useInventoryMovements', () => {
   it('returns an empty array when there are no movements in the window', async () => {
     vi.mocked(db.getAll).mockResolvedValueOnce([] as any)
     const { getMovements } = useInventoryMovements()
-    const result = await getMovements('p1', '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z')
+    const result = await getMovements('p1', '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z', 'shop-1')
     expect(result).toEqual([])
   })
 
@@ -55,12 +55,14 @@ describe('useInventoryMovements', () => {
   it('uses inclusive (>=/<=) bounds on both halves of the union, against the correct timestamp columns', async () => {
     vi.mocked(db.getAll).mockResolvedValueOnce([] as any)
     const { getMovements } = useInventoryMovements()
-    await getMovements('p1', '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z')
+    await getMovements('p1', '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z', 'shop-1')
 
     const sql = vi.mocked(db.getAll).mock.calls[0][0] as string
     expect(sql).toContain('created_at >= ?')
     expect(sql).toContain('created_at <= ?')
     expect(sql).toContain('sr.received_at >= ?')
     expect(sql).toContain('sr.received_at <= ?')
+    expect(sql).toContain('shop_id = ?')
+    expect(sql).toContain('srl.shop_id = ?')
   })
 })

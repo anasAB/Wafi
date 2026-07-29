@@ -20,7 +20,7 @@ describe('useStockTakeVariance', () => {
     vi.mocked(useInventoryMovements).mockReturnValue({ getMovements })
 
     const { loadMovements } = useStockTakeVariance()
-    const result = await loadMovements('p1', -7, '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z')
+    const result = await loadMovements('p1', -7, '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z', 'shop-1')
 
     expect(result.netMovementDelta).toBe(-2)      // -3 + 1
     expect(result.unexplainedVariance).toBe(-5)   // -7 - (-2)
@@ -32,7 +32,7 @@ describe('useStockTakeVariance', () => {
     vi.mocked(useInventoryMovements).mockReturnValue({ getMovements })
 
     const { loadMovements } = useStockTakeVariance()
-    const result = await loadMovements('p1', -13, '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z')
+    const result = await loadMovements('p1', -13, '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z', 'shop-1')
 
     expect(result.netMovementDelta).toBe(0)
     expect(result.unexplainedVariance).toBe(-13)
@@ -45,7 +45,7 @@ describe('useStockTakeVariance', () => {
     vi.mocked(useInventoryMovements).mockReturnValue({ getMovements })
 
     const { loadMovements } = useStockTakeVariance()
-    const result = await loadMovements('p1', 20, '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z')
+    const result = await loadMovements('p1', 20, '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z', 'shop-1')
 
     expect(result.netMovementDelta).toBe(10)
     expect(result.unexplainedVariance).toBe(10)
@@ -56,8 +56,8 @@ describe('useStockTakeVariance', () => {
     vi.mocked(useInventoryMovements).mockReturnValue({ getMovements })
 
     const { loadMovements } = useStockTakeVariance()
-    await loadMovements('p1', -13, '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z')
-    await loadMovements('p1', -13, '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z')
+    await loadMovements('p1', -13, '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z', 'shop-1')
+    await loadMovements('p1', -13, '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z', 'shop-1')
 
     expect(getMovements).toHaveBeenCalledTimes(1)
   })
@@ -67,8 +67,8 @@ describe('useStockTakeVariance', () => {
     vi.mocked(useInventoryMovements).mockReturnValue({ getMovements })
 
     const { loadMovements } = useStockTakeVariance()
-    await loadMovements('p1', -13, '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z')
-    await loadMovements('p2', -5, '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z')
+    await loadMovements('p1', -13, '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z', 'shop-1')
+    await loadMovements('p2', -5, '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z', 'shop-1')
 
     expect(getMovements).toHaveBeenCalledTimes(2)
   })
@@ -78,8 +78,8 @@ describe('useStockTakeVariance', () => {
     vi.mocked(useInventoryMovements).mockReturnValue({ getMovements })
 
     const { loadMovements } = useStockTakeVariance()
-    await loadMovements('p1', -13, '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z')
-    await loadMovements('p1', -13, '2026-07-29T10:00:00Z', '2026-07-29T12:00:00Z')
+    await loadMovements('p1', -13, '2026-07-29T10:00:00Z', '2026-07-29T11:00:00Z', 'shop-1')
+    await loadMovements('p1', -13, '2026-07-29T10:00:00Z', '2026-07-29T12:00:00Z', 'shop-1')
 
     expect(getMovements).toHaveBeenCalledTimes(2)
   })
