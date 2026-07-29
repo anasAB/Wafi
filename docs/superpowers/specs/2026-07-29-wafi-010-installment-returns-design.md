@@ -83,6 +83,11 @@ since the schema permits it.
 | `defaulted` | full or partial | Return proceeds; plan **never** auto-cancelled; surface warning (see below). A defaulted plan already represents an active collections situation — silently erasing that debt via a routine return is a business decision the owner must make explicitly, not a side effect. |
 | anything else (future status) | any | Treated the same as `active`+partial: return proceeds, plan untouched, generic manual-review warning. Never silently falls into the terminal (no-warning) branch. |
 
+**Normative:** any plan status not explicitly named as terminal (`completed`,
+`cancelled`) in this table MUST enter the manual-review warning branch by default.
+Terminal status is the only branch permitted to suppress the warning — everything else,
+named or not, warns.
+
 ### 4. Auto-cancel implementation
 
 Extract the two `UPDATE` statements currently inline in `useInstallmentPlan.cancelPlan()`
@@ -104,12 +109,24 @@ async function cancelPlanWithinTx(tx: Transaction, planId: string): Promise<bool
     [planId],
   )
   const planResult = await tx.execute(
-    `UPDATE installment_plans SET status = 'cancelled' WHERE id = ? AND status IN ('active', 'defaulted')`,
+    `UPDATE installment_plans SET status = 'cancelled' WHERE id = ? AND status = 'active'`,
     [planId],
   )
   return (planResult as any).rowsAffected > 0
 }
+```
 
+`cancelPlanWithinTx`'s guard is `status = 'active'` only — **not** `IN ('active',
+'defaulted')`. The decision table (§3) says `defaulted` plans are never auto-cancelled;
+if the helper itself allowed cancelling a `defaulted` plan, that invariant would depend
+entirely on every current and future caller remembering never to invoke it for one —
+the helper would be a loaded gun pointed at its own business rule. Baking the guard into
+the helper means the invariant holds structurally, regardless of caller. Manual
+cancellation of a `defaulted` plan (e.g. an owner deliberately writing off a bad debt)
+is not supported by this helper at all — if that's ever wanted, it needs its own
+explicit call site/confirmation, not a side effect of this ticket's shared helper.
+
+```ts
 async function cancelPlan(planId: string, reason: 'manual' | 'sale_returned' = 'manual', returnId?: string): Promise<void> {
   await executeFinancialWrite(
     async () => {
@@ -226,7 +243,13 @@ from a fresh read of `return_line_items`/`sale_line_items` at that moment — no
 
 1. Insert this return's `returns`/`return_line_items` rows (as today).
 2. Re-query total returned quantity per product for this `sale_id` from
-   `return_line_items` (now including the row just inserted in step 1).
+   `return_line_items` (now including the row just inserted in step 1). **This
+   recomputation happens inside the same transaction, after the just-inserted return
+   rows are visible to that transaction** — a plain consequence of executing both
+   statements on the same connection/transaction context, but the specific invariant
+   this fix depends on: if step 2 ran outside the transaction, or against a connection
+   that couldn't see step 1's uncommitted insert, the re-read would be just as stale as
+   the `lines.value` snapshot it's replacing.
 3. Compare against `sale_line_items.quantity` per product; `isFullSaleReturn` is true
    only if every product's cumulative returned quantity now meets its original quantity.
 4. Proceed to the plan lookup/decision table using this freshly-computed value, not the
@@ -258,9 +281,14 @@ example) correct even when the two returns are concurrent, not just sequential.
    exists — proving the cancellation and the return commit or fail together.
 8. **No duplicate cancellation audit**: plan is `active`; a manual `cancelPlan(planId)`
    commits first (plan now `cancelled`); a full-sale return on the same sale is
-   confirmed afterward → `cancelPlanWithinTx` matches zero rows (guard clause, §8),
-   returns `false`, and no second `installment_plan.cancelled` audit entry with
-   `reason: 'sale_returned'` is emitted for a plan that was already cancelled.
+   confirmed afterward → `cancelPlanWithinTx`'s `status = 'active'` guard (§4) matches
+   zero rows, returns `false`, and no second `installment_plan.cancelled` audit entry
+   with `reason: 'sale_returned'` is emitted for a plan that was already cancelled.
+10. **`cancelPlanWithinTx` never cancels a `defaulted` plan**: call the helper directly
+    against a `defaulted` plan (bypassing the decision-table caller entirely) → the
+    `status = 'active'` guard matches zero rows, returns `false`, plan remains
+    `defaulted` — proving the invariant holds at the helper level, not just by
+    convention at the call site.
 9. **Concurrent returns on the same sale**: sale has two line items (A, B) and an
    `active` plan. Simulate two return transactions each returning one line item, with
    the second transaction's in-transaction re-read (§8) occurring after the first has
