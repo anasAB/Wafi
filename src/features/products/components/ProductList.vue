@@ -5,7 +5,7 @@ import ProductAvatar from '@/components/ui/ProductAvatar.vue'
 import { matchesArabicQuery } from '@/shared/text/arabic'
 import { useCategories } from '@/features/categories/composables/useCategories'
 import type { Product } from '@/features/pos/pos.types'
-import { isCostStale, isCostImprecise } from '@/features/products/product.utils'
+import { isCostMissing, isCostStale, isCostImprecise } from '@/features/products/product.utils'
 
 const props = defineProps<{
   products:             Product[]
@@ -21,9 +21,9 @@ const emit = defineEmits<{
 }>()
 
 function costImpreciseLabel(p: Product): string | null {
-  if (!p.costPriceUsd || p.costPriceUsd <= 0) return 'لا يوجد سعر'
+  if (isCostMissing(p)) return 'لا يوجد سعر'
   if (isCostStale(p)) {
-    const ageDays = Math.floor((Date.now() - new Date(p.costUpdatedAt!).getTime()) / (1000 * 60 * 60 * 24))
+    const ageDays = Math.ceil((Date.now() - new Date(p.costUpdatedAt!).getTime()) / (1000 * 60 * 60 * 24))
     return `قديم (${ageDays} يوماً)`
   }
   return null

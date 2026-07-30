@@ -33,13 +33,17 @@ export function rowToProduct(r: ProductRow): Product {
  */
 export const COST_STALE_AFTER_DAYS = 90
 
+export function isCostMissing(p: Pick<Product, 'costPriceUsd'>): boolean {
+  return !p.costPriceUsd || p.costPriceUsd <= 0
+}
+
 export function isCostStale(p: Pick<Product, 'costPriceUsd' | 'costUpdatedAt'>): boolean {
-  if (!p.costPriceUsd || p.costPriceUsd <= 0) return false  // "missing", not "stale" — never double-flag
+  if (isCostMissing(p)) return false  // "missing", not "stale" — never double-flag
   if (!p.costUpdatedAt) return false  // no signal yet — not flagged either way
   const ageDays = (Date.now() - new Date(p.costUpdatedAt).getTime()) / (1000 * 60 * 60 * 24)
   return ageDays > COST_STALE_AFTER_DAYS
 }
 
 export function isCostImprecise(p: Pick<Product, 'costPriceUsd' | 'costUpdatedAt'>): boolean {
-  return (!p.costPriceUsd || p.costPriceUsd <= 0) || isCostStale(p)
+  return isCostMissing(p) || isCostStale(p)
 }
