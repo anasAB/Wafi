@@ -140,6 +140,26 @@ describe('useReceivingSheet — confirm()', () => {
     expect(costUpd).toBeUndefined()
   })
 
+  it('stamps cost_updated_at alongside cost_price_usd when updateCost is on', async () => {
+    const txExecute = setupWriteTransaction()
+    const sheet = await ready()
+    await sheet.confirm()
+    const costUpd = (txExecute.mock.calls as any[])
+      .find(([s]: [string]) => s.includes('UPDATE products SET cost_price_usd'))
+    expect(costUpd).toBeDefined()
+    expect(costUpd[0]).toContain('cost_updated_at')
+  })
+
+  it('does NOT touch cost_updated_at when updateCost is off (regression guard)', async () => {
+    const txExecute = setupWriteTransaction()
+    const sheet = await ready()
+    sheet.lines.value[0].updateCost = false
+    await sheet.confirm()
+    const costUpd = (txExecute.mock.calls as any[])
+      .find(([s]: [string]) => s.includes('UPDATE products SET cost_price_usd'))
+    expect(costUpd).toBeUndefined()
+  })
+
   it('writes receiving.created audit metadata with supplier/total/lineCount from confirmed state', async () => {
     setupWriteTransaction()
     const sheet = await ready()
