@@ -133,7 +133,7 @@ This document unifies three streams of work into a single, coherent architecture
 | WAFI-022 | Deployment Readiness & Operational Runbook (renamed from "Production Deployment Checklist") | P2 | 0.25 sprint | Staging, monitoring, backup, rollback tested. **Status: shipped, 2026-07-23** — see IMPLEMENTATION STATUS above. Real finding: production DB currently has zero backup capability (Free tier). |
 | WAFI-023 | Post-Launch Monitoring & Feedback | P2 | Ongoing | Sentry, in-app reporting, weekly review, SLA. **Status: core (Sentry + in-app reporting + docs) shipped 2026-07-23** — see IMPLEMENTATION STATUS above; weekly review/SLA are ongoing founder practice, not a one-time build. |
 
-**Foundation Total: 23 tickets | 8 weeks** — **17 of 23 fully shipped (WAFI-001, WAFI-203, WAFI-002, WAFI-003, WAFI-004, WAFI-005, WAFI-007, WAFI-008, WAFI-009, WAFI-010, WAFI-011, WAFI-013, WAFI-016, WAFI-017, WAFI-018, WAFI-022, WAFI-023), 2 already satisfied with no code change (WAFI-006, WAFI-019), 1 partially shipped (WAFI-021, 3 of 7 docs), 4 not started (WAFI-012, WAFI-014, WAFI-015, WAFI-020).**
+**Foundation Total: 23 tickets | 8 weeks** — **18 of 23 fully shipped (WAFI-001, WAFI-203, WAFI-002, WAFI-003, WAFI-004, WAFI-005, WAFI-007, WAFI-008, WAFI-009, WAFI-010, WAFI-011, WAFI-013, WAFI-014, WAFI-016, WAFI-017, WAFI-018, WAFI-022, WAFI-023), 2 already satisfied with no code change (WAFI-006, WAFI-019), 1 partially shipped (WAFI-021, 3 of 7 docs), 3 not started (WAFI-012, WAFI-015, WAFI-020).**
 **Critical Path: 001 → 002 → 003 → 004 → 007 → 022**
 
 ---
