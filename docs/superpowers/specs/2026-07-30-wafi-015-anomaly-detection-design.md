@@ -84,12 +84,23 @@ interface Anomaly {
   code: string          // stable identifier, e.g. 'HIGH_RETURNS_RATIO' — never compare on
                          // translated title/message text
   severity: 'critical' | 'warning' | 'info'
+  kind: 'instant' | 'aggregate'  // 'instant' = a discrete event that already happened and
+                                  // won't recur just because time passes (e.g. a specific
+                                  // sale below cost); 'aggregate' = holds only while a
+                                  // period-level condition remains true (e.g. high expense
+                                  // ratio) and naturally clears when the period/data changes.
+                                  // Not used for any behavior difference in v1 — carried now
+                                  // so future notification/escalation logic doesn't require
+                                  // a breaking shape change.
   title: string          // translated, user-facing
   message: string        // translated, user-facing detail
   deepLink?: string       // optional route to the relevant detail screen (e.g. /reports,
                           // /shifts/history)
 }
 ```
+
+`kind` per type: `SALE_BELOW_COST` and `INVENTORY_SHRINKAGE` are `instant` (discrete events);
+the remaining 5 ratio/threshold-based types are `aggregate`.
 
 ## 5. Performance (<100ms budget) — the actual mechanism, not just the target
 
@@ -100,13 +111,20 @@ interface Anomaly {
    discounts) — zero additional queries for types 1, 2, 3, 5.
 2. Batch any remaining reads by **source**, not by anomaly type: one query for shifts closed
    in-period (feeds type 6), one query for stock-take variance rows in-period (feeds type
-   7), one query for below-cost sale lines in-period (feeds type 4).
+   7), and one query for the period's sale line items with cost/price (feeds type 4, and any
+   future per-line-item rule — e.g. highest/average/median markup — for free). **Not** a
+   query scoped to only below-cost rows: fetch the period's sale line items once, then
+   compute `belowCostSales`, and anything else derived from the same rows, in memory. This
+   is deliberate — a query pre-filtered to "below cost" only answers that one question; a
+   query for the period's line items answers this and every future per-line-item question
+   without adding a query.
 3. All 7 rule functions then evaluate in memory against that already-fetched data — adding
    an 8th, 9th, 10th anomaly type later costs zero additional queries as long as it reuses
    an existing batched source.
 
-This is the concrete scaling contract: **N anomaly types must never mean N queries.** A test
-asserts on the query count (see §8) so this doesn't silently regress.
+This is the concrete scaling contract: **N anomaly types must never mean N queries, and a
+new rule that reuses an existing batched source must add zero queries.** A test asserts on
+the query count (see §9) so this doesn't silently regress.
 
 Evaluated once per Home mount / reporting-period change — not recomputed on every reactive
 tick.
@@ -119,25 +137,46 @@ tick.
   v1 — e.g. a low-margin period caused by high expenses shows both `LOW_MARGIN` and
   `HIGH_EXPENSES_RATIO`. Avoids causal-inference complexity for a first pass; revisit only if
   real usage shows the banner feels redundant.
+- **One anomaly per rule, regardless of row count:** each rule emits **at most one**
+  `Anomaly` no matter how many underlying rows triggered it — e.g. 15 sales below cost in the
+  period produces one `SALE_BELOW_COST` anomaly (with a count in its `message`, e.g. "15
+  sales sold below cost"), never 15 separate cards. This must be explicit, not left to an
+  implementer's judgment call — a per-row anomaly list would make a bad day produce a wall of
+  critical cards instead of one clear signal.
 
 ## 7. UI, dismissal, permissions
 
 - **Banner:** dismissible summary banner near the top of Home (e.g. "3 things need your
   attention"), tap to expand and see each anomaly's title/message/deep-link.
-- **Dismiss scope:** per-anomaly `code`, dismissed for **today only** — stored in
-  localStorage as `wafi:anomaly-dismissed:{shopId}:{date}:{code}`. The date-scoped key means
-  nothing needs explicit expiry/cleanup; a dismissal simply doesn't match tomorrow's key, so
-  the anomaly reappears automatically if the underlying condition is still true.
+- **Dismiss scope:** per-anomaly `code` **and reporting period**, dismissed for **today
+  only** — stored in localStorage as
+  `wafi:anomaly-dismissed:{shopId}:{date}:{periodKey}:{code}`. Including `periodKey` (e.g.
+  `today`/`7d`/`30d`) matters because "today" and "last 7 days" can legitimately disagree on
+  whether an anomaly is active — without it, dismissing under one period could wrongly hide
+  the same anomaly after switching to another. The date-scoped key means nothing needs
+  explicit expiry/cleanup; a dismissal simply doesn't match tomorrow's key, so the anomaly
+  reappears automatically if the underlying condition is still true.
 - **Permission gate:** `can_view_reports` (owner + manager) — same gate as the existing
   `/reports` badges and WAFI-017's money-owed view, so visibility is consistent between Home
-  and Reports (nobody sees the banner on one screen but not the other).
+  and Reports (nobody sees the banner on one screen but not the other). **Dismissal is
+  per-device, not per-user**, since it's stored in localStorage: if the owner dismisses an
+  anomaly on their phone, a manager logging into a *different* device still sees it (the
+  dismissal never synced); if the owner and manager share the same device/browser, the
+  manager would see it as already-dismissed. This is an accepted v1 limitation, not a bug —
+  documented here so it isn't "discovered" later and mistaken for one.
 
 ## 8. Error handling
 
 If any underlying query fails (offline, dead-letter scenario, unexpected error), the banner
-**fails closed**: log to Sentry, render nothing, never show a broken/error UI on Home.
-Anomaly detection is a supplementary signal, not a blocking feature — it must never make
-Home itself feel broken or slow.
+does **not** silently render nothing — a silent absence is indistinguishable from "no
+anomalies, everything's fine," which is actively misleading (an owner could read a broken
+evaluation as a clean bill of health). Instead: log to Sentry, and render a small, calm,
+non-alarming grey info card reading "Unable to check for issues right now" — neutral in
+tone, not scary, not phrased as an error the owner needs to act on (final copy can be
+refined at implementation/localization time, but the neutral framing is a requirement, not a
+detail). Anomaly detection is a supplementary signal, not a blocking feature —
+it must never make Home itself feel broken or slow, but it also must never claim a clean
+result it didn't actually compute.
 
 ## 9. Testing
 
@@ -146,9 +185,13 @@ Home itself feel broken or slow.
   underlying `Anomaly[]` output for the same input data (proves no drift between the two
   surfaces).
 - Dismiss-persistence test: dismiss today, confirm it reappears "tomorrow" via a mocked date.
-- **Query-count assertion**: spy/count DB calls made by `useAnomalyDetection()`, assert it
-  never exceeds "one per data source" regardless of how many rules are added — the
-  regression guard for §5's scaling contract.
+- **Query-count assertion**: spy/count DB calls made by `useAnomalyDetection()`. Two
+  assertions, not one: (a) it never exceeds "one per data source" regardless of how many
+  rules are added, and (b) adding a new rule that reuses an already-batched source (e.g. a
+  future "average markup" rule reusing the same period sale-line-items query as
+  `SALE_BELOW_COST`) produces **zero** additional queries versus the baseline. (b) is the
+  actual contract this ticket cares about — (a) alone wouldn't catch a well-intentioned but
+  wrong implementation that adds one query per new rule as long as each stays "only one."
 - Permission-gate test: banner absent for a role without `can_view_reports`.
 
 ## 10. Explicitly out of scope (v1)
