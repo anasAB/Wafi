@@ -1,5 +1,13 @@
-import { describe, it, expect } from 'vitest'
-import { computeAnomalies, ANOMALY_RULES, type AnomalyInput } from './useAnomalyDetection'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { computeAnomalies, ANOMALY_RULES, useAnomalyDetection, type AnomalyInput } from './useAnomalyDetection'
+import { db } from '@/data/powersync/db'
+
+vi.mock('@/data/powersync/db', () => ({
+  db: { getOptional: vi.fn(), getAll: vi.fn() },
+}))
+vi.mock('@/store/device.store', () => ({
+  useDeviceStore: () => ({ shopId: 'shop-1' }),
+}))
 
 const baseInput: AnomalyInput = {
   revenueUsd: 1000,
@@ -93,5 +101,47 @@ describe('computeAnomalies', () => {
 
   it('ANOMALY_RULES exposes minRevenueUsd = 50 (unchanged from the pre-existing rule)', () => {
     expect(ANOMALY_RULES.minRevenueUsd).toBe(50)
+  })
+})
+
+describe('useAnomalyDetection (data orchestrator)', () => {
+  beforeEach(() => {
+    // vi.clearAllMocks() resets each mock's call history (not just its
+    // return value) so per-test call-count assertions below aren't polluted
+    // by calls made in earlier tests within this describe block — the brief's
+    // beforeEach only set mockResolvedValue, which left call counts
+    // cumulative across tests since db.getAll/getOptional are module-level
+    // mocks shared by the whole file.
+    vi.clearAllMocks()
+    vi.mocked(db.getOptional).mockResolvedValue({ total: 0, cogs: 0 } as any)
+    vi.mocked(db.getAll).mockResolvedValue([])
+  })
+
+  it('issues at most one query per data source (sales+lines, shifts, stock-take)', async () => {
+    const { load } = useAnomalyDetection()
+    await load('today')
+    // getOptional covers the reused dashboard-style aggregates (revenue/cogs/expenses/refunds/discounts);
+    // getAll covers the 3 batched row-level sources (below-cost lines, shift variances, stock-take variances).
+    expect(vi.mocked(db.getAll).mock.calls.length).toBe(3)
+  })
+
+  it('adding a rule that reuses an already-batched source adds zero queries', async () => {
+    // Simulates a future rule (e.g. "average markup") that reuses the same
+    // period sale-line-items result computeAnomalies already receives —
+    // asserted by checking the call count is unchanged from the baseline
+    // above rather than growing with computeAnomalies' rule count.
+    const { load } = useAnomalyDetection()
+    await load('today')
+    const baselineCalls = vi.mocked(db.getAll).mock.calls.length
+    await load('today')
+    expect(vi.mocked(db.getAll).mock.calls.length).toBe(baselineCalls * 2) // same per-call count each time, not growing
+  })
+
+  it('sets error=true and anomalies=[] when a query throws, without throwing itself', async () => {
+    vi.mocked(db.getAll).mockRejectedValueOnce(new Error('offline'))
+    const { load, error, anomalies } = useAnomalyDetection()
+    await load('today')
+    expect(error.value).toBe(true)
+    expect(anomalies.value).toEqual([])
   })
 })

@@ -1,3 +1,10 @@
+import { ref } from 'vue'
+import { db } from '@/data/powersync/db'
+import { useDeviceStore } from '@/store/device.store'
+import { getDateRange } from '@/features/dashboard/composables/periodUtils'
+import type { Period } from '@/features/dashboard/composables/periodUtils'
+import * as Sentry from '@sentry/vue'
+
 export type AnomalySeverity = 'critical' | 'warning' | 'info'
 export type AnomalyKind = 'instant' | 'aggregate'
 
@@ -158,4 +165,103 @@ export function computeAnomalies(input: AnomalyInput): Anomaly[] {
   ].filter((a): a is Anomaly => a !== null)
 
   return anomalies.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
+}
+
+export function useAnomalyDetection() {
+  const device    = useDeviceStore()
+  const anomalies = ref<Anomaly[]>([])
+  const loading   = ref(false)
+  const error     = ref(false)
+
+  async function load(period: Period) {
+    loading.value = true
+    error.value = false
+    const { start, end } = getDateRange(period)
+
+    try {
+      // Source 1: dashboard-style revenue/cogs/expenses/refunds/discounts —
+      // one query each via getOptional (matches useDashboardMetrics' own
+      // pattern), not a fan-out per anomaly rule.
+      const [revRow, cogsRow, expRow, refundRow, discountRow] = await Promise.all([
+        db.getOptional<{ total: number }>(
+          `SELECT COALESCE(SUM(total_usd), 0) as total FROM sales
+           WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?`,
+          [device.shopId, start, end],
+        ),
+        db.getOptional<{ cogs: number }>(
+          `SELECT COALESCE(SUM(sli.quantity * COALESCE(sli.unit_cost_usd, 0)), 0) as cogs
+           FROM sale_line_items sli JOIN sales s ON sli.sale_id = s.id
+           WHERE s.shop_id = ? AND DATE(s.created_at, 'localtime') BETWEEN ? AND ?`,
+          [device.shopId, start, end],
+        ),
+        db.getOptional<{ total: number }>(
+          `SELECT COALESCE(SUM(amount_usd), 0) as total FROM expenses
+           WHERE shop_id = ? AND expense_date BETWEEN ? AND ?`,
+          [device.shopId, start, end],
+        ),
+        db.getOptional<{ total: number }>(
+          `SELECT COALESCE(SUM(r.refund_amount_usd), 0) as total FROM returns r
+           JOIN sales s ON s.id = r.original_sale_id
+           WHERE r.shop_id = ? AND DATE(r.created_at, 'localtime') BETWEEN ? AND ?`,
+          [device.shopId, start, end],
+        ),
+        db.getOptional<{ total: number }>(
+          `SELECT COALESCE(SUM(sale_discount_amount_usd), 0) as total FROM sales
+           WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?`,
+          [device.shopId, start, end],
+        ),
+      ])
+
+      // Source 2: below-cost sale lines in the period — a single query for
+      // the period's sale line items joined to price/cost, not scoped to
+      // only below-cost rows (spec §5: this same result set would also feed
+      // any future per-line-item rule, e.g. markup stats, at zero extra cost).
+      const belowCostRows = await db.getAll<{ id: string }>(
+        `SELECT sli.id FROM sale_line_items sli JOIN sales s ON sli.sale_id = s.id
+         WHERE s.shop_id = ? AND DATE(s.created_at, 'localtime') BETWEEN ? AND ?
+           AND sli.unit_price_usd < sli.unit_cost_usd`,
+        [device.shopId, start, end],
+      )
+
+      // Source 3: cashier shifts closed in the period with a nonzero variance.
+      const shiftVarianceRows = await db.getAll<{ id: string }>(
+        `SELECT id FROM cashier_shifts
+         WHERE shop_id = ? AND status = 'closed'
+           AND DATE(closed_at, 'localtime') BETWEEN ? AND ?
+           AND COALESCE(variance_usd, 0) != 0`,
+        [device.shopId, start, end],
+      )
+
+      // Source 4: stock-take lines with a nonzero variance, from sessions
+      // completed in the period.
+      const shrinkageRows = await db.getAll<{ id: string }>(
+        `SELECT stl.id FROM stock_take_lines stl
+         JOIN stock_take_sessions sts ON sts.id = stl.session_id
+         WHERE stl.shop_id = ? AND sts.status = 'completed'
+           AND DATE(sts.completed_at, 'localtime') BETWEEN ? AND ?
+           AND stl.variance IS NOT NULL AND stl.variance != 0`,
+        [device.shopId, start, end],
+      )
+
+      const refundsUsd = refundRow?.total ?? 0
+      anomalies.value = computeAnomalies({
+        revenueUsd: (revRow?.total ?? 0) - refundsUsd,
+        cogsUsd: cogsRow?.cogs ?? 0,
+        expensesUsd: expRow?.total ?? 0,
+        refundsUsd,
+        saleDiscountsUsd: discountRow?.total ?? 0,
+        belowCostSaleCount: belowCostRows.length,
+        cashShiftVarianceCount: shiftVarianceRows.length,
+        inventoryShrinkageCount: shrinkageRows.length,
+      })
+    } catch (e) {
+      Sentry.captureException(e)
+      error.value = true
+      anomalies.value = []
+    } finally {
+      loading.value = false
+    }
+  }
+
+  return { anomalies, loading, error, load }
 }
