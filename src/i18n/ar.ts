@@ -136,7 +136,7 @@ export default {
   dashboard: {
     profitEstimatedBadge:   'تقديري',
     profitEstimatedCaveat:  'ربح تقديري — {count} عملية بيع بدون تكلفة، الربح الحقيقي أقل',
-    profitEstimatedFixHint: 'أضف سعر التكلفة',
+    profitEstimatedFixHint: 'راجع المنتجات ذات التكلفة غير الدقيقة',
   },
   // Reporting Pack — profit report screen (/reports). Plain shop-owner language.
   reports: {

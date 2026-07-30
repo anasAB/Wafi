@@ -72,10 +72,8 @@ describe('ProductList — WAFI-013 cost freshness', () => {
     const wrapper = mount(ProductList, {
       props: { products: [missing, stale, fresh, lowStockOnly], filterImpreciseCost: true },
     })
-    expect(wrapper.findAll('[data-testid^="product-card-"]').map(w => w.attributes('data-testid'))).toEqual(
-      expect.arrayContaining(['product-card-p-missing', 'product-card-p-stale']),
-    )
-    expect(wrapper.text()).not.toContain('حليب')  // sanity: not asserting on unrelated content
+    const ids = wrapper.findAll('[data-testid^="product-card-"]').map(w => w.attributes('data-testid')) as string[]
+    expect(ids.sort()).toEqual(['product-card-p-missing', 'product-card-p-stale'].sort())
   })
 
   it('imprecise-cost labels are always visible, even when the filter is not active', () => {
