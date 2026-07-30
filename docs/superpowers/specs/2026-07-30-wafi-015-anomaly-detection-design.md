@@ -3,6 +3,11 @@
 > Design spec. Status: proposed, awaiting implementation plan.
 > Date: 2026-07-30.
 
+## Cross-Epic Edge-Case Checklist (design time)
+Domains touched: Sales, Returns, Inventory, Cash/Shifts, Products/Cost (WAFI-013 adjacency only — see §2), Reports/Dashboard.
+Matrix rows consulted: Sales, Returns, Inventory, Cash/Shifts, Products/Cost (`AI_PRINCIPAL_ENGINEER_REVIEW.md`'s Domain Interaction Matrix).
+Open cross-feature questions: none identified beyond what's already resolved in §2 (stale/missing cost is deliberately kept out of this engine, owned by WAFI-013, to avoid two features computing the same signal) and §7 (dismissal is per-device, not per-user — an accepted v1 limitation, not an open question).
+
 ---
 
 ## 1. Problem
