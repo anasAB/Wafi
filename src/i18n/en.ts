@@ -146,8 +146,6 @@ export default {
     tabCategory: 'By Category',
     topExpensesTitle: 'Top expenses',
     clearFilter: 'Clear filter',
-    expenseAnomaly: '⚠️ Your expenses are unusually high this period.',
-    returnsAnomaly: '⚠️ Returns are higher than usual.',
     chartBasisNote: 'The chart shows cumulative profit in USD from the start of the period: (gross income - returns - COGS - expenses).',
     chartTapHint: 'Tap a point to open its details instantly.',
     openSelectedPointDetails: 'Number details',
@@ -171,5 +169,23 @@ export default {
     cashMovementFootnote: 'Cash movements are not counted toward profit.',
     cashMovementInfo: 'Cash movements (pay-in, pay-out) are pure cash transfers, not income or expense — that is why they do not appear in this report. See shift history to view them.',
     viewCashMovements: 'View cash movements',
+  },
+  // WAFI-015: Anomaly detection — 7 anomaly types with localized titles and messages.
+  // Consumed by AnomalyBanner.vue and ReportsPage.vue.
+  anomalies: {
+    HIGH_EXPENSES_RATIO: { title: 'High expenses', message: 'Your expenses are unusually high this period.' },
+    HIGH_RETURNS_RATIO: { title: 'High returns', message: 'Returns are higher than usual this period.' },
+    LOW_MARGIN: { title: 'Low profit margin', message: 'Your overall profit margin is lower than usual this period.' },
+    SALE_BELOW_COST: { title: 'Sale below cost', message: '{count} sale(s) sold below cost this period.' },
+    HIGH_DISCOUNT_RATIO: { title: 'High discount activity', message: 'Discounts given this period are higher than usual.' },
+    CASH_SHIFT_VARIANCE: { title: 'Cash shift variance', message: '{count} shift(s) closed with an unusual cash variance this period.' },
+    INVENTORY_SHRINKAGE: { title: 'Inventory shrinkage', message: '{count} product(s) had an unusual stock-take variance this period.' },
+  },
+  // WAFI-015: Anomaly banner on home screen — alert banner and expand UI.
+  home: {
+    anomalyBannerTitle: '{count} thing(s) need your attention',
+    anomalyBannerDismiss: 'Dismiss',
+    anomalyBannerError: 'Unable to check for issues right now',
+    anomalyBannerExpand: 'Show details',
   },
 }
