@@ -78,7 +78,55 @@ Also add `cost_updated_at: column.text` to the `products` table definition in
 confirmed the existing convention there is `column.text` for every other timestamp
 column on this table, e.g. `created_at`/`updated_at`, not a dedicated date type).
 
-## Stamping `cost_updated_at` — two write paths, two different rules
+## Invariant: every write path that changes `cost_price_usd` must apply these rules
+
+**Every code path that writes `products.cost_price_usd` must also apply the
+`cost_updated_at` rules in this section — the three (now four) write paths named below
+are the ones audited at design time, not a closed, permanently-complete list.** A future
+write path this design didn't anticipate (a bulk price-adjustment tool, a supplier
+price-sync integration, anything else) must be checked against this invariant when it's
+built, not assumed exempt because it wasn't named here.
+
+**Confirmed by grepping every `cost_price_usd` write in the codebase at design time**,
+there are four, not three — the original draft of this design missed one:
+
+1. `useProducts.ts::save()` — manual product edit (compare-before-stamp rule, below).
+2. `useProducts.ts::save()`'s creation branch — new product (unconditional-stamp rule,
+   below).
+3. `useReceivingSheet.ts` — receiving flow (unconditional-stamp rule, below).
+4. **`useProductImport.ts::commitImport()` (Excel/CSV bulk import) — genuinely missed by
+   the first draft of this design, found only by grepping every `cost_price_usd` write
+   site rather than trusting the assumed list of three.** Its `INSERT INTO products`
+   (line 45-57) binds `costUsd ?? 0` — a real, non-null cost when the imported
+   spreadsheet's row has one. This must stamp `cost_updated_at = now` (reusing the `now`
+   already computed at line 31 for `created_at`/`updated_at`) whenever the resolved
+   `costUsd` is a real positive number, following the same unconditional rule as manual
+   creation — entering a cost via import is exactly as much a confirmation of that value
+   as entering it by hand. When `costUsd` resolves to `null`/`0` (the sheet's cost column
+   was blank for that row), leave `cost_updated_at` `NULL`, same as any other
+   no-cost-provided creation.
+
+**Not a write path, confirmed and excluded deliberately:** `useSale.ts`'s open-item
+INSERT (WAFI-101, an ad-hoc product created inline during a sale from an unrecognized
+barcode) hard-codes `cost_price_usd` to the literal `0` in the SQL itself, never a bound
+variable — it can never set a real cost, so there's nothing to stamp; it's correctly
+caught by the missing-cost half of the filter like any other zero-cost product, needing
+no special handling. `usePayment.ts` and `useSale.ts`'s product lookups only `SELECT
+cost_price_usd` (read, not write) — irrelevant to this invariant.
+
+## PowerSync sync rules — verify before shipping, not a design-time assumption
+
+**No sync-rules file exists anywhere in this repository** — PowerSync sync rules are
+configured in the hosted PowerSync dashboard, not version-controlled alongside this
+codebase, so this design cannot state from the repo alone whether they enumerate
+`products` columns explicitly or use a wildcard select. **Implementation checklist item,
+not a design decision:** before this ships, confirm whether the shop's PowerSync sync
+rules for `products` name columns explicitly; if they do, `cost_updated_at` must be
+added to that list or it will silently never sync to any device despite being written
+correctly and passing every local test. If they're wildcard-based, this is a non-issue.
+Do not assume either answer — check the actual dashboard configuration.
+
+## Stamping `cost_updated_at` — four write paths, two different rules
 
 **`useProducts.ts::save()` (manual product edit)** — must stamp `cost_updated_at` **only
 when the cost value itself actually changes**, not on every save (the existing `UPDATE`
@@ -105,6 +153,14 @@ depending on a future edit to ever become "fresh" even though its cost was accur
 moment it was entered. A product created with no cost (`costPriceUsd <= 0`, e.g. a
 quick-add from an unknown barcode scan) stays `NULL` — nothing to confirm yet, caught by
 the missing-cost half of the filter until someone sets a real cost.
+
+**`useProductImport.ts::commitImport()` (Excel/CSV bulk import)** — stamp `cost_updated_at
+= now` **unconditionally** for each inserted row whenever the resolved `costUsd` (after
+currency conversion, `useProductImport.ts:38`) is a real positive number. Same
+unconditional rule as manual creation and receiving — bulk-importing a cost from a
+spreadsheet is exactly as much a confirmation of that value as typing it into the
+product form by hand. Rows where the sheet's cost column was blank (`costUsd` resolves
+to `null`/`0`) leave `cost_updated_at` `NULL`, same as any other no-cost creation.
 
 **The missing → fresh transition (the most important one to get right):** a product
 created with cost `0`, later edited to set cost `5.00`, must end up with `cost_updated_at
@@ -235,24 +291,32 @@ at all.
    test 3's general "cost changed" case.
 6. `useReceivingSheet.ts`: confirming a cost during receiving stamps `cost_updated_at`
    even when the confirmed value equals the product's existing cost.
-7. `isCostStale()`: a product with `cost_price_usd <= 0` returns `false` regardless of
+7. `useReceivingSheet.ts` with `line.updateCost = false`: `cost_updated_at` is left
+   completely unchanged — the exact regression class that shows up during a refactor
+   (someone hoists the stamp out of the `if (line.updateCost && ...)` guard "to simplify
+   it" and it silently starts firing on every receiving line regardless of whether the
+   owner actually opted in to updating cost for that line).
+8. `useProductImport.ts::commitImport()`: an imported row with a real cost column value
+   stamps `cost_updated_at = now`; a row with a blank cost column leaves it `NULL` —
+   proves the fourth write path, not just the three originally assumed.
+9. `isCostStale()`: a product with `cost_price_usd <= 0` returns `false` regardless of
    `cost_updated_at` (missing takes priority, never double-counted as stale).
-8. `isCostStale()` boundary: with the predicate as written (`ageDays > COST_STALE_AFTER_DAYS`),
-   exactly 90.0 days old returns `false` (not yet stale), 91 days old returns `true`, 89
-   days old returns `false`. Assert all three explicitly — the exact-90 case is the one
-   most likely to silently flip if the comparison operator is ever changed from `>` to
-   `>=` without anyone noticing.
-9. `isCostStale()`: a product with a real cost and `cost_updated_at` NULL returns
-   `false` (not flagged — no signal yet, per the "unknown, not stale" rule for
-   never-backfilled/never-touched rows).
-10. Combined filter: a list with one missing-cost product, one stale product, one fresh
+10. `isCostStale()` boundary: with the predicate as written (`ageDays > COST_STALE_AFTER_DAYS`),
+    exactly 90.0 days old returns `false` (not yet stale), 91 days old returns `true`, 89
+    days old returns `false`. Assert all three explicitly — the exact-90 case is the one
+    most likely to silently flip if the comparison operator is ever changed from `>` to
+    `>=` without anyone noticing.
+11. `isCostStale()`: a product with a real cost and `cost_updated_at` NULL returns
+    `false` (not flagged — no signal yet, per the "unknown, not stale" rule for
+    never-backfilled/never-touched rows).
+12. Combined filter: a list with one missing-cost product, one stale product, one fresh
     product, and one low-stock-but-fine-cost product — the imprecise-cost filter returns
     exactly the first two.
-11. Migration 073's backfill: a product with `cost_price_usd > 0` and pre-existing
+13. Migration 073's backfill: a product with `cost_price_usd > 0` and pre-existing
     `updated_at` gets `cost_updated_at` set to that same value; a product with
     `cost_price_usd <= 0` stays `NULL`.
-12. Count badge reflects the combined filter's count, not just the missing-cost count.
-13. `route.query.filter === 'missing-cost'` (the old value) still activates
+14. Count badge reflects the combined filter's count, not just the missing-cost count.
+15. `route.query.filter === 'missing-cost'` (the old value) still activates
     `filterImpreciseCost`, exactly the same as `'imprecise-cost'` — proves the backward-
     compatibility alias actually works, not just that the new value does.
 
