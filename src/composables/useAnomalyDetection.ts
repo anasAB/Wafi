@@ -167,50 +167,38 @@ export function computeAnomalies(input: AnomalyInput): Anomaly[] {
   return anomalies.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
 }
 
+// Revenue/COGS/expenses/refunds are NEVER re-queried here — they come from
+// the caller's own useDashboardMetrics() instance, passed in via `load()`'s
+// second argument. This is a deliberate correction after Task 2's review
+// found the original design duplicating useDashboardMetrics.ts's aggregate
+// queries with divergent (bugged) COGS math — see plan §2a. There must be
+// exactly one implementation of that math in the codebase.
+export interface DashboardMetricsSnapshot {
+  revenueUsd: number
+  cogsUsd: number
+  expensesUsd: number
+  refundsUsd: number
+}
+
 export function useAnomalyDetection() {
   const device    = useDeviceStore()
   const anomalies = ref<Anomaly[]>([])
   const loading   = ref(false)
   const error     = ref(false)
 
-  async function load(period: Period) {
+  async function load(period: Period, dashboardMetrics: DashboardMetricsSnapshot) {
     loading.value = true
     error.value = false
     const { start, end } = getDateRange(period)
 
     try {
-      // Source 1: dashboard-style revenue/cogs/expenses/refunds/discounts —
-      // one query each via getOptional (matches useDashboardMetrics' own
-      // pattern), not a fan-out per anomaly rule.
-      const [revRow, cogsRow, expRow, refundRow, discountRow] = await Promise.all([
-        db.getOptional<{ total: number }>(
-          `SELECT COALESCE(SUM(total_usd), 0) as total FROM sales
-           WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?`,
-          [device.shopId, start, end],
-        ),
-        db.getOptional<{ cogs: number }>(
-          `SELECT COALESCE(SUM(sli.quantity * COALESCE(sli.unit_cost_usd, 0)), 0) as cogs
-           FROM sale_line_items sli JOIN sales s ON sli.sale_id = s.id
-           WHERE s.shop_id = ? AND DATE(s.created_at, 'localtime') BETWEEN ? AND ?`,
-          [device.shopId, start, end],
-        ),
-        db.getOptional<{ total: number }>(
-          `SELECT COALESCE(SUM(amount_usd), 0) as total FROM expenses
-           WHERE shop_id = ? AND expense_date BETWEEN ? AND ?`,
-          [device.shopId, start, end],
-        ),
-        db.getOptional<{ total: number }>(
-          `SELECT COALESCE(SUM(r.refund_amount_usd), 0) as total FROM returns r
-           JOIN sales s ON s.id = r.original_sale_id
-           WHERE r.shop_id = ? AND DATE(r.created_at, 'localtime') BETWEEN ? AND ?`,
-          [device.shopId, start, end],
-        ),
-        db.getOptional<{ total: number }>(
-          `SELECT COALESCE(SUM(sale_discount_amount_usd), 0) as total FROM sales
-           WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?`,
-          [device.shopId, start, end],
-        ),
-      ])
+      // Source 1: discount total — the one aggregate useDashboardMetrics
+      // does not already compute, so it is fetched here, not duplicated.
+      const discountRow = await db.getOptional<{ total: number }>(
+        `SELECT COALESCE(SUM(sale_discount_amount_usd), 0) as total FROM sales
+         WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?`,
+        [device.shopId, start, end],
+      )
 
       // Source 2: below-cost sale lines in the period — a single query for
       // the period's sale line items joined to price/cost, not scoped to
@@ -243,12 +231,11 @@ export function useAnomalyDetection() {
         [device.shopId, start, end],
       )
 
-      const refundsUsd = refundRow?.total ?? 0
       anomalies.value = computeAnomalies({
-        revenueUsd: (revRow?.total ?? 0) - refundsUsd,
-        cogsUsd: cogsRow?.cogs ?? 0,
-        expensesUsd: expRow?.total ?? 0,
-        refundsUsd,
+        revenueUsd: dashboardMetrics.revenueUsd,
+        cogsUsd: dashboardMetrics.cogsUsd,
+        expensesUsd: dashboardMetrics.expensesUsd,
+        refundsUsd: dashboardMetrics.refundsUsd,
         saleDiscountsUsd: discountRow?.total ?? 0,
         belowCostSaleCount: belowCostRows.length,
         cashShiftVarianceCount: shiftVarianceRows.length,

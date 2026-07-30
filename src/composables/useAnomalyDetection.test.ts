@@ -117,12 +117,26 @@ describe('useAnomalyDetection (data orchestrator)', () => {
     vi.mocked(db.getAll).mockResolvedValue([])
   })
 
-  it('issues at most one query per data source (sales+lines, shifts, stock-take)', async () => {
+  const dashboardMetrics = { revenueUsd: 1000, cogsUsd: 400, expensesUsd: 100, refundsUsd: 0 }
+
+  it('issues exactly 4 queries total: 1 getOptional (discount) + 3 getAll (below-cost, shifts, shrinkage)', async () => {
     const { load } = useAnomalyDetection()
-    await load('today')
-    // getOptional covers the reused dashboard-style aggregates (revenue/cogs/expenses/refunds/discounts);
-    // getAll covers the 3 batched row-level sources (below-cost lines, shift variances, stock-take variances).
+    await load('today', dashboardMetrics)
+    expect(vi.mocked(db.getOptional).mock.calls.length).toBe(1)
     expect(vi.mocked(db.getAll).mock.calls.length).toBe(3)
+  })
+
+  it('never re-queries revenue/cogs/expenses/refunds — computeAnomalies receives exactly the passed-in dashboardMetrics values', async () => {
+    // Regression guard for the Task-2 review finding: an earlier draft
+    // re-implemented these aggregates with its own SQL (diverging from
+    // useDashboardMetrics' COGS-reversal logic). This test asserts the
+    // orchestrator's only getOptional call is the discount query — if a
+    // future change reintroduces a revenue/cogs/expenses/refunds query,
+    // this count catches it immediately.
+    const { load, anomalies } = useAnomalyDetection()
+    await load('today', { revenueUsd: 1000, cogsUsd: 850, expensesUsd: 100, refundsUsd: 0 }) // low margin
+    expect(vi.mocked(db.getOptional).mock.calls.length).toBe(1)
+    expect(anomalies.value.some(a => a.code === 'LOW_MARGIN')).toBe(true)
   })
 
   it('adding a rule that reuses an already-batched source adds zero queries', async () => {
@@ -131,16 +145,18 @@ describe('useAnomalyDetection (data orchestrator)', () => {
     // asserted by checking the call count is unchanged from the baseline
     // above rather than growing with computeAnomalies' rule count.
     const { load } = useAnomalyDetection()
-    await load('today')
-    const baselineCalls = vi.mocked(db.getAll).mock.calls.length
-    await load('today')
-    expect(vi.mocked(db.getAll).mock.calls.length).toBe(baselineCalls * 2) // same per-call count each time, not growing
+    await load('today', dashboardMetrics)
+    const baselineGetAll = vi.mocked(db.getAll).mock.calls.length
+    const baselineGetOptional = vi.mocked(db.getOptional).mock.calls.length
+    await load('today', dashboardMetrics)
+    expect(vi.mocked(db.getAll).mock.calls.length).toBe(baselineGetAll * 2)
+    expect(vi.mocked(db.getOptional).mock.calls.length).toBe(baselineGetOptional * 2)
   })
 
   it('sets error=true and anomalies=[] when a query throws, without throwing itself', async () => {
     vi.mocked(db.getAll).mockRejectedValueOnce(new Error('offline'))
     const { load, error, anomalies } = useAnomalyDetection()
-    await load('today')
+    await load('today', dashboardMetrics)
     expect(error.value).toBe(true)
     expect(anomalies.value).toEqual([])
   })
