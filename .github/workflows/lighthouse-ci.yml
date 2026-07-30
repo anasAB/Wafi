@@ -1,0 +1,60 @@
+name: Lighthouse CI
+
+# WAFI-020 Phase 1. Informational only — continue-on-error, matching the
+# design-system-check.yml (WAFI-005) precedent: report, never block. Audits
+# /welcome only — the one route reachable with no login session (see
+# docs/superpowers/specs/2026-07-30-wafi-020-lighthouse-ci-design.md's
+# "auth-wall finding" for why /pos, /products, etc. are out of scope for
+# this first pass).
+#
+# No browser-install step is needed: GitHub's ubuntu-latest runner ships a
+# Chrome/Chromium build already compatible with Lighthouse.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  lighthouse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches design-system-check.yml's node-version (WAFI-005) — this is
+          # not independently pinned anywhere else in the repo (no `engines`
+          # field in package.json, no .nvmrc). If the project's Node version is
+          # ever bumped, this workflow should be updated alongside
+          # design-system-check.yml, the actual precedent it's copied from;
+          # nothing currently enforces the two staying in sync automatically.
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run Lighthouse CI
+        continue-on-error: true
+        uses: treosh/lighthouse-ci-action@v11
+        with:
+          # staticDistDir/isSinglePageApplication/url all live in
+          # .lighthouserc.json (repo root), not as direct action inputs —
+          # there is no such input on this action. configPath is the only
+          # thing wiring the two files together.
+          configPath: './.lighthouserc.json'
+          uploadArtifacts: true
+          # Phase 1 audits only the public /welcome page — there is no
+          # authenticated business data in what gets uploaded, so free
+          # temporary public report hosting is fine. This would need
+          # re-evaluating if a later phase ever audits an authenticated route.
+          temporaryPublicStorage: true
+          # Deliberately 1, not Lighthouse's usual multi-run default: this
+          # phase is informational-only with no pass/fail gate riding on the
+          # score, so the variance-reduction that multiple runs buys isn't
+          # worth 3x the CI time yet. Don't "fix" this to 3 without
+          # re-reading this comment — it's intentional, not an oversight.
+          runs: 1
