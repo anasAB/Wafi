@@ -59,7 +59,7 @@ export function useProfitTrend() {
       // Joined to the original sale so a source filter also excludes refunds
       // against an excluded sale (matches useDashboardMetrics.ts's refund query).
       db.getAll<{ day: string; total: number }>(
-        `SELECT ${sb} as day, COALESCE(SUM(r.refund_amount_usd), 0) as total
+        `SELECT ${sbR} as day, COALESCE(SUM(r.refund_amount_usd), 0) as total
          FROM returns r JOIN sales s ON s.id = r.original_sale_id
          WHERE r.shop_id = ? AND DATE(r.created_at, 'localtime') BETWEEN ? AND ?${s.clause}
          GROUP BY day`, [device.shopId, start, end, ...s.params]),

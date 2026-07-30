@@ -12,6 +12,7 @@ import { usePwaLifecycle } from '@/composables/usePwaLifecycle'
 import { useShiftStore } from '@/features/shifts/shift.store'
 import { useShift }      from '@/features/shifts/composables/useShift'
 import { useStaff }      from '@/features/staff/composables/useStaff'
+import { useDeviceStore } from '@/store/device.store'
 import LockScreen        from '@/features/shifts/components/LockScreen.vue'
 import IdleLockOverlay   from '@/features/shifts/components/IdleLockOverlay.vue'
 import { useIdleLock }   from '@/composables/useIdleLock'
@@ -74,6 +75,21 @@ onMounted(async () => {
       new Promise(resolve => setTimeout(resolve, 8000)),
     ]).catch(() => { /* offline/error — fall back to local state */ })
   }
+
+  // hasAnyStaff() below filters by device.shopId, which device.store.ts
+  // resolves independently (off the SIGNED_IN auth event or a PowerSync
+  // reconnect) from the local `shops` row -- NOT from the sync checkpoint
+  // awaited above. On a cold start (full site-data clear + fresh login,
+  // found live 2026-07-29) that resolution can still be mid-flight here even
+  // though `shops`/`staff` have already synced locally, leaving
+  // device.shopId at its empty fallback. hasAnyStaff() would then query
+  // `WHERE shop_id = ''`, match nothing, and — since this check runs only
+  // once and is never retried — permanently misreport hasStaff as false for
+  // the whole session, skipping LockScreen and leaving every gated route to
+  // bounce through the router's redirect chain instead. Awaiting it directly
+  // here (it only reads the already-synced local `shops` table, no extra
+  // network round trip) closes that race.
+  await useDeviceStore().refreshShopId()
 
   // Durably seed the receipt counter from already-synced sales, so a cache clear
   // / PWA reinstall / new device can't re-issue a receipt number that already
