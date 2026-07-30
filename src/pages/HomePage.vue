@@ -186,7 +186,7 @@ function handleDismissDailyDigest() {
 // the products missing a cost, so the owner can fix the source of the estimate.
 function goToMissingCostProducts() {
   showProfitSheet.value = false
-  router.push('/products?filter=missing-cost')
+  router.push('/products?filter=imprecise-cost')
 }
 
 const canStartSale = computed(() => currentRate.value !== null)
