@@ -12,7 +12,17 @@
 
 - Reference spec: `docs/superpowers/specs/2026-07-30-wafi-015-anomaly-detection-design.md` — every requirement below traces back to it; if anything here seems to contradict it, the spec wins and this plan has a bug.
 - **7 anomaly codes, exact names:** `HIGH_EXPENSES_RATIO`, `HIGH_RETURNS_RATIO`, `LOW_MARGIN`, `SALE_BELOW_COST`, `HIGH_DISCOUNT_RATIO`, `CASH_SHIFT_VARIANCE`, `INVENTORY_SHRINKAGE`.
-- **Query-batching contract:** `useAnomalyDetection()`'s data-fetching orchestrator issues at most one query per data source (dashboard metrics reused, not re-queried; one query for period sales+line items; one query for cashier shifts; one query for stock-take lines). Adding a rule that reuses an existing source must add zero queries — this is asserted by a test, not just documented.
+- **Query-batching contract:** `useAnomalyDetection()`'s data-fetching orchestrator issues at most one query per data source it owns (below-cost sale lines; cashier shifts; stock-take lines; discount total), and **never re-implements revenue/COGS/expenses/refunds math** — those come in as parameters from the caller's own `useDashboardMetrics()` instance (see §2a, added after Task 2's review found the original design duplicating and diverging from `useDashboardMetrics.ts`'s COGS-reversal logic). Adding a rule that reuses an existing source must add zero queries — this is asserted by a test, not just documented.
+
+### 2a. Revised Task 2 interface (post-review correction)
+
+Task 2's original design had `useAnomalyDetection()` independently re-querying revenue/COGS/expenses/refunds with its own SQL, duplicating `useDashboardMetrics.ts` and — critically — omitting the COGS-reversal-for-restocked-returns subtraction that composable applies, which could make the anomaly engine disagree with the dashboard on the same period's numbers. **Corrected interface:** `useAnomalyDetection()` no longer fetches revenue/COGS/expenses/refunds itself. Its `load()` signature becomes:
+
+```ts
+load(period: Period, dashboardMetrics: { revenueUsd: number; cogsUsd: number; expensesUsd: number; refundsUsd: number }): Promise<void>
+```
+
+The caller (Task 5's `AnomalyBanner.vue`, Task 7's `ReportsPage.vue`) must have its own `useDashboardMetrics()` instance already loaded for the same period and pass its current `.value`s in — guaranteeing the anomaly engine and the dashboard/report page can never diverge on revenue/COGS/expenses/refunds, since there is exactly one implementation of that math (`useDashboardMetrics.ts`) and `useAnomalyDetection` never reimplements it. `useAnomalyDetection()` itself still owns and queries: the discount total (1 query), below-cost sale lines (1 query), cashier-shift variances (1 query), and stock-take variances (1 query) — 4 queries total per `load()` call, none of them duplicating dashboard logic.
 - **One anomaly per rule** regardless of how many underlying rows triggered it (e.g. 15 below-cost sales → one `SALE_BELOW_COST` anomaly with a count in its message).
 - **Severity lives in `ANOMALY_RULES` config**, never hardcoded in a rule function or the `Anomaly` type consumer.
 - **Dismissal key:** `wafi:anomaly-dismissed:{shopId}:{date}:{periodKey}:{code}`, localStorage, per-device (not per-user) — documented, not fixed, as a v1 limitation.
@@ -347,7 +357,7 @@ git commit -m "feat(anomalies): add shared anomaly rules engine (WAFI-015)"
 
 **Interfaces:**
 - Consumes: `computeAnomalies`, `AnomalyInput`, `Anomaly` from Task 1 (same file). `db.getOptional`/`db.getAll` from `@/data/powersync/db`. `useDeviceStore()` from `@/store/device.store` for `shopId`. `getDateRange(period)` from `@/features/dashboard/composables/periodUtils`.
-- Produces: `useAnomalyDetection()` returning `{ anomalies: Ref<Anomaly[]>, loading: Ref<boolean>, error: Ref<boolean>, load(period: Period): Promise<void> }` — Tasks 4 and 6 both call this.
+- Produces: `useAnomalyDetection()` returning `{ anomalies: Ref<Anomaly[]>, loading: Ref<boolean>, error: Ref<boolean>, load(period: Period, dashboardMetrics: DashboardMetricsSnapshot): Promise<void> }`, and the `DashboardMetricsSnapshot` type (`{ revenueUsd, cogsUsd, expensesUsd, refundsUsd }`) — Tasks 5 and 7 both call this, and must each have their own `useDashboardMetrics()` instance already loaded for the same period to pass in (see §2a).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -371,12 +381,26 @@ describe('useAnomalyDetection (data orchestrator)', () => {
     vi.mocked(db.getAll).mockResolvedValue([])
   })
 
-  it('issues at most one query per data source (sales+lines, shifts, stock-take)', async () => {
+  const dashboardMetrics = { revenueUsd: 1000, cogsUsd: 400, expensesUsd: 100, refundsUsd: 0 }
+
+  it('issues exactly 4 queries total: 1 getOptional (discount) + 3 getAll (below-cost, shifts, shrinkage)', async () => {
     const { load } = useAnomalyDetection()
-    await load('today')
-    // getOptional covers the reused dashboard-style aggregates (revenue/cogs/expenses/refunds/discounts);
-    // getAll covers the 3 batched row-level sources (below-cost lines, shift variances, stock-take variances).
+    await load('today', dashboardMetrics)
+    expect(vi.mocked(db.getOptional).mock.calls.length).toBe(1)
     expect(vi.mocked(db.getAll).mock.calls.length).toBe(3)
+  })
+
+  it('never re-queries revenue/cogs/expenses/refunds — computeAnomalies receives exactly the passed-in dashboardMetrics values', async () => {
+    // Regression guard for the Task-2 review finding: an earlier draft
+    // re-implemented these aggregates with its own SQL (diverging from
+    // useDashboardMetrics' COGS-reversal logic). This test asserts the
+    // orchestrator's only getOptional call is the discount query — if a
+    // future change reintroduces a revenue/cogs/expenses/refunds query,
+    // this count catches it immediately.
+    const { load, anomalies } = useAnomalyDetection()
+    await load('today', { revenueUsd: 1000, cogsUsd: 850, expensesUsd: 100, refundsUsd: 0 }) // low margin
+    expect(vi.mocked(db.getOptional).mock.calls.length).toBe(1)
+    expect(anomalies.value.some(a => a.code === 'LOW_MARGIN')).toBe(true)
   })
 
   it('adding a rule that reuses an already-batched source adds zero queries', async () => {
@@ -385,16 +409,18 @@ describe('useAnomalyDetection (data orchestrator)', () => {
     // asserted by checking the call count is unchanged from the baseline
     // above rather than growing with computeAnomalies' rule count.
     const { load } = useAnomalyDetection()
-    await load('today')
-    const baselineCalls = vi.mocked(db.getAll).mock.calls.length
-    await load('today')
-    expect(vi.mocked(db.getAll).mock.calls.length).toBe(baselineCalls * 2) // same per-call count each time, not growing
+    await load('today', dashboardMetrics)
+    const baselineGetAll = vi.mocked(db.getAll).mock.calls.length
+    const baselineGetOptional = vi.mocked(db.getOptional).mock.calls.length
+    await load('today', dashboardMetrics)
+    expect(vi.mocked(db.getAll).mock.calls.length).toBe(baselineGetAll * 2)
+    expect(vi.mocked(db.getOptional).mock.calls.length).toBe(baselineGetOptional * 2)
   })
 
   it('sets error=true and anomalies=[] when a query throws, without throwing itself', async () => {
     vi.mocked(db.getAll).mockRejectedValueOnce(new Error('offline'))
     const { load, error, anomalies } = useAnomalyDetection()
-    await load('today')
+    await load('today', dashboardMetrics)
     expect(error.value).toBe(true)
     expect(anomalies.value).toEqual([])
   })
@@ -417,50 +443,38 @@ import { getDateRange } from '@/features/dashboard/composables/periodUtils'
 import type { Period } from '@/features/dashboard/composables/periodUtils'
 import * as Sentry from '@sentry/vue'
 
+// Revenue/COGS/expenses/refunds are NEVER re-queried here — they come from
+// the caller's own useDashboardMetrics() instance, passed in via `load()`'s
+// second argument. This is a deliberate correction after Task 2's review
+// found the original design duplicating useDashboardMetrics.ts's aggregate
+// queries with divergent (bugged) COGS math — see plan §2a. There must be
+// exactly one implementation of that math in the codebase.
+export interface DashboardMetricsSnapshot {
+  revenueUsd: number
+  cogsUsd: number
+  expensesUsd: number
+  refundsUsd: number
+}
+
 export function useAnomalyDetection() {
   const device    = useDeviceStore()
   const anomalies = ref<Anomaly[]>([])
   const loading   = ref(false)
   const error     = ref(false)
 
-  async function load(period: Period) {
+  async function load(period: Period, dashboardMetrics: DashboardMetricsSnapshot) {
     loading.value = true
     error.value = false
     const { start, end } = getDateRange(period)
 
     try {
-      // Source 1: dashboard-style revenue/cogs/expenses/refunds/discounts —
-      // one query each via getOptional (matches useDashboardMetrics' own
-      // pattern), not a fan-out per anomaly rule.
-      const [revRow, cogsRow, expRow, refundRow, discountRow] = await Promise.all([
-        db.getOptional<{ total: number }>(
-          `SELECT COALESCE(SUM(total_usd), 0) as total FROM sales
-           WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?`,
-          [device.shopId, start, end],
-        ),
-        db.getOptional<{ cogs: number }>(
-          `SELECT COALESCE(SUM(sli.quantity * COALESCE(sli.unit_cost_usd, 0)), 0) as cogs
-           FROM sale_line_items sli JOIN sales s ON sli.sale_id = s.id
-           WHERE s.shop_id = ? AND DATE(s.created_at, 'localtime') BETWEEN ? AND ?`,
-          [device.shopId, start, end],
-        ),
-        db.getOptional<{ total: number }>(
-          `SELECT COALESCE(SUM(amount_usd), 0) as total FROM expenses
-           WHERE shop_id = ? AND expense_date BETWEEN ? AND ?`,
-          [device.shopId, start, end],
-        ),
-        db.getOptional<{ total: number }>(
-          `SELECT COALESCE(SUM(r.refund_amount_usd), 0) as total FROM returns r
-           JOIN sales s ON s.id = r.original_sale_id
-           WHERE r.shop_id = ? AND DATE(r.created_at, 'localtime') BETWEEN ? AND ?`,
-          [device.shopId, start, end],
-        ),
-        db.getOptional<{ total: number }>(
-          `SELECT COALESCE(SUM(sale_discount_amount_usd), 0) as total FROM sales
-           WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?`,
-          [device.shopId, start, end],
-        ),
-      ])
+      // Source 1: discount total — the one aggregate useDashboardMetrics
+      // does not already compute, so it is fetched here, not duplicated.
+      const discountRow = await db.getOptional<{ total: number }>(
+        `SELECT COALESCE(SUM(sale_discount_amount_usd), 0) as total FROM sales
+         WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?`,
+        [device.shopId, start, end],
+      )
 
       // Source 2: below-cost sale lines in the period — a single query for
       // the period's sale line items joined to price/cost, not scoped to
@@ -493,12 +507,11 @@ export function useAnomalyDetection() {
         [device.shopId, start, end],
       )
 
-      const refundsUsd = refundRow?.total ?? 0
       anomalies.value = computeAnomalies({
-        revenueUsd: (revRow?.total ?? 0) - refundsUsd,
-        cogsUsd: cogsRow?.cogs ?? 0,
-        expensesUsd: expRow?.total ?? 0,
-        refundsUsd,
+        revenueUsd: dashboardMetrics.revenueUsd,
+        cogsUsd: dashboardMetrics.cogsUsd,
+        expensesUsd: dashboardMetrics.expensesUsd,
+        refundsUsd: dashboardMetrics.refundsUsd,
         saleDiscountsUsd: discountRow?.total ?? 0,
         belowCostSaleCount: belowCostRows.length,
         cashShiftVarianceCount: shiftVarianceRows.length,
@@ -702,7 +715,7 @@ git commit -m "feat(anomalies): add i18n strings for anomaly banner and badges"
 - Test: `src/features/dashboard/components/AnomalyBanner.test.ts`
 
 **Interfaces:**
-- Consumes: `useAnomalyDetection()` (Task 2), `isDismissed`/`dismiss` from `useAnomalyDismissal` (Task 3), `useCan()` from `@/composables/useCan.ts` (`can('can_view_reports')`), `useDeviceStore()` for `shopId`, `t('anomalies.<code>.title'|'message', { count })` and `t('home.anomalyBanner*')` (Task 4).
+- Consumes: `useAnomalyDetection()` and `DashboardMetricsSnapshot` (Task 2, revised per §2a — this component owns its own `useDashboardMetrics()` instance and passes its loaded values into `load()`), `isDismissed`/`dismiss` from `useAnomalyDismissal` (Task 3), `useCan()` from `@/composables/useCan.ts` (`can('can_view_reports')`), `useDeviceStore()` for `shopId`, `t('anomalies.<code>.title'|'message', { count })` and `t('home.anomalyBanner*')` (Task 4), `useDashboardMetrics()` from `@/features/dashboard/composables/useDashboardMetrics.ts` (pre-existing).
 - Produces: a `<AnomalyBanner />` component with no props — Task 7 mounts it in `HomePage.vue`.
 
 **Design note on `{ count }`:** the shared engine's `Anomaly.message` (Task 1) already contains the final English count text (e.g. "15 sales sold below cost"). The i18n-driven display text is derived by re-extracting the count from the underlying data the banner already has (`anomalies` array doesn't carry a raw count field). To avoid parsing English text back out of `Anomaly.message`, this component displays `t('anomalies.<code>.message')` **without** interpolating a count for v1 — the pluralized/counted phrasing lives only in the English fallback inside `useAnomalyDetection.ts` used for Sentry/debugging, not the user-facing UI. This is a deliberate scope cut: exposing a `count` field on `Anomaly` (e.g. `Anomaly.count?: number`) for real i18n interpolation is a natural follow-up, not required for this ticket to ship a correct, honest banner.
@@ -734,6 +747,13 @@ vi.mock('@/composables/useAnomalyDismissal', () => ({
 }))
 vi.mock('@/store/device.store', () => ({
   useDeviceStore: () => ({ shopId: 'shop-1' }),
+}))
+const mockMetricsLoad = vi.fn()
+vi.mock('@/features/dashboard/composables/useDashboardMetrics', () => ({
+  useDashboardMetrics: () => ({
+    revenueUsd: { value: 0 }, cogsUsd: { value: 0 }, expensesUsd: { value: 0 }, refundsUsd: { value: 0 },
+    load: mockMetricsLoad,
+  }),
 }))
 
 const canViewReports = { value: true }
@@ -808,6 +828,7 @@ import { useAnomalyDetection } from '@/composables/useAnomalyDetection'
 import { isDismissed, dismiss } from '@/composables/useAnomalyDismissal'
 import { useCan } from '@/composables/useCan'
 import { useDeviceStore } from '@/store/device.store'
+import { useDashboardMetrics } from '@/features/dashboard/composables/useDashboardMetrics'
 
 const { t } = useI18n()
 const { can } = useCan()
@@ -815,11 +836,26 @@ const canViewReports = can('can_view_reports')
 const device = useDeviceStore()
 
 const { anomalies, error, load } = useAnomalyDetection()
+// This component owns its own dashboard-metrics instance rather than
+// receiving one via props — Home's own metrics instance is a separate,
+// independently-loaded object. Loading here guarantees the anomaly engine
+// reads the SAME revenue/COGS/expenses/refunds math as every other
+// consumer of useDashboardMetrics (see plan §2a) — it does not reduce
+// query count versus Home's own cards, but it eliminates the divergent-COGS
+// bug the Task 2 review found.
+const dashboardMetrics = useDashboardMetrics()
 const expanded = ref(false)
 const periodKey = 'today' // Home always evaluates anomalies against today's period.
 
-onMounted(() => {
-  if (canViewReports.value) load('today')
+onMounted(async () => {
+  if (!canViewReports.value) return
+  await dashboardMetrics.load('today')
+  await load('today', {
+    revenueUsd: dashboardMetrics.revenueUsd.value,
+    cogsUsd: dashboardMetrics.cogsUsd.value,
+    expensesUsd: dashboardMetrics.expensesUsd.value,
+    refundsUsd: dashboardMetrics.refundsUsd.value,
+  })
 })
 
 const visibleAnomalies = computed(() =>
@@ -961,7 +997,7 @@ git commit -m "feat(anomalies): mount AnomalyBanner on Home dashboard"
 - Delete: `src/__tests__/features/ReportAnomalies.test.ts`
 
 **Interfaces:**
-- Consumes: `useAnomalyDetection()` (Task 2) in place of `evaluateReportAnomalies` (deleted).
+- Consumes: `useAnomalyDetection()` and `DashboardMetricsSnapshot` (Task 2, revised per §2a) in place of `evaluateReportAnomalies` (deleted). This page already has its own `metrics` (`useDashboardMetrics()`) instance loaded — reuse its already-loaded values, do not create a second `useDashboardMetrics()` instance here.
 
 - [ ] **Step 1: Replace the import and computed in ReportsPage.vue**
 
@@ -977,9 +1013,18 @@ Add:
 ```ts
 import { useAnomalyDetection } from '@/composables/useAnomalyDetection'
 const { anomalies, load: loadAnomalies } = useAnomalyDetection()
+
+async function loadAnomaliesForPeriod() {
+  await loadAnomalies(period.value, {
+    revenueUsd: metrics.revenueUsd.value,
+    cogsUsd: metrics.cogsUsd.value,
+    expensesUsd: metrics.expensesUsd.value,
+    refundsUsd: metrics.refundsUsd.value,
+  })
+}
 ```
 
-Call `loadAnomalies(period.value)` alongside this page's existing metrics-loading call (find where `metrics.load(period.value)` is invoked — on mount and on period change — and add the same call there, so `anomalies` always reflects the page's selected period, not just "today").
+Find where this page currently calls `metrics.load(period.value)` (on mount and on period change) and add a call to `loadAnomaliesForPeriod()` immediately **after** that `metrics.load` call resolves (not in parallel — `metrics`'s values must already be updated before `loadAnomaliesForPeriod` reads them), so `anomalies` always reflects the page's selected period using the same values the page's own cards show.
 
 - [ ] **Step 2: Replace the template's hardcoded 2-badge block**
 
