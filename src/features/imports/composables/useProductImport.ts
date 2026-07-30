@@ -42,17 +42,21 @@ export function useProductImport() {
           // uncategorized (category/category_id/subcategory_id all null), same
           // as manually adding a product without picking a category; the owner
           // can assign a category afterward from Products.
+          // WAFI-013: stamped unconditionally when the imported cost is real —
+          // entering a cost via a bulk import is exactly as much a confirmation
+          // of that value as typing it into the product form by hand.
+          const costUpdatedAt = costUsd !== null && costUsd > 0 ? now : null
           await tx.execute(
             `INSERT INTO products
                (id, shop_id, name_ar, name_en, barcode, category, category_id, subcategory_id,
                 price_usd, cost_price_usd, current_stock, low_stock_threshold, photo_url,
-                is_active, deleted, sync_status, created_at, updated_at, created_via)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 1, 0, 'pending', ?, ?, ?)`,
+                is_active, deleted, sync_status, created_at, updated_at, cost_updated_at, created_via)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 1, 0, 'pending', ?, ?, ?, ?)`,
             [
               uuidv4(), device.shopId, r.nameAr, r.nameEn, r.barcode, null, null, null,
               priceUsd, costUsd ?? 0,
               r.currentStock ?? 0, r.lowStockThreshold ?? DEFAULT_LOW_STOCK,
-              now, now, 'import',
+              now, now, costUpdatedAt, 'import',
             ],
           )
         }
