@@ -177,14 +177,14 @@ export default {
     HIGH_EXPENSES_RATIO: { title: 'مصاريف مرتفعة', message: 'مصاريفك أعلى من المعتاد في هذه الفترة' },
     HIGH_RETURNS_RATIO: { title: 'مرتجعات مرتفعة', message: 'المرتجعات أعلى من المعتاد في هذه الفترة' },
     LOW_MARGIN: { title: 'الربح منخفض', message: 'هامش الربح أقل من المعتاد في هذه الفترة' },
-    SALE_BELOW_COST: { title: 'بيع دون التكلفة', message: '{count} عملية(عمليات) بيعت دون التكلفة في هذه الفترة' },
+    SALE_BELOW_COST: { title: 'بيع دون التكلفة', message: '{count} عملية بيعت دون التكلفة في هذه الفترة' },
     HIGH_DISCOUNT_RATIO: { title: 'خصومات مرتفعة', message: 'الخصومات المعطاة في هذه الفترة أعلى من المعتاد' },
-    CASH_SHIFT_VARIANCE: { title: 'تفاوت في الصندوق', message: '{count} وردية(ورديات) أغلقت برصيد نقدي غير معتاد في هذه الفترة' },
-    INVENTORY_SHRINKAGE: { title: 'نقص في المخزون', message: '{count} منتج(منتجات) بها نقص غير معتاد في هذه الفترة' },
+    CASH_SHIFT_VARIANCE: { title: 'تفاوت في الصندوق', message: '{count} وردية أغلقت برصيد نقدي غير معتاد في هذه الفترة' },
+    INVENTORY_SHRINKAGE: { title: 'نقص في المخزون', message: '{count} منتج به نقص غير معتاد في هذه الفترة' },
   },
   // WAFI-015: Anomaly banner on home screen — alert banner and expand UI.
   home: {
-    anomalyBannerTitle: '{count} شيء(أشياء) يحتاج نظرك',
+    anomalyBannerTitle: '{count} أمور تحتاج انتباهك',
     anomalyBannerDismiss: 'تجاهل',
     anomalyBannerError: 'تعذّر التحقق من المشاكل الآن',
     anomalyBannerExpand: 'عرض التفاصيل',
