@@ -17,7 +17,7 @@ Business logic (validation, financial calculations, permission checks, DB writes
 | Inventory receiving | `src/features/suppliers/composables/useReceivingSheet.ts`, `useReceivings.ts` | 157 / 79 lines | |
 | Customer debt/credit | `src/features/customers/composables/useCustomerBalance.ts` | 208 lines | |
 | Staff shifts | `src/features/shifts/composables/useShift.ts`, `useShiftDetail.ts` | 452 lines (+detail) | |
-| Staff ledger/settlement | `src/features/staff/composables/useStaffLedger.ts`, `useStaffSettlement.ts` | 99 / 265 lines | Related to shifts but separate; folded into StaffService (see §4) |
+| Staff ledger/settlement | `src/features/staff-ledger/composables/useStaffLedger.ts`, `useStaffSettlement.ts` | 99 / 265 lines | Related to shifts but separate; folded into StaffService (see §4) |
 | Expenses | `src/features/expenses/composables/useExpenses.ts` | 273 lines | |
 
 No repository/service abstraction exists — composables import `db` directly from `src/data/powersync/db` and call `db.writeTransaction(...)` inline. The only existing abstraction is `src/composables/executeFinancialWrite.ts`, a wrapper that enforces "every financial write pairs with exactly one audit-log call" plus an optional permission check (WAFI-007). No event-publishing mechanism exists anywhere in the codebase (confirmed via grep — zero matches for `eventbus`, `publish(`, `emitEvent`, `domain event`).
@@ -42,30 +42,35 @@ Services are organized by cohesive business capability. If a service grows beyon
 All services live in `src/services/`, one file per service, pure TypeScript (no Vue imports, no store imports — see §6a). Filenames follow the repo's existing lowercase dot-notation convention for non-composable files (`audit.types.ts`, `customer.types.ts`, `export.validation.ts`), not PascalCase.
 
 ### SalesService (`src/services/sales.service.ts`)
-Extracted from `usePayment.ts`, `useFastCash.ts`.
+Extracted from `usePayment.ts`'s `confirm()` only.
+
+**Correction (2026-07-30 codebase survey):** there is no "void" concept anywhere in this codebase, and no `voidSale`/`returnSale` function exists in `usePayment.ts` or anywhere else. Refunds/returns are a genuinely separate feature (`src/features/returns/composables/useReturnSheet.ts`) with their own transaction, audit calls, and installment-plan-cancellation coupling (`cancelPlanWithinTx`). **`voidSale`/`returnSale` are dropped from WAFI-152's scope entirely** — a returns-extraction service (`ReturnsService`, or folded into `SalesService` later) is a follow-up ticket, not part of this one. There is also no existing `PaymentInput` type; `usePayment.confirm()` currently takes only an optional `customerId: string`, reading everything else off the composable's own refs (`method`, `amountReceived`, `pendingPayments`). `CompleteSaleInput` is therefore a **new** type this ticket introduces, shaped to carry what `confirm()` today reads from refs.
+
 - `completeSale(input: CompleteSaleInput): Promise<Sale>` → `DomainEventType.SaleCompleted`
   `{ saleId, shopId, staffId, totalUsd, totalSyp, paymentSummary: { cashUsd, cashSyp, cardTotal, creditTotal, methodCount }, itemCount, discountApplied }`
-- `voidSale(saleId: string, reason: string): Promise<void>` → `DomainEventType.SaleVoided`
-  `{ saleId, reason, voidedBy }`
-- `returnSale(saleId: string, items: ReturnItem[]): Promise<Return>` → `DomainEventType.SaleReturned`
-  `{ saleId, returnId, itemCount, refundAmount }`
 
 ### InventoryService (`src/services/inventory.service.ts`)
-Extracted from `useReceivingSheet.ts`, `useReceivings.ts`.
-- `receiveStock(input: ReceiveStockInput): Promise<Receiving>` → `DomainEventType.StockReceived`
+
+**Correction (2026-07-30 codebase survey):** `adjustInventory` does not belong to `useReceivingSheet.ts`/`useReceivings.ts` — that logic actually lives in `src/features/products/composables/useProducts.ts` (`adjustStock` for absolute values, `adjustStockBy` for deltas — the latter used by stock-take, WAFI-121). `receiveStock` extracts from `useReceivingSheet.ts` as originally planned, **including its own inline stock-increment block** (lines 101–124 of that file) — that increment has different semantics from `adjustStock`/`adjustStockBy` (no `stock_adjustments` row; folded into the `receiving.created` audit event instead of `stock.adjusted`) and stays a separate code path rather than being consolidated. No `ReceiveStockInput`/`Adjustment`/`AdjustInventoryInput` types exist today; all are new types this ticket introduces. `StockAdjustment` (`src/features/products/product.types.ts`) is the closest existing analog for `Adjustment`'s shape (`{ id, productId, oldValue, newValue, reason, notes?, createdAt, deviceId }`).
+
+- `receiveStock(input: ReceiveStockInput): Promise<Receiving>` → `DomainEventType.StockReceived` (extracted from `useReceivingSheet.ts`)
   `{ receivingId, supplierId, skuCount, totalCost }`
-- `adjustInventory(input: AdjustInventoryInput): Promise<Adjustment>` → `DomainEventType.InventoryAdjusted`
+- `adjustInventory(input: AdjustInventoryInput): Promise<Adjustment>` → `DomainEventType.InventoryAdjusted` (extracted from `useProducts.ts`'s `adjustStock`/`adjustStockBy` — `AdjustInventoryInput` carries a discriminated `mode: 'absolute' | 'delta'` so one method covers both call shapes)
   `{ productId, deltaQty, reason }`
 
 ### CustomerService (`src/services/customer.service.ts`)
-Extracted from `useCustomerBalance.ts`.
-- `updateDebt(customerId: string, amount: number, reason: string): Promise<CustomerBalance>` → `DomainEventType.CustomerDebtChanged`
-  `{ customerId, previousBalance, newBalance, amount, reason }`
-- `recordPayment(customerId: string, amount: number): Promise<Payment>` → `DomainEventType.InstallmentDuePaid`
+Extracted from `useCustomerBalance.ts` only.
+
+**Correction (2026-07-30 codebase survey):** no `CustomerBalance` type and no `updateDebt` function exist anywhere in the codebase — the spec's original assumption of an existing type/function to extract was wrong. The current balance shape is implicit (a bare `number` plus separately-tracked `pendingSyncCount`/`openInvoices`/`payments` refs); `CustomerBalance` below is a **new** type this ticket introduces to give that implicit shape a name. There is also no single `recordPayment` — ad-hoc invoice collections (`useCustomerBalance.ts`) and installment-due payments (`useInstallmentPlan.ts`) are two separate, independently-evolved code paths with different transaction/audit patterns (the former calls `db.writeTransaction` directly and awaits the audit call manually; the latter routes through `executeFinancialWrite`). **WAFI-152 extracts only `useCustomerBalance.ts`'s `recordPayment`** (ad-hoc collections against open invoices); `useInstallmentPlan.ts`'s `recordDuePayment` stays untouched and is a candidate for a later ticket once this pattern is proven. `updateDebt` is dropped — there is nothing to extract it from; if a direct debt-adjustment method is needed later, it is designed fresh in that follow-up ticket, not invented here.
+
+- `recordPayment(customerId: string, allocations: PaymentAllocation[]): Promise<CustomerBalance>` → `DomainEventType.InstallmentDuePaid`
   `{ customerId, amount, remainingBalance }`
 
 ### StaffService (`src/services/staff.service.ts`)
-Extracted from `useShift.ts`, `useShiftDetail.ts`, `useStaffLedger.ts`, `useStaffSettlement.ts`.
+
+**Correction (2026-07-30 codebase survey):** `useStaffLedger.ts`/`useStaffSettlement.ts` do not live at `src/features/staff/composables/` as the spec originally assumed — the real path is `src/features/staff-ledger/composables/`.
+
+Extracted from `useShift.ts`, `useShiftDetail.ts`, `src/features/staff-ledger/composables/useStaffLedger.ts`, `src/features/staff-ledger/composables/useStaffSettlement.ts`.
 - `openShift(staffId: string, openingCash: number): Promise<Shift>` → `DomainEventType.ShiftOpened`
   `{ shiftId, staffId, openingCash }`
 - `closeShift(shiftId: string, countedCash: number): Promise<Shift>` → `DomainEventType.ShiftClosed`
@@ -77,7 +82,10 @@ Extracted from `useShift.ts`, `useShiftDetail.ts`, `useStaffLedger.ts`, `useStaf
 
 ### ExpenseService (`src/services/expense.service.ts`)
 Extracted from `useExpenses.ts`.
-- `recordExpense(input: RecordExpenseInput): Promise<Expense>` → `DomainEventType.ExpenseRecorded`
+
+**Correction (2026-07-30 codebase survey):** the existing input type is `NewExpense` (`src/features/expenses/expense.types.ts`), not `RecordExpenseInput` as originally assumed — `recordExpense`'s input parameter is `NewExpense`, reusing the existing type rather than introducing a new one. Two behavioral gaps found in `useExpenses.ts` that this extraction should preserve as-is (not silently fix): `duplicateLastMonth` currently issues no audit call at all, unlike `save`/`updateExpense`/`deleteExpense` — this ticket keeps that inconsistency rather than changing behavior, and flags it in the extracted service with a comment for a future ticket. The recurring-expense insert loop in `save` (one `db.execute` per month, no `writeTransaction` wrapper) also stays as-is — no transaction is added — since fixing that data-integrity gap is out of scope for a like-for-like extraction.
+
+- `recordExpense(input: NewExpense): Promise<Expense>` → `DomainEventType.ExpenseRecorded`
   `{ expenseId, category, amountUsd, staffId, photoUrl? }`
 
 Event payloads above are stable business facts, not UI DTOs — e.g. `SalesService.completeSale` reports a `paymentSummary` (aggregated totals per method) rather than the raw `paymentMethods[]` array a payment screen would render, and `returnSale`/`receiveStock` report counts/totals rather than full item arrays. Once WAFI-140 ships, subscribers depend on these shapes as a contract; reshaping them later is a breaking change, so each payload is scoped to what a subscriber plausibly needs, not what the UI happened to have on hand.
@@ -90,8 +98,6 @@ Event payloads above are stable business facts, not UI DTOs — e.g. `SalesServi
 // src/services/events/domainEvent.types.ts
 export enum DomainEventType {
   SaleCompleted = 'sale.completed',
-  SaleVoided = 'sale.voided',
-  SaleReturned = 'sale.returned',
   StockReceived = 'stock.received',
   InventoryAdjusted = 'inventory.adjusted',
   CustomerDebtChanged = 'customer.debt_changed',
@@ -188,7 +194,7 @@ Acceptance criteria (from the plan, verified against this design):
 ## 8. Testing Strategy
 
 - **New service tests:** `src/services/__tests__/<service>.service.test.ts`, one per service — this is where business-rule assertions live going forward. Critical business rules (discount math, cash reconciliation, debt calculation, variance calculation) must have unit tests; a blanket percentage target is not the goal in itself. The plan's WAFI-152 AC states ">80% coverage" as its literal acceptance criterion — treat that as the plan's own bar for this ticket's sign-off, but let "is every business rule actually tested" be the working standard while writing tests, not the percentage.
-- **Existing composable tests trimmed:** `usePayment.test.ts`, `useShift.deactivation.test.ts`, `useExpenses.test.ts`, `useReceivings.test.ts`, `useReceivingSheet.test.ts`, `useStaffSettlement.test.ts`, `useStaffLedger.test.ts` keep only delegation and reactive-state assertions (e.g. "calling `pay()` invokes `SalesService.completeSale` with the mapped input and toggles `isProcessing`"). Business-rule test cases move to the new service test files rather than being duplicated.
+- **Existing composable tests trimmed:** `usePayment.test.ts`, `useShift.deactivation.test.ts`, `useExpenses.test.ts`, `useReceivings.test.ts`, `useReceivingSheet.test.ts`, `useProducts.test.ts` (adjustStock/adjustStockBy cases only), `useCustomerBalance.test.ts`, `src/__tests__/features/useStaffSettlement.test.ts`, `useStaffLedger.test.ts` keep only delegation and reactive-state assertions (e.g. "calling `pay()` invokes `SalesService.completeSale` with the mapped input and toggles `isProcessing`"). Business-rule test cases move to the new service test files rather than being duplicated.
 - **Error handling:** services throw typed domain errors (exact error class names/hierarchy are an implementation-planning detail, not fixed here). One of these is the existing permission-denied error already thrown by `executeFinancialWrite`/`executeBusinessWrite` — that behavior is unchanged. Composables catch and map thrown errors to existing UI-facing error state; no user-visible behavior change.
 
 ## 9. Migration Approach
@@ -231,3 +237,13 @@ Each extraction is a self-contained PR: move logic to the service, add service t
 16. Coverage: kept the plan's literal ">80%" AC as the ticket's stated sign-off bar, but reframed the day-to-day testing standard as "every critical business rule has a test" rather than chasing the percentage (§8).
 17. Added an explicit anti-pattern note against services accumulating unrelated responsibilities ("god services") — extract a new service instead (§2).
 18. Return types are flagged as provisional — narrow to what callers need during extraction rather than defaulting to full DB rows if a caller only needs a summary (§7).
+
+## Decisions Made During Codebase Verification (pre-plan)
+
+A full-file read of all 6 composable groups (2026-07-30) surfaced several places where this spec's original assumptions didn't match the real code. Corrections, inline above in §4:
+
+19. **Sales:** dropped `voidSale`/`returnSale` from WAFI-152 entirely — no void concept exists anywhere in the codebase, and refunds live in a wholly separate feature (`useReturnSheet.ts`) with their own transaction and installment-plan coupling. `SalesService` in this ticket is `completeSale` only; returns extraction is a follow-up ticket. `CompleteSaleInput` is a new type (no `PaymentInput` existed to extract from).
+20. **Inventory:** `adjustInventory` extracts from `useProducts.ts` (`adjustStock`/`adjustStockBy`), not from `useReceivingSheet.ts`/`useReceivings.ts` as originally assumed. `receiveStock` keeps its own separate inline stock-increment logic rather than being consolidated onto `adjustInventory` — the two have different semantics today (no `stock_adjustments` row / different audit event) and unifying them is out of scope. `ReceiveStockInput`/`Adjustment`/`AdjustInventoryInput` are all new types.
+21. **Customer:** dropped `updateDebt` — no such function or `CustomerBalance` type exists to extract from. `CustomerService.recordPayment` extracts only `useCustomerBalance.ts`'s ad-hoc-collection path; `useInstallmentPlan.ts`'s separate `recordDuePayment` path stays untouched (candidate for a later ticket once this pattern is proven, rather than unifying two independently-evolved payment flows in one sprint).
+22. **Staff:** corrected file paths — `useStaffLedger.ts`/`useStaffSettlement.ts` live in `src/features/staff-ledger/composables/`, not `src/features/staff/composables/`.
+23. **Expenses:** corrected input type — reuse the existing `NewExpense` type rather than inventing `RecordExpenseInput`. Two pre-existing behavioral quirks (`duplicateLastMonth` has no audit call; the recurring-expense insert loop has no transaction wrapper) are preserved as-is during extraction, not fixed — flagged inline in the service for a future ticket rather than silently changed as a side effect of this one.
