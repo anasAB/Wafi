@@ -5,12 +5,13 @@ import ProductAvatar from '@/components/ui/ProductAvatar.vue'
 import { matchesArabicQuery } from '@/shared/text/arabic'
 import { useCategories } from '@/features/categories/composables/useCategories'
 import type { Product } from '@/features/pos/pos.types'
+import { isCostStale, isCostImprecise } from '@/features/products/product.utils'
 
 const props = defineProps<{
-  products:           Product[]
-  filterLowStock?:    boolean
-  filterMissingCost?: boolean
-  initialCategoryId?: string | null
+  products:             Product[]
+  filterLowStock?:      boolean
+  filterImpreciseCost?: boolean
+  initialCategoryId?:   string | null
 }>()
 
 const emit = defineEmits<{
@@ -18,6 +19,15 @@ const emit = defineEmits<{
   (e: 'delete', id: string): void
   (e: 'adjust-stock', id: string): void
 }>()
+
+function costImpreciseLabel(p: Product): string | null {
+  if (!p.costPriceUsd || p.costPriceUsd <= 0) return 'لا يوجد سعر'
+  if (isCostStale(p)) {
+    const ageDays = Math.floor((Date.now() - new Date(p.costUpdatedAt!).getTime()) / (1000 * 60 * 60 * 24))
+    return `قديم (${ageDays} يوماً)`
+  }
+  return null
+}
 
 const search    = ref('')
 const openKebab = ref<string | null>(null)
@@ -71,10 +81,11 @@ const displayed = computed(() => {
     ? props.products.filter(p => p.currentStock <= p.lowStockThreshold)
     : props.products
 
-  // WAFI-054: tap-through target from the dashboard profit caveat — show only the
-  // products with no cost price so the owner can fix the source of the estimate.
-  if (props.filterMissingCost) {
-    list = list.filter(p => !p.costPriceUsd || p.costPriceUsd <= 0)
+  // WAFI-013: combined missing-or-stale filter (renamed/widened from the
+  // WAFI-054 missing-cost-only filter — same underlying concept, now covers
+  // both cases an owner should distrust this product's margin number for).
+  if (props.filterImpreciseCost) {
+    list = list.filter(p => isCostImprecise(p))
   }
 
   if (selectedCategoryId.value) {
@@ -124,7 +135,7 @@ function onPage(e: { first: number; rows: number }) {
 // Jump back to the first page whenever the result set changes (filter, search,
 // category, or a product removed), so we never land on an empty page.
 watch(
-  () => [search.value, selectedCategoryId.value, selectedSubcategoryId.value, props.filterLowStock, props.filterMissingCost, displayed.value.length],
+  () => [search.value, selectedCategoryId.value, selectedSubcategoryId.value, props.filterLowStock, props.filterImpreciseCost, displayed.value.length],
   () => { if (first.value >= displayed.value.length) first.value = 0 },
 )
 watch([search, selectedCategoryId, selectedSubcategoryId], () => { first.value = 0 })
@@ -377,6 +388,7 @@ function handleAdjustStock(id: string) {
             <!-- Cost -->
             <td class="td">
               <span class="cost-price">${{ p.costPriceUsd.toFixed(2) }}</span>
+              <p v-if="costImpreciseLabel(p)" class="cost-imprecise-label">{{ costImpreciseLabel(p) }}</p>
             </td>
             <!-- Sale Price -->
             <td class="td">
@@ -464,6 +476,7 @@ function handleAdjustStock(id: string) {
         <div class="mobile-info">
           <p class="product-name truncate">{{ p.nameAr }}</p>
           <p v-if="p.barcode" class="text-xs text-muted mt-0.5">{{ p.barcode }}</p>
+          <p v-if="costImpreciseLabel(p)" class="cost-imprecise-label">{{ costImpreciseLabel(p) }}</p>
         </div>
         <!-- Price + stock -->
         <div class="mobile-meta">
@@ -1036,6 +1049,12 @@ function handleAdjustStock(id: string) {
   font-weight: 700;
   color: #60A5FA;
   font-variant-numeric: tabular-nums;
+}
+
+.cost-imprecise-label {
+  font-size: 11px;
+  color: #F59E0B;
+  margin: 2px 0 0 0;
 }
 
 /* ── Stock ───────────────────────────────────────── */
