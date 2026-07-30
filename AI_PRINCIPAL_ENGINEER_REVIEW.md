@@ -308,6 +308,41 @@ than leaving it undocumented.
 
 ---
 
+# CROSS-EPIC EDGE-CASE CHECKLIST
+
+This checklist is required twice per feature — once at design time,
+once at final review — as a filled-in artifact, not an implicit
+mental check. Copy the relevant template into the feature's design
+spec and, separately, into its final-review write-up.
+
+## Design-Time Checklist
+
+Copy this block into the feature's design spec (`docs/superpowers/specs/`):
+
+```
+## Cross-Epic Edge-Case Checklist (design time)
+Domains touched: [list]
+Matrix rows consulted: [list, or "n/a — new domain, row added to DOMAIN INTERACTION MATRIX above"]
+Open cross-feature questions: [list, or "none identified"]
+```
+
+## Final-Review Checklist
+
+Copy this block into the feature's final whole-branch review write-up:
+
+```
+## Cross-Epic Edge-Case Checklist (final review)
+Matrix rows re-checked after implementation: [list]
+Domains touched but not covered in the original spec checklist: [list, or "none"]
+```
+
+If final review finds a domain touched but not in the spec's
+checklist, that is a signal the design-time check missed something —
+worth noting in the ticket's status entry even after the fact, so the
+gap is visible rather than silently patched.
+
+---
+
 # RIPPLE EFFECT REVIEW
 
 For every action identify:
