@@ -65,7 +65,13 @@ requires a dedicated, always-on CI test account (a real shop/staff record in pro
 Supabase, or a disposable project stood up per-run) plus a scripted login step before
 Lighthouse runs, and introduces an ongoing dependency on live Supabase availability
 during CI runs. That's real additional infrastructure, not a config tweak — a follow-up
-ticket's worth of work, not squeezed into this one.
+ticket's worth of work, not squeezed into this one. Concretely, that follow-up ticket
+must provide: **(1)** a seeded CI-only shop/staff account that persists across runs (not
+recreated per-run, to avoid a login race against PowerSync's initial sync), **(2)** a
+scripted login step run before Lighthouse (e.g. a small Playwright/Puppeteer script that
+signs in and lets the router guard clear), and **(3)** a saved authenticated storage
+state (cookies/local-storage snapshot) that Lighthouse's browser context loads instead
+of starting from a fresh, logged-out session on every audit.
 
 ## Workflow
 
@@ -79,9 +85,13 @@ name: Lighthouse CI
 # /welcome only — the one route reachable with no login session (see design
 # doc's "auth-wall finding" for why /pos, /products, etc. are out of scope
 # for this first pass).
+#
+# No browser-install step is needed: GitHub's ubuntu-latest runner ships a
+# Chrome/Chromium build already compatible with Lighthouse.
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened]
 
 jobs:
   lighthouse:
@@ -91,7 +101,13 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
+          # Matches design-system-check.yml's node-version (WAFI-005) — this is
+          # not independently pinned anywhere else in the repo (no `engines`
+          # field in package.json, no .nvmrc). If the project's Node version is
+          # ever bumped, this workflow must be updated by hand along with it;
+          # nothing currently enforces the two staying in sync.
           node-version: 20
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
@@ -105,26 +121,50 @@ jobs:
         with:
           urls: |
             http://localhost:4173/welcome
+          # Serve the existing `dist/` build output as a static site rather
+          # than shelling out to `npm run preview` — one less moving part for
+          # a CI runner with no interactive terminal. `staticDistDir` is
+          # Vite's default output directory (vite.config.ts has no `build.outDir`
+          # override, confirmed at implementation time).
+          serveStatic: true
+          staticDistDir: dist
           uploadArtifacts: true
+          # Phase 1 audits only the public /welcome page (see "auth-wall
+          # finding" below) — there is no authenticated business data in what
+          # gets uploaded, so free temporary public report hosting is fine.
+          # This would need re-evaluating if a later phase ever audits an
+          # authenticated route.
           temporaryPublicStorage: true
+          # Deliberately 1, not Lighthouse's usual multi-run default: this
+          # phase is informational-only with no pass/fail gate riding on the
+          # score, so the variance-reduction that multiple runs buys isn't
+          # worth 3x the CI time yet. Don't "fix" this to 3 without
+          # re-reading this comment — it's intentional, not an oversight.
           runs: 1
-        # The action starts its own static server (via `npm run preview` or an
-        # equivalent) to serve the build output before auditing — configured via
-        # the action's `staticDistDir`/`startServerCommand` inputs at
-        # implementation time, pointed at this project's `vite preview` output
-        # (see package.json: "preview": "vite preview").
+        # Phase 1 assumes the project's preview server keeps using Vite's
+        # default port (4173, hard-coded in the urls: list above). If
+        # package.json's preview script or vite.config.ts ever configures a
+        # different port, this workflow's URL must be updated to match — it
+        # is not derived from that configuration automatically.
 ```
+
+**Lighthouse-infrastructure failures must never block a merge in Phase 1.** If Lighthouse
+itself crashes, times out, or the runner has a transient issue, `continue-on-error: true`
+on the step means the job still reports success — this is intentional, not a gap: there
+is no scoring gate in Phase 1 for an infrastructure hiccup to threaten, so failing the
+whole PR over a flaky audit tool would cost real friction for zero benefit.
+
+**Artifact retention:** left at GitHub's default (90 days) rather than set explicitly —
+no retention requirement exists yet for these reports; a future phase that adds trend
+tracking may want to shorten or extend this deliberately, but Phase 1 has no reason to.
 
 **Not scoped by changed file paths** (unlike `design-system-check.yml`'s `paths:
 ['**.vue', '**.css']`) — deliberately runs on every pull request, since a performance
 regression can come from a dependency bump, a router change, or a build-config change,
 none of which are `.vue`/`.css` files. Design-system color drift is inherently
-CSS/template-scoped; performance is not.
-
-**`temporaryPublicStorage: true`** uses Lighthouse CI's own free, temporary public
-report hosting (no account, no cost) so the full detailed report is a clickable link,
-not just a number — the action prints that link directly into the GitHub Actions job
-summary.
+CSS/template-scoped; performance is not. `types: [opened, synchronize, reopened]` is
+GitHub's own default trigger set for `pull_request` when unspecified — listed explicitly
+here so a future reader doesn't have to know that default to know what re-runs the check.
 
 ## What you'd actually see
 
