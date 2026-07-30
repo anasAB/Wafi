@@ -283,6 +283,67 @@ Can reports become inconsistent?
 
 ---
 
+# DOMAIN INTERACTION MATRIX
+
+This is a living reference of how domains in WAFI actually interact,
+grounded in real tables and composables — not abstract categories.
+When a feature introduces a new domain or a new cross-domain
+interaction, add or update a row here as part of that feature's design
+spec. There is no separate "matrix owner" — whoever writes the design
+spec for a feature touching this table keeps it current.
+
+| Domain | Writes to (tables) | Reads from (other domains) | Key composables | Reports/Dashboards affected |
+|---|---|---|---|---|
+| Sales | `sales`, `sale_line_items`, `sale_payments`, `stock_adjustments`; updates `products` (stock/cost) | Inventory (stock/cost), Customer Credit (debt), Installments | `usePayment` | Profit report, Staff performance, Dashboard, Cost freshness |
+| Returns | `returns`, `return_line_items`, `stock_adjustments`; updates `products` | Sales (original sale), Installments (plan status), Inventory (restock) | `useReturnSheet` | Profit report, Money Owed |
+| Inventory | `stock_adjustments`, `stock_receivings`, `stock_receiving_line_items`, `stock_take_sessions`, `stock_take_lines` | Sales, Returns (both write to inventory via `stock_adjustments`) | `useInventoryMovements` (WAFI-009), `useReceivingSheet`, `useStockTake` | Cost freshness indicator, Dashboard, Profit report |
+| Installments | `installment_plans`, `installment_dues` | Sales (originating sale), Returns (cancellation trigger) | `useInstallmentPlan` | Money Owed, Collections worklist |
+| Cash / Shifts | `cash_movements`, `cashier_shifts` | Sales (cash totals), Staff (attribution) | `useCashMovements`, shift composables | Z-report, Reports (deliberately excluded — WAFI-016) |
+| Customer Credit | `customer_payments` | Sales, Returns | `useCustomerBalance` | Money Owed, Collections worklist |
+| Staff | `staff_ledger`, `staff_settlements` | Sales (attribution), Cash/Shifts | staff-ledger composables | Staff performance dashboard |
+| Products / Cost | `products` | Receiving, Import | `useProducts`, `useReceivingSheet`, `useProductImport` | Cost freshness indicator, Dashboard, Profit report |
+| Audit | `audit_log` | All of the above | `executeFinancialWrite` wrapper | Audit log page |
+
+If a feature touches a domain not listed here, add a new row rather
+than leaving it undocumented.
+
+---
+
+# CROSS-EPIC EDGE-CASE CHECKLIST
+
+This checklist is required twice per feature — once at design time,
+once at final review — as a filled-in artifact, not an implicit
+mental check. Copy the relevant template into the feature's design
+spec and, separately, into its final-review write-up.
+
+## Design-Time Checklist
+
+Copy this block into the feature's design spec (`docs/superpowers/specs/`):
+
+```
+## Cross-Epic Edge-Case Checklist (design time)
+Domains touched: [list]
+Matrix rows consulted: [list, or "n/a — new domain, row added to DOMAIN INTERACTION MATRIX above"]
+Open cross-feature questions: [list, or "none identified"]
+```
+
+## Final-Review Checklist
+
+Copy this block into the feature's final whole-branch review write-up:
+
+```
+## Cross-Epic Edge-Case Checklist (final review)
+Matrix rows re-checked after implementation: [list]
+Domains touched but not covered in the original spec checklist: [list, or "none"]
+```
+
+If final review finds a domain touched but not in the spec's
+checklist, that is a signal the design-time check missed something —
+worth noting in the ticket's status entry even after the fact, so the
+gap is visible rather than silently patched.
+
+---
+
 # RIPPLE EFFECT REVIEW
 
 For every action identify:

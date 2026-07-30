@@ -9,6 +9,8 @@
 
 Before implementing any new feature, reviewing any PR, or testing/evaluating any release, load and apply `AI_PRINCIPAL_ENGINEER_REVIEW.md` (repo root). It defines the review role, invariants, and evaluation framework that every feature/PR/release must be checked against — apply it in full, not as an optional checklist.
 
+**Cross-epic edge-case review is mandatory, not implicit (WAFI-014):** every design spec must include the filled `Cross-Epic Edge-Case Checklist (design time)` block, consulting the `DOMAIN INTERACTION MATRIX` in `AI_PRINCIPAL_ENGINEER_REVIEW.md`; every final whole-branch review must include the filled `Cross-Epic Edge-Case Checklist (final review)` block. A design or review write-up missing its checklist block is incomplete.
+
 ---
 
 ## What We Are Building
