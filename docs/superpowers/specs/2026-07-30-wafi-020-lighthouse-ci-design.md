@@ -75,9 +75,47 @@ of starting from a fresh, logged-out session on every audit.
 
 ## Workflow
 
-New file: `.github/workflows/lighthouse-ci.yml`
+**Verified against the action's real interface before writing this** (its `action.yml`
+and the underlying `@lhci/cli` docs), not assumed:
+
+- `treosh/lighthouse-ci-action`'s own inputs are `urls`, `budgetPath`, `configPath`,
+  `uploadArtifacts`, `artifactName`, `temporaryPublicStorage`, `runs`, plus LHCI-server
+  inputs not used here. **There is no `serveStatic` or `staticDistDir` input on the
+  action itself** — static-directory serving is a property of the underlying `@lhci/cli`
+  tool's own config file, reached via the action's `configPath` input pointing at a
+  `lighthouserc.json`. An earlier draft of this design used `serveStatic`/`staticDistDir`
+  as direct action inputs — verified wrong, corrected below.
+- The static server's port is **dynamically chosen by LHCI at run time, not fixed at
+  4173** (that's Vite's dev-preview default, irrelevant here since nothing runs `vite
+  preview` in this design). LHCI's own docs describe exactly this case: write the URL
+  with **no port** (`http://localhost/welcome`) and LHCI rewrites it to whatever port
+  its temporary static server actually bound. An earlier draft hard-coded `:4173` —
+  verified wrong, corrected below.
+- The static server's default behavior for a path with no matching file on disk is a
+  **404, not an SPA fallback to `index.html`** — `isSinglePageApplication` must be set to
+  `true` explicitly, or requesting `/welcome` directly (as opposed to `/`) would 404
+  before Vue Router ever got a chance to render anything, since this is a Vue Router
+  *history-mode* SPA with no `/welcome.html` file actually on disk. This is load-bearing
+  for the whole design: without it, this workflow would audit a 404 page and silently
+  report a meaningless score. An earlier draft didn't set this at all — added below.
+
+New files: `.github/workflows/lighthouse-ci.yml` and `.lighthouserc.json`.
+
+```json
+// .lighthouserc.json
+{
+  "ci": {
+    "collect": {
+      "staticDistDir": "./dist",
+      "isSinglePageApplication": true,
+      "url": ["http://localhost/welcome"]
+    }
+  }
+}
+```
 
 ```yaml
+# .github/workflows/lighthouse-ci.yml
 name: Lighthouse CI
 
 # WAFI-020 Phase 1. Informational only — continue-on-error, matching the
@@ -104,8 +142,9 @@ jobs:
           # Matches design-system-check.yml's node-version (WAFI-005) — this is
           # not independently pinned anywhere else in the repo (no `engines`
           # field in package.json, no .nvmrc). If the project's Node version is
-          # ever bumped, this workflow must be updated by hand along with it;
-          # nothing currently enforces the two staying in sync.
+          # ever bumped, this workflow should be updated alongside
+          # design-system-check.yml, the actual precedent it's copied from;
+          # nothing currently enforces the two staying in sync automatically.
           node-version: 20
           cache: npm
 
@@ -119,15 +158,11 @@ jobs:
         continue-on-error: true
         uses: treosh/lighthouse-ci-action@v11
         with:
-          urls: |
-            http://localhost:4173/welcome
-          # Serve the existing `dist/` build output as a static site rather
-          # than shelling out to `npm run preview` — one less moving part for
-          # a CI runner with no interactive terminal. `staticDistDir` is
-          # Vite's default output directory (vite.config.ts has no `build.outDir`
-          # override, confirmed at implementation time).
-          serveStatic: true
-          staticDistDir: dist
+          # staticDistDir/isSinglePageApplication/url all live in
+          # .lighthouserc.json (see above), not as direct action inputs —
+          # there is no such input on this action. configPath is the only
+          # thing wiring the two files together.
+          configPath: './.lighthouserc.json'
           uploadArtifacts: true
           # Phase 1 audits only the public /welcome page (see "auth-wall
           # finding" below) — there is no authenticated business data in what
@@ -141,12 +176,13 @@ jobs:
           # worth 3x the CI time yet. Don't "fix" this to 3 without
           # re-reading this comment — it's intentional, not an oversight.
           runs: 1
-        # Phase 1 assumes the project's preview server keeps using Vite's
-        # default port (4173, hard-coded in the urls: list above). If
-        # package.json's preview script or vite.config.ts ever configures a
-        # different port, this workflow's URL must be updated to match — it
-        # is not derived from that configuration automatically.
 ```
+
+The URL in `.lighthouserc.json` has no port (`http://localhost/welcome`) by design — LHCI
+substitutes the port of the temporary static server it starts internally, whatever that
+turns out to be for a given run. The only thing this design depends on for that URL to
+keep working is the *route* `/welcome` continuing to exist and being reachable with no
+session — not any particular port number, since none is hard-coded.
 
 **Lighthouse-infrastructure failures must never block a merge in Phase 1.** If Lighthouse
 itself crashes, times out, or the runner has a transient issue, `continue-on-error: true`
