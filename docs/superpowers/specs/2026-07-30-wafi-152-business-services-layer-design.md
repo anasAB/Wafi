@@ -1,7 +1,7 @@
 # WAFI-152: Business Services Layer — Design Spec
 
 **Date:** 2026-07-30
-**Status:** Approved for planning
+**Status:** NOT IMPLEMENTED YET — spec refined and reviewed, READY TO BE IMPLEMENTED
 **Macro-Phase:** 2A (Architecture Transformation) — lead track, prerequisite for WAFI-140 (Event Bus)
 **Sequencing assumption:** This spec assumes Macro-Phase 1 (RLS, real auth, device registration, audit wiring — WAFI-001/002/003/004/007) has shipped first, per the plan's stated critical path (`001 → 002 → 003 → 004 → 152`). It does not re-verify Phase 1 completion.
 
