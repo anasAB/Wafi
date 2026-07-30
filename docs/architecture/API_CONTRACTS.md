@@ -5,7 +5,7 @@
 > this doc is "API contracts" in the sense of: every place the client makes a promise about
 > what the server will do. Keep this list in sync whenever an RPC is added, renamed, or
 > removed — a stale list here is worse than no list.
-> Last updated: 2026-07-27.
+> Last updated: 2026-07-30.
 
 ---
 
@@ -30,6 +30,7 @@ Fastify server in this repo. The "API" is:
 | `allocate_device_code` | Issues a device pairing code for self-serve multi-device registration | Needs to be unique and server-generated |
 | `record_device_session_id` | Records which Supabase Auth session belongs to which device | Enables real remote sign-out (see `record_device_session_id`/`revoke_device_session`, migration `067`) |
 | `revoke_device_session` | Revokes a specific device's live Supabase Auth session on remote sign-out | Soft `is_active` flags alone don't kill an existing session — this does |
+| `register_device` | Registers a device's `device_sessions` row before the device has an `active_role` to write it under RLS | `SECURITY DEFINER`, added to fix a circular-lockout bug: device registration required `active_role='owner'`, which itself required registration to have already happened (migration `072`) |
 
 **Before adding a new RPC:** check `docs/architecture/WAFI-122-rpc-audit.md` — an existing
 RPC-focused security audit that should be extended, not duplicated, when the RPC surface

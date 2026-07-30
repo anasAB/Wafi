@@ -4,7 +4,7 @@
 > live** companion to PRINCIPLES.md (how), PATTERNS.md (what shapes), and ENFORCEMENT.md
 > (verify). This file is a map, not a tutorial — each section links to the doc that owns
 > the detail.
-> Last updated: 2026-07-27.
+> Last updated: 2026-07-30.
 
 ---
 
@@ -73,6 +73,14 @@ calculation) so the eventual extraction is mechanical, not a rewrite.
   PowerSync's replication without re-reading ADR-010 first.
 - Role is carried as a JWT claim (`active_role`), re-resolved on every token refresh, so
   RLS policies and PowerSync sync-rule branching can both read it.
+- **Circular-lockout case study**: server-authoritative identity bootstrapping is easy to
+  get wrong in a way that locks out every new signup at once. Migration `069`
+  (`bootstrap_owner_identity`) fixed the original owner-bootstrap chicken-and-egg problem;
+  a second instance of the same shape recurred for device registration (RLS required
+  `active_role='owner'` to write a `device_sessions` row, but establishing `active_role`
+  required registration to have already happened) and was fixed by the `register_device`
+  `SECURITY DEFINER` RPC in migration `072`. If you add a new "first write for this
+  identity" flow, check whether it can hit this pattern before shipping it.
 
 ## 6. Feature-flag / pack gating
 
@@ -93,3 +101,4 @@ inline in nav components. See ADR-008 (per-shop feature flags).
 | What RPCs/API surface does the client call? | API_CONTRACTS.md, `WAFI-122-rpc-audit.md` |
 | Why was decision X made? | `docs/adr/ADR-NNN-*.md` |
 | Is a given ticket done? | `WAFI_Production_Readiness_Plan_v3.md`'s IMPLEMENTATION STATUS table — **verify against the code before trusting it**, this table has been caught stale before |
+| Something's broken in production right now | `docs/RUNBOOK.md` — situation-indexed, routes to the right procedure |

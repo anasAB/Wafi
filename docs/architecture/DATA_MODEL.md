@@ -4,7 +4,7 @@
 > ARCHITECTURE.md (where things live) and API_CONTRACTS.md (RPC surface). This is a map of
 > what exists, not a column-by-column reference — read the migration file for exact
 > columns/constraints; this doc tells you which migration to open.
-> Last updated: 2026-07-27.
+> Last updated: 2026-07-30.
 
 ---
 
@@ -12,11 +12,17 @@
 
 Postgres (Supabase), migrated via `supabase/migrations/NNN_*.sql` (sequential, additive-only
 — see DEPLOYMENT.md's rollback section: **there is no down-migration path**, only forward
-fixes). As of this writing the highest applied migration is `069_bootstrap_owner_identity.sql`
-(67 migration files total). The client's local copy (PowerSync/SQLite) mirrors a subset of
+fixes). The client's local copy (PowerSync/SQLite) mirrors a subset of
 this schema — see `src/data/powersync/schema.ts` for the exact synced-table list, which
 should match section 2 below; if it doesn't, the schema.ts file is stale and needs updating
 alongside the next migration that touches a synced table.
+
+As of this writing the highest applied migration is `072_register_device_rpc.sql`
+(72 migration files total). A `073_products_cost_updated_at.sql` migration is specified
+(not yet applied) by the WAFI-013 cost-freshness design spec
+(`docs/superpowers/specs/2026-07-30-wafi-013-cost-freshness-design.md`) — it adds a
+`products.cost_updated_at` column; update the Catalog domain row and section 6 (no read
+models) when it lands.
 
 ## 2. Tables (by domain)
 
@@ -30,7 +36,7 @@ alongside the next migration that touches a synced table.
 | Suppliers | `suppliers`, `stock_receivings`, `stock_receiving_line_items` |
 | Stock-take | `stock_take_sessions`, `stock_take_lines` |
 | Cash & shifts | `cashier_shifts`, `cash_movements`, `denomination_configs` |
-| Staff | `staff`, `staff_ledger`, `staff_settlements`, `devices` |
+| Staff | `staff`, `staff_ledger`, `staff_settlements`, `devices`, `device_sessions` |
 | Money/pricing | `exchange_rates` |
 | Expenses | `expenses` |
 | Receipts | `receipt_settings` |
@@ -62,6 +68,13 @@ statement of these rules:
 - **Historical reports never change**: profit/dashboard metrics derive from transactional
   data at query time (see `useDashboardMetrics`, `useProfitTrend`), not from a
   duplicated/cached calculation that could drift from the ledger.
+- **Domain-by-domain RLS hardening (058-063)**: a later wave beyond the original
+  008/012/015 tenant-scoping pass — `058_cash_shifts_domain_rls.sql`,
+  `059_accounting_domain_rls.sql`, `060_staff_finance_domain_rls.sql`,
+  `061_audit_domain_rls.sql`, `062_configuration_domain_rls.sql`, plus
+  `063_backfill_staff_permissions.sql` — locked down remaining tables domain-by-domain as
+  part of WAFI-001. Server-side role enforcement (WAFI-001) and sales/returns immutability
+  (WAFI-202, migration `064`) build on top of this wave.
 
 ## 4. Refund/return timing (a real gap someone will eventually "fix" wrong)
 
@@ -71,6 +84,14 @@ against `useDashboardMetrics.ts`'s refund query (`DATE(returns.created_at,'local
 Documented explicitly in the profit-report v1.0 plan
 (`docs/superpowers/plans/2026-06-25-premium-insights-reporting-pack-v1.md`) so this doesn't
 get "corrected" to sale-date recognition by someone who assumes it's a bug.
+
+## 4a. Sale source tagging
+
+`sales.source` (migration `070_sales_source_tagging.sql`, WAFI-008) is a `NOT NULL DEFAULT
+'pos'` provenance column distinguishing how a sale was created (e.g. POS checkout vs. a
+future import/API path). Profit-engine composables (`useDashboardMetrics`, `useProfitTrend`)
+filter/group on it — if you add a new sale-creation path, set `source` explicitly rather than
+relying on the default, or reporting will silently misattribute it to POS.
 
 ## 5. Currency
 
