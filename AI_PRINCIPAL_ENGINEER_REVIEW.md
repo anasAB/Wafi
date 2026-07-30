@@ -294,11 +294,12 @@ spec for a feature touching this table keeps it current.
 
 | Domain | Writes to (tables) | Reads from (other domains) | Key composables | Reports/Dashboards affected |
 |---|---|---|---|---|
-| Sales | `sales`, `sale_line_items` | Inventory (stock/cost), Customer Credit (debt), Installments | `usePayment` | Profit report, Staff performance, Dashboard, Cost freshness |
-| Returns | `returns`, `return_line_items` | Sales (original sale), Installments (plan status), Inventory (restock) | `useReturnSheet` | Profit report, Money Owed |
+| Sales | `sales`, `sale_line_items`, `sale_payments`, `stock_adjustments`; updates `products` (stock/cost) | Inventory (stock/cost), Customer Credit (debt), Installments | `usePayment` | Profit report, Staff performance, Dashboard, Cost freshness |
+| Returns | `returns`, `return_line_items`, `stock_adjustments`; updates `products` | Sales (original sale), Installments (plan status), Inventory (restock) | `useReturnSheet` | Profit report, Money Owed |
+| Inventory | `stock_adjustments`, `stock_receivings`, `stock_receiving_line_items`, `stock_take_sessions`, `stock_take_lines` | Sales, Returns (both write to inventory via `stock_adjustments`) | `useInventoryMovements` (WAFI-009), `useReceivingSheet`, `useStockTake` | Cost freshness indicator, Dashboard, Profit report |
 | Installments | `installment_plans`, `installment_dues` | Sales (originating sale), Returns (cancellation trigger) | `useInstallmentPlan` | Money Owed, Collections worklist |
 | Cash / Shifts | `cash_movements`, `cashier_shifts` | Sales (cash totals), Staff (attribution) | `useCashMovements`, shift composables | Z-report, Reports (deliberately excluded — WAFI-016) |
-| Customer Credit | `customer_ledger` | Sales, Returns | `useCustomerBalance` | Money Owed, Collections worklist |
+| Customer Credit | `customer_payments` | Sales, Returns | `useCustomerBalance` | Money Owed, Collections worklist |
 | Staff | `staff_ledger`, `staff_settlements` | Sales (attribution), Cash/Shifts | staff-ledger composables | Staff performance dashboard |
 | Products / Cost | `products` | Receiving, Import | `useProducts`, `useReceivingSheet`, `useProductImport` | Cost freshness indicator, Dashboard, Profit report |
 | Audit | `audit_log` | All of the above | `executeFinancialWrite` wrapper | Audit log page |
