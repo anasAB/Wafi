@@ -11,6 +11,7 @@ const mockRow = (overrides = {}) => ({
   price_usd: 10, cost_price_usd: 7, barcode: null, category: null,
   current_stock: 5, low_stock_threshold: 3, photo_url: null,
   created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z',
+  cost_updated_at: '2024-01-01T00:00:00Z',
   is_active: 1, deleted: 0, sync_status: 'synced',
   ...overrides,
 })
@@ -30,6 +31,17 @@ describe('useProducts', () => {
     expect(products.value[0].salePriceUsd).toBe(10)
     expect(products.value[0].costPriceUsd).toBe(7)
     expect(products.value[0].currentStock).toBe(5)
+  })
+
+  it('load maps cost_updated_at to costUpdatedAt (and leaves it undefined when null)', async () => {
+    vi.mocked(db.getAll).mockResolvedValueOnce([
+      mockRow({ id: 'p1', cost_updated_at: '2026-01-01T00:00:00Z' }),
+      mockRow({ id: 'p2', cost_updated_at: null }),
+    ])
+    const { products, load } = useProducts()
+    await load()
+    expect(products.value.find(p => p.id === 'p1')?.costUpdatedAt).toBe('2026-01-01T00:00:00Z')
+    expect(products.value.find(p => p.id === 'p2')?.costUpdatedAt).toBeUndefined()
   })
 
   it('lowStockProducts returns products at or below threshold', async () => {
