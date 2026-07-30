@@ -40,6 +40,10 @@ const visibleProducts = computed(() => {
 })
 
 async function loadProducts() {
+  // Note: this column list omits cost_updated_at (WAFI-013). Harmless today —
+  // this grid shows no cost-freshness UI, and rowToProduct maps a missing
+  // column gracefully via `?? undefined` — but a future freshness UI on the
+  // POS screen would need cost_updated_at added here first.
   const result = await db.execute(
     `SELECT id, shop_id, name_ar, name_en, price_usd, cost_price_usd, barcode, category, category_id, subcategory_id, photo_url, current_stock, low_stock_threshold, is_active, created_at, updated_at FROM products WHERE shop_id = ? AND is_active = 1`,
     [device.shopId]

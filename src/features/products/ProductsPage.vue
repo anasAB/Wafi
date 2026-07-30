@@ -11,14 +11,29 @@ import { useBarcodeScan } from '@/composables/useBarcodeScan'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import AppToast from '@/components/ui/AppToast.vue'
 import type { AdjustmentReason } from '@/features/products/product.types'
+import { isCostImprecise } from '@/features/products/product.utils'
 
 const router  = useRouter()
 const route   = useRoute()
 const { products, load, softDelete, adjustStock } = useProducts()
 const scanner = useBarcodeScan()
 
-const filterLowStock    = computed(() => route.query.filter === 'low-stock')
-const filterMissingCost = computed(() => route.query.filter === 'missing-cost')
+const filterLowStock = computed(() => route.query.filter === 'low-stock')
+// WAFI-013: renamed from filterMissingCost — the filter now covers both missing
+// AND stale cost. 'missing-cost' is kept as a permanent backward-compatible
+// alias for the query-param VALUE (not the variable name) — someone may have
+// bookmarked or screenshotted the dashboard's old deep link
+// (HomePage.vue's goToMissingCostProducts), and there's no mechanism in this
+// app to notify a bookmark-holder that a URL changed.
+const filterImpreciseCost = computed(() =>
+  route.query.filter === 'imprecise-cost' || route.query.filter === 'missing-cost'
+)
+const impreciseCostCount = computed(() =>
+  products.value.filter(p => isCostImprecise(p)).length
+)
+function setFilter(value: 'low-stock' | 'imprecise-cost' | null) {
+  router.push({ query: { ...route.query, filter: value ?? undefined } })
+}
 const initialCategoryId = computed(() => (route.query.category as string | undefined) ?? null)
 const deleteTarget   = ref<string | null>(null)
 const toast          = ref<{ message: string; type: 'success' | 'error' } | null>(null)
@@ -123,6 +138,32 @@ async function confirmDelete() {
         </div>
       </div>
 
+      <!-- Filter chips (WAFI-013 — first visible chip UI for either filter; both
+           low-stock and imprecise-cost were previously deep-link-only) -->
+      <div class="filter-chips">
+        <button
+          type="button"
+          class="filter-chip"
+          :class="{ 'filter-chip-active': !filterLowStock && !filterImpreciseCost }"
+          @click="setFilter(null)"
+        >الكل</button>
+        <button
+          type="button"
+          class="filter-chip"
+          :class="{ 'filter-chip-active': filterLowStock }"
+          @click="setFilter(filterLowStock ? null : 'low-stock')"
+        >مخزون منخفض</button>
+        <button
+          type="button"
+          class="filter-chip"
+          :class="{ 'filter-chip-active': filterImpreciseCost }"
+          @click="setFilter(filterImpreciseCost ? null : 'imprecise-cost')"
+        >
+          بدون سعر دقيق
+          <span v-if="impreciseCostCount > 0" class="filter-chip-badge">{{ impreciseCostCount }}</span>
+        </button>
+      </div>
+
       <!-- Missed barcode banner -->
       <div v-if="missedBarcode" class="barcode-banner">
         <span class="barcode-banner-text">
@@ -139,7 +180,7 @@ async function confirmDelete() {
         class="product-list-block"
         :products="products"
         :filter-low-stock="filterLowStock"
-        :filter-missing-cost="filterMissingCost"
+        :filter-imprecise-cost="filterImpreciseCost"
         :initial-category-id="initialCategoryId"
         @edit="id => router.push(`/products/${id}/edit`)"
         @delete="handleDelete"
@@ -327,6 +368,55 @@ async function confirmDelete() {
 
 .barcode-banner-action:hover {
   opacity: 0.85;
+}
+
+.filter-chips {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.filter-chip {
+  height: 36px;
+  padding-inline: 0.875rem;
+  border-radius: 9999px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.14);
+  color: #9CB3D0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.filter-chip:hover {
+  background: rgba(26,86,219,0.10);
+  color: #E8EDF5;
+}
+
+.filter-chip-active {
+  background: linear-gradient(135deg, rgba(26,86,219,0.28), rgba(18,72,179,0.20));
+  border-color: rgba(26,86,219,0.45);
+  color: #FFFFFF;
+}
+
+.filter-chip-badge {
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding-inline: 0.25rem;
+  border-radius: 9999px;
+  background: rgba(245,158,11,0.9);
+  color: #1a1a1a;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 </style>

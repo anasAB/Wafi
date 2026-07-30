@@ -65,18 +65,27 @@ export function useProducts() {
 
     const now = new Date().toISOString()
     if (data.id) {
-      const old = await db.getOptional<{ price_usd: number }>(
-        `SELECT price_usd FROM products WHERE id = ?`, [data.id]
+      const old = await db.getOptional<{ price_usd: number; cost_price_usd: number }>(
+        `SELECT price_usd, cost_price_usd FROM products WHERE id = ?`, [data.id]
       )
-      await db.execute(
-        `UPDATE products SET name_ar=?, name_en=?, barcode=?, category_id=?, subcategory_id=?,
-         price_usd=?, cost_price_usd=?, current_stock=?, low_stock_threshold=?,
-         photo_url=?, is_active=?, updated_at=?, sync_status='pending' WHERE id=?`,
-        [data.nameAr, data.nameEn ?? null, normalizedBarcode || null,
-         data.categoryId ?? null, effectiveSubcategoryId ?? null,
-         data.salePriceUsd, data.costPriceUsd, currentStock, data.lowStockThreshold,
-         data.photoUrl ?? null, data.isActive ? 1 : 0, now, data.id]
-      )
+      const costChanged = old ? old.cost_price_usd !== data.costPriceUsd : false
+      const sql = costChanged
+        ? `UPDATE products SET name_ar=?, name_en=?, barcode=?, category_id=?, subcategory_id=?,
+           price_usd=?, cost_price_usd=?, current_stock=?, low_stock_threshold=?,
+           photo_url=?, is_active=?, cost_updated_at=?, updated_at=?, sync_status='pending' WHERE id=?`
+        : `UPDATE products SET name_ar=?, name_en=?, barcode=?, category_id=?, subcategory_id=?,
+           price_usd=?, cost_price_usd=?, current_stock=?, low_stock_threshold=?,
+           photo_url=?, is_active=?, updated_at=?, sync_status='pending' WHERE id=?`
+      const baseParams = [
+        data.nameAr, data.nameEn ?? null, normalizedBarcode || null,
+        data.categoryId ?? null, effectiveSubcategoryId ?? null,
+        data.salePriceUsd, data.costPriceUsd, currentStock, data.lowStockThreshold,
+        data.photoUrl ?? null, data.isActive ? 1 : 0,
+      ]
+      const params = costChanged
+        ? [...baseParams, now, now, data.id]
+        : [...baseParams, now, data.id]
+      await db.execute(sql, params)
       await load()
       if (old && old.price_usd !== data.salePriceUsd) {
         await logProductPriceChanged(data.id, data.nameAr, old.price_usd, data.salePriceUsd)
@@ -86,17 +95,18 @@ export function useProducts() {
       return data.id
     } else {
       const id = uuidv4()
+      const costUpdatedAt = data.costPriceUsd > 0 ? now : null
       await db.execute(
         `INSERT INTO products
          (id, shop_id, name_ar, name_en, barcode, category, category_id, subcategory_id,
           price_usd, cost_price_usd, current_stock, low_stock_threshold, photo_url,
-          is_active, deleted, sync_status, created_at, updated_at, created_via)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'pending', ?, ?, ?)`,
+          is_active, deleted, sync_status, created_at, updated_at, cost_updated_at, created_via)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [id, data.shopId, data.nameAr, data.nameEn ?? null, normalizedBarcode || null,
          null, data.categoryId ?? null, effectiveSubcategoryId ?? null,
          data.salePriceUsd, data.costPriceUsd,
          currentStock, data.lowStockThreshold, data.photoUrl ?? null,
-         data.isActive ? 1 : 0, now, now, data.createdVia ?? null]
+         data.isActive ? 1 : 0, 0, 'pending', now, now, costUpdatedAt, data.createdVia ?? null]
       )
       await load()
       await logProductCreated(id, data.nameAr)

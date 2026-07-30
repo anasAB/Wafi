@@ -11,6 +11,7 @@ const mockRow = (overrides = {}) => ({
   price_usd: 10, cost_price_usd: 7, barcode: null, category: null,
   current_stock: 5, low_stock_threshold: 3, photo_url: null,
   created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z',
+  cost_updated_at: '2024-01-01T00:00:00Z',
   is_active: 1, deleted: 0, sync_status: 'synced',
   ...overrides,
 })
@@ -30,6 +31,17 @@ describe('useProducts', () => {
     expect(products.value[0].salePriceUsd).toBe(10)
     expect(products.value[0].costPriceUsd).toBe(7)
     expect(products.value[0].currentStock).toBe(5)
+  })
+
+  it('load maps cost_updated_at to costUpdatedAt (and leaves it undefined when null)', async () => {
+    vi.mocked(db.getAll).mockResolvedValueOnce([
+      mockRow({ id: 'p1', cost_updated_at: '2026-01-01T00:00:00Z' }),
+      mockRow({ id: 'p2', cost_updated_at: null }),
+    ])
+    const { products, load } = useProducts()
+    await load()
+    expect(products.value.find(p => p.id === 'p1')?.costUpdatedAt).toBe('2026-01-01T00:00:00Z')
+    expect(products.value.find(p => p.id === 'p2')?.costUpdatedAt).toBeUndefined()
   })
 
   it('lowStockProducts returns products at or below threshold', async () => {
@@ -150,5 +162,112 @@ describe('useProducts', () => {
     await load()
     expect(getById('p1')?.id).toBe('p1')
     expect(getById('missing')).toBeUndefined()
+  })
+})
+
+describe('useProducts.save — cost_updated_at stamping (WAFI-013)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  it('creating a product with a real cost stamps cost_updated_at', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce(null)
+    const { save } = useProducts()
+    await save({
+      shopId: 's1', nameAr: 'حليب', salePriceUsd: 5, costPriceUsd: 3.10,
+      currentStock: 20, lowStockThreshold: 5, isActive: true,
+      createdAt: '', updatedAt: '',
+    })
+    const insertCall = vi.mocked(db.execute).mock.calls.find(
+      c => typeof c[0] === 'string' && c[0].includes('INSERT INTO products'),
+    )
+    expect(insertCall).toBeDefined()
+    const sql = insertCall![0] as string
+    expect(sql).toContain('cost_updated_at')
+  })
+
+  it('creating a product with no cost (0) leaves cost_updated_at out / null', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce(null)
+    const { save } = useProducts()
+    await save({
+      shopId: 's1', nameAr: 'قلم بلا سعر', salePriceUsd: 2, costPriceUsd: 0,
+      currentStock: 20, lowStockThreshold: 5, isActive: true,
+      createdAt: '', updatedAt: '',
+    })
+    const insertCall = vi.mocked(db.execute).mock.calls.find(
+      c => typeof c[0] === 'string' && c[0].includes('INSERT INTO products'),
+    )
+    expect(insertCall).toBeDefined()
+    // cost_updated_at bound param must be null when costPriceUsd is 0.
+    const params = insertCall![1] as any[]
+    const sql = insertCall![0] as string
+    const costUpdatedAtIndex = sql
+      .slice(sql.indexOf('('), sql.indexOf(')'))
+      .split(',').map(s => s.trim()).indexOf('cost_updated_at')
+    expect(params[costUpdatedAtIndex]).toBeNull()
+  })
+
+  it('editing only the name (cost unchanged) does NOT update cost_updated_at', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce({ price_usd: 10, cost_price_usd: 7 })
+    const { save } = useProducts()
+    await save({
+      id: 'p1', shopId: 's1', nameAr: 'اسم جديد', salePriceUsd: 10, costPriceUsd: 7,
+      currentStock: 20, lowStockThreshold: 5, isActive: true,
+      createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z',
+    })
+    const updateCall = vi.mocked(db.execute).mock.calls.find(
+      c => typeof c[0] === 'string' && c[0].includes('UPDATE products'),
+    )
+    expect(updateCall).toBeDefined()
+    const sql = updateCall![0] as string
+    expect(sql).not.toContain('cost_updated_at')
+  })
+
+  it('editing only the sale price (cost unchanged) does NOT update cost_updated_at', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce({ price_usd: 10, cost_price_usd: 7 })
+    const { save } = useProducts()
+    await save({
+      id: 'p1', shopId: 's1', nameAr: 'منتج', salePriceUsd: 15, costPriceUsd: 7,
+      currentStock: 20, lowStockThreshold: 5, isActive: true,
+      createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z',
+    })
+    const updateCall = vi.mocked(db.execute).mock.calls.find(
+      c => typeof c[0] === 'string' && c[0].includes('UPDATE products'),
+    )
+    expect(updateCall).toBeDefined()
+    const sql = updateCall![0] as string
+    expect(sql).not.toContain('cost_updated_at')
+  })
+
+  it('editing the cost value DOES update cost_updated_at', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce({ price_usd: 10, cost_price_usd: 7 })
+    const { save } = useProducts()
+    await save({
+      id: 'p1', shopId: 's1', nameAr: 'منتج', salePriceUsd: 10, costPriceUsd: 9,
+      currentStock: 20, lowStockThreshold: 5, isActive: true,
+      createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z',
+    })
+    const updateCall = vi.mocked(db.execute).mock.calls.find(
+      c => typeof c[0] === 'string' && c[0].includes('UPDATE products'),
+    )
+    expect(updateCall).toBeDefined()
+    const sql = updateCall![0] as string
+    expect(sql).toContain('cost_updated_at')
+  })
+
+  it('the missing → fresh transition: editing cost from 0 to a real value stamps cost_updated_at', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce({ price_usd: 5, cost_price_usd: 0 })
+    const { save } = useProducts()
+    await save({
+      id: 'p1', shopId: 's1', nameAr: 'حليب', salePriceUsd: 5, costPriceUsd: 3.10,
+      currentStock: 20, lowStockThreshold: 5, isActive: true,
+      createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z',
+    })
+    const updateCall = vi.mocked(db.execute).mock.calls.find(
+      c => typeof c[0] === 'string' && c[0].includes('UPDATE products'),
+    )
+    expect(updateCall).toBeDefined()
+    expect((updateCall![0] as string)).toContain('cost_updated_at')
   })
 })

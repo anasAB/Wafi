@@ -5,6 +5,7 @@ export interface Product {
   nameEn?:            string
   salePriceUsd:       number   // stored as price_usd in DB
   costPriceUsd:       number
+  costUpdatedAt?:     string   // WAFI-013 — null/undefined until a real cost is set/confirmed
   barcode?:           string
   category?:          string
   categoryId?:        string

@@ -18,7 +18,13 @@
 4. Review migrations added since the last release — confirm each is
    additive-only (no `DROP`/`RENAME`/destructive `ALTER` on live data,
    per `ENFORCEMENT.md` §6), and note anything that needs a breaking-change
-   entry in this release's `docs/releases/vX.Y.Z.md` file.
+   entry in this release's `docs/releases/vX.Y.Z.md` file. If a migration
+   adds a column to a table PowerSync syncs, confirm the project's
+   PowerSync sync rules include that column (check the PowerSync dashboard
+   directly — this cannot be verified from this repository, since no
+   sync-rules file is version-controlled here). A column missing from the
+   sync rules fails silently: writes succeed locally but the value never
+   reaches any device.
 5. Increment the version in `package.json`, matching what this release
    will be called in `docs/releases/`.
 

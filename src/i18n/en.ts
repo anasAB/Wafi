@@ -135,7 +135,7 @@ export default {
   dashboard: {
     profitEstimatedBadge:   'Estimated',
     profitEstimatedCaveat:  'Estimated — {count} sales are missing a cost price, real profit is lower',
-    profitEstimatedFixHint: 'Add a cost price',
+    profitEstimatedFixHint: 'Review products with imprecise cost',
   },
   // Reporting Pack — profit report screen (/reports).
   reports: {
