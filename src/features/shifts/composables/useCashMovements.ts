@@ -2,7 +2,7 @@ import { db }              from '@/data/powersync/db'
 import { useDeviceStore }  from '@/store/device.store'
 import { useSessionStore } from '@/store/session.store'
 import { useAuditLog }     from '@/features/audit/composables/useAuditLog'
-import { executeFinancialWrite } from '@/composables/executeFinancialWrite'
+import { executeBusinessOperation } from '@/composables/executeBusinessOperation'
 import { useZReport }      from './useZReport'
 import type { CashierShift } from '../shift.types'
 import type {
@@ -67,13 +67,13 @@ export function useCashMovements() {
     if (input.currency === 'SYP' && !Number.isInteger(input.amount)) {
       throw new Error('مبلغ الليرة يجب أن يكون رقماً صحيحاً')
     }
-    return executeFinancialWrite(
+    return executeBusinessOperation(
       () => insert({
         shiftId: input.shift.id, direction: input.direction, category: input.category,
         currency: input.currency, amount: input.amount, note: input.note ?? null,
         voidsMovementId: null,
       }),
-      (id) => logCashMovementRecorded(id, input.direction, input.category, input.currency, input.amount),
+      { audit: (id) => logCashMovementRecorded(id, input.direction, input.category, input.currency, input.amount) },
     )
   }
 
@@ -91,13 +91,13 @@ export function useCashMovements() {
     if (existingVoid) throw new Error('تم عكس هذه الحركة مسبقاً')
 
     const reverseDir: CashMovementDirection = orig.direction === 'in' ? 'out' : 'in'
-    return executeFinancialWrite(
+    return executeBusinessOperation(
       () => insert({
         shiftId: orig.shift_id, direction: reverseDir, category: orig.category,
         currency: orig.currency, amount: orig.amount, note: reasonNote ?? null,
         voidsMovementId: movementId,
       }),
-      (id) => logCashMovementVoided(id, movementId, reasonNote ?? ''),
+      { audit: (id) => logCashMovementVoided(id, movementId, reasonNote ?? '') },
     )
   }
 

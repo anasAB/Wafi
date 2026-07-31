@@ -1,5 +1,15 @@
 # WAFI-152: Business Services Layer — Implementation Plan
 
+> **STATUS: ✅ SHIPPED 2026-07-31.** All 5 tasks implemented. Real-codebase deviations from
+> this plan (a 7th `executeFinancialWrite` call site the plan's file list missed in
+> `useCashMovements.ts`, `enum` → const-object conversion forced by this repo's
+> `erasableSyntaxOnly` build flag, `useShift.ts`'s `openShift`/`closeShift` narrowed to a
+> raw-write-only extraction since they're session/identity orchestration not comparable
+> business-write logic, and a real bug fixed in the original `adjustInventory` sketch)
+> are recorded in `WAFI_Production_Readiness_Plan_v3.md`'s WAFI-152 entry, not re-edited
+> into every task/step below — this file is kept as the historical plan, not a live
+> checklist. The checkboxes below were not individually ticked during implementation.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Extract business logic out of 6 Vue composable groups into 5 framework-agnostic TypeScript services under `src/services/`, with a shared `executeBusinessOperation` wrapper that runs a write, then an audit call, then a fire-and-forget domain-event publish.
@@ -60,7 +70,7 @@
 
 Extraction order matches the spec's simplest→most-complex sequencing (§9), but Task 1 (the shared wrapper) must land first since every other task depends on it:
 
-0. `executeBusinessWrite` + event types (foundation — blocks everything else)
+0. `executeBusinessOperation` + event types (foundation — blocks everything else)
 1. ExpenseService (single composable, no `writeTransaction` today — simplest)
 2. InventoryService (two extraction sources: `useReceivingSheet.ts` + `useProducts.ts`)
 3. CustomerService (single composable, needs new `CustomerBalance` type)
@@ -568,10 +578,10 @@ git commit -m "refactor(WAFI-152): extract ExpenseService.recordExpense from use
 - Modify: `src/__tests__/features/useProducts.test.ts`
 
 **Interfaces:**
-- Consumes: `executeBusinessWrite`, `DomainEventType` (Task 0); `ReceivingLine`, `Receiving` types (`src/features/suppliers/receiving.types.ts`); `AdjustmentReason`, `StockAdjustment` types (`src/features/products/product.types.ts`).
+- Consumes: `executeBusinessOperation`, `InventoryEventType` (Task 0); `ReceivingLine`, `Receiving` types (`src/features/suppliers/receiving.types.ts`); `AdjustmentReason`, `StockAdjustment` types (`src/features/products/product.types.ts`).
 - Produces:
-  - `receiveStock(shopId: string, staffId: string, input: ReceiveStockInput): Promise<Receiving>`
-  - `adjustInventory(shopId: string, input: AdjustInventoryInput): Promise<StockAdjustment>` where `AdjustInventoryInput = { productId: string; reason: AdjustmentReason; notes?: string } & ({ mode: 'absolute'; newValue: number } | { mode: 'delta'; delta: number })`
+  - `receiveStock(shopId: string, staffId: string, input: ReceiveStockInput, audit: ReceiveStockAuditPort): Promise<Receiving>`
+  - `adjustInventory(shopId: string, deviceId: string, input: AdjustInventoryInput, audit: InventoryAdjustAuditPort): Promise<StockAdjustment>` where `AdjustInventoryInput = { productId: string; reason: AdjustmentReason; notes?: string } & ({ mode: 'absolute'; newValue: number } | { mode: 'delta'; delta: number })`
 
 **Context:** Two independent extraction sources per the verified spec §4 correction — `receiveStock` from `useReceivingSheet.ts`'s `confirm()` (including its own inline stock-increment block, kept separate from `adjustInventory`'s logic), and `adjustInventory` from `useProducts.ts`'s `adjustStock`/`adjustStockBy` (the discriminated `mode` union lets one service method replace both). Both must preserve the never-below-zero clamp (`Math.max(0, ...)`) exactly.
 
@@ -603,12 +613,13 @@ describe('InventoryService.receiveStock', () => {
     invoicePhotoUrl: null,
     notes: '',
   }
+  const fakeAudit = { logReceivingCreated: vi.fn().mockResolvedValue(undefined) }
 
   it('runs one writeTransaction inserting the header and one line item', async () => {
     const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [{ current_stock: 10 }] } })
     vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
 
-    const result = await receiveStock('shop1', 'staff1', input)
+    const result = await receiveStock('shop1', 'staff1', input, fakeAudit)
 
     expect(txExecute).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO stock_receivings'),
@@ -625,7 +636,7 @@ describe('InventoryService.receiveStock', () => {
     const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [{ current_stock: 10 }] } })
     vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
 
-    await receiveStock('shop1', 'staff1', input)
+    await receiveStock('shop1', 'staff1', input, fakeAudit)
 
     expect(txExecute).toHaveBeenCalledWith(
       expect.stringContaining('UPDATE products SET current_stock'),
@@ -640,11 +651,22 @@ describe('InventoryService.receiveStock', () => {
     await receiveStock('shop1', 'staff1', {
       ...input,
       lines: [{ ...input.lines[0], updateCost: false }],
-    })
+    }, fakeAudit)
 
     const costUpdateCall = txExecute.mock.calls.find((c: any[]) =>
       String(c[0]).includes('cost_price_usd'))
     expect(costUpdateCall).toBeUndefined()
+  })
+
+  it('calls the injected audit port with the created receiving id/supplier/total/lines', async () => {
+    const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [{ current_stock: 10 }] } })
+    vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
+
+    const result = await receiveStock('shop1', 'staff1', input, fakeAudit)
+
+    expect(fakeAudit.logReceivingCreated).toHaveBeenCalledWith(
+      result.id, 'مورد الكتروني', result.totalCostUsd, 1, expect.any(Array),
+    )
   })
 })
 ```
@@ -662,9 +684,8 @@ Read `src/features/suppliers/composables/useReceivingSheet.ts` in full first (al
 // src/services/inventory.service.ts
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '@/data/powersync/db'
-import { executeBusinessWrite } from '@/composables/executeBusinessWrite'
-import { DomainEventType } from '@/services/events/domainEvent.types'
-import { useAuditLog } from '@/features/audit/composables/useAuditLog'
+import { executeBusinessOperation } from '@/composables/executeBusinessOperation'
+import { InventoryEventType } from '@/services/events/domainEvent.types'
 import type { ReceivingLine, Receiving } from '@/features/suppliers/receiving.types'
 
 export interface ReceiveStockInput {
@@ -675,10 +696,34 @@ export interface ReceiveStockInput {
   notes: string
 }
 
+/** Structurally identical to useAuditLog.ts's private (unexported) ReceivingAuditLineItem
+ *  — duplicated here rather than exported from useAuditLog, so this file still imports
+ *  nothing from @/features/audit (which itself imports Vue/Pinia composables elsewhere
+ *  in that module). If useAuditLog.ts's shape ever changes, update both. */
+export interface ReceivingAuditLineItem {
+  productId: string
+  productName: string
+  qtyReceived: number
+  unitCostUsd: number
+  lineTotalUsd: number
+  costUpdated: boolean
+}
+
+/** Narrow audit interface this service needs — implemented by the caller via
+ *  useAuditLog(), never imported here. Keeps this file free of Vue imports in
+ *  fact, not just by convention (matches ExpenseAuditPort's pattern, Task 1). */
+export interface ReceiveStockAuditPort {
+  logReceivingCreated: (
+    receivingId: string, supplierName: string, totalUsd: number, lineCount: number,
+    lineItems?: ReceivingAuditLineItem[],
+  ) => Promise<void>
+}
+
 export async function receiveStock(
   shopId: string,
   staffId: string | null,
   input: ReceiveStockInput,
+  audit: ReceiveStockAuditPort,
 ): Promise<Receiving> {
   if (!input.supplierId || input.lines.length === 0 || input.lines.some(l => l.qtyReceived <= 0)) {
     throw new Error('receiveStock() called without valid input')
@@ -744,15 +789,13 @@ export async function receiveStock(
     }
   }
 
-  return executeBusinessWrite(
-    write,
-    async (receiving) => {
-      const { logReceivingCreated } = useAuditLog()
+  return executeBusinessOperation(write, {
+    audit: async (receiving) => {
       const auditSupplierName = input.supplierName.trim() ||
         (await db.getOptional<{ name: string }>(
           `SELECT name FROM suppliers WHERE id = ? LIMIT 1`, [input.supplierId],
         ))?.name || 'مورد غير معروف'
-      await logReceivingCreated(
+      await audit.logReceivingCreated(
         receiving.id, auditSupplierName, receiving.totalCostUsd, input.lines.length,
         input.lines.map((line) => ({
           productId: line.productId, productName: line.productName,
@@ -762,21 +805,22 @@ export async function receiveStock(
         })),
       )
     },
-    (receiving) => ({
-      type: DomainEventType.StockReceived,
+    toEvent: (receiving) => ({
+      type: InventoryEventType.StockReceived,
+      entityId: receiving.id,
       payload: { receivingId: receiving.id, supplierId: input.supplierId, skuCount: input.lines.length, totalCost: receiving.totalCostUsd },
       staffId: staffId ?? '',
       shopId,
       occurredAt: now,
     }),
-  )
+  })
 }
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/services/__tests__/inventory.service.test.ts`
-Expected: PASS (3 tests)
+Expected: PASS (4 tests)
 
 - [ ] **Step 5: Write the failing test for `adjustInventory`**
 
@@ -785,13 +829,15 @@ Expected: PASS (3 tests)
 import { adjustInventory } from '@/services/inventory.service'
 
 describe('InventoryService.adjustInventory', () => {
+  const fakeAdjustAudit = { logStockAdjusted: vi.fn().mockResolvedValue(undefined) }
+
   it('mode: absolute — clamps to 0 and never goes negative', async () => {
     const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [{ current_stock: 5 }] } })
     vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
 
-    const result = await adjustInventory('shop1', {
+    const result = await adjustInventory('shop1', 'device1', {
       mode: 'absolute', productId: 'p1', newValue: -3, reason: 'other',
-    })
+    }, fakeAdjustAudit)
 
     expect(result.newValue).toBe(0)
     expect(txExecute).toHaveBeenCalledWith(
@@ -804,20 +850,32 @@ describe('InventoryService.adjustInventory', () => {
     const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [{ current_stock: 10 }] } })
     vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
 
-    const result = await adjustInventory('shop1', {
+    const result = await adjustInventory('shop1', 'device1', {
       mode: 'delta', productId: 'p1', delta: -4, reason: 'stocktake',
-    })
+    }, fakeAdjustAudit)
 
     expect(result.oldValue).toBe(10)
     expect(result.newValue).toBe(6)
   })
 
   it('mode: delta — no-op when delta is 0 (matches existing adjustStockBy early-return)', async () => {
-    const result = await adjustInventory('shop1', {
+    const result = await adjustInventory('shop1', 'device1', {
       mode: 'delta', productId: 'p1', delta: 0, reason: 'stocktake',
-    })
+    }, fakeAdjustAudit)
     expect(db.writeTransaction).not.toHaveBeenCalled()
     expect(result).toBeNull()
+  })
+
+  it('calls the injected audit port with product name/old/new value', async () => {
+    const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [{ current_stock: 10 }] } })
+    vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
+    vi.mocked(db.getOptional).mockResolvedValueOnce({ name_ar: 'Samsung A55' } as any)
+
+    await adjustInventory('shop1', 'device1', {
+      mode: 'delta', productId: 'p1', delta: -4, reason: 'stocktake',
+    }, fakeAdjustAudit)
+
+    expect(fakeAdjustAudit.logStockAdjusted).toHaveBeenCalledWith('p1', 'Samsung A55', 10, 6)
   })
 })
 ```
@@ -837,14 +895,21 @@ export type AdjustInventoryInput =
   { productId: string; reason: AdjustmentReason; notes?: string } &
   ({ mode: 'absolute'; newValue: number } | { mode: 'delta'; delta: number })
 
+/** Narrow audit interface this service needs — implemented by the caller via
+ *  useAuditLog(), never imported here. */
+export interface InventoryAdjustAuditPort {
+  logStockAdjusted: (productId: string, name: string, oldQty: number, newQty: number) => Promise<void>
+}
+
 export async function adjustInventory(
   shopId: string,
+  deviceId: string,
   input: AdjustInventoryInput,
+  audit: InventoryAdjustAuditPort,
 ): Promise<StockAdjustment | null> {
   if (input.mode === 'delta' && input.delta === 0) return null
 
   const now = new Date().toISOString()
-  const deviceId = shopId  // TODO: device.deviceId — see Step 7a
   let oldValue = 0
   let clampedValue = 0
 
@@ -873,52 +938,40 @@ export async function adjustInventory(
     return { id: uuidv4(), productId: input.productId, oldValue, newValue: clampedValue, reason: input.reason, notes: input.notes, createdAt: now, deviceId }
   }
 
-  return executeBusinessWrite(
-    write,
-    async (adjustment) => {
-      const { logStockAdjusted } = useAuditLog()
+  return executeBusinessOperation(write, {
+    audit: async (adjustment) => {
       const nameRow = await db.getOptional<{ name_ar: string }>(
         `SELECT name_ar FROM products WHERE id = ?`, [input.productId],
       )
-      await logStockAdjusted(input.productId, nameRow?.name_ar ?? input.productId, adjustment.oldValue, adjustment.newValue)
+      await audit.logStockAdjusted(input.productId, nameRow?.name_ar ?? input.productId, adjustment.oldValue, adjustment.newValue)
     },
-    (adjustment) => ({
-      type: DomainEventType.InventoryAdjusted,
+    toEvent: (adjustment) => ({
+      type: InventoryEventType.Adjusted,
+      entityId: input.productId,
       payload: { productId: input.productId, deltaQty: adjustment.newValue - adjustment.oldValue, reason: input.reason },
       staffId: '',
       shopId,
       occurredAt: now,
     }),
-  )
+  })
 }
 ```
 
-- [ ] **Step 7a: Refactor — fix the `deviceId` placeholder**
+- [ ] **Step 7a: Confirm the `deviceId` parameter is real, not a placeholder**
 
-The `deviceId` value above is a placeholder (`shopId` reused, which is wrong) because `useProducts.ts`'s original code reads `useDeviceStore().deviceId` — a Pinia call. Per spec §6a, the service cannot call `useDeviceStore()` itself. Change `adjustInventory`'s signature to accept `deviceId: string` as an explicit parameter (the composable, which already calls `useDeviceStore()` for other purposes, passes it in):
-
-```ts
-// src/services/inventory.service.ts — update signature
-export async function adjustInventory(
-  shopId: string,
-  deviceId: string,
-  input: AdjustInventoryInput,
-): Promise<StockAdjustment | null> {
-  // ... same body, replace `const deviceId = shopId` line with the parameter
-```
-
-Update the test file's calls to `adjustInventory('shop1', 'device1', { ... })` accordingly, and re-run Step 6's tests to confirm they still pass with the corrected signature.
+Unlike an earlier draft of this plan (which reused `shopId` as a `deviceId` placeholder), the signature above already takes `deviceId` as an explicit parameter — per spec §6a, the service cannot call `useDeviceStore()` itself, since `useProducts.ts`'s original code read `useDeviceStore().deviceId` (a Pinia call). The composable, which already calls `useDeviceStore()` for other purposes, passes it in (see Step 10). Confirm the test file's calls all pass `'device1'` explicitly as the second argument (Step 5/6 above already do), and re-run Step 6's tests to confirm they pass with this signature.
 
 - [ ] **Step 8: Run test to verify it passes**
 
 Run: `npx vitest run src/services/__tests__/inventory.service.test.ts`
-Expected: PASS (6 tests)
+Expected: PASS (8 tests)
 
 - [ ] **Step 9: Delegate `useReceivingSheet.ts`'s `confirm()` to `receiveStock`**
 
 ```ts
 // src/features/suppliers/composables/useReceivingSheet.ts — replace confirm()'s body
 import { receiveStock } from '@/services/inventory.service'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 // ...
 async function confirm(): Promise<void> {
   if (!supplierId.value || lines.value.length === 0 || lines.value.some(l => l.qtyReceived <= 0)) {
@@ -926,13 +979,14 @@ async function confirm(): Promise<void> {
   }
   const { shopId } = useDeviceStore()
   const session = useSessionStore()
+  const { logReceivingCreated } = useAuditLog()
   await receiveStock(shopId, session.activeStaff?.id ?? null, {
     supplierId: supplierId.value,
     supplierName: supplierName.value,
     lines: [...lines.value],
     invoicePhotoUrl: invoicePhotoUrl.value,
     notes: notes.value,
-  })
+  }, { logReceivingCreated })
 }
 ```
 
@@ -941,17 +995,20 @@ async function confirm(): Promise<void> {
 ```ts
 // src/features/products/composables/useProducts.ts — replace both function bodies
 import { adjustInventory } from '@/services/inventory.service'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 // ...
 async function adjustStock(productId: string, newValue: number, reason: AdjustmentReason, notes?: string) {
   const device = useDeviceStore()
-  await adjustInventory(device.shopId, device.deviceId, { mode: 'absolute', productId, newValue, reason, notes })
+  const { logStockAdjusted } = useAuditLog()
+  await adjustInventory(device.shopId, device.deviceId, { mode: 'absolute', productId, newValue, reason, notes }, { logStockAdjusted })
   await load()
 }
 
 async function adjustStockBy(productId: string, delta: number, reason: AdjustmentReason, notes?: string) {
   if (delta === 0) return
   const device = useDeviceStore()
-  await adjustInventory(device.shopId, device.deviceId, { mode: 'delta', productId, delta, reason, notes })
+  const { logStockAdjusted } = useAuditLog()
+  await adjustInventory(device.shopId, device.deviceId, { mode: 'delta', productId, delta, reason, notes }, { logStockAdjusted })
   await load()
 }
 ```
@@ -981,10 +1038,10 @@ git commit -m "refactor(WAFI-152): extract InventoryService.receiveStock and .ad
 - Modify: `src/__tests__/features/useCustomerBalance.test.ts`
 
 **Interfaces:**
-- Consumes: `executeBusinessWrite`, `DomainEventType` (Task 0); `PaymentAllocation` type (`src/features/customers/customer.types.ts`, unchanged); `fetchOutstandingBalanceUsd` (existing exported function in `useCustomerBalance.ts` — reused, not duplicated).
-- Produces: `CustomerBalance` (new type: `{ balanceUsd: number; pendingSyncCount: number }`), `recordPayment(shopId: string, customerId: string, allocations: PaymentAllocation[]): Promise<CustomerBalance>`.
+- Consumes: `executeBusinessOperation`, `CustomerEventType` (Task 0); `PaymentAllocation` type (`src/features/customers/customer.types.ts`, unchanged); `fetchOutstandingBalanceUsd` (existing exported function in `useCustomerBalance.ts` — reused, not duplicated).
+- Produces: `CustomerBalance` (new type: `{ balanceUsd: number; pendingSyncCount: number }`), `recordPayment(shopId: string, customerId: string, allocations: PaymentAllocation[], audit: RecordPaymentAuditPort, shiftId?: string | null, deviceId?: string | null): Promise<CustomerBalance>`.
 
-**Context:** Per spec §4 correction #21, only `useCustomerBalance.ts`'s ad-hoc `recordPayment` is in scope — `useInstallmentPlan.ts`'s separate `recordDuePayment` stays untouched. `useCustomerBalance.ts` today does NOT use `executeFinancialWrite`/`executeBusinessWrite` — it manually sequences `writeTransaction` → audit → `load()`. This extraction is also where it's brought onto the standard wrapper for consistency with every other write path in the codebase (the research findings flagged this as the dominant pattern elsewhere).
+**Context:** Per spec §4 correction #21, only `useCustomerBalance.ts`'s ad-hoc `recordPayment` is in scope — `useInstallmentPlan.ts`'s separate `recordDuePayment` stays untouched. `useCustomerBalance.ts` today does NOT use `executeFinancialWrite`/`executeBusinessOperation` — it manually sequences `writeTransaction` → audit → `load()`. This extraction is also where it's brought onto the standard wrapper for consistency with every other write path in the codebase (the research findings flagged this as the dominant pattern elsewhere).
 
 - [ ] **Step 1: Write the failing test for the overpayment guards**
 
@@ -997,6 +1054,8 @@ import { db } from '@/data/powersync/db'
 import { recordPayment } from '@/services/customer.service'
 
 describe('CustomerService.recordPayment', () => {
+  const fakeAudit = { logCustomerPaymentRecorded: vi.fn().mockResolvedValue(undefined) }
+
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -1006,7 +1065,7 @@ describe('CustomerService.recordPayment', () => {
     await expect(recordPayment('shop1', 'c1', [
       { saleId: 's1', amountUsd: 60, currency: 'USD', amountRaw: 60, method: 'cash' },
       { saleId: 's1', amountUsd: 60, currency: 'USD', amountRaw: 60, method: 'cash' },
-    ])).rejects.toThrow('المبلغ المدخل يتجاوز المبلغ المتبقي للفاتورة')
+    ], fakeAudit)).rejects.toThrow('المبلغ المدخل يتجاوز المبلغ المتبقي للفاتورة')
   })
 
   it('rejects a batch exceeding customer outstanding balance when per-sale remaining is unavailable offline', async () => {
@@ -1016,7 +1075,7 @@ describe('CustomerService.recordPayment', () => {
     })
     await expect(recordPayment('shop1', 'c1', [
       { saleId: 's1', amountUsd: 100, currency: 'USD', amountRaw: 100, method: 'cash' },
-    ])).rejects.toThrow('المبلغ المدخل يتجاوز رصيد العميل المستحق')
+    ], fakeAudit)).rejects.toThrow('المبلغ المدخل يتجاوز رصيد العميل المستحق')
   })
 
   it('inserts one customer_payments row per allocation inside one writeTransaction', async () => {
@@ -1027,8 +1086,19 @@ describe('CustomerService.recordPayment', () => {
     await recordPayment('shop1', 'c1', [
       { saleId: 's1', amountUsd: 100, currency: 'USD', amountRaw: 100, method: 'cash' },
       { saleId: 's2', amountUsd: 80, currency: 'USD', amountRaw: 80, method: 'cash' },
-    ])
+    ], fakeAudit)
     expect(txExecute).toHaveBeenCalledTimes(2)
+  })
+
+  it('calls the injected audit port with the customer id and total paid', async () => {
+    vi.mocked(db.getOptional).mockResolvedValue({ remaining_usd: 1000 } as any)
+    const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [] } })
+    vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
+
+    await recordPayment('shop1', 'c1', [
+      { saleId: 's1', amountUsd: 100, currency: 'USD', amountRaw: 100, method: 'cash' },
+    ], fakeAudit)
+    expect(fakeAudit.logCustomerPaymentRecorded).toHaveBeenCalledWith('c1', 100)
   })
 })
 ```
@@ -1046,9 +1116,8 @@ Read `src/features/customers/composables/useCustomerBalance.ts` in full first (a
 // src/services/customer.service.ts
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '@/data/powersync/db'
-import { executeBusinessWrite } from '@/composables/executeBusinessWrite'
-import { DomainEventType } from '@/services/events/domainEvent.types'
-import { useAuditLog } from '@/features/audit/composables/useAuditLog'
+import { executeBusinessOperation } from '@/composables/executeBusinessOperation'
+import { CustomerEventType } from '@/services/events/domainEvent.types'
 import { fetchOutstandingBalanceUsd } from '@/features/customers/composables/useCustomerBalance'
 import type { PaymentAllocation } from '@/features/customers/customer.types'
 
@@ -1057,10 +1126,17 @@ export interface CustomerBalance {
   pendingSyncCount: number
 }
 
+/** Narrow audit interface this service needs — implemented by the caller via
+ *  useAuditLog(), never imported here. */
+export interface RecordPaymentAuditPort {
+  logCustomerPaymentRecorded: (customerId: string, amountUsd: number) => Promise<void>
+}
+
 export async function recordPayment(
   shopId: string,
   customerId: string,
   allocations: PaymentAllocation[],
+  audit: RecordPaymentAuditPort,
   shiftId: string | null = null,
   deviceId: string | null = null,
 ): Promise<CustomerBalance> {
@@ -1115,20 +1191,19 @@ export async function recordPayment(
     return { totalPaid: batchTotalUsd }
   }
 
-  const result = await executeBusinessWrite(
-    write,
-    async ({ totalPaid }) => {
-      const { logCustomerPaymentRecorded } = useAuditLog()
-      await logCustomerPaymentRecorded(customerId, totalPaid)
+  const result = await executeBusinessOperation(write, {
+    audit: async ({ totalPaid }) => {
+      await audit.logCustomerPaymentRecorded(customerId, totalPaid)
     },
-    () => ({
-      type: DomainEventType.InstallmentDuePaid,
+    toEvent: () => ({
+      type: CustomerEventType.InstallmentDuePaid,
+      entityId: customerId,
       payload: { customerId, amount: batchTotalUsd, remainingBalance: 0 },  // remainingBalance filled below
       staffId: '',
       shopId,
       occurredAt: now,
     }),
-  )
+  })
 
   const balanceUsd = await fetchOutstandingBalanceUsd(customerId, shopId)
   return { balanceUsd, pendingSyncCount: 0 }
@@ -1143,42 +1218,46 @@ Fetch the balance once, use it for both the event payload and the return value, 
 
 ```ts
 // src/services/customer.service.ts — replace the tail of recordPayment
-  await executeBusinessWrite(
-    write,
-    async ({ totalPaid }) => {
-      const { logCustomerPaymentRecorded } = useAuditLog()
-      await logCustomerPaymentRecorded(customerId, totalPaid)
+  await executeBusinessOperation(write, {
+    audit: async ({ totalPaid }) => {
+      await audit.logCustomerPaymentRecorded(customerId, totalPaid)
     },
-    () => ({
-      type: DomainEventType.InstallmentDuePaid,
+    toEvent: () => ({
+      type: CustomerEventType.InstallmentDuePaid,
+      entityId: customerId,
       payload: { customerId, amount: batchTotalUsd, remainingBalance: 0 },
       staffId: '',
       shopId,
       occurredAt: now,
     }),
-  )
+  })
 
   const balanceUsd = await fetchOutstandingBalanceUsd(customerId, shopId)
   return { balanceUsd, pendingSyncCount: 0 }
 ```
 
-Since the event is published inside `executeBusinessWrite` before the post-write balance fetch runs, `remainingBalance` cannot be computed synchronously from within `toEvent`'s callback without restructuring. Accept this as a known limitation for this ticket (the event payload's `remainingBalance` field is set to `NaN`-safe `0` with a one-line code comment `// TODO(WAFI-140): remainingBalance is not the true post-payment balance — computing it requires a second query after publish, deferred until the event actually has a subscriber`) rather than adding complexity to work around a stub event nobody consumes yet. This is a legitimate simplification: don't over-engineer a payload accuracy no subscriber currently reads.
+Since the event is published inside `executeBusinessOperation` before the post-write balance fetch runs, `remainingBalance` cannot be computed synchronously from within `toEvent`'s callback without restructuring. Accept this as a known limitation for this ticket (the event payload's `remainingBalance` field is set to `NaN`-safe `0` with a one-line code comment `// TODO(WAFI-140): remainingBalance is not the true post-payment balance — computing it requires a second query after publish, deferred until the event actually has a subscriber`) rather than adding complexity to work around a stub event nobody consumes yet. This is a legitimate simplification: don't over-engineer a payload accuracy no subscriber currently reads.
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/services/__tests__/customer.service.test.ts`
-Expected: PASS (3 tests)
+Expected: PASS (4 tests)
 
 - [ ] **Step 5: Delegate `useCustomerBalance.ts`'s `recordPayment` to the service**
 
 ```ts
 // src/features/customers/composables/useCustomerBalance.ts — replace recordPayment's body
 import { recordPayment as recordPaymentService } from '@/services/customer.service'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 // ...
 async function recordPayment(allocations: PaymentAllocation[]): Promise<void> {
   const device = useDeviceStore()
   const shiftStore = useShiftStore()
-  await recordPaymentService(device.shopId, customerId, allocations, shiftStore.activeShiftId, device.deviceId)
+  const { logCustomerPaymentRecorded } = useAuditLog()
+  await recordPaymentService(
+    device.shopId, customerId, allocations,
+    { logCustomerPaymentRecorded }, shiftStore.activeShiftId, device.deviceId,
+  )
   await load()
 }
 ```
@@ -1208,8 +1287,8 @@ git commit -m "refactor(WAFI-152): extract CustomerService.recordPayment from us
 - Modify: `src/__tests__/features/usePayment.test.ts`
 
 **Interfaces:**
-- Consumes: `executeBusinessWrite`, `DomainEventType` (Task 0); `PaymentMethod`, `SplitPaymentEntry`, `CompletedSale`, `SaleLine` types (`src/features/payment/payment.types.ts`, unchanged).
-- Produces: `CompleteSaleInput` (new type — see Step 3), `completeSale(input: CompleteSaleInput): Promise<CompletedSale>`.
+- Consumes: `executeBusinessOperation`, `SalesEventType` (Task 0); `PaymentMethod`, `SplitPaymentEntry`, `CompletedSale`, `SaleLine` types (`src/features/payment/payment.types.ts`, unchanged).
+- Produces: `CompleteSaleInput` (new type — see Step 3), `completeSale(input: CompleteSaleInput, audit: CompleteSaleAuditPort): Promise<CompletedSale>`.
 
 **Context:** This is the largest and most order-sensitive extraction. Per the research findings, `saleStore.incrementSequence()` is called INSIDE the write callback, AFTER `db.writeTransaction` resolves successfully — this exact ordering (WAFI-004: failed write must not burn the sequence number) must be preserved byte-for-byte. `usePayment.confirm()` reads `method`, `amountReceived`, `pendingPayments` off its own composable refs rather than taking a single input object — `CompleteSaleInput` is a new type that bundles what `confirm()` currently reads from those refs plus `customerId`.
 
@@ -1242,13 +1321,17 @@ describe('SalesService.completeSale', () => {
     lines: [{ nameAr: 'Samsung A55', quantity: 1, unitPriceUsd: 100, lineTotalUsd: 100 }],
     exchangeRateAtSale: 1,
   }
+  const fakeAudit = {
+    logSaleCompleted: vi.fn().mockResolvedValue(undefined),
+    logDiscountApplied: vi.fn().mockResolvedValue(undefined),
+  }
 
   it('does NOT increment the sale sequence when db.writeTransaction throws (WAFI-004)', async () => {
     const saleStore = useSaleStore()
     const incrementSpy = vi.spyOn(saleStore, 'incrementSequence')
     vi.mocked(db.writeTransaction).mockRejectedValueOnce(new Error('write failed'))
 
-    await expect(completeSale(baseInput)).rejects.toThrow('write failed')
+    await expect(completeSale(baseInput, fakeAudit)).rejects.toThrow('write failed')
     expect(incrementSpy).not.toHaveBeenCalled()
   })
 
@@ -1258,7 +1341,7 @@ describe('SalesService.completeSale', () => {
     const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [] } })
     vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
 
-    await completeSale(baseInput)
+    await completeSale(baseInput, fakeAudit)
     expect(incrementSpy).toHaveBeenCalledTimes(1)
   })
 })
@@ -1277,11 +1360,11 @@ Extract `confirm()`'s body from `usePayment.ts` (lines 181–386 of the pre-extr
 // src/services/sales.service.ts
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '@/data/powersync/db'
-import { executeBusinessWrite } from '@/composables/executeBusinessWrite'
-import { DomainEventType } from '@/services/events/domainEvent.types'
-import { useAuditLog } from '@/features/audit/composables/useAuditLog'
+import { executeBusinessOperation } from '@/composables/executeBusinessOperation'
+import { SalesEventType } from '@/services/events/domainEvent.types'
 import { useSaleStore } from '@/store/sale.store'
 import type { PaymentMethod, SplitPaymentEntry, CompletedSale, SaleLine } from '@/features/payment/payment.types'
+import type { DiscountType } from '@/features/pos/discounts'
 
 export interface CompleteSaleInput {
   shopId: string
@@ -1296,11 +1379,28 @@ export interface CompleteSaleInput {
   exchangeRateAtSale: number
 }
 
+/** Narrow audit interface this service needs — implemented by the caller via
+ *  useAuditLog(), never imported here. */
+export interface CompleteSaleAuditPort {
+  logSaleCompleted: (saleId: string, totalUsd: number, itemCount: number) => Promise<void>
+  logDiscountApplied: (
+    saleId: string,
+    meta: {
+      operatorId: string | null; tierApplied: 'retail'; basePriceUsd: number
+      discountType: DiscountType; discountValue: number; finalPriceUsd: number
+      pinApproval: boolean; belowCost: boolean
+    },
+  ) => Promise<void>
+}
+
 function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
-export async function completeSale(input: CompleteSaleInput): Promise<CompletedSale> {
+export async function completeSale(
+  input: CompleteSaleInput,
+  audit: CompleteSaleAuditPort,
+): Promise<CompletedSale> {
   // NOTE TO IMPLEMENTER: paste the exact body of usePayment.ts's confirm() here
   // (lines 181-386 of the pre-extraction file), replacing every read of a
   // composable ref (method.value, amountReceived.value, pendingPayments.value,
@@ -1320,13 +1420,16 @@ export async function completeSale(input: CompleteSaleInput): Promise<CompletedS
 
 This task's Step 4 deliverable is explicitly a **paste-and-adapt** operation, not a from-scratch rewrite — the source is real, tested, 200 lines of order-sensitive logic already fully covered by `usePayment.test.ts`'s 641 lines. Writing it a second time from a summary risks silently changing behavior (e.g. the exact rounding, the exact order stock is deducted vs. sale rows inserted). The implementer must open the real file and move the real code.
 
-- [ ] **Step 4a: Wire the write into `executeBusinessWrite`**
+- [ ] **Step 4a: Wire the write into `executeBusinessOperation`**
 
-Once Step 4's transaction body compiles, wrap it:
+Once Step 4's transaction body compiles, wrap it. Note `logDiscountApplied`'s real signature (`src/features/audit/composables/useAuditLog.ts`) takes a single `meta` object (`operatorId`, `tierApplied`, `basePriceUsd`, `discountType`, `discountValue`, `finalPriceUsd`, `pinApproval`, `belowCost`), not positional args — the implementer must pull these fields from whatever the pasted `confirm()` body already computes per line (WAFI-100's existing discount-audit call site in `usePayment.ts` has the exact shape to copy):
 
 ```ts
 // src/services/sales.service.ts — the write/audit/event wiring around the pasted body
-export async function completeSale(input: CompleteSaleInput): Promise<CompletedSale> {
+export async function completeSale(
+  input: CompleteSaleInput,
+  audit: CompleteSaleAuditPort,
+): Promise<CompletedSale> {
   const saleId = uuidv4()
   const now = new Date().toISOString()
   // ... (pasted entries/isSplit/primaryMethod computation from confirm(), using `input.*`)
@@ -1339,18 +1442,20 @@ export async function completeSale(input: CompleteSaleInput): Promise<CompletedS
     return sale  // the CompletedSale object built inside confirm()'s original body
   }
 
-  return executeBusinessWrite(
-    write,
-    async (sale) => {
-      const { logSaleCompleted, logDiscountApplied } = useAuditLog()
-      await logSaleCompleted(sale.saleId, sale.totalUsd, sale.lines.length)
+  return executeBusinessOperation(write, {
+    audit: async (sale) => {
+      await audit.logSaleCompleted(sale.saleId, sale.totalUsd, sale.lines.length)
+      // NOTE TO IMPLEMENTER: copy the exact per-line and sale-level discount-audit
+      // calls (meta object shape, operatorId/basePriceUsd/pinApproval/belowCost
+      // sourcing) verbatim from usePayment.ts's confirm() — do not re-derive from
+      // this sketch, which omits fields this callback doesn't have in scope yet.
       for (const line of sale.lines) {
-        if (line.discountType) await logDiscountApplied(sale.saleId, line.nameAr, line.discountType, line.discountValue)
+        if (line.discountType) await audit.logDiscountApplied(sale.saleId, { /* ...meta, copied from confirm() */ } as any)
       }
-      if (sale.saleDiscount) await logDiscountApplied(sale.saleId, '__sale_level__', sale.saleDiscount.type, sale.saleDiscount.value)
     },
-    (sale) => ({
-      type: DomainEventType.SaleCompleted,
+    toEvent: (sale) => ({
+      type: SalesEventType.Completed,
+      entityId: sale.saleId,
       payload: {
         saleId: sale.saleId, shopId: input.shopId, staffId: input.staffId,
         totalUsd: sale.totalUsd, totalSyp: sale.totalSyp,
@@ -1365,7 +1470,7 @@ export async function completeSale(input: CompleteSaleInput): Promise<CompletedS
       shopId: input.shopId,
       occurredAt: now,
     }),
-  )
+  })
 }
 ```
 
@@ -1400,18 +1505,20 @@ Expected: PASS (2 tests)
 
 - [ ] **Step 6: Add tests for the remaining behaviors ported from `usePayment.test.ts`**
 
-Per spec §8, business-rule assertions move to the service test file. Port (not duplicate) these specific scenarios from the 641-line `usePayment.test.ts` into `sales.service.test.ts`, adapting each to call `completeSale(input)` directly instead of driving the composable: stock deduction/clamping/oversell notes, credit/installment path (`isCredit`), split payments across multiple methods, discount persistence + audit trail (WAFI-100), `source = 'pos'` tagging (WAFI-008). Do not re-derive these test cases from scratch — read each corresponding `it(...)` block in `usePayment.test.ts` and adapt its assertions to the service's direct call shape.
+Per spec §8, business-rule assertions move to the service test file. Port (not duplicate) these specific scenarios from the 641-line `usePayment.test.ts` into `sales.service.test.ts`, adapting each to call `completeSale(input, fakeAudit)` directly instead of driving the composable: stock deduction/clamping/oversell notes, credit/installment path (`isCredit`), split payments across multiple methods, discount persistence + audit trail (WAFI-100 — assert against `fakeAudit.logDiscountApplied`'s call args, not `db.execute`'s SQL text), `source = 'pos'` tagging (WAFI-008). Do not re-derive these test cases from scratch — read each corresponding `it(...)` block in `usePayment.test.ts` and adapt its assertions to the service's direct call shape.
 
 - [ ] **Step 7: Delegate `usePayment.ts`'s `confirm()` to `SalesService.completeSale`**
 
 ```ts
 // src/features/payment/usePayment.ts — replace confirm()'s body
 import { completeSale } from '@/services/sales.service'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 // ...
 async function confirm(customerId?: string): Promise<CompletedSale> {
   const device = useDeviceStore()
   const shiftStore = useShiftStore()
   const session = useSessionStore()
+  const { logSaleCompleted, logDiscountApplied } = useAuditLog()
   const sale = await completeSale({
     shopId: device.shopId,
     staffId: session.activeStaff?.id ?? '',
@@ -1423,7 +1530,7 @@ async function confirm(customerId?: string): Promise<CompletedSale> {
     customerId,
     lines: saleStore.lines,  // whatever the existing confirm() read for line items
     exchangeRateAtSale: /* existing exchange-rate source */,
-  })
+  }, { logSaleCompleted, logDiscountApplied })
   state.value = 'confirmed'
   return sale
 }
@@ -1460,10 +1567,10 @@ git commit -m "refactor(WAFI-152): extract SalesService.completeSale from usePay
 - Modify: `src/__tests__/features/useStaffSettlement.permissions.test.ts`
 
 **Interfaces:**
-- Consumes: `executeBusinessWrite`, `DomainEventType` (Task 0); `CashierShift`, `DenominationBreakdown`, `ZReportMetrics` types (`src/features/shifts/shift.types.ts`); `StaffLedgerEntry`, `NewStaffLedgerEntry`, `StaffSettlement` types (`src/features/staff-ledger/staff-ledger.types.ts`).
+- Consumes: `executeBusinessOperation`, `StaffEventType` (Task 0); `CashierShift`, `DenominationBreakdown`, `ZReportMetrics` types (`src/features/shifts/shift.types.ts`); `StaffLedgerEntry`, `NewStaffLedgerEntry`, `StaffSettlement` types (`src/features/staff-ledger/staff-ledger.types.ts`).
 - Produces: `openShift`, `closeShift`, `paySettlement`, `addLedgerEntry` per spec §4.
 
-**Context:** Largest file-count task — 4 source files, most complex being `useShift.ts` (452 lines, discriminated-union `OpenShiftResult`). `useShiftDetail.ts` is explicitly read-only (per research) and is NOT touched by this task — it has no writes to extract. `useStaffLedger.ts`/`useStaffSettlement.ts` already use `executeFinancialWrite` — Task 0 already renamed their import to `executeBusinessWrite` with a placeholder `toEvent`; this task replaces that placeholder with the real service extraction and correct event payloads.
+**Context:** Largest file-count task — 4 source files, most complex being `useShift.ts` (452 lines, discriminated-union `OpenShiftResult`). `useShiftDetail.ts` is explicitly read-only (per research) and is NOT touched by this task — it has no writes to extract. `useStaffLedger.ts`/`useStaffSettlement.ts` already use `executeFinancialWrite` — Task 0 already renamed their import to `executeBusinessOperation` with no `toEvent` (out-of-scope call sites publish nothing, per Task 0's Step 9); this task replaces that with the real service extraction, injected audit ports (matching Task 1's `ExpenseAuditPort` pattern — no service in this ticket calls `useAuditLog()` directly), and correct event payloads.
 
 - [ ] **Step 1: Read all 4 source files and their test files in full**
 
@@ -1490,29 +1597,37 @@ describe('StaffService.addLedgerEntry', () => {
     staffId: 'staff1', entryType: 'advance', amountRaw: 50, currency: 'USD',
     lockedRate: 1, sourceType: 'manual',
   }
+  const fakeAudit = { logStaffLedgerEntryCreated: vi.fn().mockResolvedValue(undefined) }
 
   it('rejects a zero or negative amountRaw', async () => {
-    await expect(addLedgerEntry('shop1', { ...baseEntry, amountRaw: 0 })).rejects.toThrow()
-    await expect(addLedgerEntry('shop1', { ...baseEntry, amountRaw: -10 })).rejects.toThrow()
+    await expect(addLedgerEntry('shop1', { ...baseEntry, amountRaw: 0 }, fakeAudit)).rejects.toThrow()
+    await expect(addLedgerEntry('shop1', { ...baseEntry, amountRaw: -10 }, fakeAudit)).rejects.toThrow()
   })
 
   it('rejects a missing lockedRate', async () => {
-    await expect(addLedgerEntry('shop1', { ...baseEntry, lockedRate: undefined as any })).rejects.toThrow()
+    await expect(addLedgerEntry('shop1', { ...baseEntry, lockedRate: undefined as any }, fakeAudit)).rejects.toThrow()
   })
 
   it('rejects a negative lockedRate', async () => {
-    await expect(addLedgerEntry('shop1', { ...baseEntry, lockedRate: -1 })).rejects.toThrow()
+    await expect(addLedgerEntry('shop1', { ...baseEntry, lockedRate: -1 }, fakeAudit)).rejects.toThrow()
   })
 
   it('rejects an amount that rounds to zero USD after SYP conversion', async () => {
-    await expect(addLedgerEntry('shop1', { ...baseEntry, currency: 'SYP', amountRaw: 0.001, lockedRate: 15000 })).rejects.toThrow()
+    await expect(addLedgerEntry('shop1', { ...baseEntry, currency: 'SYP', amountRaw: 0.001, lockedRate: 15000 }, fakeAudit)).rejects.toThrow()
   })
 
   it('inserts a ledger entry when validation passes', async () => {
-    await addLedgerEntry('shop1', baseEntry)
+    await addLedgerEntry('shop1', baseEntry, fakeAudit)
     expect(db.execute).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO staff_ledger'),
       expect.any(Array),
+    )
+  })
+
+  it('calls the injected audit port with the created entry id/staffId/type/amount', async () => {
+    const result = await addLedgerEntry('shop1', baseEntry, fakeAudit)
+    expect(fakeAudit.logStaffLedgerEntryCreated).toHaveBeenCalledWith(
+      result.id, result.staffId, result.entryType, result.amountUsd,
     )
   })
 })
@@ -1525,20 +1640,28 @@ Expected: FAIL with "Cannot find module '@/services/staff.service'"
 
 - [ ] **Step 4: Implement `StaffService.addLedgerEntry`**
 
-Paste `useStaffLedger.ts`'s `addLedgerEntry` body verbatim (validation rules + insert + `executeFinancialWrite`/now `executeBusinessWrite` call), converting to a plain function:
+Paste `useStaffLedger.ts`'s `addLedgerEntry` body verbatim (validation rules + insert + `executeFinancialWrite`/now `executeBusinessOperation` call), converting to a plain function:
 
 ```ts
 // src/services/staff.service.ts
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '@/data/powersync/db'
-import { executeBusinessWrite } from '@/composables/executeBusinessWrite'
-import { DomainEventType } from '@/services/events/domainEvent.types'
-import { useAuditLog } from '@/features/audit/composables/useAuditLog'
+import { executeBusinessOperation } from '@/composables/executeBusinessOperation'
+import { StaffEventType } from '@/services/events/domainEvent.types'
 import type { NewStaffLedgerEntry, StaffLedgerEntry } from '@/features/staff-ledger/staff-ledger.types'
+
+/** Narrow audit interface this service needs — implemented by the caller via
+ *  useAuditLog(), never imported here. */
+export interface StaffLedgerAuditPort {
+  logStaffLedgerEntryCreated: (
+    entryId: string, staffId: string, entryType: string, amountUsd: number,
+  ) => Promise<void>
+}
 
 export async function addLedgerEntry(
   shopId: string,
   entry: NewStaffLedgerEntry,
+  audit: StaffLedgerAuditPort,
 ): Promise<StaffLedgerEntry> {
   // NOTE TO IMPLEMENTER: paste useStaffLedger.ts's exact validation block here
   // (amountRaw > 0, lockedRate present and > 0, SYP-conversion-rounds-to-nonzero
@@ -1559,21 +1682,19 @@ export async function addLedgerEntry(
     return { id, shopId, ...entry, amountUsd: entry.amountRaw / entry.lockedRate, createdAt: now, settlementId: null }
   }
 
-  return executeBusinessWrite(
-    write,
-    async (created) => {
-      const { logStaffLedgerEntryCreated } = useAuditLog()
-      await logStaffLedgerEntryCreated(created.id, created.staffId, created.entryType, created.amountUsd)
+  return executeBusinessOperation(write, {
+    audit: async (created) => {
+      await audit.logStaffLedgerEntryCreated(created.id, created.staffId, created.entryType, created.amountUsd)
     },
-    (created) => ({
-      type: DomainEventType.StaffLedgerEntryAdded,
+    toEvent: (created) => ({
+      type: StaffEventType.LedgerEntryAdded,
+      entityId: created.id,
       payload: { staffId: created.staffId, entryType: created.entryType, amount: created.amountUsd },
       staffId: created.staffId,
       shopId,
       occurredAt: now,
     }),
-    'can_view_expenses',
-  )
+  }, 'can_view_expenses')
 }
 ```
 
@@ -1582,7 +1703,7 @@ Correct the `amountUsd` computation and SYP-conversion rounding-to-zero rejectio
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `npx vitest run src/services/__tests__/staff.service.test.ts`
-Expected: PASS (5 tests)
+Expected: PASS (6 tests)
 
 - [ ] **Step 6: Write the failing test for `openShift`/`closeShift`**
 
@@ -1591,15 +1712,20 @@ Expected: PASS (5 tests)
 import { openShift, closeShift } from '@/services/staff.service'
 
 describe('StaffService.openShift / closeShift', () => {
+  const fakeShiftAudit = {
+    logShiftOpened: vi.fn().mockResolvedValue(undefined),
+    logShiftClosed: vi.fn().mockResolvedValue(undefined),
+  }
+
   it('openShift inserts a shift row and returns opened result', async () => {
     vi.mocked(db.getOptional).mockResolvedValue(null)  // no existing open shift for device
-    const result = await openShift('shop1', 'device1', 'staff1', 100)
+    const result = await openShift('shop1', 'device1', 'staff1', 100, fakeShiftAudit)
     expect(result.status).toBe('opened')
   })
 
   it('closeShift computes variance as countedCash - expectedCash', async () => {
     vi.mocked(db.getOptional).mockResolvedValue({ id: 'shift1', opening_cash: 100, expected_cash: 250 } as any)
-    const result = await closeShift('shift1', 230)
+    const result = await closeShift('shift1', 230, fakeShiftAudit)
     expect(result.variance).toBe(-20)
   })
 })
@@ -1614,10 +1740,24 @@ Expected: FAIL with "openShift is not exported"
 
 Paste `useShift.ts`'s `openShift`/`closeShift`/`writeShiftClose` bodies (the discriminated `OpenShiftResult` union and variance computation from `shift.types.ts`'s `varianceLevel()`), converting Vue-store reads to explicit parameters. Given the file's size and the discriminated-union complexity (`opened|resumed|conflict|device-deactivated|identity-unconfirmed`), the implementer must read the full 452-line source in Step 1 and preserve every branch — this is not summarizable into a short code block without omitting a real business rule. Follow the same paste-and-adapt approach as Task 4 Step 4.
 
+Both methods take an injected audit port as their last parameter (matching Task 1/2/3's `*AuditPort` pattern) — define:
+
+```ts
+// src/services/staff.service.ts
+export interface OpenShiftAuditPort {
+  logShiftOpened: (shiftId: string) => Promise<void>
+}
+export interface CloseShiftAuditPort {
+  logShiftClosed: (shiftId: string) => Promise<void>
+}
+```
+
+`openShift(shopId, deviceId, staffId, openingCash, audit: OpenShiftAuditPort)` and `closeShift(shiftId, countedCash, audit: CloseShiftAuditPort)` — call `audit.logShiftOpened`/`audit.logShiftClosed` from inside `executeBusinessOperation`'s `audit` hook exactly like Task 1-3's services, never `useAuditLog()` directly.
+
 - [ ] **Step 9: Run test to verify it passes**
 
 Run: `npx vitest run src/services/__tests__/staff.service.test.ts`
-Expected: PASS (7 tests)
+Expected: PASS (8 tests)
 
 - [ ] **Step 10: Write the failing test for `paySettlement`**
 
@@ -1626,9 +1766,11 @@ Expected: PASS (7 tests)
 import { paySettlement } from '@/services/staff.service'
 
 describe('StaffService.paySettlement', () => {
+  const fakeSettlementAudit = { logStaffSettlementPaid: vi.fn().mockResolvedValue(undefined) }
+
   it('marks the settlement as paid and returns the updated record', async () => {
     vi.mocked(db.getOptional).mockResolvedValue({ id: 'settle1', status: 'finalized', final_amount_usd: 100 } as any)
-    const result = await paySettlement('staff1', 100)
+    const result = await paySettlement('staff1', 100, fakeSettlementAudit)
     expect(result.status).toBe('paid')
   })
 })
@@ -1636,26 +1778,33 @@ describe('StaffService.paySettlement', () => {
 
 - [ ] **Step 11: Run test to verify it fails, then implement `paySettlement` (paste from `useStaffSettlement.ts`'s `markPaid`)**
 
-Run: `npx vitest run src/services/__tests__/staff.service.test.ts` — expect FAIL, then paste `markPaid`'s body (per research: single UPDATE, wrapped in `executeFinancialWrite`/now `executeBusinessWrite`, audit callback `logStaffSettlementPaid`) into `paySettlement`, adapting the permission string `'can_view_expenses'` and the `DomainEventType.SettlementPaid` event.
+Run: `npx vitest run src/services/__tests__/staff.service.test.ts` — expect FAIL, then paste `markPaid`'s body (per research: single UPDATE, wrapped in `executeFinancialWrite`/now `executeBusinessOperation`, audit callback `logStaffSettlementPaid`) into `paySettlement`, adapting the permission string `'can_view_expenses'` and the `StaffEventType.SettlementPaid` event. Define `PaySettlementAuditPort = { logStaffSettlementPaid: (settlementId: string, staffId: string, paymentMethod: string) => Promise<void> }` and take it as `paySettlement`'s last parameter — call `audit.logStaffSettlementPaid(...)` from inside `executeBusinessOperation`'s `audit` hook, never `useAuditLog()` directly (same pattern as every other service in this ticket).
 
 - [ ] **Step 12: Run test to verify it passes**
 
 Run: `npx vitest run src/services/__tests__/staff.service.test.ts`
-Expected: PASS (8 tests)
+Expected: PASS (9 tests)
 
 - [ ] **Step 13: Delegate all 3 composables to `StaffService`**
 
 ```ts
 // src/features/shifts/composables/useShift.ts — openShift/closeShift delegate to StaffService
 import { openShift as openShiftService, closeShift as closeShiftService } from '@/services/staff.service'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 // replace openShift()/closeShift() bodies with calls to the service, keeping
-// forceCloseShift's local teardown (session.clearSession(), etc.) in the composable
+// forceCloseShift's local teardown (session.clearSession(), etc.) in the composable —
+// construct { logShiftOpened } / { logShiftClosed } from useAuditLog() at the call site
+// and pass as the service's last argument, same as every other delegation in this ticket
 
 // src/features/staff-ledger/composables/useStaffLedger.ts — addLedgerEntry delegates
 import { addLedgerEntry as addLedgerEntryService } from '@/services/staff.service'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
+// construct { logStaffLedgerEntryCreated } from useAuditLog() and pass as the 3rd argument
 
 // src/features/staff-ledger/composables/useStaffSettlement.ts — markPaid delegates
 import { paySettlement } from '@/services/staff.service'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
+// construct { logStaffSettlementPaid } from useAuditLog() and pass as the 3rd argument
 ```
 
 Preserve `finalize()`'s `db.writeTransaction` composition logic (per-application `UPDATE staff_ledger`, carry-forward `INSERT`, `UPDATE staff_settlements`) as a separate `StaffService` method if time permits within this task, or leave `finalize()` un-extracted for this ticket if the transaction-composition complexity (multiple ledger rows touched atomically) needs its own careful pass — flag this decision explicitly in the PR description rather than rushing an incomplete extraction.
@@ -1703,16 +1852,16 @@ Expected: PASS — per this repo's known gotcha, `npm run build` type-checks tes
 Run: `git grep -l executeFinancialWrite -- '*.ts'`
 Expected: no output — confirms Task 0's rename was complete.
 
-- [ ] **Grep for Vue/Pinia imports inside `src/services/`**
+- [ ] **Grep for Vue/Pinia imports (including `useAuditLog`) inside `src/services/`**
 
-Run: `git grep -lE "from 'vue'|useSessionStore|useDeviceStore|useShiftStore" -- 'src/services/*.ts'`
-Expected: no output outside `src/composables/executeBusinessWrite.ts` (which is intentionally allowed to read `useSessionStore` per spec §6a) — confirms the 5 services are genuinely framework-agnostic.
+Run: `git grep -lE "from 'vue'|useSessionStore|useDeviceStore|useShiftStore|useAuditLog" -- 'src/services/**/*.ts'`
+Expected: **no output at all** — unlike an earlier draft of this check, `useAuditLog` is included here on purpose: `executeBusinessOperation.ts` (which legitimately reads `useSessionStore()` per spec §6a) lives in `src/composables/`, outside this glob, so nothing under `src/services/` should match any of these patterns, including audit logging. Every service takes its audit functions as an injected `*AuditPort` parameter instead (Task 1's `ExpenseAuditPort` pattern, carried through Tasks 2-5) — confirms the 5 services are genuinely framework-agnostic, not just DB-agnostic.
 
 - [ ] **Verify AC checklist from the spec (§7)**
 
 - [ ] Zero business logic in Vue components
 - [ ] All 5 composables (usePayment, useReceivingSheet/useProducts, useCustomerBalance, useShift/useStaffLedger/useStaffSettlement, useExpenses) are thin wrappers around services
 - [ ] Services are pure TypeScript, framework-agnostic
-- [ ] Services publish domain events via `executeBusinessWrite` only
+- [ ] Services publish domain events via `executeBusinessOperation` only
 - [ ] Every critical business rule (per spec §8) has a unit test in the new `*.service.test.ts` files
 - [ ] Services work offline (PowerSync `db.writeTransaction` semantics unchanged — verified by the fact that no test needed to change its mock setup)

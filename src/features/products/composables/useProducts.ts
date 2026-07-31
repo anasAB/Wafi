@@ -6,6 +6,7 @@ import type { Product } from '@/features/pos/pos.types'
 import type { AdjustmentReason } from '@/features/products/product.types'
 import { rowToProduct, type ProductRow } from '@/features/products/product.utils'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
+import { adjustInventory } from '@/services/inventory.service'
 
 export function useProducts() {
   const products = ref<Product[]>([])
@@ -132,35 +133,13 @@ export function useProducts() {
     reason: AdjustmentReason,
     notes?: string
   ) {
-    const now = new Date().toISOString()
     const device = useDeviceStore()
-    let oldValue = 0
-
-    // Stock can never go below zero. Clamp here (the write path) so a fat-fingered
-    // or pasted negative on the form can't corrupt the dashboard / low-stock query.
-    const clampedValue = Math.max(0, newValue)
-
-    await db.writeTransaction(async (tx) => {
-      const stockResult = await tx.execute(
-        'SELECT current_stock FROM products WHERE id = ?', [productId]
-      )
-      oldValue = (stockResult as any).rows._array[0]?.current_stock ?? 0
-      await tx.execute(
-        `UPDATE products SET current_stock = ?, updated_at = ?, sync_status = 'pending' WHERE id = ?`,
-        [clampedValue, now, productId]
-      )
-      await tx.execute(
-        `INSERT INTO stock_adjustments (id, shop_id, product_id, old_value, new_value, reason, notes, created_at, device_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [uuidv4(), device.shopId, productId, oldValue, clampedValue, reason, notes ?? null, now, device.deviceId]
-      )
-    })
-
-    const nameRow = await db.getOptional<{ name_ar: string }>(
-      `SELECT name_ar FROM products WHERE id = ?`, [productId]
+    await adjustInventory(
+      device.shopId, device.deviceId,
+      { mode: 'absolute', productId, newValue, reason, notes },
+      { logStockAdjusted },
     )
     await load()
-    await logStockAdjusted(productId, nameRow?.name_ar ?? productId, oldValue, clampedValue)
   }
 
   // WAFI-121: snapshot-based flows (stock take, spot checks) must commit
@@ -174,34 +153,13 @@ export function useProducts() {
     notes?: string
   ) {
     if (delta === 0) return
-    const now = new Date().toISOString()
     const device = useDeviceStore()
-    let oldValue = 0
-    let newValue = 0
-
-    await db.writeTransaction(async (tx) => {
-      const stockResult = await tx.execute(
-        'SELECT current_stock FROM products WHERE id = ?', [productId]
-      )
-      oldValue = (stockResult as any).rows._array[0]?.current_stock ?? 0
-      // Same never-below-zero clamp as adjustStock (the oversold convention).
-      newValue = Math.max(0, oldValue + delta)
-      await tx.execute(
-        `UPDATE products SET current_stock = ?, updated_at = ?, sync_status = 'pending' WHERE id = ?`,
-        [newValue, now, productId]
-      )
-      await tx.execute(
-        `INSERT INTO stock_adjustments (id, shop_id, product_id, old_value, new_value, reason, notes, created_at, device_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [uuidv4(), device.shopId, productId, oldValue, newValue, reason, notes ?? null, now, device.deviceId]
-      )
-    })
-
-    const nameRow = await db.getOptional<{ name_ar: string }>(
-      `SELECT name_ar FROM products WHERE id = ?`, [productId]
+    await adjustInventory(
+      device.shopId, device.deviceId,
+      { mode: 'delta', productId, delta, reason, notes },
+      { logStockAdjusted },
     )
     await load()
-    await logStockAdjusted(productId, nameRow?.name_ar ?? productId, oldValue, newValue)
   }
 
   return { products, lowStockProducts, load, getById, save, softDelete, adjustStock, adjustStockBy }

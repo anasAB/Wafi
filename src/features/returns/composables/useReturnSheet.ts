@@ -6,7 +6,7 @@ import { useShiftStore } from '@/features/shifts/shift.store'
 import { v4 as uuidv4 } from 'uuid'
 import type { ReturnLine, RefundMethod, ConfirmResult } from '../returns.types'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
-import { executeFinancialWrite } from '@/composables/executeFinancialWrite'
+import { executeBusinessOperation } from '@/composables/executeBusinessOperation'
 import { cancelPlanWithinTx } from '@/features/installments/composables/useInstallmentPlan'
 
 export function useReturnSheet(saleId: string) {
@@ -154,7 +154,7 @@ export function useReturnSheet(saleId: string) {
     const returnId  = uuidv4()
     const now       = new Date().toISOString()
 
-    const { warning } = await executeFinancialWrite(
+    const { warning } = await executeBusinessOperation(
       async () => {
         let cancelledPlanId: string | null = null
         let warning: ConfirmResult['warning']
@@ -307,13 +307,15 @@ export function useReturnSheet(saleId: string) {
 
         return { cancelledPlanId, warning }
       },
-      async ({ cancelledPlanId }) => {
-        await Promise.all([
-          logReturnProcessed(returnId, saleId, refundAmountUsd),
-          cancelledPlanId
-            ? logInstallmentPlanCancelled(cancelledPlanId, { reason: 'sale_returned', returnId })
-            : Promise.resolve(),
-        ])
+      {
+        audit: async ({ cancelledPlanId }) => {
+          await Promise.all([
+            logReturnProcessed(returnId, saleId, refundAmountUsd),
+            cancelledPlanId
+              ? logInstallmentPlanCancelled(cancelledPlanId, { reason: 'sale_returned', returnId })
+              : Promise.resolve(),
+          ])
+        },
       },
     )
 

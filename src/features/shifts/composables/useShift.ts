@@ -20,6 +20,7 @@ function parseBreakdown(raw: unknown): CurrencyBreakdown {
 }
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 import { establishOperatorIdentity } from '@/features/staff/composables/useOperatorSwitch'
+import { openShift as openShiftService, closeShift as closeShiftService } from '@/services/staff.service'
 
 /** Parse the stored Z-report JSON snapshot. Never throws — a corrupt/absent blob
  *  yields null so the UI falls back gracefully (live preview for an open shift).
@@ -216,23 +217,22 @@ export function useShift() {
       return { status: 'identity-unconfirmed', reason: identity.reason }
     }
 
-    const shiftId = crypto.randomUUID()
-    const now     = new Date().toISOString()
-    await db.execute(
-      `INSERT INTO cashier_shifts
-         (id, shop_id, device_id, staff_id, opened_at, opening_cash_usd, opening_cash_syp, opening_breakdown, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open')`,
-      [
-        shiftId, device.shopId, device.deviceId, staff.id, now, openingCashUsd, openingCashSyp,
-        openingBreakdown ? JSON.stringify(openingBreakdown) : null,
-      ]
-    )
     // Identity lives in one place: opening a shift establishes who is using this
-    // device. Set the session store BEFORE logging so the audit entry for the
-    // shift-open action is attributed to this staff, not 'system'.
+    // device. Set the session store BEFORE the service's internal audit call
+    // runs (useAuditLog reads session.activeStaff at write time) so the
+    // shift-open audit entry is attributed to this staff, not whoever/whatever
+    // was previously active.
     session.setActiveStaff(staff)
+    // WAFI-152: the raw insert + audit + event is StaffService's job; the
+    // identity/session orchestration around it (establishOperatorIdentity above,
+    // this session.setActiveStaff call, shiftStore mutation below) stays here —
+    // see staff.service.ts's module comment on why this is a narrow, not full,
+    // extraction.
+    const { id: shiftId } = await openShiftService(
+      device.shopId, device.deviceId, staff.id,
+      { openingCashUsd, openingCashSyp, openingBreakdown }, { logShiftOpened },
+    )
     shiftStore.openShift(shiftId, staff)
-    await logShiftOpened(shiftId)
     return { status: 'opened', shiftId }
   }
 
@@ -305,24 +305,30 @@ export function useShift() {
   async function closeShift(input: CloseShiftInput): Promise<void> {
     const shiftId = shiftStore.activeShiftId ?? input.shiftId
     if (!shiftId) throw new Error('No open shift to close')
+    const staffId = session.activeStaff?.id ?? ''
     // Persist the variance + note + a full Z-report snapshot so the closed shift's
     // figures are immutable: reads (history, reprint) come back from this snapshot
     // and never recompute, so a later product/price/exchange-rate edit can't rewrite
-    // a historical Z-report (WAFI-060).
-    await writeShiftClose(shiftId, {
-      closingCashUsd: input.closingCashUsd,
-      closingCashSyp: input.closingCashSyp,
-      varianceUsd:    input.varianceUsd ?? null,
-      varianceSyp:    input.varianceSyp ?? null,
-      closeNote:      input.closeNote ?? null,
-      forceClosedBy:  input.forceClosedBy ?? null,
-      zReport:        input.zReport ?? null,
-      closingBreakdown: input.closingBreakdown ?? null,
-    })
+    // a historical Z-report (WAFI-060). WAFI-152: StaffService.closeShift is the
+    // narrow normal-close path only (force_closed_by always null) — see its module
+    // comment; forceCloseShift below stays on its own writeShiftClose call.
+    await closeShiftService(
+      device.shopId, shiftId, staffId,
+      {
+        closingCashUsd: input.closingCashUsd,
+        closingCashSyp: input.closingCashSyp,
+        varianceUsd:    input.varianceUsd ?? null,
+        varianceSyp:    input.varianceSyp ?? null,
+        closeNote:      input.closeNote ?? null,
+        zReport:        input.zReport ?? null,
+        closingBreakdown: input.closingBreakdown ?? null,
+      },
+      { logShiftClosed },
+    )
     shiftStore.closeShift()
-    // Log the close while identity is still set, then clear it so the two
-    // identity stores fall back to null together (no stale session after logout).
-    await logShiftClosed(shiftId)
+    // Clear identity only after the close (and its audit entry, already logged
+    // above by the service while identity was still set) so the two identity
+    // stores fall back to null together (no stale session after logout).
     session.clearSession()
   }
 

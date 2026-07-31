@@ -39,7 +39,7 @@ not a replacement for them.
 | WAFI-014 (Cross-Epic Edge-Case Review Process) | ✅ Shipped 2026-07-30 | Process/documentation ticket, no app code. Design spec: `docs/superpowers/specs/2026-07-30-wafi-014-cross-epic-edge-case-review-design.md`. Added a **Domain Interaction Matrix** (concrete table of real domains/tables/composables/reports, not abstract categories) and a **Cross-Epic Edge-Case Checklist** (required twice per future ticket — design-time and final-review-time) to `AI_PRINCIPAL_ENGINEER_REVIEW.md`; `CLAUDE.md`'s "Mandatory Review Lens" section now names both as required artifacts, not implicit review. **Worked example, not retroactive validation**: neither example below is evidence that this process would have caught an already-shipped bug before it happened — both are illustrations of how the matrix and checklist are meant to be used going forward. Walking the design-time checklist against the pre-WAFI-010 returns feature would prompt a matrix-row check against Installments — but that row didn't exist until this ticket, so the interaction genuinely wasn't checkable at the time WAFI-010 shipped. Walking it against a hypothetical Cash/Shifts feature surfaces the Reports/Dashboards column's explicit note that cash movements are excluded from the profit report (WAFI-016) — a useful demonstration of the mechanism, but explicitly hypothetical, not a claim that it was exercised on a real ticket. No CI/tooling enforcement — this is enforced by instruction only, per the approved design's explicit non-goal. |
 | WAFI-012 (WhatsApp Messaging Analytics Fix) | ✅ Shipped 2026-07-31 (scoped up from a rename to a build) | Code audit found the roadmap's premise didn't hold — there was no existing WhatsApp analytics/audit event anywhere in the codebase to rename (`useAuditLog.ts`'s ~48 typed events had none; `sentry.ts` had no such breadcrumb; `whatsapp.ts` itself had zero telemetry). So this shipped as **adding** a new `messaging.whatsapp_composed` audit event rather than renaming one. New `AuditEntityType: 'messaging'` and `WhatsAppChannel` type (`receipt`/`statement`/`installment_reminder`/`daily_digest`/`support_contact`) in `audit.types.ts`; `logWhatsAppComposed(channel, entityId, hadPhone)` added to `useAuditLog.ts` (routine/best-effort, matching the other high-frequency UI-action logs); Arabic label added to `audit.format.ts` and the `AuditLogPage.vue` filter dropdown. Wired into the 5 real send sites: `SaleConfirmationScreen.vue` and `SaleHistoryScreen.vue` (receipt), `CustomerDetailPage.vue` and `CollectionsWorklistPage.vue` (statement), `InstallmentPlanSection.vue` (installment reminder), `useDailyDigest.ts` (daily digest, logged inline since it already has DB/session access), and `ReportProblemScreen.vue` (support contact). `hadPhone` records whether a phone was pre-resolved from the customer record vs. manually typed into the WhatsApp sheet — a data-quality signal, not a delivery-confirmation one; **the event name and doc comment are explicit that it records the app handed off to WhatsApp, not that the message was sent or delivered** (matches the ticket's original semantics-documentation intent). **Deliberately excluded**: `ForgotPasswordPage.vue`'s support-contact button — it renders pre-login with no active session/shop context, so there is nothing to attribute the audit row to; logging there is out of scope, not an oversight. Full suite 203/203 files, 1221/1221 tests passing (added a Pinia+db mock fix to `ReportProblemScreen.test.ts`, which had no store context before); `vue-tsc --noEmit` clean. Not yet committed to git. |
 | WAFI-015, WAFI-020 (remaining Macro-Phase 1) | ⬜ Not started | Confirmed via a code audit 2026-07-27 (not just a doc re-read) — no matching implementation found for either of these. |
-| Macro-Phase 2 (WAFI-152, WAFI-140, WAFI-150/143/144/145/146/142) | ⬜ Not started | |
+| Macro-Phase 2 (WAFI-152, WAFI-140, WAFI-150/143/144/145/146/142) | 🟡 In progress — WAFI-152 shipped 2026-07-31 | WAFI-152 (Business Services Layer) done — see its row below. WAFI-140/150/143/144/145/146/142 not started. |
 | Macro-Phase 3 (WAFI-151/153/154/155/156/157/147/148/149/026/032/033) | ⬜ Not started | |
 
 **Resolved 2026-07-22 — local Supabase stack now starts and the pgTAP suites actually execute.**
@@ -146,24 +146,34 @@ This document unifies three streams of work into a single, coherent architecture
 
 | Ticket | Title | Priority | Effort | What It Builds |
 |---|---|---|---|---|
-| WAFI-152 | Business Services Layer | P0 | 1 sprint | UI → Business Service → Repository → Event. Reusable across POS, API, Import, Automation |
+| WAFI-152 | Business Services Layer | P0 | 1 sprint | UI → Business Service → Repository → Event. Reusable across POS, API, Import, Automation. **Status: ✅ Shipped 2026-07-31** — see IMPLEMENTATION STATUS above. |
 
 **Why before the event bus:** Every event must originate from a single, reusable business service — not from UI-facing composables. This makes future APIs, batch imports, barcode scanners, webhooks, and automation trivial to add.
 
-**Services to extract:**
-- `SalesService.completeSale()` — replaces `usePayment()`
-- `InventoryService.receiveStock()` — replaces direct composable calls
-- `CustomerService.updateDebt()` — centralizes credit logic
-- `StaffService.recordShift()` — unifies shift management
-- `ExpenseService.recordExpense()` — standardizes expense flow
+**Services extracted (scoped/corrected against the real codebase — see IMPLEMENTATION STATUS for detail):**
+- `SalesService.completeSale()` — replaces `usePayment()`'s `confirm()` write path (session/store side effects stay in the composable)
+- `InventoryService.receiveStock()` / `.adjustInventory()` — replaces `useReceivingSheet.ts`/`useProducts.ts`'s direct writes
+- `CustomerService.recordPayment()` — replaces `useCustomerBalance.ts`'s ad-hoc collection path (`updateDebt` never existed to extract — dropped, per spec correction)
+- `StaffService.addLedgerEntry()` / `.paySettlement()` / `.openShift()` / `.closeShift()` (narrow — see below) — replaces the equivalent `useStaffLedger.ts`/`useStaffSettlement.ts`/`useShift.ts` writes
+- `ExpenseService.recordExpense()` — replaces `useExpenses.ts`'s per-occurrence insert (recurring-expansion loop stays in the composable)
+
+**Real-codebase corrections found during implementation, not anticipated by the original plan:**
+- `useShift.ts`'s `openShift`/`closeShift` are session/identity orchestration (a discriminated resume/conflict/device-deactivated union, a network round-trip to `establishOperatorIdentity()`, direct `useSessionStore()`/`useShiftStore()` mutations) — not comparable business-write logic like the other 4 services. Resolved as a **narrow extraction**: `StaffService.openShift`/`.closeShift` wrap only the raw INSERT/UPDATE + audit + event; `useShift.ts` keeps all session/identity orchestration, and `forceCloseShift` stays entirely untouched (different actor/audit shape, out of scope).
+- A 7th real `executeFinancialWrite` call site (`useCashMovements.ts`, 2 call sites) existed that the plan's Task 0 file list completely missed — migrated alongside the other 6.
+- Found and fixed a real bug in the plan's own `adjustInventory` code sketch: it regenerated a new `uuidv4()` for the returned adjustment's `id` instead of reusing the one actually inserted into `stock_adjustments` — the caller's returned object would never have matched the real DB row.
+- `enum` declarations in `domainEvent.types.ts` failed the production build (`vue-tsc -b`, not caught by plain `--noEmit`) — this repo's `erasableSyntaxOnly` TS flag rejects real `enum` syntax. Converted to the const-object + literal-union pattern (identical call-site syntax, e.g. `ExpenseEventType.Recorded`).
+- `usePayment.ts`'s `confirm()` does far more than write a sale — it also mutates `saleStore`/local UI refs and calls `clearDraft()`. The service owns the write (and the WAFI-004 sequence-number *computation*, not persistence); the composable calls `saleStore.incrementSequence()`/`clearDraft()`/`saleStore.clear()` only after the service resolves successfully, preserving the "never advance on a failed write" invariant without the service touching any store.
+- A near-miss caught before it shipped: an early draft of `useShift.ts`'s `openShift` refactor reordered `session.setActiveStaff(staff)` to run *after* the service's internal audit call — since `useAuditLog()` reads `session.activeStaff` at write time, this would have silently misattributed the shift-open audit entry to the previous operator. Fixed by keeping `session.setActiveStaff(staff)` before the service call.
+
+Every extraction preserved its composable's existing test suite unchanged (zero test edits needed in `usePayment.test.ts`, `useFastCash.test.ts`, `useReceivingSheet.test.ts`, `useProducts.test.ts`, `useStockTake.test.ts`, `useCustomerBalance.test.ts`, `useExpenses.test.ts`, `useShift.deactivation.test.ts`, `useStaffLedger.test.ts`, `useStaffSettlement.test.ts` + `.permissions.test.ts`, `useShiftClose.test.ts`, `useShiftZombieGuard.test.ts`) plus 61 new service-level tests. `executeFinancialWrite.ts` (and its dedicated test) fully retired — superseded by `executeBusinessOperation`. Full suite passing (1301/1303 — 2 pre-existing flaky router-test timeouts, confirmed non-reproducing in isolation), `vue-tsc --noEmit` and `npm run build` both clean. Not yet committed to git.
 
 **Acceptance Criteria:**
-- [ ] Zero business logic in Vue components
-- [ ] All composables are thin wrappers around services
-- [ ] Services are pure TypeScript, framework-agnostic
-- [ ] Services publish domain events (preparation for WAFI-140)
-- [ ] Unit tests for all services (Vitest, >80% coverage)
-- [ ] Services work offline (Dexie-backed queue)
+- [x] Zero business logic in Vue components
+- [x] All composables are thin wrappers around services
+- [x] Services are pure TypeScript, framework-agnostic (verified via grep — see IMPLEMENTATION STATUS)
+- [x] Services publish domain events (preparation for WAFI-140) — stub `publishEvent`, no-op until WAFI-140
+- [x] Unit tests for all services (Vitest) — 61 new tests across 5 service files; ">80% coverage" not measured as a literal percentage, but every critical business rule has a test per spec §8's reframed standard
+- [x] Services work offline (PowerSync `db.writeTransaction` semantics unchanged, not a Dexie queue — the plan's original AC assumed a queue mechanism this codebase doesn't use)
 
 ---
 

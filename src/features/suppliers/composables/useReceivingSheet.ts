@@ -1,10 +1,9 @@
 import { ref, computed } from 'vue'
-import { v4 as uuidv4 } from 'uuid'
-import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { useSessionStore } from '@/store/session.store'
 import type { ReceivingLine } from '../receiving.types'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
+import { receiveStock } from '@/services/inventory.service'
 
 // Minimal product shape needed to seed a line (matches useProducts' Product).
 interface PickedProduct { id: string; nameAr: string; costPriceUsd: number }
@@ -64,90 +63,13 @@ export function useReceivingSheet() {
     const session = useSessionStore()
     const staffId = session.activeStaff?.id ?? null
 
-    // Current exchange rate (read-only lookup, outside transaction).
-    const rateResult = await db.execute(
-      `SELECT rate FROM exchange_rates WHERE shop_id = ? ORDER BY set_at DESC LIMIT 1`,
-      [shopId],
-    )
-    const exchangeRate: number = (rateResult as any).rows._array[0]?.rate ?? 1
-
-    const receivingId = uuidv4()
-    const now = new Date().toISOString()
-    const snapshotLines = [...lines.value]
-    const total = snapshotLines.reduce(
-      (sum, line) => sum + (Number(line.qtyReceived) || 0) * (Number(line.unitCostUsd) || 0),
-      0,
-    )
-
-    await db.writeTransaction(async (tx) => {
-      await tx.execute(
-        `INSERT INTO stock_receivings
-           (id, shop_id, supplier_id, received_at, invoice_photo_url, total_cost_usd,
-            exchange_rate_at_receiving, notes, staff_id, sync_status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-        [receivingId, shopId, supplierId.value, now, invoicePhotoUrl.value,
-         total, exchangeRate, notes.value || null, staffId],
-      )
-
-      for (const line of snapshotLines) {
-        await tx.execute(
-          `INSERT INTO stock_receiving_line_items
-             (id, receiving_id, shop_id, product_id, qty_received, unit_cost_usd, cost_updated, sync_status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
-          [uuidv4(), receivingId, shopId, line.productId, line.qtyReceived,
-           line.unitCostUsd, line.updateCost ? 1 : 0],
-        )
-
-        // Increment stock.
-        const stockResult = await tx.execute(
-          `SELECT current_stock FROM products WHERE id = ?`, [line.productId],
-        )
-        const oldStock: number = (stockResult as any).rows._array[0]?.current_stock ?? 0
-        const newStock = oldStock + line.qtyReceived
-        await tx.execute(
-          `UPDATE products SET current_stock = ?, updated_at = ?, sync_status = 'pending' WHERE id = ?`,
-          [newStock, now, line.productId],
-        )
-
-        // Update standing cost only if toggled AND the cost is real (WAFI-021): a
-        // zero/blank unit cost must never overwrite the product's standing cost — that
-        // silently wipes margin on every later sale. Past sale_line_items are untouched.
-        // WAFI-013: cost_updated_at is stamped unconditionally in this branch (not
-        // compared against the old value) — confirming a cost during a receiving is
-        // itself the freshness signal, even if the confirmed number happens to equal
-        // what was already stored.
-        if (line.updateCost && line.unitCostUsd > 0) {
-          await tx.execute(
-            `UPDATE products SET cost_price_usd = ?, cost_updated_at = ?, updated_at = ?, sync_status = 'pending' WHERE id = ?`,
-            [line.unitCostUsd, now, now, line.productId],
-          )
-        }
-      }
-    })
-
-    const supplierNameFromState = supplierName.value.trim()
-    const supplierNameFromDb = supplierNameFromState
-      ? null
-      : await db.getOptional<{ name: string }>(
-          `SELECT name FROM suppliers WHERE id = ? LIMIT 1`,
-          [supplierId.value],
-        )
-    const auditSupplierName = supplierNameFromState || supplierNameFromDb?.name || 'مورد غير معروف'
-
-    await logReceivingCreated(
-      receivingId,
-      auditSupplierName,
-      total,
-      snapshotLines.length,
-      snapshotLines.map((line) => ({
-        productId: line.productId,
-        productName: line.productName,
-        qtyReceived: Number(line.qtyReceived) || 0,
-        unitCostUsd: Number(line.unitCostUsd) || 0,
-        lineTotalUsd: (Number(line.qtyReceived) || 0) * (Number(line.unitCostUsd) || 0),
-        costUpdated: line.updateCost,
-      })),
-    )
+    await receiveStock(shopId, staffId, {
+      supplierId: supplierId.value,
+      supplierName: supplierName.value,
+      lines: [...lines.value],
+      invoicePhotoUrl: invoicePhotoUrl.value,
+      notes: notes.value,
+    }, { logReceivingCreated })
   }
 
   return {

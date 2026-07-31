@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid'
-import { executeFinancialWrite } from '@/composables/executeFinancialWrite'
+import { executeBusinessOperation } from '@/composables/executeBusinessOperation'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { useSessionStore } from '@/store/session.store'
@@ -80,7 +80,7 @@ export function useInstallmentPlan() {
       input.totalAmountUsd, input.downPaymentUsd, input.termCount, input.termFrequency, input.startDate,
     )
 
-    return executeFinancialWrite(
+    return executeBusinessOperation(
       async () => {
         await db.writeTransaction(async (tx) => {
           await tx.execute(
@@ -132,7 +132,7 @@ export function useInstallmentPlan() {
           status: 'active' as const, createdAt: now, createdBy,
         }
       },
-      (plan) => logInstallmentPlanCreated(plan.planId, input.customerId, input.totalAmountUsd, input.downPaymentUsd, input.termCount),
+      { audit: (plan) => logInstallmentPlanCreated(plan.planId, input.customerId, input.totalAmountUsd, input.downPaymentUsd, input.termCount) },
     )
   }
 
@@ -161,7 +161,7 @@ export function useInstallmentPlan() {
     // WAFI-120: cash installment collection enters the drawer → shift + device.
     const shiftStore = useShiftStore()
     const deviceStore = useDeviceStore()
-    await executeFinancialWrite(
+    await executeBusinessOperation(
       async () => {
         await db.writeTransaction(async (tx) => {
           await tx.execute(
@@ -194,7 +194,7 @@ export function useInstallmentPlan() {
           }
         })
       },
-      () => logInstallmentPaymentRecorded(dueId, due.plan_id, amountUsd),
+      { audit: () => logInstallmentPaymentRecorded(dueId, due.plan_id, amountUsd) },
     )
   }
 
@@ -210,7 +210,7 @@ export function useInstallmentPlan() {
    * ever wired up to a screen that can load a non-active plan.
    */
   async function cancelPlan(planId: string): Promise<void> {
-    await executeFinancialWrite(
+    await executeBusinessOperation(
       async () => {
         let cancelled = false
         await db.writeTransaction(async (tx) => {
@@ -218,9 +218,11 @@ export function useInstallmentPlan() {
         })
         return cancelled
       },
-      (cancelled) => cancelled
-        ? logInstallmentPlanCancelled(planId, { reason: 'manual' })
-        : Promise.resolve(),
+      {
+        audit: (cancelled) => cancelled
+          ? logInstallmentPlanCancelled(planId, { reason: 'manual' })
+          : Promise.resolve(),
+      },
     )
   }
 

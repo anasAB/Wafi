@@ -3,7 +3,8 @@ import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { useSessionStore } from '@/store/session.store'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
-import { executeFinancialWrite } from '@/composables/executeFinancialWrite'
+import { executeBusinessOperation } from '@/composables/executeBusinessOperation'
+import { paySettlement as paySettlementService } from '@/services/staff.service'
 import type { StaffSettlement, StaffLedgerEntry } from '@/features/staff-ledger/staff-ledger.types'
 
 type StaffLedgerRowLocal = { id: string; entry_type: string; amount_usd: number }
@@ -158,7 +159,7 @@ export function useStaffSettlement() {
 
     let finalizedAt = ''
 
-    await executeFinancialWrite(
+    await executeBusinessOperation(
       async () => {
         const now = new Date().toISOString()
         // All writes inside one transaction (Invariant 10) — link consumed
@@ -200,10 +201,12 @@ export function useStaffSettlement() {
         finalizedAt = now
         return { finalAmountUsd, now }
       },
-      ({ finalAmountUsd }) => logStaffSettlementFinalized(
-        settlementId, staffId, existingSettlementRow.period_month, finalAmountUsd,
-        options.settlementCurrency, finalAmountUsd < 0,
-      ),
+      {
+        audit: ({ finalAmountUsd }) => logStaffSettlementFinalized(
+          settlementId, staffId, existingSettlementRow.period_month, finalAmountUsd,
+          options.settlementCurrency, finalAmountUsd < 0,
+        ),
+      },
       'can_view_expenses',
     )
 
@@ -244,16 +247,9 @@ export function useStaffSettlement() {
       throw new Error(`settlement ${settlementId} is not finalized (status: ${existingSettlementRow.status})`)
     }
 
-    await executeFinancialWrite(
-      async () => {
-        const now = new Date().toISOString()
-        await db.execute(
-          `UPDATE staff_settlements SET status = 'paid', paid_at = ?, paid_by_staff_id = ?, payment_method = ? WHERE id = ?`,
-          [now, session.activeStaff!.id, options.paymentMethod, settlementId],
-        )
-      },
-      () => logStaffSettlementPaid(settlementId, staffId, options.paymentMethod),
-      'can_view_expenses',
+    await paySettlementService(
+      settlementId, staffId, session.activeStaff!.id, options.paymentMethod,
+      { logStaffSettlementPaid },
     )
     const row = await db.getOptional<StaffSettlementRow>(
       `SELECT * FROM staff_settlements WHERE id = ?`, [settlementId],

@@ -3,7 +3,9 @@ import { v4 as uuidv4 } from 'uuid'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { useShiftStore } from '@/features/shifts/shift.store'
+import { useSessionStore } from '@/store/session.store'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
+import { recordExpense } from '@/services/expense.service'
 import type { Expense, NewExpense } from '@/features/expenses/expense.types'
 
 type ExpenseRow = {
@@ -112,36 +114,20 @@ export function useExpenses() {
 
   async function save(data: NewExpense) {
     const device = useDeviceStore()
-    const now = new Date().toISOString()
-    const createdIds: string[] = []
+    const session = useSessionStore()
+    const shiftStore = useShiftStore()
+    // WAFI-120: drawer attribution — anything that can move physical cash
+    // carries shift_id + device_id at write time. Null when no shift is open
+    // (the no-shift path is WAFI-136's spec; Z-report falls back to the
+    // legacy time window for null rows).
+    const context = { shiftId: shiftStore.activeShiftId, deviceId: device.deviceId }
+    const staffId = session.activeStaff?.id ?? ''
 
-    const insertOne = async (expenseDate: string) => {
-      const id = uuidv4()
-      const storedNotes = buildStoredNotes(
-        data.notes,
-        data.isRecurringMonthly ? data.recurringStartDate : undefined,
-        data.isRecurringMonthly ? data.recurringEndDate : undefined,
-      )
-      // Cost SYP at the rate effective on THIS occurrence's date (WAFI-025) — a
-      // recurring expense spanning months must not book every month at one rate.
-      const rate = data.currency === 'SYP' ? await rateForDate(device.shopId, expenseDate) : null
-      const amountUsd = costUsd(data.amount, data.currency, data.amountUsd, rate)
-      // WAFI-120: drawer attribution — anything that can move physical cash
-      // carries shift_id + device_id at write time. Null when no shift is open
-      // (the no-shift path is WAFI-136's spec; Z-report falls back to the
-      // legacy time window for null rows).
-      const shiftStore = useShiftStore()
-      await db.execute(
-        `INSERT INTO expenses (id, shop_id, amount, currency, amount_usd, category, expense_date,
-          notes, photo_url, paid_in_cash, created_at, shift_id, device_id, sync_status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-        [id, device.shopId, data.amount, data.currency, amountUsd,
-         data.category, expenseDate, storedNotes,
-         data.photoUrl ?? null, data.paidInCash ? 1 : 0, now,
-         shiftStore.activeShiftId, device.deviceId]
-      )
-      createdIds.push(id)
-    }
+    // WAFI-152: single-occurrence insert + audit + event delegates to
+    // ExpenseService.recordExpense — rate lookup/cost recompute/recurring-meta
+    // stamping all now live in the service, called once per occurrence below.
+    const insertOne = (expenseDate: string) =>
+      recordExpense(device.shopId, staffId, { ...data, expenseDate }, context, { logExpenseCreated })
 
     if (data.isRecurringMonthly && data.recurringStartDate && data.recurringEndDate) {
       const start = new Date(data.recurringStartDate + 'T00:00:00')
@@ -168,9 +154,6 @@ export function useExpenses() {
     }
 
     if (lastStart) await load(lastStart, lastEnd)
-    for (const id of createdIds) {
-      await logExpenseCreated(id, data.category, data.amountUsd)
-    }
   }
 
   // Copy last month's expenses into the current month (for recurring costs like
