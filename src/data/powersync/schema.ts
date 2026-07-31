@@ -330,6 +330,24 @@ const sync_dead_letter = new Table({
   failed_at:     column.text,    // ISO timestamp of the last failed attempt
 }, { localOnly: true })
 
+const events = new Table({
+  type:            column.text,
+  entity_id:       column.text,
+  payload:         column.text,   // JSON.stringify'd — same convention as audit_log's `meta`
+  payload_version: column.integer,
+  staff_id:        column.text,
+  shop_id:         column.text,
+  occurred_at:     column.text,
+  created_at:      column.text,
+})
+
+const daily_event_counts = new Table({
+  shop_id:    column.text,
+  event_type: column.text,
+  day:        column.text,
+  count:      column.integer,
+})
+
 const audit_log = new Table({
   shop_id:     column.text,
   staff_id:    column.text,
@@ -444,6 +462,8 @@ export const AppSchema = new Schema({
   return_reasons,
   sync_dead_letter,
   audit_log,
+  events,
+  daily_event_counts,
   suppliers,
   stock_receivings,
   stock_receiving_line_items,
