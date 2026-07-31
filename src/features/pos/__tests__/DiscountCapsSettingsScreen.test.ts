@@ -132,7 +132,9 @@ describe('DiscountCapsSettingsScreen', () => {
     expect(wrapper.text()).toContain('تم الحفظ')
 
     await vi.advanceTimersByTimeAsync(1500)
+    await wrapper.vm.$nextTick()
     expect(wrapper.text()).toContain('لم يتم الحفظ على الخادم')
-    expect(wrapper.text()).not.toContain('تم الحفظ')
+    expect(wrapper.find('.error-note').exists()).toBe(true)
+    expect(wrapper.find('.saved-note').exists()).toBe(false)
   })
 })
