@@ -7,6 +7,7 @@ import { isDismissed, dismiss } from '@/composables/useAnomalyDismissal'
 import { useCan } from '@/composables/useCan'
 import { useDeviceStore } from '@/store/device.store'
 import { useDashboardMetrics } from '@/features/dashboard/composables/useDashboardMetrics'
+import { getDateRange } from '@/features/dashboard/composables/periodUtils'
 
 const { t } = useI18n()
 const { can } = useCan()
@@ -35,7 +36,7 @@ const periodKey = 'today' // Home always evaluates anomalies against today's per
 onMounted(async () => {
   if (!canViewReports.value) return
   await dashboardMetrics.load('today')
-  await load('today', {
+  await load(getDateRange('today'), {
     revenueUsd: dashboardMetrics.revenueUsd.value,
     cogsUsd: dashboardMetrics.cogsUsd.value,
     expensesUsd: dashboardMetrics.expensesUsd.value,

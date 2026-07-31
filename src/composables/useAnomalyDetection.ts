@@ -1,8 +1,6 @@
 import { ref } from 'vue'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
-import { getDateRange } from '@/features/dashboard/composables/periodUtils'
-import type { Period } from '@/features/dashboard/composables/periodUtils'
 import * as Sentry from '@sentry/vue'
 
 export type AnomalySeverity = 'critical' | 'warning' | 'info'
@@ -180,16 +178,28 @@ export interface DashboardMetricsSnapshot {
   refundsUsd: number
 }
 
+// Callers pass an already-computed { start, end } range rather than a Period
+// enum: this composable is shared by AnomalyBanner.vue (Home, always 'today')
+// and ReportsPage.vue (week/month/quarter/custom, via getReportRange). The
+// dashboard's `Period` type only covers 'today'|'week'|'month' and cannot
+// represent 'quarter'/'custom', so accepting a raw range here keeps both
+// callers correct instead of silently mis-mapping ReportsPage's wider period
+// set onto the narrower Period type.
+export interface DateRange {
+  start: string
+  end: string
+}
+
 export function useAnomalyDetection() {
   const device    = useDeviceStore()
   const anomalies = ref<Anomaly[]>([])
   const loading   = ref(false)
   const error     = ref(false)
 
-  async function load(period: Period, dashboardMetrics: DashboardMetricsSnapshot) {
+  async function load(range: DateRange, dashboardMetrics: DashboardMetricsSnapshot) {
     loading.value = true
     error.value = false
-    const { start, end } = getDateRange(period)
+    const { start, end } = range
 
     try {
       // Source 1: discount total — the one aggregate useDashboardMetrics

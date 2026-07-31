@@ -121,7 +121,7 @@ describe('useAnomalyDetection (data orchestrator)', () => {
 
   it('issues exactly 4 queries total: 1 getOptional (discount) + 3 getAll (below-cost, shifts, shrinkage)', async () => {
     const { load } = useAnomalyDetection()
-    await load('today', dashboardMetrics)
+    await load({ start: '2026-07-31', end: '2026-07-31' }, dashboardMetrics)
     expect(vi.mocked(db.getOptional).mock.calls.length).toBe(1)
     expect(vi.mocked(db.getAll).mock.calls.length).toBe(3)
   })
@@ -134,7 +134,7 @@ describe('useAnomalyDetection (data orchestrator)', () => {
     // future change reintroduces a revenue/cogs/expenses/refunds query,
     // this count catches it immediately.
     const { load, anomalies } = useAnomalyDetection()
-    await load('today', { revenueUsd: 1000, cogsUsd: 850, expensesUsd: 100, refundsUsd: 0 }) // low margin
+    await load({ start: '2026-07-31', end: '2026-07-31' }, { revenueUsd: 1000, cogsUsd: 850, expensesUsd: 100, refundsUsd: 0 }) // low margin
     expect(vi.mocked(db.getOptional).mock.calls.length).toBe(1)
     expect(anomalies.value.some(a => a.code === 'LOW_MARGIN')).toBe(true)
   })
@@ -145,10 +145,10 @@ describe('useAnomalyDetection (data orchestrator)', () => {
     // asserted by checking the call count is unchanged from the baseline
     // above rather than growing with computeAnomalies' rule count.
     const { load } = useAnomalyDetection()
-    await load('today', dashboardMetrics)
+    await load({ start: '2026-07-31', end: '2026-07-31' }, dashboardMetrics)
     const baselineGetAll = vi.mocked(db.getAll).mock.calls.length
     const baselineGetOptional = vi.mocked(db.getOptional).mock.calls.length
-    await load('today', dashboardMetrics)
+    await load({ start: '2026-07-31', end: '2026-07-31' }, dashboardMetrics)
     expect(vi.mocked(db.getAll).mock.calls.length).toBe(baselineGetAll * 2)
     expect(vi.mocked(db.getOptional).mock.calls.length).toBe(baselineGetOptional * 2)
   })
@@ -156,7 +156,7 @@ describe('useAnomalyDetection (data orchestrator)', () => {
   it('sets error=true and anomalies=[] when a query throws, without throwing itself', async () => {
     vi.mocked(db.getAll).mockRejectedValueOnce(new Error('offline'))
     const { load, error, anomalies } = useAnomalyDetection()
-    await load('today', dashboardMetrics)
+    await load({ start: '2026-07-31', end: '2026-07-31' }, dashboardMetrics)
     expect(error.value).toBe(true)
     expect(anomalies.value).toEqual([])
   })
