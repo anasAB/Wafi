@@ -60,7 +60,7 @@ The caller (Task 5's `AnomalyBanner.vue`, Task 7's `ReportsPage.vue`) must have 
 **Interfaces:**
 - Produces: `Anomaly` type, `AnomalyInput` type, `computeAnomalies(input: AnomalyInput): Anomaly[]`, `ANOMALY_RULES` const — Task 2 imports all of these; `AnomalyBanner.vue`/`ReportsPage.vue` (Tasks 4, 6) import `Anomaly` and consume the composable from Task 2, not this file directly.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 // src/composables/useAnomalyDetection.test.ts
@@ -163,12 +163,12 @@ describe('computeAnomalies', () => {
 })
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npx vitest run src/composables/useAnomalyDetection.test.ts`
 Expected: FAIL — `useAnomalyDetection` module doesn't exist yet.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 // src/composables/useAnomalyDetection.ts
@@ -335,12 +335,12 @@ export function computeAnomalies(input: AnomalyInput): Anomaly[] {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `npx vitest run src/composables/useAnomalyDetection.test.ts`
 Expected: PASS, all cases green.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/composables/useAnomalyDetection.ts src/composables/useAnomalyDetection.test.ts
@@ -359,7 +359,7 @@ git commit -m "feat(anomalies): add shared anomaly rules engine (WAFI-015)"
 - Consumes: `computeAnomalies`, `AnomalyInput`, `Anomaly` from Task 1 (same file). `db.getOptional`/`db.getAll` from `@/data/powersync/db`. `useDeviceStore()` from `@/store/device.store` for `shopId`. `getDateRange(period)` from `@/features/dashboard/composables/periodUtils`.
 - Produces: `useAnomalyDetection()` returning `{ anomalies: Ref<Anomaly[]>, loading: Ref<boolean>, error: Ref<boolean>, load(period: Period, dashboardMetrics: DashboardMetricsSnapshot): Promise<void> }`, and the `DashboardMetricsSnapshot` type (`{ revenueUsd, cogsUsd, expensesUsd, refundsUsd }`) — Tasks 5 and 7 both call this, and must each have their own `useDashboardMetrics()` instance already loaded for the same period to pass in (see §2a).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 // append to src/composables/useAnomalyDetection.test.ts
@@ -427,12 +427,12 @@ describe('useAnomalyDetection (data orchestrator)', () => {
 })
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npx vitest run src/composables/useAnomalyDetection.test.ts`
 Expected: FAIL — `useAnomalyDetection` composable not exported yet.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 // append to src/composables/useAnomalyDetection.ts
@@ -530,12 +530,12 @@ export function useAnomalyDetection() {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `npx vitest run src/composables/useAnomalyDetection.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/composables/useAnomalyDetection.ts src/composables/useAnomalyDetection.test.ts
@@ -554,7 +554,7 @@ git commit -m "feat(anomalies): add batched data-fetching orchestrator for useAn
 - Consumes: nothing beyond `localStorage` (browser global).
 - Produces: `isDismissed(shopId: string, periodKey: string, code: string): boolean`, `dismiss(shopId: string, periodKey: string, code: string): void` — consumed by `AnomalyBanner.vue` (Task 4).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 // src/composables/useAnomalyDismissal.test.ts
@@ -611,12 +611,12 @@ describe('useAnomalyDismissal', () => {
 })
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npx vitest run src/composables/useAnomalyDismissal.test.ts`
 Expected: FAIL — module doesn't exist yet.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 // src/composables/useAnomalyDismissal.ts
@@ -638,12 +638,12 @@ export function dismiss(shopId: string, periodKey: string, code: string): void {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `npx vitest run src/composables/useAnomalyDismissal.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/composables/useAnomalyDismissal.ts src/composables/useAnomalyDismissal.test.ts
@@ -661,7 +661,7 @@ git commit -m "feat(anomalies): add per-device, date-scoped anomaly dismissal"
 **Interfaces:**
 - Produces: translation keys consumed by `AnomalyBanner.vue` (Task 5) and `ReportsPage.vue` (Task 6): `anomalies.HIGH_EXPENSES_RATIO.title`/`.message`, same shape for all 7 codes, plus `home.anomalyBannerTitle`, `home.anomalyBannerDismiss`, `home.anomalyBannerError`, `home.anomalyBannerExpand`.
 
-- [ ] **Step 1: Add English strings**
+- [x] **Step 1: Add English strings**
 
 In `src/i18n/en.ts`, inside the existing `reports` block, remove `expenseAnomaly`/`returnsAnomaly` (superseded — Task 6 removes their last usage in the same pass) and add a new top-level `anomalies` block plus 4 keys inside the existing `home` block:
 
@@ -690,16 +690,16 @@ anomalyBannerExpand: 'Show details',
 
 Note: the message strings duplicate the English text already hardcoded in Task 1's rule functions (`useAnomalyDetection.ts`) — Task 5 wires the component to call `t('anomalies.<code>.title')`/`t('anomalies.<code>.message', { count })` for display, while the plain-English strings inside `useAnomalyDetection.ts` remain as fallback/Sentry-log-friendly text only, never rendered directly in the UI. This mirrors how `ReportsPage.vue` already gets its anomaly copy from `t('reports.expenseAnomaly')` rather than from `useReportAnomalies.ts`.
 
-- [ ] **Step 2: Add matching Arabic strings**
+- [x] **Step 2: Add matching Arabic strings**
 
 In `src/i18n/ar.ts`, mirror the same structure (remove `expenseAnomaly`/`returnsAnomaly` from `reports`, add the same `anomalies` block and 4 `home.*` keys) with Arabic translations matching this repo's existing tone (see neighboring `reports.expenseAnomaly`/`returnsAnomaly` Arabic strings for the register to match before deleting them).
 
-- [ ] **Step 3: Verify the app still type-checks**
+- [x] **Step 3: Verify the app still type-checks**
 
 Run: `npx vue-tsc --noEmit`
 Expected: no new errors (i18n keys are not statically typed in this repo per existing usage, so this mainly guards against a stray syntax error in the edited files).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/i18n/en.ts src/i18n/ar.ts
@@ -720,7 +720,7 @@ git commit -m "feat(anomalies): add i18n strings for anomaly banner and badges"
 
 **Design note on `{ count }`:** the shared engine's `Anomaly.message` (Task 1) already contains the final English count text (e.g. "15 sales sold below cost"). The i18n-driven display text is derived by re-extracting the count from the underlying data the banner already has (`anomalies` array doesn't carry a raw count field). To avoid parsing English text back out of `Anomaly.message`, this component displays `t('anomalies.<code>.message')` **without** interpolating a count for v1 — the pluralized/counted phrasing lives only in the English fallback inside `useAnomalyDetection.ts` used for Sentry/debugging, not the user-facing UI. This is a deliberate scope cut: exposing a `count` field on `Anomaly` (e.g. `Anomaly.count?: number`) for real i18n interpolation is a natural follow-up, not required for this ticket to ship a correct, honest banner.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 // src/features/dashboard/components/AnomalyBanner.test.ts
@@ -812,12 +812,12 @@ describe('AnomalyBanner', () => {
 })
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npx vitest run src/features/dashboard/components/AnomalyBanner.test.ts`
 Expected: FAIL — component doesn't exist yet.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```vue
 <!-- src/features/dashboard/components/AnomalyBanner.vue -->
@@ -939,12 +939,12 @@ function dismissOne(code: string) {
 </style>
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `npx vitest run src/features/dashboard/components/AnomalyBanner.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/features/dashboard/components/AnomalyBanner.vue src/features/dashboard/components/AnomalyBanner.test.ts
@@ -961,7 +961,7 @@ git commit -m "feat(anomalies): add Home anomaly banner component (WAFI-015)"
 **Interfaces:**
 - Consumes: `AnomalyBanner` (Task 5, no props).
 
-- [ ] **Step 1: Import and place the component**
+- [x] **Step 1: Import and place the component**
 
 In `src/pages/HomePage.vue`'s `<script setup>`, add the import near the other feature-component imports (after `CashDrawerSheet`):
 
@@ -975,12 +975,12 @@ In the template, add `<AnomalyBanner />` as the first element inside the page's 
 <AnomalyBanner />
 ```
 
-- [ ] **Step 2: Run the existing HomePage test suite to confirm no regression**
+- [x] **Step 2: Run the existing HomePage test suite to confirm no regression**
 
 Run: `npx vitest run src/pages/HomePage.test.ts` (or the actual existing test file name — confirm via `Glob src/pages/HomePage*.test.ts` first if this exact name doesn't match)
 Expected: PASS, no change in existing assertions (the banner renders nothing in tests that don't mock `useAnomalyDetection`/`useCan`, since `AnomalyBanner`'s own tests already cover its mocked behavior — if `HomePage.test.ts` mounts the full component tree without those mocks, confirm it doesn't throw; add a lightweight mock there only if it does).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/pages/HomePage.vue
@@ -999,7 +999,7 @@ git commit -m "feat(anomalies): mount AnomalyBanner on Home dashboard"
 **Interfaces:**
 - Consumes: `useAnomalyDetection()` and `DashboardMetricsSnapshot` (Task 2, revised per §2a) in place of `evaluateReportAnomalies` (deleted). This page already has its own `metrics` (`useDashboardMetrics()`) instance loaded — reuse its already-loaded values, do not create a second `useDashboardMetrics()` instance here.
 
-- [ ] **Step 1: Replace the import and computed in ReportsPage.vue**
+- [x] **Step 1: Replace the import and computed in ReportsPage.vue**
 
 Remove:
 ```ts
@@ -1026,7 +1026,7 @@ async function loadAnomaliesForPeriod() {
 
 Find where this page currently calls `metrics.load(period.value)` (on mount and on period change) and add a call to `loadAnomaliesForPeriod()` immediately **after** that `metrics.load` call resolves (not in parallel — `metrics`'s values must already be updated before `loadAnomaliesForPeriod` reads them), so `anomalies` always reflects the page's selected period using the same values the page's own cards show.
 
-- [ ] **Step 2: Replace the template's hardcoded 2-badge block**
+- [x] **Step 2: Replace the template's hardcoded 2-badge block**
 
 Remove:
 ```html
@@ -1045,23 +1045,23 @@ Add (iterates all applicable anomalies from the shared engine, not just 2 hardco
 </div>
 ```
 
-- [ ] **Step 3: Delete the superseded files**
+- [x] **Step 3: Delete the superseded files**
 
 ```bash
 git rm src/features/dashboard/composables/useReportAnomalies.ts src/__tests__/features/ReportAnomalies.test.ts
 ```
 
-- [ ] **Step 4: Run the full test suite**
+- [x] **Step 4: Run the full test suite**
 
 Run: `npx vitest run`
 Expected: PASS — specifically confirm `ReportsPage.test.ts` (if it references `anomalies.highExpenses`/`anomalies.highReturns` directly, update those assertions to check for the presence of an anomaly with `code === 'HIGH_EXPENSES_RATIO'`/`'HIGH_RETURNS_RATIO'` in the array instead).
 
-- [ ] **Step 5: Run type-check**
+- [x] **Step 5: Run type-check**
 
 Run: `npx vue-tsc --noEmit`
 Expected: no errors.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/features/dashboard/components/ReportsPage.vue
@@ -1076,3 +1076,13 @@ git commit -m "refactor(anomalies): migrate ReportsPage onto shared anomaly engi
 - **Placeholder scan:** no TBD/TODO; the one deliberately-scoped-down item (per-anomaly `count` i18n interpolation) is called out explicitly as a follow-up, not left vague.
 - **Type consistency:** `Anomaly`/`AnomalyInput` defined once in Task 1, imported (never redefined) in Tasks 2, 5, 6, 7. `useAnomalyDetection()`'s return shape (`anomalies`, `loading`, `error`, `load`) is identical across Tasks 2, 5, 7 usage.
 - **Scope:** single ticket, single cohesive engine + 2 consuming surfaces — not decomposed further, as none of the 7 tasks is independently shippable ahead of Task 1.
+
+## Completion note (2026-07-31)
+
+All 7 tasks implemented and verified against the current code (not assumed from commit messages — see [[feedback_verify_before_done]]). Tasks 1–5 shipped first; a code review then found Tasks 6–7 had been skipped (banner never mounted, `ReportsPage.vue` never migrated, `useReportAnomalies.ts` never deleted) — both were completed in a follow-up pass.
+
+**One deviation from this plan, found necessary during Task 7:** `useAnomalyDetection()`'s `load()` originally took a `Period` (`'today'|'week'|'month'`, per §2a and Task 2). `ReportsPage.vue`'s own period type, `ReportPeriod`, also includes `'quarter'` and `'custom'` (via `getReportRange`). Passing those through the dashboard's `getDateRange(period)` — which only handles `'today'`/`'week'`, defaulting everything else to the month-range branch — would have silently computed the wrong anomaly window for quarter/custom reports. Fixed by changing `load()`'s signature to accept a plain `{ start, end }` range (removing the internal `getDateRange` call from `useAnomalyDetection.ts` entirely); `AnomalyBanner.vue` now computes its own range via `getDateRange('today')`, and `ReportsPage.vue` passes the same `{ start, end }` it already computed for `metrics.loadRange`.
+
+Final verification: 39 anomaly-related tests pass (`useAnomalyDetection`, `useAnomalyDismissal`, `AnomalyBanner`, updated `ReportsPage` anomaly assertion). Full suite: 1241 passed, 5 pre-existing failures unrelated to this feature (PowerSync `Worker`-not-defined in the test env, plus `useSaleDraft`/`useReturnReasons`/`useExportData`). `vue-tsc --noEmit` clean.
+
+Commits: `0800736` (range-type fix + old-engine deletion), `bc7627e` (mount on Home), `c754b92` (migrate ReportsPage).
