@@ -168,11 +168,15 @@ Reference read-model (projection) table:
 
 ```sql
 create table daily_event_counts (
+  id uuid primary key default gen_random_uuid(),  -- every synced table needs a surrogate id;
+                                                   -- PowerSync's client Table() schema always
+                                                   -- keys rows by a single `id` column, so this
+                                                   -- can't be a composite-natural-key table.
   shop_id uuid not null references shops(id),
   event_type text not null,
   day date not null,
   count integer not null default 0,
-  primary key (shop_id, event_type, day)
+  unique (shop_id, event_type, day)
 );
 alter table daily_event_counts enable row level security;
 -- Full CRUD (unlike events/audit_log): this is a mutable projection, incremented
