@@ -40,8 +40,10 @@ CREATE TABLE IF NOT EXISTS public.daily_event_counts (
 
 ALTER TABLE public.daily_event_counts ENABLE ROW LEVEL SECURITY;
 
--- Full CRUD (unlike events): a mutable projection, incremented in place by the
--- reference read-model subscriber (Task 5), not an append-only log.
+-- SELECT/INSERT/UPDATE (unlike events' append-only SELECT/INSERT-only): a mutable
+-- projection, incremented in place by the reference read-model subscriber (Task 5),
+-- not an append-only log. No DELETE policy; this projection is never deleted, only
+-- incremented in place.
 DROP POLICY IF EXISTS daily_event_counts_select_all ON public.daily_event_counts;
 CREATE POLICY daily_event_counts_select_all ON public.daily_event_counts
   FOR SELECT TO authenticated, anon
@@ -76,3 +78,13 @@ BEGIN
     END IF;
   END LOOP;
 END $$;
+
+-- Base table privileges (required for RLS to be meaningful; see 066_fill_missing_table_grants.sql).
+-- RLS policies restrict; they do not grant. Base privileges are scoped to what RLS allows:
+--   - events is append-only (SELECT/INSERT only), so grant only SELECT, INSERT.
+--   - daily_event_counts allows SELECT/INSERT/UPDATE (no DELETE), so grant only those three.
+-- This defense-in-depth pattern (grant only what's needed, then RLS further restricts by shop)
+-- ensures RLS is not the sole gatekeeper, matching the pattern in 018_audit_log_append_only.sql
+-- which revokes UPDATE/DELETE at both the policy and grant levels.
+GRANT SELECT, INSERT ON TABLE public.events TO anon, authenticated, service_role;
+GRANT SELECT, INSERT, UPDATE ON TABLE public.daily_event_counts TO anon, authenticated, service_role;
