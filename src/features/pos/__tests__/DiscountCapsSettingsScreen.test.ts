@@ -1,14 +1,15 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 
 const mockLoad = vi.fn().mockResolvedValue(undefined)
 const mockSave = vi.fn().mockResolvedValue(undefined)
+const mockCheckSaveFailed = vi.fn().mockResolvedValue(null)
 vi.mock('@/features/pos/useDiscountCaps', () => ({
   useDiscountCaps: () => ({
     cashierPct: { value: 5 }, managerPct: { value: 15 }, loaded: { value: true },
-    load: mockLoad, save: mockSave,
+    load: mockLoad, save: mockSave, checkSaveFailed: mockCheckSaveFailed,
   }),
 }))
 
@@ -23,9 +24,15 @@ function mountScreen() {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers()
   setActivePinia(createPinia())
   mockLoad.mockClear()
   mockSave.mockClear()
+  mockCheckSaveFailed.mockClear().mockResolvedValue(null)
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe('DiscountCapsSettingsScreen', () => {
@@ -34,9 +41,98 @@ describe('DiscountCapsSettingsScreen', () => {
     expect(mockLoad).toHaveBeenCalled()
   })
 
-  it('calls save with the edited values on submit', async () => {
+  it('has an accessible label linked to each input', async () => {
     const wrapper = mountScreen()
-    await (wrapper.vm as any).submit(10, 25)
-    expect(mockSave).toHaveBeenCalledWith({ cashierPct: 10, managerPct: 25 })
+    await wrapper.vm.$nextTick()
+    const cashierInput = wrapper.find('#cashier-cap-input')
+    const managerInput = wrapper.find('#manager-cap-input')
+    expect(cashierInput.attributes('aria-labelledby')).toBe('cashier-cap-label')
+    expect(managerInput.attributes('aria-labelledby')).toBe('manager-cap-label')
+    expect(wrapper.find('#cashier-cap-label').exists()).toBe(true)
+    expect(wrapper.find('#manager-cap-label').exists()).toBe(true)
+  })
+
+  it('submits the form on Enter without a validation error', async () => {
+    const wrapper = mountScreen()
+    await wrapper.find('#cashier-cap-input').setValue('10')
+    await wrapper.find('form').trigger('submit')
+    expect(wrapper.find('[data-testid="confirm-dialog"]').exists()).toBe(true)
+  })
+
+  it('shows an inline error and does not open the confirm dialog for a negative value (BUG-01)', async () => {
+    const wrapper = mountScreen()
+    await wrapper.find('#cashier-cap-input').setValue('-10')
+    await wrapper.find('form').trigger('submit')
+    expect(wrapper.text()).toContain('يجب أن تكون النسبة بين 0 و100')
+    expect(wrapper.find('[data-testid="confirm-dialog"]').exists()).toBe(false)
+    expect(mockSave).not.toHaveBeenCalled()
+  })
+
+  it('shows an inline error for a value above 100 (BUG-02)', async () => {
+    const wrapper = mountScreen()
+    await wrapper.find('#cashier-cap-input').setValue('150')
+    await wrapper.find('form').trigger('submit')
+    expect(wrapper.text()).toContain('يجب أن تكون النسبة بين 0 و100')
+    expect(mockSave).not.toHaveBeenCalled()
+  })
+
+  it('shows a cross-field error when cashier exceeds manager (BUG-04)', async () => {
+    const wrapper = mountScreen()
+    await wrapper.find('#cashier-cap-input').setValue('90')
+    await wrapper.find('#manager-cap-input').setValue('10')
+    await wrapper.find('form').trigger('submit')
+    expect(wrapper.text()).toContain('لا يمكن أن يتجاوز حد الكاشير حد المدير')
+    expect(mockSave).not.toHaveBeenCalled()
+  })
+
+  it('shows a required error for an empty field instead of silently saving 0 (BUG-06)', async () => {
+    const wrapper = mountScreen()
+    await wrapper.find('#cashier-cap-input').setValue('')
+    await wrapper.find('form').trigger('submit')
+    expect(wrapper.text()).toContain('الرجاء إدخال قيمة')
+    expect(mockSave).not.toHaveBeenCalled()
+  })
+
+  it('opens a confirmation dialog before saving a valid change, and saves only on confirm', async () => {
+    const wrapper = mountScreen()
+    await wrapper.find('#cashier-cap-input').setValue('10')
+    await wrapper.find('form').trigger('submit')
+    expect(mockSave).not.toHaveBeenCalled()
+
+    await wrapper.find('[data-testid="dialog-confirm"]').trigger('click')
+    expect(mockSave).toHaveBeenCalledWith({ cashierPct: 10, managerPct: 15 })
+  })
+
+  it('does not save if the confirmation dialog is cancelled', async () => {
+    const wrapper = mountScreen()
+    await wrapper.find('#cashier-cap-input').setValue('10')
+    await wrapper.find('form').trigger('submit')
+
+    await wrapper.find('.btn-ghost').trigger('click')
+    expect(mockSave).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="confirm-dialog"]').exists()).toBe(false)
+  })
+
+  it('shows a success toast immediately after a confirmed save', async () => {
+    const wrapper = mountScreen()
+    await wrapper.find('#cashier-cap-input').setValue('10')
+    await wrapper.find('form').trigger('submit')
+    await wrapper.find('[data-testid="dialog-confirm"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('تم الحفظ')
+  })
+
+  it('downgrades the toast to a failure message if checkSaveFailed later reports a rejection (BUG-05)', async () => {
+    mockCheckSaveFailed.mockResolvedValue('check constraint violated')
+    const wrapper = mountScreen()
+    await wrapper.find('#cashier-cap-input').setValue('10')
+    await wrapper.find('form').trigger('submit')
+    await wrapper.find('[data-testid="dialog-confirm"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('تم الحفظ')
+
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(wrapper.text()).toContain('لم يتم الحفظ على الخادم')
+    expect(wrapper.text()).not.toContain('تم الحفظ')
   })
 })
