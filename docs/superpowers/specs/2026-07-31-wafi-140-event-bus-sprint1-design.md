@@ -96,13 +96,19 @@ create table events (
 create index events_shop_type_idx on events (shop_id, type, occurred_at desc);
 
 alter table events enable row level security;
--- Tenant scoping follows the existing owner_user_id -> auth.uid() pattern
--- (see docs/architecture — no JWT claim/hook), identical shape to every
--- other RLS'd table in this schema.
-create policy events_tenant_isolation on events
-  for all
-  using (shop_id in (select id from shops where owner_user_id = auth.uid()))
-  with check (shop_id in (select id from shops where owner_user_id = auth.uid()));
+-- Tenant scoping via the existing public.auth_shop_id() helper (015_rls_tenant_scoping.sql) —
+-- the same shop_id = (select public.auth_shop_id()) shape used by every RLS'd table in this
+-- schema. INSERT stays open shop-wide (matches audit_log's pattern, 061_audit_domain_rls.sql —
+-- every domain's mutations write their own audit/event entries, system-generated). No UPDATE/
+-- DELETE policy is created: events are append-only, denied to everyone by omission, matching
+-- audit_log (018_audit_log_append_only.sql). Per-event-type SELECT restriction (e.g. cashier
+-- cannot subscribe to staff.ledger_entry_added) is explicitly Sprint 3 — SELECT here is shop-wide.
+create policy events_select_all on events
+  for select to authenticated, anon
+  using (shop_id = (select public.auth_shop_id()));
+create policy events_insert_all on events
+  for insert to authenticated, anon
+  with check (shop_id = (select public.auth_shop_id()));
 ```
 
 `events` must be added to the PowerSync sync rules / publication (same step every new synced table
@@ -149,14 +155,14 @@ time-bounded. This decision must be revisited no later than Sprint 3 (security/h
 - **Payload contains immutable business facts and identifiers only** — no UI state, no computed/
   derived display values, no localized strings. Mutable personal information (customer name,
   phone, address) must not be duplicated into a payload unless the specific event is an
-  intentional, legally-immutable audit snapshot (none of the 10 Sprint 1 events are). This keeps
+  intentional, legally-immutable audit snapshot (none of the 9 Sprint 1 events are). This keeps
   events from slowly becoming ad-hoc DTOs, and avoids stale-PII drift between an event payload and
   the current customer record.
 - **Typed payloads, not anonymous objects.** Each event type gets its own payload interface in
   `domainEvent.types.ts` (e.g. `SaleCompletedPayload`, `ExpenseRecordedPayload`), with
   `DomainEvent<SaleCompletedPayload>` etc. replacing today's inline object-literal payloads. Applies
-  to all 10 Sprint 1 events, including the pre-existing 9 (a small refactor of their `toEvent`
-  hooks, not a behavior change).
+  to all 9 Sprint 1 events (a small refactor of their existing `toEvent` hooks, not a behavior
+  change).
 
 Reference read-model (projection) table:
 
@@ -169,13 +175,21 @@ create table daily_event_counts (
   primary key (shop_id, event_type, day)
 );
 alter table daily_event_counts enable row level security;
-create policy daily_event_counts_tenant_isolation on daily_event_counts
-  for all
-  using (shop_id in (select id from shops where owner_user_id = auth.uid()))
-  with check (shop_id in (select id from shops where owner_user_id = auth.uid()));
+-- Full CRUD (unlike events/audit_log): this is a mutable projection, incremented
+-- in place by the reference read-model subscriber (§7), not an append-only log.
+create policy daily_event_counts_select_all on daily_event_counts
+  for select to authenticated, anon
+  using (shop_id = (select public.auth_shop_id()));
+create policy daily_event_counts_insert_all on daily_event_counts
+  for insert to authenticated, anon
+  with check (shop_id = (select public.auth_shop_id()));
+create policy daily_event_counts_update_all on daily_event_counts
+  for update to authenticated, anon
+  using (shop_id = (select public.auth_shop_id()))
+  with check (shop_id = (select public.auth_shop_id()));
 ```
 
-## 5. Event set (10 events)
+## 5. Event set (9 events)
 
 The 9 events already wired via `toEvent` hooks start persisting the moment `publishEvent()` is
 real — no service code changes required:
@@ -192,9 +206,14 @@ real — no service code changes required:
 | `shift.closed` | `staff.service.ts` |
 | `installment.due_paid` | `customer.service.ts` |
 
-10th event added this sprint: `customer.debt_changed` (`CustomerEventType.DebtChanged` is already
-typed in `domainEvent.types.ts` but has no `toEvent` hook yet) — wired into the customer-payment
-service call that currently changes `customer_payments` balance without an event.
+`customer.debt_changed` (already typed in `domainEvent.types.ts`) is deliberately **not** wired
+this sprint. Investigated during planning: the only debt-decreasing call site on
+`executeBusinessOperation` today is `customer.service.ts`'s `recordPayment`, which already emits
+`installment.due_paid` — adding a second event to the same call site means both fire together for
+every payment, which is redundant. The other debt-changing path (returning a credit sale) lives in
+`returns.service.ts`, explicitly excluded from WAFI-152's business-services migration and not yet
+on `executeBusinessOperation`. Wiring `customer.debt_changed` waits until returns joins that layer
+— a separate, later piece of work, not squeezed into Sprint 1.
 
 ## 6. `publishEvent()` implementation
 
@@ -238,7 +257,7 @@ database growth note in §4).
 
 - Vitest: `publishEvent()` writes the correct row shape (mock PowerSync `db.execute`), including
   `payload_version` defaulting to `1` and `occurred_at`/`created_at` both present.
-- Vitest: each of the 10 `toEvent` hooks produces a payload matching its typed interface (compile-
+- Vitest: each of the 9 `toEvent` hooks produces a payload matching its typed interface (compile-
   time check via the type system, plus a runtime shape assertion per event).
 - Vitest: `useEventSubscription` invokes handler on matching inserts, ignores non-matching types,
   and its returned `stop()`/`onUnmounted` path actually detaches the watch query.
@@ -258,9 +277,8 @@ Matrix rows consulted: Sales, Inventory, Installments, Customer Credit, Staff, A
                  (all already-wired services and the existing audit_log table)
 Open cross-feature questions:
   - The new "Event" domain has no row yet in the DOMAIN INTERACTION MATRIX — added below.
-  - customer.debt_changed's exact service call site needs confirming against current
-    customer.service.ts balance-mutation logic during implementation (not fully enumerated
-    in this design pass).
+  - customer.debt_changed's call site was investigated during planning (see §5) and resolved:
+    not wired this sprint, deferred until returns.service.ts joins executeBusinessOperation.
 ```
 
 New DOMAIN INTERACTION MATRIX row (to add to `AI_PRINCIPAL_ENGINEER_REVIEW.md` as part of this
@@ -272,8 +290,8 @@ ticket's implementation):
 
 ## 10. Out-of-scope call-outs (explicitly deferred, not silently dropped)
 
-- `customer.debt_changed` full downstream reactions (notifications, reports) — later tickets, this
-  sprint only ensures the event is emitted and persisted.
+- `customer.debt_changed` itself — not wired this sprint (see §5); deferred until
+  `returns.service.ts` joins `executeBusinessOperation`.
 - Any UI surface for browsing raw events — WAFI-142 (Event Registry) territory.
 - Sprint 1's failure-counter is dev-visibility only, not owner-facing alerting.
 - Retention/pruning of synced `events` rows on-device — must be solved via PowerSync sync-rule
