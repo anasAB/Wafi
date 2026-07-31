@@ -147,8 +147,6 @@ export default {
     tabCategory: 'حسب الفئة',
     topExpensesTitle: 'أعلى المصاريف',
     clearFilter: 'مسح الفلتر',
-    expenseAnomaly: '⚠️ مصاريفك مرتفعة بشكل غير معتاد هذه الفترة.',
-    returnsAnomaly: '⚠️ المرتجعات أعلى من المعتاد.',
     chartBasisNote: 'المخطط يعرض الربح التراكمي بالدولار من بداية الفترة: (الدخل − المرتجعات − تكلفة البضاعة − المصاريف).',
     chartTapHint: 'اضغط على نقطة لعرض تفاصيلها فورًا.',
     openSelectedPointDetails: 'تفاصيل الرقم',
@@ -172,5 +170,23 @@ export default {
     cashMovementFootnote: 'حركات الصندوق لا تُحتسب ضمن الربح.',
     cashMovementInfo: 'حركات الصندوق (إيداع، سحب) هي نقل نقدي فقط ولا تُعتبر دخلاً أو مصروفاً — لذلك لا تظهر في هذا التقرير. راجع سجل الورديات لعرضها.',
     viewCashMovements: 'عرض حركات الصندوق',
+  },
+  // WAFI-015: Anomaly detection — 7 anomaly types with localized titles and messages.
+  // Consumed by AnomalyBanner.vue and ReportsPage.vue.
+  anomalies: {
+    HIGH_EXPENSES_RATIO: { title: 'مصاريف مرتفعة', message: 'مصاريفك أعلى من المعتاد في هذه الفترة' },
+    HIGH_RETURNS_RATIO: { title: 'مرتجعات مرتفعة', message: 'المرتجعات أعلى من المعتاد في هذه الفترة' },
+    LOW_MARGIN: { title: 'الربح منخفض', message: 'هامش الربح أقل من المعتاد في هذه الفترة' },
+    SALE_BELOW_COST: { title: 'بيع دون التكلفة', message: '{count} عملية بيعت دون التكلفة في هذه الفترة' },
+    HIGH_DISCOUNT_RATIO: { title: 'خصومات مرتفعة', message: 'الخصومات المعطاة في هذه الفترة أعلى من المعتاد' },
+    CASH_SHIFT_VARIANCE: { title: 'تفاوت في الصندوق', message: '{count} وردية أغلقت برصيد نقدي غير معتاد في هذه الفترة' },
+    INVENTORY_SHRINKAGE: { title: 'نقص في المخزون', message: '{count} منتج به نقص غير معتاد في هذه الفترة' },
+  },
+  // WAFI-015: Anomaly banner on home screen — alert banner and expand UI.
+  home: {
+    anomalyBannerTitle: '{count} أمور تحتاج انتباهك',
+    anomalyBannerDismiss: 'تجاهل',
+    anomalyBannerError: 'تعذّر التحقق من المشاكل الآن',
+    anomalyBannerExpand: 'عرض التفاصيل',
   },
 }

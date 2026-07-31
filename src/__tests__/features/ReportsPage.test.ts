@@ -142,7 +142,8 @@ describe('ReportsPage', () => {
     const w = mountPage()
     await flushPromises()
 
-    expect(w.text()).toContain('⚠️ مصاريفك مرتفعة بشكل غير معتاد هذه الفترة.')
+    expect(w.text()).toContain('مصاريف مرتفعة')
+    expect(w.text()).toContain('مصاريفك أعلى من المعتاد في هذه الفترة')
   })
 
   it('opens drilldown sheet when selecting a day point on the trend chart', async () => {

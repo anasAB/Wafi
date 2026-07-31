@@ -14,7 +14,7 @@ import { useProfitTrend } from '../composables/useProfitTrend'
 import { useBucketBreakdown } from '../composables/useBucketBreakdown'
 import { useExpenseBreakdown } from '../composables/useExpenseBreakdown'
 import { useCategoryBreakdown, type CategoryBreakdownRow } from '../composables/useCategoryBreakdown'
-import { evaluateReportAnomalies } from '../composables/useReportAnomalies'
+import { useAnomalyDetection } from '@/composables/useAnomalyDetection'
 import { useDeadStockReport } from '../composables/useDeadStockReport'
 import type { DeadStockThresholdDays } from '../composables/useDeadStockReport'
 import { useUncostedSalesNotice } from '../composables/useUncostedSalesNotice'
@@ -35,6 +35,7 @@ const expenseBreakdown = useExpenseBreakdown()
 const categoryBreakdown = useCategoryBreakdown()
 const deadStock = useDeadStockReport()
 const uncostedSales = useUncostedSalesNotice()
+const { anomalies, load: loadAnomalies } = useAnomalyDetection()
 
 const period      = ref<ReportPeriod>('month')
 const customStart = ref('')
@@ -88,13 +89,6 @@ const isCustomIncomplete = computed(() =>
 const hasSales = computed(() => metrics.invoiceCount.value > 0)
 const isProfit = computed(() => metrics.profitUsd.value >= 0)
 const showTrendChart = computed(() => chartBucket.value === 'month' || trend.points.value.length >= 3)
-const anomalies = computed(() =>
-  evaluateReportAnomalies(
-    metrics.grossIncomeUsd.value,
-    metrics.expensesUsd.value,
-    metrics.refundsUsd.value,
-  ),
-)
 const popDeltaPct = computed<number | null>(() => {
   if (previousInvoiceCount.value <= 0) return null
   const prev = previousProfitUsd.value
@@ -136,6 +130,16 @@ async function reload() {
       ? previousMetrics.loadRange(previousRange.start, previousRange.end)
       : Promise.resolve(),
   ])
+
+  // Runs after metrics.loadRange resolves (not in parallel with it above):
+  // the anomaly engine reads metrics' just-updated revenue/COGS/expenses/refunds
+  // values, so it must not race the load that produces them (see WAFI-015 plan §2a).
+  await loadAnomalies({ start, end }, {
+    revenueUsd: metrics.revenueUsd.value,
+    cogsUsd: metrics.cogsUsd.value,
+    expensesUsd: metrics.expensesUsd.value,
+    refundsUsd: metrics.refundsUsd.value,
+  })
 
   if (trend.points.value.length > 0) {
     selectedTrendPointIndex.value = trend.points.value.length - 1
@@ -246,9 +250,10 @@ onMounted(() => { reload(); deadStock.load() })
       <button data-test="period-custom"  :class="{ active: period === 'custom' }"  @click="selectPeriod('custom')">{{ t('reports.custom') }}</button>
     </div>
 
-    <div v-if="anomalies.highExpenses || anomalies.highReturns" class="anomalies-wrap">
-      <p v-if="anomalies.highExpenses" class="anomaly-banner">{{ t('reports.expenseAnomaly') }}</p>
-      <p v-if="anomalies.highReturns" class="anomaly-banner">{{ t('reports.returnsAnomaly') }}</p>
+    <div v-if="anomalies.length > 0" class="anomalies-wrap">
+      <p v-for="a in anomalies" :key="a.code" class="anomaly-banner">
+        {{ t(`anomalies.${a.code}.title`) }} — {{ t(`anomalies.${a.code}.message`) }}
+      </p>
     </div>
 
     <div class="reports-tabs" role="tablist" aria-label="report tabs">

@@ -9,6 +9,7 @@ import AppToast    from '@/components/ui/AppToast.vue'
 import ExpenseForm from '@/features/expenses/components/ExpenseForm.vue'
 import ProfitSheet from '@/features/dashboard/components/ProfitSheet.vue'
 import CashDrawerSheet from '@/features/dashboard/components/CashDrawerSheet.vue'
+import AnomalyBanner from '@/features/dashboard/components/AnomalyBanner.vue'
 import ExchangeRateWidget from '@/features/exchange-rate/ExchangeRateWidget.vue'
 import ExchangeRateEditor from '@/features/exchange-rate/ExchangeRateEditor.vue'
 import ConnectionPill from '@/components/ui/ConnectionPill.vue'
@@ -341,6 +342,9 @@ const ACTIVITY_HEADING: Record<string, string> = { today: 'اليوم', week: '�
         <p class="gm-date">{{ arabicDate }}</p>
         <h1 class="gm-name">{{ greeting }} 👋</h1>
       </div>
+
+      <!-- WAFI-015: anomaly banner is the first thing an owner sees on Home. -->
+      <AnomalyBanner />
 
       <!-- Exchange rate must be a prominent first action on Home (Task 2 / Epic 1.5). -->
       <div class="hp-rate-row">
