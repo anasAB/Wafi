@@ -2,7 +2,7 @@ import { ref } from 'vue'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { useSessionStore } from '@/store/session.store'
-import type { AuditEvent, AuditEntityType, AuditLog } from '@/features/audit/audit.types'
+import type { AuditEvent, AuditEntityType, AuditLog, WhatsAppChannel } from '@/features/audit/audit.types'
 import type { DiscountType } from '@/features/pos/discounts'
 
 type AuditRow = {
@@ -502,6 +502,16 @@ export function useAuditLog() {
     settlementId: string, staffId: string, paymentMethod: string,
   ) => _log('staff_settlement.paid', 'staff_settlement', settlementId, { staffId, paymentMethod })
 
+  // WAFI-012: records that the app handed off to WhatsApp — NOT that the
+  // message was sent or delivered (wa.me opens the user's WhatsApp app/web
+  // client, which we have no visibility into past that point). Routine,
+  // high-frequency, best-effort like the other UI-action logs above.
+  const logWhatsAppComposed = (
+    channel: WhatsAppChannel,
+    entityId: string | null,
+    hadPhone: boolean,
+  ) => _log('messaging.whatsapp_composed', 'messaging', entityId, { channel, hadPhone })
+
   return {
     entries,
     loadLog,
@@ -555,5 +565,6 @@ export function useAuditLog() {
     logStaffLedgerEntryCreated,
     logStaffSettlementFinalized,
     logStaffSettlementPaid,
+    logWhatsAppComposed,
   }
 }

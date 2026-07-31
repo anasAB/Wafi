@@ -12,6 +12,7 @@ import InvoiceDetailSheet from './components/InvoiceDetailSheet.vue'
 import AuditHistory from '@/features/audit/components/AuditHistory.vue'
 import InstallmentPlanSection from './components/InstallmentPlanSection.vue'
 import { WhatsAppPreviewSheet, useSendStatement } from '@/features/messaging'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 import { useCustomers } from './composables/useCustomers'
 import { useCustomerBalance } from './composables/useCustomerBalance'
 import { useReceiptSettings } from '@/features/receipt/composables/useReceiptSettings'
@@ -35,6 +36,7 @@ const {
 } = useCustomerBalance(customerId)
 const { settings: receiptSettings, load: loadReceiptSettings } = useReceiptSettings()
 const sendStatement = useSendStatement()
+const { logWhatsAppComposed } = useAuditLog()
 
 const customer    = ref<Customer | undefined>(undefined)
 const showPayment = ref(false)
@@ -113,6 +115,7 @@ async function handleDelete() {
 
 function handleStatementSent(payload: { phone: string; text: string }) {
   sendStatement.send(payload.phone, payload.text)
+  logWhatsAppComposed('statement', customerId, statementPreview.value?.phone != null)
   showStatement.value = false
   toast.value = { message: 'تم إرسال كشف الحساب', type: 'success' }
 }

@@ -17,6 +17,7 @@ import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import { WhatsAppPreviewSheet, useSendReceipt } from '@/features/messaging'
 import { buildReceiptData } from './useSaleHistory'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 
 const router  = useRouter()
 const route   = useRoute()
@@ -254,9 +255,11 @@ async function handleReprint(saleId: string) {
 
 // ── WhatsApp send ─────────────────────────────────────────────────────────────
 const { prepare, send } = useSendReceipt()
+const { logWhatsAppComposed } = useAuditLog()
 const waSheetOpen   = ref(false)
 const waSheetText   = ref('')
 const waSheetPhone  = ref<string | null>(null)
+const waSheetSaleId = ref<string | null>(null)
 
 async function handleWhatsApp(saleId: string) {
   try {
@@ -265,6 +268,7 @@ async function handleWhatsApp(saleId: string) {
     const prepared = prepare(receipt)
     waSheetText.value  = prepared.text
     waSheetPhone.value = prepared.phone   // null
+    waSheetSaleId.value = saleId
     waSheetOpen.value  = true
   } catch (e) {
     toastType.value = 'error'
@@ -274,6 +278,7 @@ async function handleWhatsApp(saleId: string) {
 
 function onWaSend(payload: { phone: string; text: string }) {
   send(payload.phone, payload.text)
+  logWhatsAppComposed('receipt', waSheetSaleId.value, waSheetPhone.value !== null)
   waSheetOpen.value = false
   toastType.value = 'info'
   toast.value = 'تم فتح واتساب'

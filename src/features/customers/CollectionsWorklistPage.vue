@@ -6,6 +6,7 @@ import AppToast from '@/components/ui/AppToast.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import RecordPaymentSheet from './components/RecordPaymentSheet.vue'
 import { WhatsAppPreviewSheet, useSendStatement } from '@/features/messaging'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 import { useCollectionsWorklist } from './composables/useCollectionsWorklist'
 import type { CollectionsSortOption } from './composables/useCollectionsWorklist'
 import { useCustomerBalance } from './composables/useCustomerBalance'
@@ -16,6 +17,7 @@ const router = useRouter()
 const { debtorRows, creditRows, sort, load, markReminded } = useCollectionsWorklist()
 const { settings: receiptSettings, load: loadReceiptSettings } = useReceiptSettings()
 const sendStatement = useSendStatement()
+const { logWhatsAppComposed } = useAuditLog()
 
 const toast = ref<{ message: string; type: 'success' | 'error' } | null>(null)
 const payingRow = ref<CollectionsWorklistRow | null>(null)
@@ -81,6 +83,7 @@ async function openReminder(row: CollectionsWorklistRow) {
 
 async function handleStatementSent(payload: { phone: string; text: string }) {
   sendStatement.send(payload.phone, payload.text)
+  logWhatsAppComposed('statement', statementForRow.value?.customerId ?? null, statementPreview.value?.phone != null)
   if (statementForRow.value) {
     await markReminded(statementForRow.value.customerId)
   }

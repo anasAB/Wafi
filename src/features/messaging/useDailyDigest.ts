@@ -3,6 +3,7 @@ import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 import { useSettingsStore } from '@/features/settings'
 import { openWhatsApp, resolvePhone } from './whatsapp'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 
 type DigestMetrics = {
   revenueUsd: number
@@ -93,6 +94,7 @@ async function loadTodayMetrics(shopId: string): Promise<DigestMetrics> {
 export function useDailyDigest() {
   const device = useDeviceStore()
   const settings = useSettingsStore()
+  const { logWhatsAppComposed } = useAuditLog()
 
   const isEnabled = computed(() => settings.dailyDigestEnabled)
   const reminderHour = computed(() => settings.dailyDigestHour)
@@ -151,6 +153,7 @@ export function useDailyDigest() {
     if (!ownerPhone.value) return false
     const payload = text ?? await buildTodayDigestText()
     openWhatsApp(ownerPhone.value, payload)
+    logWhatsAppComposed('daily_digest', null, true)
     return true
   }
 

@@ -99,6 +99,15 @@ export function eventLabel(entry: AuditLog): string {
       const to   = (m.to_name as string) ?? 'مستخدم غير معروف'
       return `تبديل المستخدم: من ${from} إلى ${to}`
     }
+    case 'messaging.whatsapp_composed': {
+      const channelLabels: Record<string, string> = {
+        receipt: 'فاتورة', statement: 'كشف حساب',
+        installment_reminder: 'تذكير قسط', daily_digest: 'ملخص يومي',
+        support_contact: 'تواصل مع الدعم',
+      }
+      const channel = channelLabels[m.channel as string] ?? str(m.channel)
+      return `فتح واتساب: ${channel}`
+    }
     default:                          return entry.event
   }
 }

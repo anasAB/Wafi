@@ -2,9 +2,11 @@
 import { ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { openWhatsApp } from '@/features/messaging/whatsapp'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 
 const route = useRoute()
 const description = ref('')
+const { logWhatsAppComposed } = useAuditLog()
 
 function send() {
   const supportPhone = import.meta.env.VITE_SUPPORT_WHATSAPP_PHONE as string | undefined
@@ -18,6 +20,7 @@ function send() {
     lines.push(`الوصف: ${description.value.trim()}`)
   }
   openWhatsApp(supportPhone, lines.join('\n'))
+  logWhatsAppComposed('support_contact', null, true)
 }
 </script>
 

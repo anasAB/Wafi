@@ -4,6 +4,7 @@ import { ref, onMounted, computed } from 'vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import { useInstallmentPlan } from '@/features/installments/composables/useInstallmentPlan'
 import { useSendInstallmentReminder, WhatsAppPreviewSheet } from '@/features/messaging'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 import { dueBucket } from '@/features/installments/installment.types'
 import type { InstallmentPlan, InstallmentDue } from '@/features/installments/installment.types'
 
@@ -16,6 +17,7 @@ const props = defineProps<{
 
 const { loadActivePlanForCustomer, recordDuePayment, cancelPlan } = useInstallmentPlan()
 const sendReminder = useSendInstallmentReminder()
+const { logWhatsAppComposed } = useAuditLog()
 
 const plan = ref<InstallmentPlan | null>(null)
 const dues = ref<InstallmentDue[]>([])
@@ -92,6 +94,7 @@ function openReminder() {
 
 function handleReminderSend(payload: { phone: string; text: string }) {
   sendReminder.send(payload.phone, payload.text)
+  logWhatsAppComposed('installment_reminder', props.customerId, reminderPreview.value?.phone != null)
   showReminderSheet.value = false
 }
 

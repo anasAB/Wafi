@@ -2,33 +2,38 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Extract business logic out of 6 Vue composable groups into 5 framework-agnostic TypeScript services under `src/services/`, with a shared `executeBusinessWrite` wrapper that atomically writes, audits, and publishes a stub domain event.
+**Goal:** Extract business logic out of 6 Vue composable groups into 5 framework-agnostic TypeScript services under `src/services/`, with a shared `executeBusinessOperation` wrapper that runs a write, then an audit call, then a fire-and-forget domain-event publish.
 
-**Architecture:** `src/services/events/domainEvent.types.ts` defines the closed event-type enum and payload contract. `src/composables/executeBusinessWrite.ts` replaces `executeFinancialWrite.ts`, owning write→audit→publish as one unit. Five service files (`sales.service.ts`, `inventory.service.ts`, `customer.service.ts`, `staff.service.ts`, `expense.service.ts`) each wrap `db.writeTransaction` directly (no repository layer) and call `executeBusinessWrite`. Composables become thin delegators, keeping their existing public API so calling `.vue` components need no changes.
+**Architecture:** `src/services/events/domainEvent.types.ts` defines per-domain closed event-type enums and the shared `DomainEvent<T>` envelope. `src/composables/executeBusinessOperation.ts` replaces `executeFinancialWrite.ts`, taking a `hooks: { audit, toEvent? }` object rather than positional callbacks. Five service files (`sales.service.ts`, `inventory.service.ts`, `customer.service.ts`, `staff.service.ts`, `expense.service.ts`) each wrap `db.writeTransaction` directly (no repository layer) and call `executeBusinessOperation`. Audit-logging functions are injected as parameters (not imported from `useAuditLog` inside the service), so services have zero Vue imports in fact, not just in name. Composables become thin delegators, keeping their existing public API so calling `.vue` components need no changes.
 
 **Tech Stack:** Vue 3 (Composition API), TypeScript, Vitest, PowerSync (`db.writeTransaction`/`db.execute`/`db.getAll`/`db.getOptional`), Pinia (`useSessionStore`, `useDeviceStore`, `useShiftStore`).
 
 ## Global Constraints
 
-- Services live in `src/services/`, one file per service, **zero Vue imports** (no `ref`/`computed`/`useXStore`) — identity flows through input arguments only (spec §6a).
-- Every financial write goes through `executeBusinessWrite(write, audit, toEvent, requiredPermission?)` — no service calls a publish function directly (spec §6b).
+- Services live in `src/services/`, one file per service, **zero Vue imports, including no `useAuditLog()` call inside a service** — identity and audit-logging both flow in through input arguments/parameters, never imported from a `use*` composable inside `src/services/` (spec §6a, tightened per review — see Task 0).
+- Every financial write goes through `executeBusinessOperation(write, hooks, requiredPermission?)` where `hooks = { audit, toEvent? }` — no service calls a publish function directly, and no service imports `useAuditLog` (renamed from `executeBusinessWrite`; object-shaped hooks instead of positional args so adding a future hook doesn't mean another positional parameter).
+- `toEvent` in `hooks` is **optional** — omitting it means no event is published for that write. This exists specifically so out-of-scope call sites (installments, returns) never have to invent a fake mapping onto an unrelated `DomainEventType` member just to satisfy the wrapper's signature.
+- Audit and publish are **not symmetric**: `audit` is awaited (a financial write is not considered complete until its audit row exists — this is the wrapper's core invariant, unchanged from `executeFinancialWrite`). `publish` is fire-and-forget — it is never awaited by the caller and a publish failure never surfaces as a write failure, since nothing consumes these events yet and no future consumer should be able to make checkout depend on event-bus availability.
 - Service filenames use the repo's lowercase dot-notation convention: `sales.service.ts`, not `SalesService.ts` (spec §4).
-- `DomainEventType` is a closed TypeScript `enum`, not a free-form string (spec §5).
-- Event payloads are stable business-fact summaries, not UI DTOs — e.g. `paymentSummary` aggregate, not a raw `paymentMethods[]` array (spec §4).
+- Event types are **per-domain closed TypeScript enums** (`ExpenseEventType`, `InventoryEventType`, `CustomerEventType`, `SalesEventType`, `StaffEventType`), not one flat enum and not a free-form string — this anticipates the registry growing past the ~10 members this ticket introduces without a single enum becoming unreadable (spec §5, revised per review).
+- Every `DomainEvent<T>` envelope carries a common `entityId: string` field (the ID of the primary entity the event is about) in addition to `type`/`payload`/`staffId`/`shopId`/`occurredAt` — this gives every future subscriber one universal field to log/index/route on without needing to know each event's payload shape. Payload bodies stay domain-specific and richly typed; they are not collapsed into a generic `summary`/`metadata` blob, since that would just move the "every consumer must memorize a shape" problem from the payload into an untyped bag.
+- Event payloads describe business facts already computed during the write (amounts, counts, ids) — not a database-insert echo, but also not aggregate/summary fields the write doesn't currently produce (e.g. no fabricated `accountingPeriod` on `ExpenseRecorded` — nothing in the codebase computes that today; a richer payload is a real design task for whoever eventually needs it, not something to invent speculatively here).
 - Service methods are transaction roots; no service calls another service's transaction-opening method. Composition (not needed in this ticket) would use a `...WithinTx(tx, ...)` helper per the existing `cancelPlanWithinTx` (WAFI-010) convention (spec §6c).
 - `voidSale`/`returnSale`/`updateDebt` are explicitly OUT of scope — dropped after codebase verification found no such logic exists (spec §4 corrections).
 - Existing composable public APIs do not change — calling `.vue` components require zero edits.
-- Existing composable tests are trimmed to delegation/reactive-state assertions only; business-rule assertions move to new `*.service.test.ts` files (spec §8).
+- Existing composable tests are trimmed to delegation/reactive-state assertions only; business-rule assertions move to new `*.service.test.ts` files (spec §8). Prefer asserting on call counts, bound parameter values, and returned data over `expect.stringContaining('INSERT INTO ...')` SQL-text matching where a behavioral assertion is equally strong — SQL-string assertions are kept only where the specific table/column being written is itself the thing under test, since formatting-only SQL changes shouldn't fail a behavior-correct test.
 - Pre-existing behavioral quirks found during verification (e.g. `duplicateLastMonth` has no audit call, the recurring-expense insert loop has no transaction) are preserved as-is, not fixed as a side effect of this ticket.
+- **Acknowledged trade-off, not an oversight:** services in this ticket contain business rule + raw SQL + audit-call wiring + event-shape construction all in one file, since spec §3 explicitly defers a repository layer. This is the right call for WAFI's current size, but it is a conscious trade-off — if/when a repository layer is introduced later, these services are exactly where the SQL would be extracted from.
+- **Future file-size note (no action needed now):** each service in this ticket has 1-2 methods, so no file-splitting is needed yet. When a service like `sales.service.ts` eventually accumulates many methods (`completeSale`, `returnSale`, `refund`, `exchange`, ...), split into a `sales/` directory (`sales/completeSale.ts`, `sales/returnSale.ts`, ...) with an index re-export, rather than letting one file grow unbounded — flagged here so the convention is anticipated, not because this ticket needs to do it.
 
 ---
 
 ## File Structure
 
 **Create:**
-- `src/services/events/domainEvent.types.ts` — `DomainEventType` enum + `DomainEvent<T>` interface
-- `src/services/events/publishEvent.ts` — no-op publish stub, called only from `executeBusinessWrite`
-- `src/composables/executeBusinessWrite.ts` — replaces `executeFinancialWrite.ts`
+- `src/services/events/domainEvent.types.ts` — per-domain `*EventType` enums + `DomainEvent<T>` envelope (with `entityId`)
+- `src/services/events/publishEvent.ts` — no-op, fire-and-forget publish stub, called only from `executeBusinessOperation`
+- `src/composables/executeBusinessOperation.ts` — replaces `executeFinancialWrite.ts` (and the earlier draft's `executeBusinessWrite.ts`)
 - `src/services/expense.service.ts` + `src/services/__tests__/expense.service.test.ts`
 - `src/services/inventory.service.ts` + `src/services/__tests__/inventory.service.test.ts`
 - `src/services/customer.service.ts` + `src/services/__tests__/customer.service.test.ts`
@@ -45,7 +50,7 @@
 - `src/features/staff-ledger/composables/useStaffLedger.ts` — delegate `addLedgerEntry` to `StaffService`
 - `src/features/staff-ledger/composables/useStaffSettlement.ts` — delegate `finalize`/`markPaid` to `StaffService`
 - All 7 existing test files listed in Global Constraints — trim to delegation assertions
-- Every call site of `executeFinancialWrite` — rename import to `executeBusinessWrite` (grep confirms call sites in: `useStaffLedger.ts`, `useStaffSettlement.ts`, `useInstallmentPlan.ts`, `useReturnSheet.ts` — the latter two are outside WAFI-152's 5 services but share the wrapper, so they must be updated to the new 4-arg signature or the old wrapper must stay as a deprecated alias; see Task 1)
+- Every call site of `executeFinancialWrite` — rename import to `executeBusinessOperation` and convert the positional `(write, audit, requiredPermission?)` call into `(write, { audit }, requiredPermission?)` — no `toEvent` needed for the out-of-scope call sites since `toEvent` is optional (grep confirms call sites in: `useStaffLedger.ts`, `useStaffSettlement.ts`, `useInstallmentPlan.ts`, `useReturnSheet.ts` — the latter two are outside WAFI-152's 5 services; see Task 0)
 
 **Delete:** none — `executeFinancialWrite.ts` is superseded in place by Task 1, not left as dead code.
 
@@ -64,45 +69,50 @@ Extraction order matches the spec's simplest→most-complex sequencing (§9), bu
 
 ---
 
-### Task 0: Event Types & `executeBusinessWrite` Foundation
+### Task 0: Event Types & `executeBusinessOperation` Foundation
 
 **Files:**
 - Create: `src/services/events/domainEvent.types.ts`
 - Create: `src/services/events/publishEvent.ts`
-- Create: `src/composables/executeBusinessWrite.ts`
-- Test: `src/__tests__/composables/executeBusinessWrite.test.ts`
+- Create: `src/composables/executeBusinessOperation.ts`
+- Test: `src/__tests__/composables/executeBusinessOperation.test.ts`
 - Modify: `src/features/staff-ledger/composables/useStaffLedger.ts:2` (import rename)
 - Modify: `src/features/staff-ledger/composables/useStaffSettlement.ts` (import rename, all 2 call sites)
 - Modify: `src/features/installments/composables/useInstallmentPlan.ts` (import rename, all 3 call sites)
 - Modify: `src/features/returns/composables/useReturnSheet.ts` (import rename, 1 call site)
 
 **Interfaces:**
-- Produces: `DomainEventType` enum (12 members, see below), `DomainEvent<TPayload>` interface, `executeBusinessWrite<T>(write, audit, toEvent, requiredPermission?): Promise<T>` — every later task's service methods call this.
+- Produces: per-domain event enums (`ExpenseEventType`, `InventoryEventType`, `CustomerEventType`, `SalesEventType`, `StaffEventType`), `DomainEvent<TPayload>` envelope (with `entityId`), `executeBusinessOperation<T>(write, hooks: { audit, toEvent? }, requiredPermission?): Promise<T>` — every later task's service methods call this.
 - Consumes: nothing (this is the foundation task).
 
-**Context:** `executeFinancialWrite.ts` (`src/composables/executeFinancialWrite.ts`) is used today by 4 call sites outside WAFI-152's 5 target composables: `useStaffLedger.ts`, `useStaffSettlement.ts` (both get replaced by StaffService in Task 5, but must compile in the meantime), `useInstallmentPlan.ts`, and `useReturnSheet.ts` (both untouched by WAFI-152 — out of scope, per spec §3). Since `executeBusinessWrite` adds a required 3rd positional argument (`toEvent`) before the existing optional `requiredPermission`, **every existing call site must be updated in this task**, or the build breaks. There is no way to make this purely additive without changing the 4-arg shape everywhere `executeFinancialWrite` was called with a 3rd (`requiredPermission`) argument.
+**Context:** `executeFinancialWrite.ts` (`src/composables/executeFinancialWrite.ts`) is used today by 4 call sites outside WAFI-152's 5 target composables: `useStaffLedger.ts`, `useStaffSettlement.ts` (both get replaced by StaffService in Task 5, but must compile in the meantime), `useInstallmentPlan.ts`, and `useReturnSheet.ts` (both untouched by WAFI-152 — out of scope, per spec §3). This task replaces the wrapper's positional-args shape with an object-shaped `hooks` parameter specifically so a 3rd/4th future hook (metrics, notifications, cache invalidation) is a new field on that object, not another positional argument shifting every call site again. `toEvent` inside `hooks` is optional: this means the 4 out-of-scope call sites can be migrated onto the new wrapper for audit-consistency without inventing a fake event mapping for logic this ticket doesn't own.
 
-- [ ] **Step 1: Write the failing test for `DomainEventType`/`DomainEvent` shape**
+- [ ] **Step 1: Write the failing test for the per-domain event enums**
 
 ```ts
-// src/__tests__/composables/executeBusinessWrite.test.ts
+// src/__tests__/composables/executeBusinessOperation.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { DomainEventType } from '@/services/events/domainEvent.types'
+import {
+  ExpenseEventType, InventoryEventType, CustomerEventType, SalesEventType, StaffEventType,
+} from '@/services/events/domainEvent.types'
 
-describe('DomainEventType', () => {
-  it('has exactly the 12 canonical event type strings', () => {
-    expect(Object.values(DomainEventType)).toEqual([
-      'sale.completed',
-      'stock.received',
-      'inventory.adjusted',
-      'customer.debt_changed',
-      'installment.due_paid',
-      'shift.opened',
-      'shift.closed',
-      'settlement.paid',
-      'staff.ledger_entry_added',
-      'expense.recorded',
+describe('per-domain event type registries', () => {
+  it('ExpenseEventType has exactly the expense event(s)', () => {
+    expect(Object.values(ExpenseEventType)).toEqual(['expense.recorded'])
+  })
+  it('InventoryEventType has exactly the inventory events', () => {
+    expect(Object.values(InventoryEventType)).toEqual(['stock.received', 'inventory.adjusted'])
+  })
+  it('CustomerEventType has exactly the customer events', () => {
+    expect(Object.values(CustomerEventType)).toEqual(['customer.debt_changed', 'installment.due_paid'])
+  })
+  it('SalesEventType has exactly the sales events', () => {
+    expect(Object.values(SalesEventType)).toEqual(['sale.completed'])
+  })
+  it('StaffEventType has exactly the staff events', () => {
+    expect(Object.values(StaffEventType)).toEqual([
+      'shift.opened', 'shift.closed', 'settlement.paid', 'staff.ledger_entry_added',
     ])
   })
 })
@@ -110,28 +120,53 @@ describe('DomainEventType', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `npx vitest run src/__tests__/composables/executeBusinessWrite.test.ts`
+Run: `npx vitest run src/__tests__/composables/executeBusinessOperation.test.ts`
 Expected: FAIL with "Cannot find module '@/services/events/domainEvent.types'"
 
-- [ ] **Step 3: Create the event types**
+- [ ] **Step 3: Create the per-domain event types**
 
 ```ts
 // src/services/events/domainEvent.types.ts
-export enum DomainEventType {
-  SaleCompleted = 'sale.completed',
+
+// Split by domain (rather than one flat DomainEventType) so the registry stays
+// readable as it grows past this ticket's ~9 members — WAFI-140/143 are
+// expected to add many more events, and a single enum with 70+ members mixing
+// every domain is harder to navigate than five short, domain-scoped ones.
+
+export enum ExpenseEventType {
+  Recorded = 'expense.recorded',
+}
+
+export enum InventoryEventType {
   StockReceived = 'stock.received',
-  InventoryAdjusted = 'inventory.adjusted',
-  CustomerDebtChanged = 'customer.debt_changed',
+  Adjusted = 'inventory.adjusted',
+}
+
+export enum CustomerEventType {
+  DebtChanged = 'customer.debt_changed',
   InstallmentDuePaid = 'installment.due_paid',
+}
+
+export enum SalesEventType {
+  Completed = 'sale.completed',
+}
+
+export enum StaffEventType {
   ShiftOpened = 'shift.opened',
   ShiftClosed = 'shift.closed',
   SettlementPaid = 'settlement.paid',
-  StaffLedgerEntryAdded = 'staff.ledger_entry_added',
-  ExpenseRecorded = 'expense.recorded',
+  LedgerEntryAdded = 'staff.ledger_entry_added',
 }
+
+export type DomainEventType =
+  | ExpenseEventType | InventoryEventType | CustomerEventType | SalesEventType | StaffEventType
 
 export interface DomainEvent<TPayload = unknown> {
   type: DomainEventType
+  /** ID of the primary entity this event is about (expenseId, receivingId, saleId, ...) — the
+   *  one field every subscriber can rely on regardless of domain, so logging/indexing/routing
+   *  doesn't require knowing each event's payload shape. */
+  entityId: string
   payload: TPayload
   staffId: string
   shopId: string
@@ -139,43 +174,65 @@ export interface DomainEvent<TPayload = unknown> {
 }
 ```
 
-Note: `CustomerDebtChanged` is defined in the enum for forward-compatibility with the plan's canonical event list, but no service method in WAFI-152 emits it yet (`updateDebt` was dropped — spec §4 correction #21). It stays in the enum since WAFI-140/a future ticket will need it, and removing/re-adding enum members later is exactly the kind of churn this closed-enum design is meant to prevent.
+Note: `CustomerEventType.DebtChanged` is defined for forward-compatibility with the plan's canonical event list, but no service method in WAFI-152 emits it yet (`updateDebt` was dropped — spec §4 correction #21). It stays in the enum since a future ticket will need it, and removing/re-adding enum members later is exactly the kind of churn this closed-enum design is meant to prevent.
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `npx vitest run src/__tests__/composables/executeBusinessWrite.test.ts`
-Expected: PASS (1 test)
+Run: `npx vitest run src/__tests__/composables/executeBusinessOperation.test.ts`
+Expected: PASS (5 tests)
 
-- [ ] **Step 5: Write the failing test for `publishEvent` (no-op) and `executeBusinessWrite`**
+- [ ] **Step 5: Write the failing test for `publishEvent` (fire-and-forget) and `executeBusinessOperation`**
 
 ```ts
-// append to src/__tests__/composables/executeBusinessWrite.test.ts
-import { executeBusinessWrite } from '@/composables/executeBusinessWrite'
+// append to src/__tests__/composables/executeBusinessOperation.test.ts
+import { executeBusinessOperation } from '@/composables/executeBusinessOperation'
 import { useSessionStore } from '@/store/session.store'
 import type { Staff } from '@/features/staff/staff.types'
 
-describe('executeBusinessWrite', () => {
+describe('executeBusinessOperation', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
   })
 
-  it('runs write, then audit, then builds an event from the write result', async () => {
-    const write = vi.fn().mockResolvedValue({ id: 'abc' })
-    const audit = vi.fn().mockResolvedValue(undefined)
+  it('runs write then audit, in order, and awaits both before resolving', async () => {
+    const order: string[] = []
+    const write = vi.fn().mockImplementation(async () => { order.push('write'); return { id: 'abc' } })
+    const audit = vi.fn().mockImplementation(async () => { order.push('audit') })
     const toEvent = vi.fn().mockReturnValue({
-      type: DomainEventType.ExpenseRecorded,
-      payload: { expenseId: 'abc' },
-      staffId: 's1',
-      shopId: 'shop1',
-      occurredAt: '2026-07-30T00:00:00.000Z',
+      type: ExpenseEventType.Recorded, entityId: 'abc', payload: { expenseId: 'abc' },
+      staffId: 's1', shopId: 'shop1', occurredAt: '2026-07-30T00:00:00.000Z',
     })
 
-    const result = await executeBusinessWrite(write, audit, toEvent)
+    const result = await executeBusinessOperation(write, { audit, toEvent })
 
     expect(result).toEqual({ id: 'abc' })
-    expect(write).toHaveBeenCalledBefore(audit as any)
+    expect(order).toEqual(['write', 'audit'])
     expect(audit).toHaveBeenCalledWith({ id: 'abc' })
-    expect(toEvent).toHaveBeenCalledWith({ id: 'abc' })
+  })
+
+  it('does not require toEvent — omitting it publishes nothing and does not throw', async () => {
+    const write = vi.fn().mockResolvedValue({ id: 'abc' })
+    const audit = vi.fn().mockResolvedValue(undefined)
+
+    await expect(executeBusinessOperation(write, { audit })).resolves.toEqual({ id: 'abc' })
+  })
+
+  it('resolves the caller before publish settles — publish is fire-and-forget', async () => {
+    const write = vi.fn().mockResolvedValue({ id: 'abc' })
+    const audit = vi.fn().mockResolvedValue(undefined)
+    let publishResolved = false
+    const toEvent = vi.fn().mockReturnValue({
+      type: ExpenseEventType.Recorded, entityId: 'abc', payload: {}, staffId: 's1', shopId: 'shop1', occurredAt: 'now',
+    })
+    // publishEvent itself is a no-op today, so this test asserts the *shape* of the
+    // guarantee (executeBusinessOperation never awaits publish) rather than timing —
+    // see the mock replacement below to make the guarantee observable.
+    vi.doMock('@/services/events/publishEvent', () => ({
+      publishEvent: vi.fn().mockImplementation(() => new Promise(r => setTimeout(() => { publishResolved = true; r(undefined) }, 50))),
+    }))
+
+    await executeBusinessOperation(write, { audit, toEvent })
+    expect(publishResolved).toBe(false)  // the call above returned before the 50ms publish settled
   })
 
   it('throws before writing when requiredPermission is not satisfied', async () => {
@@ -183,10 +240,9 @@ describe('executeBusinessWrite', () => {
     session.setActiveStaff({ id: 's1', role: 'cashier', permissions: {} } as Staff)
     const write = vi.fn()
     const audit = vi.fn()
-    const toEvent = vi.fn()
 
     await expect(
-      executeBusinessWrite(write, audit, toEvent, 'can_view_expenses'),
+      executeBusinessOperation(write, { audit }, 'can_view_expenses'),
     ).rejects.toThrow('permission denied: can_view_expenses required')
     expect(write).not.toHaveBeenCalled()
   })
@@ -196,51 +252,74 @@ describe('executeBusinessWrite', () => {
     const audit = vi.fn()
     const toEvent = vi.fn()
 
-    await expect(executeBusinessWrite(write, audit, toEvent)).rejects.toThrow('db down')
+    await expect(executeBusinessOperation(write, { audit, toEvent })).rejects.toThrow('db down')
     expect(audit).not.toHaveBeenCalled()
     expect(toEvent).not.toHaveBeenCalled()
+  })
+
+  it('a publish failure does not reject the caller (fire-and-forget swallows errors)', async () => {
+    vi.doMock('@/services/events/publishEvent', () => ({
+      publishEvent: vi.fn().mockRejectedValue(new Error('bus unavailable')),
+    }))
+    const write = vi.fn().mockResolvedValue({ id: 'abc' })
+    const audit = vi.fn().mockResolvedValue(undefined)
+    const toEvent = vi.fn().mockReturnValue({
+      type: ExpenseEventType.Recorded, entityId: 'abc', payload: {}, staffId: 's1', shopId: 'shop1', occurredAt: 'now',
+    })
+
+    await expect(executeBusinessOperation(write, { audit, toEvent })).resolves.toEqual({ id: 'abc' })
   })
 })
 ```
 
-Note: `toHaveBeenCalledBefore` requires `jest-extended`-style matchers; if unavailable in this repo's Vitest config, replace with an explicit call-order array (`const order: string[] = []; write.mockImplementation(async () => { order.push('write'); return { id: 'abc' } })` etc., then `expect(order).toEqual(['write', 'audit'])`) — check `src/__tests__/setup.ts` for available matchers before running this step.
+Note: `vi.doMock` inside a test body (rather than a top-level `vi.mock`) requires Vitest's module registry reset between tests (`vi.resetModules()` in an appropriate `beforeEach`/`afterEach`) to take effect per-test — check `src/__tests__/setup.ts`'s existing config before relying on this; if the repo's Vitest setup doesn't support per-test `doMock`, restructure these two tests to inject `publishEvent` as a parameter to a lower-level test-only helper instead of module-mocking it. Get this working with a real assertion, not a skipped/pending test — the fire-and-forget guarantee is exactly the behavior code review flagged as needing verification.
 
 - [ ] **Step 6: Run test to verify it fails**
 
-Run: `npx vitest run src/__tests__/composables/executeBusinessWrite.test.ts`
-Expected: FAIL with "Cannot find module '@/composables/executeBusinessWrite'" and "Cannot find module '@/services/events/publishEvent'"
+Run: `npx vitest run src/__tests__/composables/executeBusinessOperation.test.ts`
+Expected: FAIL with "Cannot find module '@/composables/executeBusinessOperation'" and "Cannot find module '@/services/events/publishEvent'"
 
-- [ ] **Step 7: Implement `publishEvent` and `executeBusinessWrite`**
+- [ ] **Step 7: Implement `publishEvent` and `executeBusinessOperation`**
 
 ```ts
 // src/services/events/publishEvent.ts
 import type { DomainEvent } from './domainEvent.types'
 
 // No-op until WAFI-140 wires a real event bus underneath. Called only from
-// executeBusinessWrite — never import this directly from a service.
+// executeBusinessOperation, fire-and-forget — never import this directly from a service.
 export async function publishEvent<T>(_event: DomainEvent<T>): Promise<void> {
   // intentionally empty
 }
 ```
 
 ```ts
-// src/composables/executeBusinessWrite.ts
+// src/composables/executeBusinessOperation.ts
 import { useSessionStore } from '@/store/session.store'
 import { canUserDo } from '@/router/permissions'
 import type { StaffPermissions } from '@/features/staff/staff.types'
 import type { DomainEvent } from '@/services/events/domainEvent.types'
 import { publishEvent } from '@/services/events/publishEvent'
 
+export interface BusinessOperationHooks<T> {
+  /** Awaited — a financial write is not considered complete until its audit row exists. */
+  audit: (result: T) => Promise<void>
+  /** Optional and fire-and-forget. Omit entirely for writes with no event contract yet
+   *  (e.g. installments/returns, out of WAFI-152's scope) rather than inventing a fake
+   *  mapping onto an unrelated DomainEventType just to satisfy this wrapper's shape. */
+  toEvent?: (result: T) => DomainEvent
+}
+
 /**
  * Every financial-write service method calls this instead of writing, auditing,
  * and publishing separately, so a write can never ship without exactly one audit
- * call and exactly one domain event (WAFI-152; generalizes WAFI-007's
- * executeFinancialWrite to also own event publication).
+ * call (WAFI-007's invariant, unchanged) and, where a contract exists, exactly one
+ * domain event (WAFI-152). `hooks` is object-shaped rather than positional so a
+ * future hook (metrics, cache invalidation, notifications) is a new object field,
+ * not another positional parameter shifting every call site.
  */
-export async function executeBusinessWrite<T>(
+export async function executeBusinessOperation<T>(
   write: () => Promise<T>,
-  audit: (result: T) => Promise<void>,
-  toEvent: (result: T) => DomainEvent,
+  hooks: BusinessOperationHooks<T>,
   requiredPermission?: keyof StaffPermissions,
 ): Promise<T> {
   if (requiredPermission) {
@@ -250,42 +329,39 @@ export async function executeBusinessWrite<T>(
     }
   }
   const result = await write()
-  await audit(result)
-  await publishEvent(toEvent(result))
+  await hooks.audit(result)
+  if (hooks.toEvent) {
+    // Fire-and-forget: publishing must never block the caller or turn a
+    // publish/bus failure into a write failure. Nothing consumes these events
+    // yet, and no future consumer should be able to make checkout depend on
+    // event-bus availability.
+    void publishEvent(hooks.toEvent(result)).catch(() => {})
+  }
   return result
 }
 ```
 
 - [ ] **Step 8: Run test to verify it passes**
 
-Run: `npx vitest run src/__tests__/composables/executeBusinessWrite.test.ts`
-Expected: PASS (4 tests)
+Run: `npx vitest run src/__tests__/composables/executeBusinessOperation.test.ts`
+Expected: PASS (8 tests)
 
 - [ ] **Step 9: Update the 4 existing `executeFinancialWrite` call sites to the new wrapper**
 
-For each of the 4 files below, this is a mechanical rename (`executeFinancialWrite` → `executeBusinessWrite`, import path `@/composables/executeFinancialWrite` → `@/composables/executeBusinessWrite`) **plus adding a `toEvent` callback as the 3rd argument**, inserted before the existing `requiredPermission` argument. These 4 call sites are outside WAFI-152's 5 services (staff-ledger/settlement get replaced in Task 5; installments/returns are out of scope per spec §3) — for now they get a minimal `toEvent` that satisfies the new signature without over-scoping this task into installments/returns redesign:
+For each of the 4 files below, this is a mechanical rename (`executeFinancialWrite` → `executeBusinessOperation`, import path updated) **and converting the positional `(write, audit, requiredPermission?)` call into `(write, { audit }, requiredPermission?)`** — no `toEvent` is added, since `hooks.toEvent` is optional and none of these 4 call sites has an event contract defined by this ticket:
 
 ```ts
 // src/features/installments/composables/useInstallmentPlan.ts — createPlan(), around former line 135
-// BEFORE: return executeFinancialWrite(write, (plan) => logInstallmentPlanCreated(...), )
+// BEFORE: return executeFinancialWrite(write, (plan) => logInstallmentPlanCreated(...))
 // AFTER:
-import { executeBusinessWrite } from '@/composables/executeBusinessWrite'
-import { DomainEventType } from '@/services/events/domainEvent.types'
+import { executeBusinessOperation } from '@/composables/executeBusinessOperation'
 // ...
-return executeBusinessWrite(
-  write,
-  (plan) => logInstallmentPlanCreated(plan.id, plan.customerId, plan.totalAmountUsd),
-  (plan) => ({
-    type: DomainEventType.InstallmentDuePaid, // placeholder mapping — installments extraction is out of scope; this satisfies the wrapper's contract without asserting a new canonical event type
-    payload: { planId: plan.id },
-    staffId: plan.createdBy,
-    shopId: plan.shopId,
-    occurredAt: new Date().toISOString(),
-  }),
-)
+return executeBusinessOperation(write, {
+  audit: (plan) => logInstallmentPlanCreated(plan.id, plan.customerId, plan.totalAmountUsd),
+})
 ```
 
-Apply the same mechanical pattern (rename + add a minimal `toEvent` reusing the nearest existing `DomainEventType` member) to the remaining 3 call sites: `useInstallmentPlan.ts`'s `recordDuePayment` and `cancelPlan`, and `useReturnSheet.ts`'s `confirm()`. Since these 4 sites are not part of WAFI-152's event-contract design (spec §4/§5 only define contracts for the 5 in-scope services), do not invent new `DomainEventType` enum members for them here — reuse the closest existing member and leave a one-line comment noting the mapping is provisional pending a future ticket that actually designs installments/returns events.
+Apply the same mechanical pattern (rename + wrap the existing audit callback in `{ audit: ... }`, no `toEvent`) to the remaining 3 call sites: `useInstallmentPlan.ts`'s `recordDuePayment` and `cancelPlan`, and `useReturnSheet.ts`'s `confirm()`. This is deliberately a smaller change than an earlier draft of this plan, which had these 4 sites emit a placeholder event by reusing an unrelated `DomainEventType` member (e.g. tagging an installment-plan creation as `installment.due_paid`) — that risks a mislabeled event leaking into production if a future subscriber ever wires up to it before installments/returns get their own ticket. Omitting `toEvent` entirely is the correct behavior: these operations publish nothing until a real ticket designs their event contract.
 
 - [ ] **Step 10: Run the full test suite to confirm nothing broke**
 
@@ -303,11 +379,11 @@ Expected: no output (empty) before deleting
 
 ```bash
 git add src/services/events/domainEvent.types.ts src/services/events/publishEvent.ts \
-        src/composables/executeBusinessWrite.ts src/__tests__/composables/executeBusinessWrite.test.ts \
+        src/composables/executeBusinessOperation.ts src/__tests__/composables/executeBusinessOperation.test.ts \
         src/features/installments/composables/useInstallmentPlan.ts \
         src/features/returns/composables/useReturnSheet.ts
 git rm src/composables/executeFinancialWrite.ts
-git commit -m "feat(WAFI-152): add executeBusinessWrite wrapper and DomainEventType registry"
+git commit -m "feat(WAFI-152): add executeBusinessOperation wrapper and per-domain event registries"
 ```
 
 ---
@@ -321,10 +397,10 @@ git commit -m "feat(WAFI-152): add executeBusinessWrite wrapper and DomainEventT
 - Modify: `src/__tests__/features/useExpenses.test.ts`
 
 **Interfaces:**
-- Consumes: `executeBusinessWrite` (Task 0), `DomainEventType` (Task 0), `NewExpense`/`Expense` types (`src/features/expenses/expense.types.ts`, unchanged).
-- Produces: `ExpenseService.recordExpense(shopId: string, staffId: string, input: NewExpense): Promise<Expense>` (creation only — `updateExpense`/`deleteExpense`/`duplicateLastMonth` extraction is described below but is the same pattern, kept in one PR since the file is small).
+- Consumes: `executeBusinessOperation` (Task 0), `ExpenseEventType` (Task 0), `NewExpense`/`Expense` types (`src/features/expenses/expense.types.ts`, unchanged).
+- Produces: `ExpenseService.recordExpense(shopId: string, staffId: string, input: NewExpense, audit: ExpenseAuditPort): Promise<Expense>`, where `ExpenseAuditPort = { logExpenseCreated: (id: string, category: string, amountUsd: number) => Promise<void> }` — a narrow interface defined in the service file itself, so the service has zero import of `useAuditLog` or any other Vue composable. The composable that calls this service constructs the real implementation via `useAuditLog()` and passes it in.
 
-**Context:** Per the verified spec §4 correction, `useExpenses.ts` today does **not** use `db.writeTransaction` or `executeFinancialWrite` at all — every write is a bare `db.execute` followed by an inline audit call. `duplicateLastMonth` has no audit call at all (preserve this, don't add one). The recurring-expense insert loop in `save` has no transaction (preserve this too — do not wrap it in `db.writeTransaction` as a "fix", since that's a behavior change out of this ticket's scope).
+**Context:** Per the verified spec §4 correction, `useExpenses.ts` today does **not** use `db.writeTransaction` or `executeFinancialWrite` at all — every write is a bare `db.execute` followed by an inline audit call. `duplicateLastMonth` has no audit call at all (preserve this, don't add one). The recurring-expense insert loop in `save` has no transaction (preserve this too — do not wrap it in `db.writeTransaction` as a "fix", since that's a behavior change out of this ticket's scope). Per code review, `useAuditLog()` is a Vue composable and must never be imported inside `src/services/` — dependency-injecting the audit functions as a parameter is what makes "framework-agnostic" true in fact, not just true in a comment.
 
 - [ ] **Step 1: Write the failing test for `recordExpense`**
 
@@ -351,24 +427,32 @@ describe('ExpenseService.recordExpense', () => {
     expenseDate: '2026-07-30',
     paidInCash: true,
   }
+  const fakeAudit = { logExpenseCreated: vi.fn().mockResolvedValue(undefined) }
 
   it('inserts one expense row and returns the created Expense', async () => {
-    const result = await recordExpense('shop1', 'staff1', baseInput)
-    expect(db.execute).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO expenses'),
-      expect.any(Array),
-    )
+    const result = await recordExpense('shop1', 'staff1', baseInput, fakeAudit)
+    expect(db.execute).toHaveBeenCalledTimes(1)
+    const [, params] = vi.mocked(db.execute).mock.calls[0]
+    expect(params).toContain('shop1')
+    expect(params).toContain('صيانة')
     expect(result.category).toBe('صيانة')
     expect(result.amountUsd).toBe(50)
     expect(result.shopId).toBe('shop1')
   })
 
+  it('calls the injected audit port with the created expense id/category/amount', async () => {
+    const result = await recordExpense('shop1', 'staff1', baseInput, fakeAudit)
+    expect(fakeAudit.logExpenseCreated).toHaveBeenCalledWith(result.id, 'صيانة', 50)
+  })
+
   it('does not call db.writeTransaction (matches existing behavior — no transaction today)', async () => {
-    await recordExpense('shop1', 'staff1', baseInput)
+    await recordExpense('shop1', 'staff1', baseInput, fakeAudit)
     expect(db.writeTransaction).not.toHaveBeenCalled()
   })
 })
 ```
+
+Note the shift from `expect.stringContaining('INSERT INTO expenses')` to asserting on bound parameter values and call count — per code review, a SQL-text assertion breaks on pure formatting changes despite identical behavior; asserting the right values were bound is behaviorally equivalent and more resilient. One light structural check (`db.execute` called exactly once, no `writeTransaction`) still confirms the write shape without pinning the exact SQL string.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -381,14 +465,22 @@ Expected: FAIL with "Cannot find module '@/services/expense.service'"
 // src/services/expense.service.ts
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '@/data/powersync/db'
-import { executeBusinessWrite } from '@/composables/executeBusinessWrite'
-import { DomainEventType } from '@/services/events/domainEvent.types'
+import { executeBusinessOperation } from '@/composables/executeBusinessOperation'
+import { ExpenseEventType } from '@/services/events/domainEvent.types'
 import type { NewExpense, Expense } from '@/features/expenses/expense.types'
+
+/** Narrow audit interface this service needs — implemented by the caller via
+ *  useAuditLog(), never imported here. Keeps this file free of Vue imports in
+ *  fact, not just by convention. */
+export interface ExpenseAuditPort {
+  logExpenseCreated: (id: string, category: string, amountUsd: number) => Promise<void>
+}
 
 export async function recordExpense(
   shopId: string,
   staffId: string,
   input: NewExpense,
+  audit: ExpenseAuditPort,
 ): Promise<Expense> {
   const id = uuidv4()
   const now = new Date().toISOString()
@@ -413,49 +505,24 @@ export async function recordExpense(
     }
   }
 
-  return executeBusinessWrite(
-    write,
-    async (expense) => {
-      const { logExpenseCreated } = await import('@/features/audit/composables/useAuditLog').then(m => m.useAuditLog())
-      await logExpenseCreated(expense.id, expense.category, expense.amountUsd)
-    },
-    (expense) => ({
-      type: DomainEventType.ExpenseRecorded,
+  return executeBusinessOperation(write, {
+    audit: (expense) => audit.logExpenseCreated(expense.id, expense.category, expense.amountUsd),
+    toEvent: (expense) => ({
+      type: ExpenseEventType.Recorded,
+      entityId: expense.id,
       payload: { expenseId: expense.id, category: expense.category, amountUsd: expense.amountUsd, staffId, photoUrl: expense.photoUrl },
       staffId,
       shopId,
       occurredAt: now,
     }),
-  )
+  })
 }
 ```
-
-Note: `useAuditLog()` is a Vue composable (it's named `use*` and lives under `src/features/audit/composables/`) — importing and calling it inside a "framework-agnostic" service is a real tension with spec §6a's "no Vue imports" rule. Resolve this in Step 3a below rather than shipping the dynamic-import workaround shown above (which is a placeholder to make the test pass first, per TDD's red-green-refactor — the refactor step removes it).
-
-- [ ] **Step 3a: Refactor — verify `useAuditLog` is safe to call outside a component**
-
-Read `src/features/audit/composables/useAuditLog.ts` in full. If `useAuditLog()` has no dependency on Vue's component instance (i.e. it only reads `useSessionStore()`/`useDeviceStore()` internally and returns plain async functions — the same pattern `executeBusinessWrite` itself already uses for `useSessionStore()`), replace the dynamic-import workaround with a direct top-level import:
-
-```ts
-// src/services/expense.service.ts — replace the audit callback with:
-import { useAuditLog } from '@/features/audit/composables/useAuditLog'
-// ...
-return executeBusinessWrite(
-  write,
-  async (expense) => {
-    const { logExpenseCreated } = useAuditLog()
-    await logExpenseCreated(expense.id, expense.category, expense.amountUsd)
-  },
-  (expense) => ({ /* unchanged */ }),
-)
-```
-
-This mirrors how `executeBusinessWrite` itself already calls `useSessionStore()` directly (spec §6a's stated exception: the *wrapper* may read Pinia state; the *service* passing plain data through is what "framework-agnostic" actually protects). If `useAuditLog()` turns out to require a live component instance (unlikely, given every other composable in this codebase calls it the same way from within a `db.writeTransaction` callback), flag this as a blocking finding and stop — do not proceed with a workaround; ask before continuing.
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/services/__tests__/expense.service.test.ts`
-Expected: PASS (2 tests)
+Expected: PASS (3 tests)
 
 - [ ] **Step 5: Delegate `useExpenses.ts`'s `save` to `ExpenseService.recordExpense`**
 
@@ -464,9 +531,11 @@ Read `src/features/expenses/composables/useExpenses.ts` in full first (273 lines
 ```ts
 // src/features/expenses/composables/useExpenses.ts — inside save(), replacing the per-iteration insert+audit block
 import { recordExpense } from '@/services/expense.service'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 // ...
+const { logExpenseCreated } = useAuditLog()  // constructed here, in the Vue layer, and passed in
 for (const occurrence of occurrences) {  // existing recurring-expansion loop, unchanged
-  const created = await recordExpense(device.shopId, session.activeStaff?.id ?? '', occurrence)
+  const created = await recordExpense(device.shopId, session.activeStaff?.id ?? '', occurrence, { logExpenseCreated })
   createdIds.push(created.id)
 }
 ```

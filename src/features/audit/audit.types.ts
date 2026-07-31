@@ -49,6 +49,7 @@ export type AuditEvent =
   | 'staff_ledger.entry_created'
   | 'staff_settlement.finalized'
   | 'staff_settlement.paid'
+  | 'messaging.whatsapp_composed'
 
 export type AuditEntityType =
   | 'sale' | 'return' | 'product' | 'expense'
@@ -56,7 +57,13 @@ export type AuditEntityType =
   | 'exchange_rate' | 'settings' | 'staff'
   | 'supplier' | 'receiving' | 'cash_movement'
   | 'installment_plan' | 'stock_take' | 'sync' | 'device' | 'category'
-  | 'staff_ledger' | 'staff_settlement'
+  | 'staff_ledger' | 'staff_settlement' | 'messaging'
+
+/** Where a `messaging.whatsapp_composed` event originated. Distinguishes the
+ *  five WhatsApp send sites — the event only records that the app handed off
+ *  to WhatsApp, not that the message was actually sent or delivered. */
+export type WhatsAppChannel =
+  | 'receipt' | 'statement' | 'installment_reminder' | 'daily_digest' | 'support_contact'
 
 export interface AuditLog {
   id:         string

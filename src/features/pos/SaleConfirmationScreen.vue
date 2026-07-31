@@ -10,6 +10,7 @@ import { useReceiptSettings } from '@/features/receipt/composables/useReceiptSet
 import { loadCompletedSale } from './loadCompletedSale'
 import { db } from '@/data/powersync/db'
 import { WhatsAppPreviewSheet, useSendReceipt } from '@/features/messaging'
+import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 
 const router  = useRouter()
 const route   = useRoute()
@@ -86,6 +87,7 @@ async function handlePrint() {
 
 // ── WhatsApp send ─────────────────────────────────────────────────────────────
 const { prepare, send } = useSendReceipt()
+const { logWhatsAppComposed } = useAuditLog()
 const waSheetOpen   = ref(false)
 const waSheetText   = ref('')
 const waSheetPhone  = ref<string | null>(null)
@@ -117,6 +119,7 @@ async function handleWhatsApp() {
 
 function onWaSend(payload: { phone: string; text: string }) {
   send(payload.phone, payload.text)
+  logWhatsAppComposed('receipt', sale.value?.saleId ?? null, waSheetPhone.value !== null)
   waSheetOpen.value = false
   toast.value = { message: 'تم فتح واتساب', type: 'success' }
 }
