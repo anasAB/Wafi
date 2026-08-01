@@ -1,7 +1,32 @@
+import { ref } from 'vue'
+import { db } from '@/data/powersync/db'
 import type { DomainEvent } from './domainEvent.types'
 
-// No-op until WAFI-140 wires a real event bus underneath. Called only from
-// executeBusinessOperation, fire-and-forget — never import this directly from a service.
-export async function publishEvent<T>(_event: DomainEvent<T>): Promise<void> {
-  // intentionally empty
+/** Dev-visibility only (WAFI-140 Sprint 1) -- not owner-facing alerting, not
+ *  retried. Full retry/replay is Sprint 2 (design spec §6). */
+export const eventPublishFailureCount = ref(0)
+
+// Called only from executeBusinessOperation, fire-and-forget -- never import
+// this directly from a service (executeBusinessOperation already wraps every
+// call in `.catch(() => {})`; this function must never throw past that).
+export async function publishEvent<T>(event: DomainEvent<T>): Promise<void> {
+  try {
+    await db.execute(
+      `insert into events (type, entity_id, payload, payload_version, staff_id, shop_id, occurred_at, created_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        event.type,
+        event.entityId,
+        JSON.stringify(event.payload),
+        event.payloadVersion,
+        event.staffId,
+        event.shopId,
+        event.occurredAt,
+        new Date().toISOString(),
+      ],
+    )
+  } catch (err) {
+    eventPublishFailureCount.value += 1
+    console.error('[publishEvent] failed to persist event', event.type, err)
+  }
 }
