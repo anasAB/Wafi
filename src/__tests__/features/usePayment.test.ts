@@ -261,8 +261,13 @@ describe('usePayment', () => {
     const calls = tx.mock.calls.map(c => c[0] as string)
     expect(calls.some(sql => sql.includes('INSERT INTO sales'))).toBe(true)
     // Audit log is written outside transaction via db.execute (separate from main sale tx).
-    expect(db.execute).toHaveBeenCalledTimes(1)
-    const auditCall = (db.execute as any).mock.calls[0]
+    // WAFI-140: sale.completed now also publishes a real event via db.execute
+    // (fire-and-forget), so db.execute is called twice, not once -- find the
+    // audit-log call by content rather than assuming it's the only/first call.
+    const auditCall = (db.execute as any).mock.calls.find(
+      (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('INSERT INTO audit_log'),
+    )
+    expect(auditCall).toBeDefined()
     expect(auditCall[0]).toContain('INSERT INTO audit_log')
   })
 
