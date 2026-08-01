@@ -3,6 +3,9 @@ import { db } from '@/data/powersync/db'
 import { executeBusinessOperation } from '@/composables/executeBusinessOperation'
 import { StaffEventType } from '@/services/events/domainEvent.types'
 import type { StaffLedgerEntry, NewStaffLedgerEntry } from '@/features/staff-ledger/staff-ledger.types'
+import type {
+  StaffLedgerEntryAddedPayload, SettlementPaidPayload, ShiftOpenedPayload, ShiftClosedPayload,
+} from '@/services/events/domainEvent.types'
 
 /** Narrow audit interface this service needs — implemented by the caller via
  *  useAuditLog(), never imported here. */
@@ -63,7 +66,10 @@ export async function addLedgerEntry(
     toEvent: (created) => ({
       type: StaffEventType.LedgerEntryAdded,
       entityId: created.id,
-      payload: { staffId: created.staffId, entryType: created.entryType, amount: created.amountUsd },
+      payload: {
+        staffId: created.staffId, entryType: created.entryType, amount: created.amountUsd,
+      } satisfies StaffLedgerEntryAddedPayload,
+      payloadVersion: 1,
       staffId: created.staffId,
       shopId,
       occurredAt: now,
@@ -98,9 +104,13 @@ export async function paySettlement(
     toEvent: () => ({
       type: StaffEventType.SettlementPaid,
       entityId: settlementId,
-      payload: { staffId, amount: 0, ledgerBalanceAfter: 0 },
+      payload: {
+        staffId, amount: 0, ledgerBalanceAfter: 0,
+      } satisfies SettlementPaidPayload,
+      payloadVersion: 1,
       staffId,
-      shopId: '',
+      shopId: '', // pre-existing gap: paySettlement has no shopId parameter today.
+                  // Unchanged by this task — out of WAFI-140 Sprint 1's scope to fix.
       occurredAt: now,
     }),
   }, 'can_view_expenses')
@@ -165,7 +175,10 @@ export async function openShift(
     toEvent: (shift) => ({
       type: StaffEventType.ShiftOpened,
       entityId: shift.id,
-      payload: { shiftId: shift.id, staffId, openingCash: input.openingCashUsd },
+      payload: {
+        shiftId: shift.id, staffId, openingCash: input.openingCashUsd,
+      } satisfies ShiftOpenedPayload,
+      payloadVersion: 1,
       staffId,
       shopId,
       occurredAt: now,
@@ -232,7 +245,8 @@ export async function closeShift(
         expectedCash: input.closingCashUsd - (input.varianceUsd ?? 0),
         countedCash: input.closingCashUsd,
         variance: input.varianceUsd ?? 0,
-      },
+      } satisfies ShiftClosedPayload,
+      payloadVersion: 1,
       staffId,
       shopId,
       occurredAt: now,

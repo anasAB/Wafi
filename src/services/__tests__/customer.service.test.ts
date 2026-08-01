@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
+vi.mock('@/services/events/publishEvent', () => ({ publishEvent: vi.fn().mockResolvedValue(undefined) }))
 
 import { db } from '@/data/powersync/db'
 import { recordPayment } from '@/services/customer.service'
@@ -91,5 +92,19 @@ describe('CustomerService.recordPayment', () => {
       { saleId: 's1', amountUsd: 100, currency: 'USD', amountRaw: 100, method: 'cash' },
     ], fakeAudit)
     expect(result.balanceUsd).toBe(42)
+  })
+
+  it('publishes customer.installment_due_paid with exactly the InstallmentDuePaidPayload keys', async () => {
+    vi.mocked(db.getOptional).mockResolvedValue({ remaining_usd: 1000 } as any)
+    const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [] } })
+    vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
+    const { publishEvent } = await import('@/services/events/publishEvent')
+
+    await recordPayment('shop1', 'c1', [
+      { saleId: 's1', amountUsd: 100, currency: 'USD', amountRaw: 100, method: 'cash' },
+    ], fakeAudit)
+
+    const event = vi.mocked(publishEvent).mock.calls[0][0]
+    expect(Object.keys(event.payload).sort()).toEqual(['customerId', 'amount', 'remainingBalance'].sort())
   })
 })

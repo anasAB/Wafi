@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
+vi.mock('@/services/events/publishEvent', () => ({ publishEvent: vi.fn().mockResolvedValue(undefined) }))
 
 import { db } from '@/data/powersync/db'
 import { completeSale } from '@/services/sales.service'
@@ -170,5 +171,17 @@ describe('SalesService.completeSale', () => {
   it('rolls up per-method payment totals in the (currently unpublished) event payload shape without throwing', async () => {
     setupTx({ cost_price_usd: 0, current_stock: 10 })
     await expect(completeSale(baseInput, fakeAudit)).resolves.toBeTruthy()
+  })
+
+  it('publishes sale.completed with exactly the SaleCompletedPayload keys', async () => {
+    setupTx({ cost_price_usd: 0, current_stock: 10 })
+    const { publishEvent } = await import('@/services/events/publishEvent')
+
+    await completeSale(baseInput, fakeAudit)
+
+    const event = vi.mocked(publishEvent).mock.calls[0][0]
+    expect(Object.keys(event.payload).sort()).toEqual(
+      ['saleId', 'shopId', 'staffId', 'totalUsd', 'totalSyp', 'paymentSummary', 'itemCount', 'discountApplied'].sort(),
+    )
   })
 })

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
+vi.mock('@/services/events/publishEvent', () => ({ publishEvent: vi.fn().mockResolvedValue(undefined) }))
 
 import { db } from '@/data/powersync/db'
 import { receiveStock, adjustInventory } from '@/services/inventory.service'
@@ -108,6 +109,19 @@ describe('InventoryService.receiveStock', () => {
     await expect(receiveStock('shop1', 'staff1', { ...input, supplierId: '' }, fakeAudit)).rejects.toThrow()
     expect(db.writeTransaction).not.toHaveBeenCalled()
   })
+
+  it('publishes inventory.stock_received with exactly the StockReceivedPayload keys', async () => {
+    const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [{ current_stock: 10 }] } })
+    vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
+    const { publishEvent } = await import('@/services/events/publishEvent')
+
+    await receiveStock('shop1', 'staff1', input, fakeAudit)
+
+    const event = vi.mocked(publishEvent).mock.calls[0][0]
+    expect(Object.keys(event.payload).sort()).toEqual(
+      ['receivingId', 'supplierId', 'skuCount', 'totalCost'].sort(),
+    )
+  })
 })
 
 describe('InventoryService.adjustInventory', () => {
@@ -185,5 +199,20 @@ describe('InventoryService.adjustInventory', () => {
 
     const insertCall = txExecute.mock.calls.find((c: any[]) => String(c[0]).includes('INSERT INTO stock_adjustments'))
     expect(insertCall![1][0]).toBe(result!.id)
+  })
+
+  it('publishes inventory.adjusted with exactly the InventoryAdjustedPayload keys', async () => {
+    const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [{ current_stock: 10 }] } })
+    vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
+    const { publishEvent } = await import('@/services/events/publishEvent')
+
+    await adjustInventory('shop1', 'device1', {
+      mode: 'delta', productId: 'p1', delta: -4, reason: 'stocktake',
+    }, fakeAdjustAudit)
+
+    const event = vi.mocked(publishEvent).mock.calls[0][0]
+    expect(Object.keys(event.payload).sort()).toEqual(
+      ['productId', 'deltaQty', 'reason'].sort(),
+    )
   })
 })

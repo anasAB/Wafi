@@ -4,6 +4,7 @@ import { executeBusinessOperation } from '@/composables/executeBusinessOperation
 import { InventoryEventType } from '@/services/events/domainEvent.types'
 import type { ReceivingLine, Receiving } from '@/features/suppliers/receiving.types'
 import type { AdjustmentReason, StockAdjustment } from '@/features/products/product.types'
+import type { StockReceivedPayload, InventoryAdjustedPayload } from '@/services/events/domainEvent.types'
 
 /** Structurally identical to useAuditLog.ts's private (unexported) ReceivingAuditLineItem
  *  — duplicated here rather than exported from useAuditLog, so this file still imports
@@ -133,7 +134,11 @@ export async function receiveStock(
     toEvent: (receiving) => ({
       type: InventoryEventType.StockReceived,
       entityId: receiving.id,
-      payload: { receivingId: receiving.id, supplierId: input.supplierId, skuCount: input.lines.length, totalCost: receiving.totalCostUsd },
+      payload: {
+        receivingId: receiving.id, supplierId: input.supplierId,
+        skuCount: input.lines.length, totalCost: receiving.totalCostUsd,
+      } satisfies StockReceivedPayload,
+      payloadVersion: 1,
       staffId: staffId ?? '',
       shopId,
       occurredAt: now,
@@ -201,7 +206,11 @@ export async function adjustInventory(
     toEvent: (adjustment) => ({
       type: InventoryEventType.Adjusted,
       entityId: input.productId,
-      payload: { productId: input.productId, deltaQty: adjustment.newValue - adjustment.oldValue, reason: input.reason },
+      payload: {
+        productId: input.productId, deltaQty: adjustment.newValue - adjustment.oldValue,
+        reason: input.reason,
+      } satisfies InventoryAdjustedPayload,
+      payloadVersion: 1,
       staffId: '',
       shopId,
       occurredAt: now,
