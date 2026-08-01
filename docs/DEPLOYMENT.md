@@ -24,7 +24,11 @@
    directly — this cannot be verified from this repository, since no
    sync-rules file is version-controlled here). A column missing from the
    sync rules fails silently: writes succeed locally but the value never
-   reaches any device.
+   reaches any device. The same applies to a migration that adds a whole
+   new TABLE the client reads or writes: the table needs its own sync-rule
+   bucket entry before it syncs at all, otherwise every local write queues
+   forever and no server row ever arrives. Tables added by WAFI-140 Sprint 1
+   that need this: `events` and `daily_event_counts`.
 5. Increment the version in `package.json`, matching what this release
    will be called in `docs/releases/`.
 

@@ -17,12 +17,25 @@ export function startDailyEventCountsProjection(shopId: string): { stop: () => v
     SalesEventType.Completed,
     async (row: EventRow<SaleCompletedPayload>) => {
       const day = row.occurred_at.slice(0, 10)
-      await db.execute(
-        `INSERT INTO daily_event_counts (shop_id, event_type, day, count)
-         VALUES (?, ?, ?, 1)
-         ON CONFLICT (shop_id, event_type, day) DO UPDATE SET count = daily_event_counts.count + 1`,
+      // Read-then-insert-or-update, NOT an upsert: PowerSync client tables are
+      // SQLite views backed by CRUD-queue triggers, and SQLite rejects
+      // ON CONFLICT against a view (the migration's UNIQUE constraint exists
+      // server-side only, so there is no local conflict target either).
+      const existing = await db.getOptional<{ id: string; count: number }>(
+        `SELECT id, count FROM daily_event_counts WHERE shop_id = ? AND event_type = ? AND day = ?`,
         [shopId, SalesEventType.Completed, day],
       )
+      if (existing) {
+        await db.execute(
+          `UPDATE daily_event_counts SET count = ? WHERE id = ?`,
+          [existing.count + 1, existing.id],
+        )
+      } else {
+        await db.execute(
+          `INSERT INTO daily_event_counts (id, shop_id, event_type, day, count) VALUES (?, ?, ?, ?, 1)`,
+          [crypto.randomUUID(), shopId, SalesEventType.Completed, day],
+        )
+      }
     },
     { shopId },
   )

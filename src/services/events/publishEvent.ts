@@ -12,9 +12,10 @@ export const eventPublishFailureCount = ref(0)
 export async function publishEvent<T>(event: DomainEvent<T>): Promise<void> {
   try {
     await db.execute(
-      `insert into events (type, entity_id, payload, payload_version, staff_id, shop_id, occurred_at, created_at)
-       values (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `insert into events (id, type, entity_id, payload, payload_version, staff_id, shop_id, occurred_at, created_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
+        crypto.randomUUID(),
         event.type,
         event.entityId,
         JSON.stringify(event.payload),

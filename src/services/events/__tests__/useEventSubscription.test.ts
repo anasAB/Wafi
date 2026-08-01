@@ -53,6 +53,57 @@ describe('useEventSubscription', () => {
     stop()
   })
 
+  it('only forwards genuinely new rows when the watch re-emits the whole result set', async () => {
+    // PowerSync watch queries re-emit the ENTIRE current result set on every
+    // change. Without an occurred_at watermark the handler would re-run for all
+    // history on every insert (quadratic growth in the projection's counts).
+    const older = { id: 'e1', type: 'sale.completed', payload: '{"saleId":"s1"}', payload_version: 1, shop_id: 'shop-1', occurred_at: '2026-07-31T10:00:00.000Z' }
+    const newer = { id: 'e2', type: 'sale.completed', payload: '{"saleId":"s2"}', payload_version: 1, shop_id: 'shop-1', occurred_at: '2026-07-31T11:00:00.000Z' }
+    vi.mocked(db.watch).mockReturnValue(fakeAsyncIterable([
+      { rows: { _array: [older] } },
+      { rows: { _array: [newer, older] } },
+    ]) as any)
+
+    const handler = vi.fn()
+    const { stop } = useEventSubscription(SalesEventType.Completed, handler, { shopId: 'shop-1' })
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(handler).toHaveBeenCalledTimes(2)
+    expect(handler.mock.calls[0][0]).toMatchObject({ id: 'e1' })
+    expect(handler.mock.calls[1][0]).toMatchObject({ id: 'e2' })
+    stop()
+  })
+
+  it('forwards every genuinely-new row inside a single batch (two sales in quick succession)', async () => {
+    const a = { id: 'e1', type: 'sale.completed', payload: '{}', payload_version: 1, shop_id: 'shop-1', occurred_at: '2026-07-31T10:00:00.000Z' }
+    const b = { id: 'e2', type: 'sale.completed', payload: '{}', payload_version: 1, shop_id: 'shop-1', occurred_at: '2026-07-31T10:00:01.000Z' }
+    vi.mocked(db.watch).mockReturnValue(fakeAsyncIterable([
+      { rows: { _array: [b, a] } },
+    ]) as any)
+
+    const handler = vi.fn()
+    const { stop } = useEventSubscription(SalesEventType.Completed, handler, { shopId: 'shop-1' })
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(handler).toHaveBeenCalledTimes(2)
+    stop()
+  })
+
+  it('parses payload and carries payload_version onto the forwarded row', async () => {
+    vi.mocked(db.watch).mockReturnValue(fakeAsyncIterable([
+      { rows: { _array: [{ id: 'e1', type: 'sale.completed', payload: '{"saleId":"s1"}', payload_version: 1, shop_id: 'shop-1', occurred_at: '2026-07-31T10:00:00.000Z' }] } },
+    ]) as any)
+
+    const handler = vi.fn()
+    const { stop } = useEventSubscription(SalesEventType.Completed, handler, { shopId: 'shop-1' })
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(handler).toHaveBeenCalledWith(expect.objectContaining({
+      payload: { saleId: 's1' }, payload_version: 1,
+    }))
+    stop()
+  })
+
   it('stop() aborts the underlying watch (passes an AbortSignal that becomes aborted)', () => {
     let capturedSignal: AbortSignal | undefined
     vi.mocked(db.watch).mockImplementation((_sql, _params, opts) => {
