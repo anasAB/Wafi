@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
@@ -17,6 +17,8 @@ const errors = ref<DiscountCapsErrors>({})
 const toast = ref<{ kind: 'success' | 'error'; message: string } | null>(null)
 const confirming = ref(false)
 const pending = ref<{ cashierPct: number; managerPct: number } | null>(null)
+let checkTimer: ReturnType<typeof setTimeout> | null = null
+let dismissTimer: ReturnType<typeof setTimeout> | null = null
 
 onMounted(async () => {
   await caps.load()
@@ -43,11 +45,6 @@ function submit() {
   errors.value = result.errors
   if (!result.valid || !result.parsed) return
 
-  if (result.parsed.cashierPct === caps.cashierPct.value && result.parsed.managerPct === caps.managerPct.value) {
-    toast.value = { kind: 'success', message: 'لا توجد تغييرات' }
-    return
-  }
-
   pending.value = result.parsed
   confirming.value = true
 }
@@ -59,14 +56,32 @@ async function confirmSave() {
   pending.value = null
 
   const sinceIso = new Date().toISOString()
-  await caps.save(next)
+  try {
+    await caps.save(next)
+  } catch {
+    toast.value = { kind: 'error', message: 'تعذّر الحفظ' }
+    return
+  }
   toast.value = { kind: 'success', message: 'تم الحفظ' }
 
-  setTimeout(async () => {
+  // Best-effort single sample, not an authoritative guarantee: while offline
+  // (this product's normal state), the PowerSync upload may not have even been
+  // attempted 1.5s after the local write, so checkSaveFailed() will return null
+  // and the success toast stands even though nothing has reached the server yet.
+  // This only reliably catches an already-known rejection (e.g. a dead-lettered
+  // upload from a previous save, or a very fast online rejection) — it is not a
+  // continuous monitor. A db.watch-based continuous check is a good follow-up,
+  // out of scope for this fix wave.
+  checkTimer = setTimeout(async () => {
+    checkTimer = null
     const failure = await caps.checkSaveFailed(sinceIso)
     if (failure) {
       toast.value = { kind: 'error', message: 'لم يتم الحفظ على الخادم — سيُعاد المحاولة' }
     }
+    dismissTimer = setTimeout(() => {
+      dismissTimer = null
+      toast.value = null
+    }, 2000)
   }, 1500)
 }
 
@@ -74,6 +89,11 @@ function cancelSave() {
   confirming.value = false
   pending.value = null
 }
+
+onUnmounted(() => {
+  if (checkTimer) clearTimeout(checkTimer)
+  if (dismissTimer) clearTimeout(dismissTimer)
+})
 
 defineExpose({ submit })
 </script>

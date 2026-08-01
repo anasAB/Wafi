@@ -137,4 +137,55 @@ describe('DiscountCapsSettingsScreen', () => {
     expect(wrapper.find('.error-note').exists()).toBe(true)
     expect(wrapper.find('.saved-note').exists()).toBe(false)
   })
+
+  it('shows an error toast and does not schedule the checkSaveFailed poll if save() throws', async () => {
+    mockSave.mockRejectedValueOnce(new Error('db error'))
+    const wrapper = mountScreen()
+    await wrapper.find('#cashier-cap-input').setValue('10')
+    await wrapper.find('form').trigger('submit')
+    await wrapper.find('[data-testid="dialog-confirm"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.error-note').exists()).toBe(true)
+    expect(wrapper.text()).toContain('تعذّر الحفظ')
+
+    await vi.advanceTimersByTimeAsync(1500)
+    await wrapper.vm.$nextTick()
+    expect(mockCheckSaveFailed).not.toHaveBeenCalled()
+  })
+
+  it('proceeds to the confirm dialog and calls save again when resubmitting identical values (retry after a dead-lettered save)', async () => {
+    const wrapper = mountScreen()
+    await wrapper.find('#cashier-cap-input').setValue('5')
+    await wrapper.find('#manager-cap-input').setValue('15')
+    await wrapper.find('form').trigger('submit')
+
+    expect(wrapper.text()).not.toContain('لا توجد تغييرات')
+    expect(wrapper.find('[data-testid="confirm-dialog"]').exists()).toBe(true)
+
+    await wrapper.find('[data-testid="dialog-confirm"]').trigger('click')
+    expect(mockSave).toHaveBeenCalledWith({ cashierPct: 5, managerPct: 15 })
+  })
+
+  it('auto-dismisses the toast ~2000ms after the checkSaveFailed result resolves', async () => {
+    const wrapper = mountScreen()
+    await wrapper.find('#cashier-cap-input').setValue('10')
+    await wrapper.find('form').trigger('submit')
+    await wrapper.find('[data-testid="dialog-confirm"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('تم الحفظ')
+
+    await vi.advanceTimersByTimeAsync(1500)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('تم الحفظ')
+
+    await vi.advanceTimersByTimeAsync(1999)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.saved-note').exists()).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(1)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.saved-note').exists()).toBe(false)
+    expect(wrapper.find('.error-note').exists()).toBe(false)
+  })
 })
