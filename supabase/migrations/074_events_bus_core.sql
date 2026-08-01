@@ -6,7 +6,13 @@ CREATE TABLE IF NOT EXISTS public.events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   type text NOT NULL,
   entity_id text NOT NULL,
-  payload jsonb NOT NULL,
+  -- TEXT (not JSONB) holding a JSON object: the client persists the payload as a
+  -- JSON *string* (JSON.stringify) through a PowerSync TEXT column. A JSONB column
+  -- here would store that string as a JSON string *scalar* (double-encoded), so on
+  -- sync-back JSON.parse(row.payload) yields a String, not an object. Same bug class
+  -- as migrations 024 (staff.recovery_codes) and 031 (audit_log.meta) — audit_log.meta
+  -- is the working precedent this column deliberately mirrors.
+  payload text NOT NULL,
   payload_version integer NOT NULL DEFAULT 1,
   staff_id uuid NOT NULL,
   shop_id uuid NOT NULL REFERENCES public.shops(id),
