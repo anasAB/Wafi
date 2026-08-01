@@ -4,6 +4,7 @@ import { executeBusinessOperation } from '@/composables/executeBusinessOperation
 import { CustomerEventType } from '@/services/events/domainEvent.types'
 import { fetchOutstandingBalanceUsd } from '@/features/customers/composables/useCustomerBalance'
 import type { PaymentAllocation } from '@/features/customers/customer.types'
+import type { InstallmentDuePaidPayload } from '@/services/events/domainEvent.types'
 
 export interface CustomerBalance {
   balanceUsd: number
@@ -21,6 +22,7 @@ export async function recordPayment(
   customerId: string,
   allocations: PaymentAllocation[],
   audit: RecordPaymentAuditPort,
+  staffId: string,
   shiftId: string | null = null,
   deviceId: string | null = null,
 ): Promise<CustomerBalance> {
@@ -99,8 +101,11 @@ export async function recordPayment(
     toEvent: () => ({
       type: CustomerEventType.InstallmentDuePaid,
       entityId: customerId,
-      payload: { customerId, amount: batchTotalUsd, remainingBalance: 0 },
-      staffId: '',
+      payload: {
+        customerId, amount: batchTotalUsd, remainingBalance: 0,
+      } satisfies InstallmentDuePaidPayload,
+      payloadVersion: 1,
+      staffId,
       shopId,
       occurredAt: now,
     }),

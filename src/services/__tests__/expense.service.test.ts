@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
+vi.mock('@/services/events/publishEvent', () => ({ publishEvent: vi.fn().mockResolvedValue(undefined) }))
 
 import { db } from '@/data/powersync/db'
 import { recordExpense } from '@/services/expense.service'
@@ -91,5 +92,16 @@ describe('ExpenseService.recordExpense', () => {
 
     const result = await recordExpense('shop1', 'staff1', recurringInput, context, fakeAudit)
     expect(result.notes).toBe('إيجار المحل')
+  })
+
+  it('publishes expense.recorded with exactly the ExpenseRecordedPayload keys', async () => {
+    const { publishEvent } = await import('@/services/events/publishEvent')
+    await recordExpense('shop1', 'staff1', baseInput, context, fakeAudit)
+    const event = vi.mocked(publishEvent).mock.calls[0][0]
+    expect(event.type).toBe('expense.recorded')
+    expect(Object.keys(event.payload).sort()).toEqual(
+      ['expenseId', 'category', 'amountUsd', 'staffId', 'photoUrl'].sort(),
+    )
+    expect(event.payloadVersion).toBe(1)
   })
 })

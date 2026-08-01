@@ -3,6 +3,7 @@ import { db } from '@/data/powersync/db'
 import { executeBusinessOperation } from '@/composables/executeBusinessOperation'
 import { ExpenseEventType } from '@/services/events/domainEvent.types'
 import type { NewExpense, Expense } from '@/features/expenses/expense.types'
+import type { ExpenseRecordedPayload } from '@/services/events/domainEvent.types'
 
 const RECUR_META_PREFIX = '__wafi_recurring__:'
 
@@ -102,7 +103,11 @@ export async function recordExpense(
     toEvent: (expense) => ({
       type: ExpenseEventType.Recorded,
       entityId: expense.id,
-      payload: { expenseId: expense.id, category: expense.category, amountUsd: expense.amountUsd, staffId, photoUrl: expense.photoUrl },
+      payload: {
+        expenseId: expense.id, category: expense.category, amountUsd: expense.amountUsd,
+        staffId, photoUrl: expense.photoUrl,
+      } satisfies ExpenseRecordedPayload,
+      payloadVersion: 1,
       staffId,
       shopId,
       occurredAt: now,

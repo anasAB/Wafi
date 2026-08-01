@@ -303,6 +303,7 @@ spec for a feature touching this table keeps it current.
 | Staff | `staff_ledger`, `staff_settlements` | Sales (attribution), Cash/Shifts | staff-ledger composables | Staff performance dashboard |
 | Products / Cost | `products` | Receiving, Import | `useProducts`, `useReceivingSheet`, `useProductImport` | Cost freshness indicator, Dashboard, Profit report |
 | Audit | `audit_log` | All of the above | `executeFinancialWrite` wrapper | Audit log page |
+| Events | `events`, `daily_event_counts` | Sales, Inventory, Customer Credit, Staff, Expense (all event producers) | `useEventSubscription` | none yet (Sprint 1 has no user-facing consumer) |
 
 If a feature touches a domain not listed here, add a new row rather
 than leaving it undocumented.

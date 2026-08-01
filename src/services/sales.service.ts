@@ -5,6 +5,7 @@ import { SalesEventType } from '@/services/events/domainEvent.types'
 import type { PaymentMethod, SplitPaymentEntry, CompletedSale } from '@/features/payment/payment.types'
 import type { SaleLine, SaleDiscount } from '@/store/sale.store'
 import type { DiscountType } from '@/features/pos/discounts'
+import type { SaleCompletedPayload } from '@/services/events/domainEvent.types'
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100
@@ -294,7 +295,8 @@ export async function completeSale(
         },
         itemCount: completed.lines.length,
         discountApplied: completed.lines.some(l => l.discountType) || !!completed.saleDiscount,
-      },
+      } satisfies SaleCompletedPayload,
+      payloadVersion: 1,
       staffId: input.staffId ?? '',
       shopId: input.shopId,
       occurredAt: now,
