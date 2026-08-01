@@ -22,6 +22,7 @@ export async function recordPayment(
   customerId: string,
   allocations: PaymentAllocation[],
   audit: RecordPaymentAuditPort,
+  staffId: string,
   shiftId: string | null = null,
   deviceId: string | null = null,
 ): Promise<CustomerBalance> {
@@ -104,7 +105,7 @@ export async function recordPayment(
         customerId, amount: batchTotalUsd, remainingBalance: 0,
       } satisfies InstallmentDuePaidPayload,
       payloadVersion: 1,
-      staffId: '',
+      staffId,
       shopId,
       occurredAt: now,
     }),

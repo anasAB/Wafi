@@ -68,7 +68,9 @@ describe('StaffService.addLedgerEntry', () => {
     const { publishEvent } = await import('@/services/events/publishEvent')
     await addLedgerEntry('shop1', 'creator1', baseEntry, fakeAudit)
     const event = vi.mocked(publishEvent).mock.calls[0][0]
+    expect(event.type).toBe('staff.ledger_entry_added')
     expect(Object.keys(event.payload).sort()).toEqual(['staffId', 'entryType', 'amount'].sort())
+    expect(event.payloadVersion).toBe(1)
   })
 })
 
@@ -83,7 +85,7 @@ describe('StaffService.paySettlement', () => {
   const fakeSettlementAudit = { logStaffSettlementPaid: vi.fn().mockResolvedValue(undefined) }
 
   it('marks the settlement paid with the given payment method', async () => {
-    await paySettlement('settle1', 'staff1', 'owner1', 'cash', fakeSettlementAudit)
+    await paySettlement('shop1', 'settle1', 'staff1', 'owner1', 'cash', fakeSettlementAudit)
     const [sql, params] = vi.mocked(db.execute).mock.calls[0]
     expect(sql).toContain(`SET status = 'paid'`)
     expect(params).toContain('owner1')
@@ -92,15 +94,17 @@ describe('StaffService.paySettlement', () => {
   })
 
   it('calls the injected audit port', async () => {
-    await paySettlement('settle1', 'staff1', 'owner1', 'bank', fakeSettlementAudit)
+    await paySettlement('shop1', 'settle1', 'staff1', 'owner1', 'bank', fakeSettlementAudit)
     expect(fakeSettlementAudit.logStaffSettlementPaid).toHaveBeenCalledWith('settle1', 'staff1', 'bank')
   })
 
-  it('publishes staff.settlement_paid with exactly the SettlementPaidPayload keys', async () => {
+  it('publishes settlement.paid with exactly the SettlementPaidPayload keys', async () => {
     const { publishEvent } = await import('@/services/events/publishEvent')
-    await paySettlement('settle1', 'staff1', 'owner1', 'cash', fakeSettlementAudit)
+    await paySettlement('shop1', 'settle1', 'staff1', 'owner1', 'cash', fakeSettlementAudit)
     const event = vi.mocked(publishEvent).mock.calls[0][0]
+    expect(event.type).toBe('settlement.paid')
     expect(Object.keys(event.payload).sort()).toEqual(['staffId', 'amount', 'ledgerBalanceAfter'].sort())
+    expect(event.payloadVersion).toBe(1)
   })
 })
 
@@ -131,13 +135,15 @@ describe('StaffService.openShift', () => {
     expect(fakeOpenAudit.logShiftOpened).toHaveBeenCalledWith(result.id)
   })
 
-  it('publishes staff.shift_opened with exactly the ShiftOpenedPayload keys', async () => {
+  it('publishes shift.opened with exactly the ShiftOpenedPayload keys', async () => {
     const { publishEvent } = await import('@/services/events/publishEvent')
     await openShift('shop1', 'device1', 'staff1', {
       openingCashUsd: 100, openingCashSyp: 0, openingBreakdown: null,
     }, fakeOpenAudit)
     const event = vi.mocked(publishEvent).mock.calls[0][0]
+    expect(event.type).toBe('shift.opened')
     expect(Object.keys(event.payload).sort()).toEqual(['shiftId', 'staffId', 'openingCash'].sort())
+    expect(event.payloadVersion).toBe(1)
   })
 })
 
@@ -169,15 +175,17 @@ describe('StaffService.closeShift', () => {
     expect(fakeCloseAudit.logShiftClosed).toHaveBeenCalledWith('shift1')
   })
 
-  it('publishes staff.shift_closed with exactly the ShiftClosedPayload keys', async () => {
+  it('publishes shift.closed with exactly the ShiftClosedPayload keys', async () => {
     const { publishEvent } = await import('@/services/events/publishEvent')
     await closeShift('shop1', 'shift1', 'staff1', {
       closingCashUsd: 230, closingCashSyp: 0, varianceUsd: -20, varianceSyp: 0,
       closeNote: null, zReport: null, closingBreakdown: null,
     }, fakeCloseAudit)
     const event = vi.mocked(publishEvent).mock.calls[0][0]
+    expect(event.type).toBe('shift.closed')
     expect(Object.keys(event.payload).sort()).toEqual(
       ['shiftId', 'staffId', 'expectedCash', 'countedCash', 'variance'].sort(),
     )
+    expect(event.payloadVersion).toBe(1)
   })
 })

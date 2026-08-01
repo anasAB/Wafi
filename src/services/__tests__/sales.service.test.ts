@@ -180,8 +180,10 @@ describe('SalesService.completeSale', () => {
     await completeSale(baseInput, fakeAudit)
 
     const event = vi.mocked(publishEvent).mock.calls[0][0]
+    expect(event.type).toBe('sale.completed')
     expect(Object.keys(event.payload).sort()).toEqual(
       ['saleId', 'shopId', 'staffId', 'totalUsd', 'totalSyp', 'paymentSummary', 'itemCount', 'discountApplied'].sort(),
     )
+    expect(event.payloadVersion).toBe(1)
   })
 })

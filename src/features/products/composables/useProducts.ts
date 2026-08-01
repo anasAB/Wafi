@@ -2,6 +2,7 @@ import { ref, computed } from 'vue'
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
+import { useSessionStore } from '@/store/session.store'
 import type { Product } from '@/features/pos/pos.types'
 import type { AdjustmentReason } from '@/features/products/product.types'
 import { rowToProduct, type ProductRow } from '@/features/products/product.utils'
@@ -134,8 +135,9 @@ export function useProducts() {
     notes?: string
   ) {
     const device = useDeviceStore()
+    const staffId = useSessionStore().activeStaff?.id ?? ''
     await adjustInventory(
-      device.shopId, device.deviceId,
+      device.shopId, device.deviceId, staffId,
       { mode: 'absolute', productId, newValue, reason, notes },
       { logStockAdjusted },
     )
@@ -154,8 +156,9 @@ export function useProducts() {
   ) {
     if (delta === 0) return
     const device = useDeviceStore()
+    const staffId = useSessionStore().activeStaff?.id ?? ''
     await adjustInventory(
-      device.shopId, device.deviceId,
+      device.shopId, device.deviceId, staffId,
       { mode: 'delta', productId, delta, reason, notes },
       { logStockAdjusted },
     )

@@ -248,6 +248,7 @@ export function useStaffSettlement() {
     }
 
     await paySettlementService(
+      useDeviceStore().shopId,
       settlementId, staffId, session.activeStaff!.id, options.paymentMethod,
       { logStaffSettlementPaid },
     )

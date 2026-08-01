@@ -110,7 +110,7 @@ describe('InventoryService.receiveStock', () => {
     expect(db.writeTransaction).not.toHaveBeenCalled()
   })
 
-  it('publishes inventory.stock_received with exactly the StockReceivedPayload keys', async () => {
+  it('publishes stock.received with exactly the StockReceivedPayload keys', async () => {
     const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [{ current_stock: 10 }] } })
     vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
     const { publishEvent } = await import('@/services/events/publishEvent')
@@ -118,9 +118,11 @@ describe('InventoryService.receiveStock', () => {
     await receiveStock('shop1', 'staff1', input, fakeAudit)
 
     const event = vi.mocked(publishEvent).mock.calls[0][0]
+    expect(event.type).toBe('stock.received')
     expect(Object.keys(event.payload).sort()).toEqual(
       ['receivingId', 'supplierId', 'skuCount', 'totalCost'].sort(),
     )
+    expect(event.payloadVersion).toBe(1)
   })
 })
 
@@ -135,7 +137,7 @@ describe('InventoryService.adjustInventory', () => {
     const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [{ current_stock: 5 }] } })
     vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
 
-    const result = await adjustInventory('shop1', 'device1', {
+    const result = await adjustInventory('shop1', 'device1', 'staff1', {
       mode: 'absolute', productId: 'p1', newValue: -3, reason: 'other',
     }, fakeAdjustAudit)
 
@@ -150,7 +152,7 @@ describe('InventoryService.adjustInventory', () => {
     const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [{ current_stock: 10 }] } })
     vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
 
-    const result = await adjustInventory('shop1', 'device1', {
+    const result = await adjustInventory('shop1', 'device1', 'staff1', {
       mode: 'delta', productId: 'p1', delta: -4, reason: 'stocktake',
     }, fakeAdjustAudit)
 
@@ -162,7 +164,7 @@ describe('InventoryService.adjustInventory', () => {
     const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [{ current_stock: 3 }] } })
     vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
 
-    const result = await adjustInventory('shop1', 'device1', {
+    const result = await adjustInventory('shop1', 'device1', 'staff1', {
       mode: 'delta', productId: 'p1', delta: -10, reason: 'damaged',
     }, fakeAdjustAudit)
 
@@ -170,7 +172,7 @@ describe('InventoryService.adjustInventory', () => {
   })
 
   it('mode: delta — no-op when delta is 0 (matches existing adjustStockBy early-return)', async () => {
-    const result = await adjustInventory('shop1', 'device1', {
+    const result = await adjustInventory('shop1', 'device1', 'staff1', {
       mode: 'delta', productId: 'p1', delta: 0, reason: 'stocktake',
     }, fakeAdjustAudit)
     expect(db.writeTransaction).not.toHaveBeenCalled()
@@ -182,7 +184,7 @@ describe('InventoryService.adjustInventory', () => {
     vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
     vi.mocked(db.getOptional).mockResolvedValueOnce({ name_ar: 'Samsung A55' } as any)
 
-    await adjustInventory('shop1', 'device1', {
+    await adjustInventory('shop1', 'device1', 'staff1', {
       mode: 'delta', productId: 'p1', delta: -4, reason: 'stocktake',
     }, fakeAdjustAudit)
 
@@ -193,7 +195,7 @@ describe('InventoryService.adjustInventory', () => {
     const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [{ current_stock: 10 }] } })
     vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
 
-    const result = await adjustInventory('shop1', 'device1', {
+    const result = await adjustInventory('shop1', 'device1', 'staff1', {
       mode: 'delta', productId: 'p1', delta: -4, reason: 'stocktake',
     }, fakeAdjustAudit)
 
@@ -206,13 +208,15 @@ describe('InventoryService.adjustInventory', () => {
     vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
     const { publishEvent } = await import('@/services/events/publishEvent')
 
-    await adjustInventory('shop1', 'device1', {
+    await adjustInventory('shop1', 'device1', 'staff1', {
       mode: 'delta', productId: 'p1', delta: -4, reason: 'stocktake',
     }, fakeAdjustAudit)
 
     const event = vi.mocked(publishEvent).mock.calls[0][0]
+    expect(event.type).toBe('inventory.adjusted')
     expect(Object.keys(event.payload).sort()).toEqual(
       ['productId', 'deltaQty', 'reason'].sort(),
     )
+    expect(event.payloadVersion).toBe(1)
   })
 })

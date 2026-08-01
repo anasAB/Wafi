@@ -159,6 +159,7 @@ export type AdjustInventoryInput =
 export async function adjustInventory(
   shopId: string,
   deviceId: string,
+  staffId: string,
   input: AdjustInventoryInput,
   audit: InventoryAdjustAuditPort,
 ): Promise<StockAdjustment | null> {
@@ -211,7 +212,7 @@ export async function adjustInventory(
         reason: input.reason,
       } satisfies InventoryAdjustedPayload,
       payloadVersion: 1,
-      staffId: '',
+      staffId,
       shopId,
       occurredAt: now,
     }),

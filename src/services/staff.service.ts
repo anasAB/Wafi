@@ -84,6 +84,7 @@ export interface PaySettlementAuditPort {
 }
 
 export async function paySettlement(
+  shopId: string,
   settlementId: string,
   staffId: string,
   paidByStaffId: string,
@@ -109,8 +110,7 @@ export async function paySettlement(
       } satisfies SettlementPaidPayload,
       payloadVersion: 1,
       staffId,
-      shopId: '', // pre-existing gap: paySettlement has no shopId parameter today.
-                  // Unchanged by this task — out of WAFI-140 Sprint 1's scope to fix.
+      shopId,
       occurredAt: now,
     }),
   }, 'can_view_expenses')

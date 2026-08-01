@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
+import { useSessionStore } from '@/store/session.store'
 import { useShiftStore } from '@/features/shifts/shift.store'
 import type { OpenInvoice, PaymentAllocation, CustomerPayment } from '@/features/customers/customer.types'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
@@ -133,7 +134,9 @@ export function useCustomerBalance(customerId: string) {
     const shiftStore = useShiftStore()
     await recordPaymentService(
       device.shopId, customerId, allocations,
-      { logCustomerPaymentRecorded }, shiftStore.activeShiftId, device.deviceId,
+      { logCustomerPaymentRecorded },
+      useSessionStore().activeStaff?.id ?? '',
+      shiftStore.activeShiftId, device.deviceId,
     )
     await load()
   }
