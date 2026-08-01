@@ -39,9 +39,11 @@ describe('publishEvent', () => {
   it('includes a created_at distinct from occurred_at (local persist time)', async () => {
     await publishEvent(baseEvent)
     const [, params] = vi.mocked(db.execute).mock.calls[0]
-    // created_at is the last param, occurred_at the one before it -- both present, both strings.
+    // created_at is the last param, occurred_at the one before it -- both present, both
+    // strings, and -- the actual point of this test -- not the same value.
     expect(typeof params[params.length - 1]).toBe('string')
     expect(typeof params[params.length - 2]).toBe('string')
+    expect(params[params.length - 1]).not.toBe(params[params.length - 2])
   })
 
   it('increments eventPublishFailureCount and does not throw when db.execute rejects', async () => {
