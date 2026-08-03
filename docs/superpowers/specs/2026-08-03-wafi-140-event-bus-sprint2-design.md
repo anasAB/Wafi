@@ -40,11 +40,20 @@ codebase (see §5).
 - Strict event ordering — unchanged from Sprint 1's position: handlers derive order from
   `occurred_at` themselves if they need it.
 
+**Naming convention for local-only tables.** This ticket introduces the first two tables in this
+codebase that are deliberately *not* synced, alongside `events`/`daily_event_counts` which *are*.
+To make that distinction visually unmissable (not just documented in a comment someone can miss),
+both new tables carry an explicit `local_` prefix — `local_event_processed_ledger` and
+`local_event_publish_retries` — so a future contributor scanning `supabase/migrations/` for
+"tables that need RLS" or `src/data/powersync/schema.ts` for "tables that need sync rules" sees
+immediately, from the name alone, that these two don't belong in either list. Every table this
+ticket adds without synced-table treatment uses this prefix; no exceptions.
+
 ## 3. Idempotency — processed-event ledger
 
 ```sql
 -- new table, local-only (not synced — see rationale below)
-create table event_processed_ledger (
+create table local_event_processed_ledger (
   subscriber_id text not null,   -- e.g. 'daily_event_counts_projection'
   event_id uuid not null,        -- references events(id) conceptually; not synced, no real FK
   processed_at timestamptz not null default now(),
@@ -70,16 +79,20 @@ export type SubscriberId = typeof SubscriberId[keyof typeof SubscriberId]
 
 /** At-most-once, NOT exactly-once: if the process crashes between the ledger insert and
  *  `action()` running, this row is marked processed forever and `action()` never retries.
- *  Named to make that failure mode undeniable at every call site, instead of a generic
- *  `handleOnce` that reads as a stronger guarantee than it is. Acceptable today only because
- *  the sole caller (`daily_event_counts`) is a best-effort dashboard number, not a financial
- *  ledger. Any future subscriber whose action is a financial write, or otherwise cannot
- *  tolerate silently losing an action on crash, must NOT use this helper as-is — it needs a
- *  real transactional guarantee this ledger does not provide. */
-async function processAtMostOnce(subscriberId: SubscriberId, eventId: string, action: () => Promise<void>) {
+ *  Named `processProjectionAtMostOnce` — not the shorter `processAtMostOnce` or `handleOnce`
+ *  — specifically so it reads as uncomfortable to reach for outside a read-model/projection
+ *  context. A generic-sounding name here is exactly how someone six months from now ends up
+ *  writing `processProjectionAtMostOnce(id, event, async () => { await createSale(...) })` and
+ *  silently drops a sale on a crash between the two steps. The word "Projection" in the name is
+ *  the guardrail, not just documentation of it. Acceptable today only because the sole caller
+ *  (`daily_event_counts`) is a best-effort dashboard number, not a financial ledger. Any future
+ *  subscriber whose action is a financial write, or otherwise cannot tolerate silently losing an
+ *  action on crash, must NOT use this helper — it needs a real transactional guarantee this
+ *  ledger does not provide. */
+async function processProjectionAtMostOnce(subscriberId: SubscriberId, eventId: string, action: () => Promise<void>) {
   try {
     await localDb.execute(
-      `insert into event_processed_ledger (subscriber_id, event_id) values (?, ?)`,
+      `insert into local_event_processed_ledger (subscriber_id, event_id) values (?, ?)`,
       [subscriberId, eventId],
     )
   } catch {
@@ -90,7 +103,7 @@ async function processAtMostOnce(subscriberId: SubscriberId, eventId: string, ac
 ```
 
 `dailyEventCountsProjection.ts` (Sprint 1's reference read-model) is retrofitted to call
-`processAtMostOnce(SubscriberId.DailyEventCounts, event.id, () => incrementCount(...))`, closing
+`processProjectionAtMostOnce(SubscriberId.DailyEventCounts, event.id, () => incrementCount(...))`, closing
 the double-count limitation Sprint 1 flagged as known-and-accepted. `subscriber_id` values are
 always drawn from the `SubscriberId` const object, never a raw string literal at the call site —
 same enforced-by-the-type-system discipline Sprint 1 used for `DomainEventType`, so a typo
@@ -101,7 +114,7 @@ never-populated ledger identity.
 
 ```sql
 -- new table, local-only, not synced
-create table event_publish_retries (
+create table local_event_publish_retries (
   id text primary key,           -- crypto.randomUUID(), generated client-side
   event_json text not null,      -- JSON.stringify(DomainEvent) — full event, duplicating what
                                   -- events/payload/staff/shop/time already store per-row once
@@ -118,7 +131,7 @@ create table event_publish_retries (
   next_retry_at text not null,   -- ISO string; see backoff schedule below
   created_at text not null       -- ISO string; local-only table, no timestamptz needed
 )
-create index event_publish_retries_next_retry_idx on event_publish_retries (next_retry_at)
+create index local_event_publish_retries_next_retry_idx on local_event_publish_retries (next_retry_at)
 ```
 
 **Index on `next_retry_at`, not `created_at`.** The replay sweep's query is "which rows are due
@@ -152,20 +165,28 @@ alerting/telemetry work is a change to one module, not a grep-and-replace across
 **Failure classification (transient vs. permanent).** Not every `db.execute` failure deserves 5
 retries — a schema mismatch or a malformed payload will never succeed no matter how many times it's
 retried, and retrying it forever is exactly the "retry storm" this section exists to prevent.
-`enqueueForRetry` classifies the caught error before writing `failure_kind`:
+`enqueueForRetry` calls one dedicated, single-purpose function to decide `failure_kind` — no
+inline heuristics scattered across the queue/sweep code, one place a future sprint can extend:
 
-- **`transient`** — SQLite/PowerSync busy/locked errors, generic I/O errors: worth retrying on the
-  backoff schedule below.
-- **`permanent`** — constraint violations (e.g. a malformed `payload_version`), SQL syntax/shape
-  errors: written to the queue for visibility (so the failure isn't silently invisible) but **not
-  retried** — the sweep skips `permanent` rows entirely after their first classification, logging
-  once via `logger.error` rather than repeating that log every sweep.
+```ts
+function isTransientPublishFailure(error: unknown): boolean
+```
 
-The exact error-string-to-classification mapping (e.g. which SQLite error codes count as
-`transient`) is deferred to the implementation plan / Sprint 3 as noted in §2 — this spec commits
-to the *shape* of the distinction (a `failure_kind` column and a sweep that respects it), not the
-full exhaustive classifier, since getting that list right benefits from real production error
-samples this sprint won't yet have.
+- Returns `true` (→ `failure_kind = 'transient'`) for SQLite/PowerSync busy/locked errors, generic
+  I/O errors: worth retrying on the backoff schedule below.
+- Returns `false` (→ `failure_kind = 'permanent'`) for constraint violations (e.g. a malformed
+  `payload_version`), SQL syntax/shape errors: written to the queue for visibility (so the failure
+  isn't silently invisible) but **not retried** — the sweep skips `permanent` rows entirely after
+  their first classification, logging once via `logger.error` rather than repeating that log every
+  sweep.
+
+The exact error-string-to-classification mapping inside `isTransientPublishFailure` (e.g. which
+SQLite error codes count as transient) is deferred to the implementation plan / Sprint 3 as noted
+in §2 — this spec commits to the *shape* of the distinction (one named function, a `failure_kind`
+column, and a sweep that respects it), not the full exhaustive classifier, since getting that list
+right benefits from real production error samples this sprint won't yet have. Having a single named
+function is what prevents every future call site from inventing its own ad hoc transient/permanent
+rule.
 
 **Backoff schedule.** `next_retry_at` replaces a bare `attempts` counter as the sweep's gate — a
 row is only retried once `now() >= next_retry_at`. Schedule (by `attempts` count so far): 1 min, 5
@@ -179,7 +200,7 @@ On success: **delete the retry row in the same local transaction as the successf
 insert**, not as two separate statements — if the process crashes between "insert into events
 succeeds" and "delete the retry row," the next sweep would re-insert the same event a second time
 (a real duplicate `events` row, not just a re-attempt) with no ledger protection, since
-`event_processed_ledger` only guards subscriber-side processing, not publish-side duplication.
+`local_event_processed_ledger` only guards subscriber-side processing, not publish-side duplication.
 Wrapping insert+delete in one transaction (PowerSync/local SQLite supports `db.writeTransaction` /
 equivalent) makes this atomic: either both happen or neither does, so a crash mid-retry leaves the
 retry row in place for the next sweep to safely re-attempt rather than silently duplicating the
@@ -191,12 +212,19 @@ error` once, louder, and the row is left in place for manual inspection rather t
 (deleting would silently lose the last record that this event ever existed) — see retention policy
 in §3a for how long it's kept after that.
 
+**Observability (dev/QA-only, not owner-facing).** A small `getRetryQueueStats()` function reads
+`local_event_publish_retries` and returns `{ pendingCount, permanentCount, oldestPendingAt }` —
+exposed the same way `eventPublishFailureCount` already is (a dev-visibility ref/helper, not a UI
+surface). Useful during QA to answer "is the retry queue actually draining, or silently piling up"
+without hand-querying the local DB each time. Not wired into any Settings screen or owner-facing
+alert this sprint — same non-goal posture as the rest of this table's visibility.
+
 ### 4a. Retention & cleanup
 
 Same class of problem Sprint 1 flagged for `events` itself (§4 of the Sprint 1 spec: unbounded
 local growth, deferred decision) now applies to two more local tables:
 
-- **`event_processed_ledger`** grows one row per (subscriber, event) pair processed — over a year
+- **`local_event_processed_ledger`** grows one row per (subscriber, event) pair processed — over a year
   this is the dominant growth rate of the three tables (every event, times every subscriber that
   ever handles it). Safe cleanup rule: **a ledger row is safe to delete once the `events` row it
   references is no longer synced locally** (per whatever local retention window `events` itself
@@ -204,7 +232,7 @@ local growth, deferred decision) now applies to two more local tables:
   for an event no longer present locally can never be "re-processed" anyway, so keeping it serves
   no purpose. Not implemented this sprint (`events` itself has no retention job yet to hang this
   off), but the rule is recorded now so it isn't rediscovered as a surprise later.
-- **`event_publish_retries`** stays small under normal operation (publish failures are rare) and is
+- **`local_event_publish_retries`** stays small under normal operation (publish failures are rare) and is
   self-cleaning for the common case (successful retry deletes its own row). The only rows that
   persist are `permanent`-classified or exhausted-`transient` (5-attempt) rows — by definition
   already flagged for manual inspection. No automatic purge this sprint; if this table is ever
@@ -232,6 +260,15 @@ real write call site (not just a plausible-sounding name).
 | `product.created` | `useProducts.ts` `save()`, insert branch | retrofit, same file |
 | `supplier.receiving_posted` | `useReceivingSheet.ts` | retrofit: no `executeBusinessOperation` today, needs wrapping |
 | `device.registered` | `useDeviceRegistration.ts` `registerDevice()` | bespoke: this is an RPC call + local insert, not a local-write-then-audit pair, so it calls `publishEvent()` directly after success rather than going through `executeBusinessOperation` |
+
+**`device.registered` is the one deliberate exception to "every event goes through
+`executeBusinessOperation`."** Stated explicitly so a future contributor doesn't "fix" it into
+conformance: device registration intentionally bypasses `executeBusinessOperation` because no
+business-write wrapper exists around its RPC flow (`register_device` is a server RPC, not a local
+PowerSync write followed by a local audit call — the two steps `executeBusinessOperation` exists to
+couple don't apply here in the same shape). If a future ticket introduces an RPC-aware variant of
+the wrapper, `device.registered` should move onto it then — this is a gap in today's wrapper, not a
+statement that device registration should stay special-cased forever.
 
 **Note on `customer.debt_changed`:** Sprint 1 deferred this event, reasoning that its
 credit-sale-return call site lived in `returns.service.ts`, "explicitly excluded from WAFI-152's
@@ -268,7 +305,12 @@ the two changes in practice (per WAFI-013's cost-freshness work, cost edits are 
 high-signal; price edits are comparatively routine), so defaulting to the rarer fact loses less
 information on average. A future ticket could split `toEvent` into `toEvents` (plural) if a real
 consumer needs both facts from the same write, but no such consumer exists yet — this is a
-temporary compromise to fit Sprint 1's shape, not a permanent design stance.
+temporary compromise to fit Sprint 1's shape, not a permanent design stance. **The underlying
+limitation is architectural, not this event pair specifically**: `executeBusinessOperation`
+supports at most one `DomainEvent` per write today, full stop. Multiple events per write remain
+intentionally unsupported until a future revision of `executeBusinessOperation` (e.g. a `toEvents`
+plural hook) — the price-vs-cost priority rule above is one call site's workaround for that
+framework limitation, not evidence that the framework itself picked a side on price vs. cost.
 
 ### 5b. Event versioning — already covered, confirmed not re-litigated
 
@@ -309,7 +351,7 @@ a staff-ledger fact (matches this codebase's existing separation of `cashier_shi
 
 - Vitest per new `toEvent` hook: payload shape matches its typed interface (mirrors Sprint 1's
   per-event test pattern).
-- Vitest: `processAtMostOnce()` ledger guard — invoked twice with the same `(subscriberId, eventId)` runs
+- Vitest: `processProjectionAtMostOnce()` ledger guard — invoked twice with the same `(subscriberId, eventId)` runs
   its action once; invoked with two different `eventId`s for the same subscriber runs it twice;
   invoked with the same `eventId` but two different `subscriberId`s runs independently for each
   (proves the ledger is per-subscriber, not global).
@@ -317,7 +359,7 @@ a staff-ledger fact (matches this codebase's existing separation of `cashier_shi
   is handled twice (this directly replaces Sprint 1's test that asserted the *opposite* — that it
   *did* double-count — as a known limitation; that test is deleted/inverted here, not left
   contradicting the new behavior).
-- Vitest: retry queue — a failed publish enqueues into `event_publish_retries`; a successful retry
+- Vitest: retry queue — a failed publish enqueues into `local_event_publish_retries`; a successful retry
   sweep drains and deletes it; a row that fails 5 times stops incrementing past 5 and logs loudly
   instead of retrying forever; the sweep itself never throws even if every queued row fails.
 - Vitest: `useProducts.ts save()` retrofit — single price-only change emits `product.price_changed`
@@ -332,7 +374,7 @@ a staff-ledger fact (matches this codebase's existing separation of `cashier_shi
 Sprint 1's spec already requires every `useEventSubscription` call site to own disposal explicitly
 — `onUnmounted` for component-scoped subscribers, an explicit `stop()` for store/app-init-level
 ones — and that contract is unchanged here. Restating it because this sprint adds the first
-subscriber-side dedup logic (`processAtMostOnce`): a subscriber that fails to unsubscribe and gets
+subscriber-side dedup logic (`processProjectionAtMostOnce`): a subscriber that fails to unsubscribe and gets
 re-mounted (e.g. a component remount without a full page reload) would otherwise re-attach a second
 live watch query — the ledger insert's unique-violation guard means the second instance's handler
 correctly no-ops on already-processed rows, so a lifecycle leak degrades to "wasted watch query,"
@@ -359,7 +401,7 @@ Open cross-feature questions:
     `returns` tables directly, not off events, so this is not a behavioral risk for existing
     reports; only future WAFI-143+ event consumers need to know both events can represent debt
     decreases.
-  - event_processed_ledger and event_publish_retries are both new LOCAL-ONLY tables — must be
+  - local_event_processed_ledger and local_event_publish_retries are both new LOCAL-ONLY tables — must be
     added to the app's local PowerSync schema as non-synced tables (or a plain local SQLite table
     outside PowerSync's schema entirely, if that's cleaner architecturally — an implementation
     detail for the plan, not re-litigated here), and must NOT be added to any Postgres migration
@@ -370,7 +412,7 @@ Updated DOMAIN INTERACTION MATRIX row (`AI_PRINCIPAL_ENGINEER_REVIEW.md`):
 
 | Domain | Writes to (tables) | Reads from (other domains) | Key composables | Reports/Dashboards affected |
 |---|---|---|---|---|
-| Events | `events`, `daily_event_counts`, `event_processed_ledger` (local-only), `event_publish_retries` (local-only) | Sales, Returns, Customer Credit, Inventory, Staff, Expense, Cash/Shifts, Products, Suppliers, Devices (all event producers) | `useEventSubscription`, `processAtMostOnce`, `retryPendingEventPublishes` | none yet (still no user-facing consumer — WAFI-143/144/145/146) |
+| Events | `events`, `daily_event_counts`, `local_event_processed_ledger` (local-only), `local_event_publish_retries` (local-only) | Sales, Returns, Customer Credit, Inventory, Staff, Expense, Cash/Shifts, Products, Suppliers, Devices (all event producers) | `useEventSubscription`, `processProjectionAtMostOnce`, `retryPendingEventPublishes` | none yet (still no user-facing consumer — WAFI-143/144/145/146) |
 
 ## 9. Out-of-scope call-outs (explicitly deferred, not silently dropped)
 
