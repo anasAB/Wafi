@@ -38,7 +38,14 @@ codebase (see §5).
 - Cross-device dedup (two devices racing to process the same event) — the ledger this sprint
   guards single-device re-delivery only; see §3.
 - Strict event ordering — unchanged from Sprint 1's position: handlers derive order from
-  `occurred_at` themselves if they need it.
+  `occurred_at` themselves if they need it. **Explicit invariant, stated plainly because it gets
+  worse offline, not better:** delivery order is never guaranteed to equal business (`occurred_at`)
+  order. A device offline while ringing up Sale A, B, C can sync all three interleaved with another
+  device's Sale D arriving in between (e.g. observed order A, D, B, C) purely due to sync timing —
+  this is not a bug, it is the expected behavior of a multi-device offline-first sync layer with no
+  global ordering guarantee. **Subscribers must never assume delivery order equals business order.**
+  Anything needing true chronological order must sort by `occurred_at` after receiving events, never
+  rely on the sequence handlers happened to fire in.
 
 **Naming convention for local-only tables.** This ticket introduces the first two tables in this
 codebase that are deliberately *not* synced, alongside `events`/`daily_event_counts` which *are*.
@@ -88,7 +95,9 @@ export type SubscriberId = typeof SubscriberId[keyof typeof SubscriberId]
  *  (`daily_event_counts`) is a best-effort dashboard number, not a financial ledger. Any future
  *  subscriber whose action is a financial write, or otherwise cannot tolerate silently losing an
  *  action on crash, must NOT use this helper — it needs a real transactional guarantee this
- *  ledger does not provide. */
+ *  ledger does not provide. This helper intentionally does not guarantee eventual execution:
+ *  "at most once" means 0-or-1 executions, never "eventually, exactly once" — do not read
+ *  "once" in the name as a promise that `action()` runs. */
 async function processProjectionAtMostOnce(subscriberId: SubscriberId, eventId: string, action: () => Promise<void>) {
   try {
     await localDb.execute(
@@ -98,7 +107,15 @@ async function processProjectionAtMostOnce(subscriberId: SubscriberId, eventId: 
   } catch {
     return // unique-violation: already processed, skip the action entirely
   }
-  await action()
+  try {
+    await action()
+  } catch (err) {
+    // Mandatory, not optional: the ledger row is already committed at this point, so a swallowed
+    // throw here means the event is now silently, permanently skipped with zero trace. Every
+    // subscriber's action must be wrapped exactly like this — logging is not something each
+    // subscriber remembers to add, it's built into the helper so it can't be forgotten.
+    logger.error('[processProjectionAtMostOnce] subscriber action threw after ledger commit', subscriberId, eventId, err)
+  }
 }
 ```
 
@@ -116,7 +133,7 @@ never-populated ledger identity.
 -- new table, local-only, not synced
 create table local_event_publish_retries (
   id text primary key,           -- crypto.randomUUID(), generated client-side
-  event_json text not null,      -- JSON.stringify(DomainEvent) — full event, duplicating what
+  serialized_event text not null,      -- JSON.stringify(DomainEvent) — full event, duplicating what
                                   -- events/payload/staff/shop/time already store per-row once
                                   -- the row lands. Deliberate duplication, not an oversight:
                                   -- this row exists precisely because the real `events` insert
@@ -172,21 +189,30 @@ inline heuristics scattered across the queue/sweep code, one place a future spri
 function isTransientPublishFailure(error: unknown): boolean
 ```
 
-- Returns `true` (→ `failure_kind = 'transient'`) for SQLite/PowerSync busy/locked errors, generic
-  I/O errors: worth retrying on the backoff schedule below.
-- Returns `false` (→ `failure_kind = 'permanent'`) for constraint violations (e.g. a malformed
-  `payload_version`), SQL syntax/shape errors: written to the queue for visibility (so the failure
-  isn't silently invisible) but **not retried** — the sweep skips `permanent` rows entirely after
-  their first classification, logging once via `logger.error` rather than repeating that log every
-  sweep.
+- Returns `true` (→ `failure_kind = 'transient'`), worth retrying on the backoff schedule below —
+  examples (not exhaustive): `SQLITE_BUSY`, "database is locked," I/O timeouts, "disk temporarily
+  unavailable."
+- Returns `false` (→ `failure_kind = 'permanent'`) — written to the queue for visibility (so the
+  failure isn't silently invisible) but **not retried**, the sweep skips `permanent` rows entirely
+  after their first classification, logging once via `logger.error` rather than repeating that log
+  every sweep — examples (not exhaustive): SQL syntax errors, constraint violations, "unknown
+  column," an unsupported `payload_version`.
 
-The exact error-string-to-classification mapping inside `isTransientPublishFailure` (e.g. which
-SQLite error codes count as transient) is deferred to the implementation plan / Sprint 3 as noted
-in §2 — this spec commits to the *shape* of the distinction (one named function, a `failure_kind`
-column, and a sweep that respects it), not the full exhaustive classifier, since getting that list
-right benefits from real production error samples this sprint won't yet have. Having a single named
-function is what prevents every future call site from inventing its own ad hoc transient/permanent
-rule.
+These are illustrative examples, not the complete list `isTransientPublishFailure` must match — the
+exact error-string-to-classification mapping is deferred to the implementation plan / Sprint 3 as
+noted in §2. This spec commits to the *shape* of the distinction (one named function, a
+`failure_kind` column, and a sweep that respects it), not the full exhaustive classifier, since
+getting that list right benefits from real production error samples this sprint won't yet have.
+Having a single named function is what prevents every future call site from inventing its own ad
+hoc transient/permanent rule.
+
+**Jitter (noted for Sprint 3, not built here).** The fixed backoff schedule (1 min, 5 min, 30 min, 2
+hr) means a batch of events that all failed together (e.g. a brief local-disk hiccup affecting many
+writes at once) all become due for retry at exactly the same moment, producing a small synchronized
+retry spike rather than a smooth trickle. A real retry system would add randomized jitter (e.g.
+±20%) to `next_retry_at` to spread that spike out. Not required for this sprint's expected event
+volume (a part-time single-shop POS, not a high-throughput system), but worth doing before this
+mechanism is trusted at higher scale.
 
 **Backoff schedule.** `next_retry_at` replaces a bare `attempts` counter as the sweep's gate — a
 row is only retried once `now() >= next_retry_at`. Schedule (by `attempts` count so far): 1 min, 5
@@ -206,41 +232,92 @@ equivalent) makes this atomic: either both happen or neither does, so a crash mi
 retry row in place for the next sweep to safely re-attempt rather than silently duplicating the
 underlying event.
 
+**This protection is conditional on that transaction primitive actually spanning both statements —
+confirm this against PowerSync's real API during implementation, don't assume it.** If
+`db.writeTransaction()` (or whatever the actual local-write API turns out to be) does not guarantee
+atomicity across an insert into `events` and a delete from `local_event_publish_retries` in one
+commit, this protection is imaginary and the plan must say so explicitly rather than ship code that
+looks transactional but isn't. **Fallback if no such primitive exists:** this sprint accepts
+duplicate-event tolerance on the rare crash-during-retry path (a duplicate `events` row is a
+data-quality wart, not data loss — nothing yet depends on `events` rows being unique per business
+fact) and WAFI-140 Sprint 3 must introduce a proper publish-idempotency key (e.g. a deterministic
+event ID derived from the originating write, with `events.id` unique-constrained on it) to close
+this gap for real, rather than this spec quietly assuming a guarantee that doesn't exist.
+
 On failure (attempts < 5, `transient`): increment `attempts`, overwrite `last_error`, advance
 `next_retry_at` per the schedule above. Rows reaching **5 attempts** stop being retried — `logger.
 error` once, louder, and the row is left in place for manual inspection rather than deleted
 (deleting would silently lose the last record that this event ever existed) — see retention policy
-in §3a for how long it's kept after that.
+in §4a for how long it's kept after that.
+
+**The sweep must never abort on a single row's failure.** `retryPendingEventPublishes()` iterates
+queued rows in a plain `for` loop with `try { ... } catch { ... continue }` around each row's
+retry attempt — never `Promise.all()` (one rejection would reject the whole batch) and never a
+bare loop that lets an uncaught throw stop iteration partway through. Without this, one
+permanently-stuck oldest row (e.g. a `transient`-misclassified row that in fact always fails) would
+starve every row behind it in the `next_retry_at asc` ordering, since a stopped sweep never reaches
+them. Each row's outcome (success, transient-failure, or newly-detected-permanent) is independent
+of every other row's outcome in the same sweep pass.
+
+**Concurrency guard.** Could two invocations of the sweep (or two subscriber handlers) run
+simultaneously — e.g. an app-start sweep and a reconnect-triggered sweep firing close together?
+The `local_event_publish_retries` primary key (`id`) doesn't protect against double-processing the
+same row the way `local_event_processed_ledger`'s composite key does for subscribers (§3) — but the
+underlying `events` table's own natural dedup (see the Sprint 3 idempotency-key fallback above) and
+the fact that a successful retry deletes its row atomically with the insert mean a second concurrent
+sweep attempting the same already-deleted row simply gets a no-op (row not found) rather than a
+double-insert, *once that atomicity is confirmed real per the caveat above*. This is the same
+"unique constraint as concurrency guard" pattern `local_event_processed_ledger`'s primary key
+already relies on for subscribers (§3) — worth naming explicitly as an intentional pattern, not
+an accidental side effect: a unique constraint (or, here, a row's existence) is this design's
+concurrency guard, not a mutex or lock.
 
 **Observability (dev/QA-only, not owner-facing).** A small `getRetryQueueStats()` function reads
-`local_event_publish_retries` and returns `{ pendingCount, permanentCount, oldestPendingAt }` —
-exposed the same way `eventPublishFailureCount` already is (a dev-visibility ref/helper, not a UI
-surface). Useful during QA to answer "is the retry queue actually draining, or silently piling up"
-without hand-querying the local DB each time. Not wired into any Settings screen or owner-facing
-alert this sprint — same non-goal posture as the rest of this table's visibility.
+`local_event_publish_retries` and returns `{ pendingCount, permanentCount, oldestPendingAt,
+oldestPendingAge }` — `oldestPendingAge` (a duration, e.g. `"2h14m"` or seconds) is computed
+alongside `oldestPendingAt` (a raw timestamp) because a duration is what a developer glancing at
+this during QA actually wants to interpret quickly, without doing the subtraction from "now"
+themselves. Exposed the same way `eventPublishFailureCount` already is (a dev-visibility
+ref/helper, not a UI surface). Useful during QA to answer "is the retry queue actually draining, or
+silently piling up" without hand-querying the local DB each time. Not wired into any Settings screen
+or owner-facing alert this sprint — same non-goal posture as the rest of this table's visibility.
 
-### 4a. Retention & cleanup
+### 4a. Retention & cleanup — one shared strategy, not three independent ones
 
-Same class of problem Sprint 1 flagged for `events` itself (§4 of the Sprint 1 spec: unbounded
-local growth, deferred decision) now applies to two more local tables:
+Sprint 1 flagged `events` itself for unbounded local growth (§4 of the Sprint 1 spec) and deferred
+solving it. This sprint adds two more locally-growing tables whose retention is **not independent**
+of `events`' eventual retention decision — they reference it, so they must be cleaned up in the same
+pass, in dependency order, once that pass exists:
 
-- **`local_event_processed_ledger`** grows one row per (subscriber, event) pair processed — over a year
-  this is the dominant growth rate of the three tables (every event, times every subscriber that
-  ever handles it). Safe cleanup rule: **a ledger row is safe to delete once the `events` row it
-  references is no longer synced locally** (per whatever local retention window `events` itself
-  eventually adopts — Sprint 1 named 90 days as an example, not yet implemented). A ledger entry
-  for an event no longer present locally can never be "re-processed" anyway, so keeping it serves
-  no purpose. Not implemented this sprint (`events` itself has no retention job yet to hang this
-  off), but the rule is recorded now so it isn't rediscovered as a surprise later.
-- **`local_event_publish_retries`** stays small under normal operation (publish failures are rare) and is
-  self-cleaning for the common case (successful retry deletes its own row). The only rows that
-  persist are `permanent`-classified or exhausted-`transient` (5-attempt) rows — by definition
-  already flagged for manual inspection. No automatic purge this sprint; if this table is ever
-  found accumulating unboundedly in practice, that itself is a signal worth investigating (a
-  systemic publish problem), not something to silently paper over with a cleanup job.
+```
+cleanup():
+  1. determine cutoff (events' eventual local retention window, e.g. 90 days — not yet implemented)
+  2. delete from local_event_processed_ledger where event_id in
+       (select id from events where occurred_at < cutoff)   -- must run BEFORE step 3
+  3. prune synced `events` rows older than cutoff (via PowerSync sync-rule time-scoping, per
+     Sprint 1's own note — not ad hoc client-side deletion)
+  4. delete from local_event_publish_retries where resolved (see below) — independent of cutoff
+```
 
-Both are explicit **deferred decisions**, matching Sprint 1's own posture on `events` retention —
-not implemented now, but written down so a future sprint doesn't have to rediscover the reasoning.
+Step order matters: pruning `events` before clearing the ledger rows that reference those event ids
+would leave orphaned ledger rows referencing nothing, silently defeating the "safe to delete" logic
+below rather than acting on it.
+
+- **`local_event_processed_ledger`** grows one row per (subscriber, event) pair processed — over a
+  year this is the dominant growth rate of the three tables (every event, times every subscriber
+  that ever handles it). Safe cleanup rule: **a ledger row is safe to delete once the `events` row
+  it references is no longer synced locally** — a ledger entry for an event no longer present
+  locally can never be "re-processed" anyway, so keeping it serves no purpose.
+- **`local_event_publish_retries`** stays small under normal operation (publish failures are rare)
+  and is self-cleaning for the common case (successful retry deletes its own row). The only rows
+  that persist are `permanent`-classified or exhausted-`transient` (5-attempt) rows — by definition
+  already flagged for manual inspection, and independent of the `events` retention cutoff (these
+  rows represent events that never made it into `events` at all).
+
+**Not implemented this sprint** — `events` itself has no retention job yet to hang step 1/3 off —
+but the shared `cleanup()` shape above is recorded now, as one strategy spanning all three tables,
+so a future sprint implementing `events` retention doesn't rediscover mid-implementation that the
+ledger needs to be cleaned in lockstep with it rather than as an unrelated afterthought.
 
 ## 5. Event audit — what's buildable this sprint vs. deferred
 
@@ -310,7 +387,12 @@ limitation is architectural, not this event pair specifically**: `executeBusines
 supports at most one `DomainEvent` per write today, full stop. Multiple events per write remain
 intentionally unsupported until a future revision of `executeBusinessOperation` (e.g. a `toEvents`
 plural hook) — the price-vs-cost priority rule above is one call site's workaround for that
-framework limitation, not evidence that the framework itself picked a side on price vs. cost.
+framework limitation, not evidence that the framework itself picked a side on price vs. cost. This
+sprint also adds a one-line comment on `BusinessOperationHooks.toEvent`'s JSDoc in
+`executeBusinessOperation.ts` itself (`@remarks at most one DomainEvent per write; see WAFI-140
+Sprint 2 spec §5a for a call site working around this`) so the limitation's authoritative source is
+the function signature a new contributor actually reads, not only a spec document they might not
+know to look for.
 
 ### 5b. Event versioning — already covered, confirmed not re-litigated
 
@@ -368,6 +450,21 @@ a staff-ledger fact (matches this codebase's existing separation of `cashier_shi
   direct `useAuditLog()` calls are removed from `save()`/`confirmSession()`/receiving in favor of
   `executeBusinessOperation`'s `hooks.audit`, with a regression test proving exactly one audit row
   is still written per operation (not zero, not two).
+- Vitest: **retry-then-delete crash simulation** — mock the local transaction so the `events`
+  insert succeeds but the `local_event_publish_retries` delete fails/throws; assert the documented
+  behavior from §4 (either the row survives for a safe future re-attempt, if atomicity holds, or the
+  duplicate-tolerance fallback is what actually happens, if it doesn't) — this test's job is to
+  prove the spec's stated behavior is what the real PowerSync API does, not to assume it.
+- Vitest: **duplicate reconnects** — simulate offline → online → online again (two reconnect
+  events firing close together) and assert a given `sale.completed` row's projection increment
+  still only happens once, exercising `processProjectionAtMostOnce`'s ledger guard under the
+  concurrency scenario §4's concurrency-guard note describes, not just a simple sequential
+  double-call.
+- Vitest: **subscriber action throws** — ledger insert succeeds, `action()` rejects; assert
+  `logger.error` was called with `(subscriberId, eventId, err)`, and assert a subsequent delivery of
+  the same event is skipped (not retried) — this is documented, intentional behavior (§3), and this
+  test is what keeps it from silently regressing into "retries forever" or "throws uncaught"
+  instead.
 
 ### 7a. Subscriber lifecycle (confirming, not changing, Sprint 1's contract)
 
@@ -412,7 +509,7 @@ Updated DOMAIN INTERACTION MATRIX row (`AI_PRINCIPAL_ENGINEER_REVIEW.md`):
 
 | Domain | Writes to (tables) | Reads from (other domains) | Key composables | Reports/Dashboards affected |
 |---|---|---|---|---|
-| Events | `events`, `daily_event_counts`, `local_event_processed_ledger` (local-only), `local_event_publish_retries` (local-only) | Sales, Returns, Customer Credit, Inventory, Staff, Expense, Cash/Shifts, Products, Suppliers, Devices (all event producers) | `useEventSubscription`, `processProjectionAtMostOnce`, `retryPendingEventPublishes` | none yet (still no user-facing consumer — WAFI-143/144/145/146) |
+| Events | `events`, `daily_event_counts`, `local_event_processed_ledger` (local-only), `local_event_publish_retries` (local-only) | Sales, Returns, Customer Credit, Inventory, Staff, Expense, Cash/Shifts, Products, Suppliers, Devices (all event producers) | `useEventSubscription`, `processProjectionAtMostOnce`, `retryPendingEventPublishes`, `isTransientPublishFailure`, `getRetryQueueStats` | none yet (still no user-facing consumer — WAFI-143/144/145/146) |
 
 ## 9. Out-of-scope call-outs (explicitly deferred, not silently dropped)
 
