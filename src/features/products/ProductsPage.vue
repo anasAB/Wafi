@@ -86,6 +86,10 @@ function handleBarcodeScan(code: string) {
   }
 }
 
+function dismissMissedBarcode() {
+  missedBarcode.value = null
+}
+
 function handleDelete(id: string) {
   deleteTarget.value = id
 }
@@ -174,6 +178,12 @@ async function confirmDelete() {
           class="barcode-banner-action"
           @click="openAdd(missedBarcode!)"
         >إضافة بهذا الباركود</button>
+        <button
+          type="button"
+          class="barcode-banner-close"
+          aria-label="إغلاق"
+          @click="dismissMissedBarcode"
+        >&times;</button>
       </div>
 
       <ProductList
@@ -368,6 +378,25 @@ async function confirmDelete() {
 
 .barcode-banner-action:hover {
   opacity: 0.85;
+}
+
+.barcode-banner-close {
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  line-height: 1;
+  font-size: 1.25rem;
+  color: #93A3B8;
+  background: transparent;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.barcode-banner-close:hover {
+  color: #E8EDF5;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .filter-chips {

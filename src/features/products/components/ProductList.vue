@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import Paginator from 'primevue/paginator'
 import ProductAvatar from '@/components/ui/ProductAvatar.vue'
 import { matchesArabicQuery } from '@/shared/text/arabic'
@@ -31,6 +31,12 @@ function costImpreciseLabel(p: Product): string | null {
 
 const search    = ref('')
 const openKebab = ref<string | null>(null)
+// BUG-H01 (/products) fix: the dropdown normally anchors to the cell's
+// inline-start edge and grows toward inline-end, but for rows near the table's
+// edge that overflows the viewport and forces a horizontal scrollbar. Flip to
+// anchor from the other side whenever the rendered menu would overflow.
+const kebabFlip = ref(false)
+const kebabDropdownRef = ref<HTMLElement | null>(null)
 const isCategoryMenuOpen = ref(false)
 const categoryMenuRef = ref<HTMLElement | null>(null)
 const isSubcategoryMenuOpen = ref(false)
@@ -193,8 +199,20 @@ function categoryNameFor(p: Product): string {
   return categoriesWithSubcategories.value.find(c => c.id === p.categoryId)?.name ?? ''
 }
 
-function toggleKebab(id: string) {
-  openKebab.value = openKebab.value === id ? null : id
+async function toggleKebab(id: string) {
+  if (openKebab.value === id) {
+    openKebab.value = null
+    return
+  }
+  kebabFlip.value = false
+  openKebab.value = id
+  await nextTick()
+  const el = kebabDropdownRef.value
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  if (rect.left < 0 || rect.right > window.innerWidth) {
+    kebabFlip.value = true
+  }
 }
 
 function closeKebab() {
@@ -427,7 +445,12 @@ function handleAdjustStock(id: string) {
                 </svg>
               </button>
               <!-- Kebab dropdown -->
-              <div v-if="openKebab === p.id" class="kebab-dropdown">
+              <div
+                v-if="openKebab === p.id"
+                ref="kebabDropdownRef"
+                class="kebab-dropdown"
+                :class="{ 'kebab-dropdown--flip': kebabFlip }"
+              >
                 <button type="button" class="kebab-item" @click="handleAdjustStock(p.id)">
                   <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
@@ -1111,6 +1134,11 @@ function handleAdjustStock(id: string) {
   overflow: hidden;
   min-width: 144px;
   box-shadow: 0 8px 48px rgba(26,86,219,0.22);
+}
+
+.kebab-dropdown--flip {
+  inset-inline-start: auto;
+  inset-inline-end: 0;
 }
 
 .kebab-item {

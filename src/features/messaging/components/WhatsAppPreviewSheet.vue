@@ -95,6 +95,7 @@ function handleSend() {
             placeholder="مثال: 0912345678 أو +963912345678"
             dir="ltr"
             autocomplete="tel"
+            @input="phoneError = null"
           />
           <p v-if="phoneError" class="phone-error-msg">{{ phoneError }}</p>
         </div>

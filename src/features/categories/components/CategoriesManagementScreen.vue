@@ -4,7 +4,14 @@ import { useRouter } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
-import { useCategories } from '@/features/categories/composables/useCategories'
+import { useCategories, FALLBACK_CATEGORY_NAME } from '@/features/categories/composables/useCategories'
+
+// BUG-H02 (/products) fix: opening the merge/reassign picker used to eagerly
+// materialize "غير مصنف" in the database just so it could be shown as a valid
+// target, leaving a stray permanent category behind even if the user cancelled
+// without picking anything. This sentinel lets the picker list show it as an
+// option without writing anything until the user actually confirms it.
+const PENDING_FALLBACK_ID = '__pending_fallback__'
 
 const router = useRouter()
 const { categoriesWithSubcategories, duplicateCategoryGroups, load, createCategory, renameCategory,
@@ -19,6 +26,9 @@ const blockedMessage = ref<string | null>(null)
 // products, instead of just a count with no way to find them.
 const blockedCategoryId = ref<string | null>(null)
 const loadError = ref<string | null>(null)
+// BUG-M02 (/products) fix: distinguishes "still loading" from "genuinely
+// empty" so the empty-state hint doesn't flash before real categories render.
+const loading = ref(true)
 const assigningCategoryId = ref<string | null>(null)
 const productPickerOpen = ref(false)
 const productSearchQuery = ref('')
@@ -48,12 +58,19 @@ onMounted(async () => {
     // Local PowerSync read failed (e.g. shop not yet resolved) — surface it
     // instead of leaving the screen silently blank.
     loadError.value = 'تعذّر تحميل الفئات. حاول مرة أخرى.'
+  } finally {
+    loading.value = false
   }
 })
 
 async function addCategory() {
   const name = newCategoryName.value.trim()
-  if (!name) return
+  if (!name) {
+    // BUG-L02 (/products): this used to silently no-op with zero feedback,
+    // inconsistent with the duplicate-name case just below which does message.
+    blockedMessage.value = 'أدخل اسم الفئة أولاً'
+    return
+  }
   const result = await createCategory(name)
   if (result.error === 'duplicate') {
     blockedMessage.value = 'هذه الفئة موجودة بالفعل'
@@ -64,7 +81,10 @@ async function addCategory() {
 
 async function addSubcategory(categoryId: string) {
   const name = (newSubcategoryName.value[categoryId] ?? '').trim()
-  if (!name) return
+  if (!name) {
+    blockedMessage.value = 'أدخل اسم الفئة الفرعية أولاً'
+    return
+  }
   const result = await createSubcategory(categoryId, name)
   if (result.error === 'duplicate') {
     blockedMessage.value = 'هذه الفئة الفرعية موجودة بالفعل'
@@ -154,25 +174,37 @@ const pickerBusy = ref(false)
 
 async function openTargetPicker(mode: 'reassign' | 'merge', sourceId: string, count = 0) {
   blockedMessage.value = null
-  // The fallback must always be a valid target — create it on first need.
-  await ensureFallbackCategory()
-  await load()
+  // The fallback must always be offered as a target, but must NOT be created
+  // in the database just by opening this picker — see PENDING_FALLBACK_ID
+  // above. It's only materialized in pickTarget, once the user actually
+  // confirms it as their choice.
   const source = categoriesWithSubcategories.value.find(c => c.id === sourceId)
   targetPicker.value = { mode, sourceId, sourceName: source?.name ?? '', count }
 }
 
-const targetOptions = computed(() =>
-  categoriesWithSubcategories.value.filter(c => c.id !== targetPicker.value?.sourceId)
-)
+const targetOptions = computed(() => {
+  const real = categoriesWithSubcategories.value.filter(c => c.id !== targetPicker.value?.sourceId)
+  const hasFallback = real.some(c => c.name.trim().toLowerCase() === FALLBACK_CATEGORY_NAME.toLowerCase())
+  if (hasFallback) return real
+  return [
+    ...real,
+    { id: PENDING_FALLBACK_ID, shopId: '', name: FALLBACK_CATEGORY_NAME, createdAt: '', subcategories: [] },
+  ]
+})
 
 async function pickTarget(targetId: string) {
   const p = targetPicker.value
   if (!p || pickerBusy.value) return
   pickerBusy.value = true
   try {
+    // Only now, with the user's actual confirmed choice, does "غير مصنف" get
+    // created for real if it didn't already exist.
+    const resolvedTargetId = targetId === PENDING_FALLBACK_ID
+      ? await ensureFallbackCategory()
+      : targetId
     const result = p.mode === 'reassign'
-      ? await deleteCategoryWithReassign(p.sourceId, targetId)
-      : await mergeCategory(p.sourceId, targetId)
+      ? await deleteCategoryWithReassign(p.sourceId, resolvedTargetId)
+      : await mergeCategory(p.sourceId, resolvedTargetId)
     if (result.error === 'open-stock-take') {
       blockedMessage.value = 'يوجد جرد نشط لهذه الأصناف حالياً. يرجى إكماله أو إلغاؤه أولاً.'
     } else if (result.error === 'fallback') {
@@ -237,7 +269,10 @@ async function removeSubcategory(id: string) {
         </button>
       </div>
 
-      <p v-if="categoriesWithSubcategories.length === 0 && !loadError" class="empty-hint">
+      <p v-if="loading" class="empty-hint" data-testid="categories-loading">
+        جاري التحميل...
+      </p>
+      <p v-else-if="categoriesWithSubcategories.length === 0 && !loadError" class="empty-hint">
         لا توجد فئات بعد. أضف أول فئة أعلاه.
       </p>
 

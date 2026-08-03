@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useSync } from './useSync'
 import type { DeadLetterEntry } from '@/data/powersync/dead-letter'
 import SyncBadge from '@/components/ui/SyncBadge.vue'
@@ -51,6 +51,15 @@ async function togglePanel() {
   panelOpen.value = !panelOpen.value
   if (panelOpen.value) await refreshDeadLetter()
 }
+
+// BUG-L01 (/history) fix: Escape now closes the panel like any standard
+// dialog. (Outside-click already worked via .sync-overlay — this adds the
+// other standard dismissal path, plus a visible header close icon below.)
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && panelOpen.value) panelOpen.value = false
+}
+onMounted(() => document.addEventListener('keydown', onKeydown))
+onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 
 async function handleSyncNow() {
   syncing.value = true
@@ -124,7 +133,19 @@ async function onDiscard(id: string) {
       <div class="sync-panel-inner" dir="rtl">
         <div class="sync-panel-head">
           <p class="sync-title">حالة المزامنة</p>
-          <SyncBadge :status="status" :pending-count="pendingCount" :blocked-count="blockedCount" />
+          <div class="sync-panel-head-right">
+            <SyncBadge :status="status" :pending-count="pendingCount" :blocked-count="blockedCount" />
+            <button
+              type="button"
+              class="sync-close-btn"
+              aria-label="إغلاق"
+              @click="panelOpen = false"
+            >
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
       <div class="sync-info-row">
@@ -287,6 +308,32 @@ async function onDiscard(id: string) {
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 12px;
+}
+
+.sync-panel-head-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sync-close-btn {
+  width: 1.75rem;
+  height: 1.75rem;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  color: #7E90AA;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.sync-close-btn:hover {
+  color: #E8EDF5;
+  background: rgba(255, 255, 255, 0.10);
 }
 
 .sync-title {

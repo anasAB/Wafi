@@ -41,7 +41,10 @@ function formatDate(iso: string): string {
       </div>
 
       <template v-else>
-        <div class="trend-card">
+        <!-- BUG-L03 (/products): showing a "$0.00 trend" with zero real data
+             behind it is misleading — only render once there's at least one
+             completed session for the figure to be computed from. -->
+        <div v-if="sessions.length > 0" class="trend-card">
           <span class="trend-label">اتجاه العجز (آخر 3 عمليات)</span>
           <span
             class="trend-value"

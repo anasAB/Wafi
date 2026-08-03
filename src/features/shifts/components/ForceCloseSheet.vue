@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useShift }   from '@/features/shifts/composables/useShift'
 import { useZReport } from '@/features/shifts/composables/useZReport'
+import { useDevices } from '@/features/devices/composables/useDevices'
 import type { CashierShift, ZReportMetrics } from '@/features/shifts/shift.types'
 import type { Staff } from '@/features/staff/staff.types'
 
@@ -17,6 +18,10 @@ const DEFAULT_NOTE = 'إغلاق إجباري من قبل المالك (دون �
 
 const { forceCloseShift } = useShift()
 const { compute }         = useZReport()
+// BUG-N01 fix: the owner had no way to confirm which physical device this
+// force-close targets, same gap as the shift-history cards.
+const { devices, load: loadDevices } = useDevices()
+const deviceCode = computed(() => devices.value.find(d => d.id === props.shift.deviceId)?.code ?? '—')
 
 const loading  = ref(true)
 const closing  = ref(false)
@@ -32,6 +37,7 @@ const reason     = ref('')
 
 onMounted(async () => {
   try {
+    await loadDevices()
     // Counted value is irrelevant to `expected`; pass 0 just to read the expecteds.
     const m = await compute(props.shift, 0, 0)
     expectedUsd.value = m.expectedUsd
@@ -93,7 +99,9 @@ async function confirm() {
         <span class="fc-warn-icon">⚠</span>
         <div>
           <h2 class="fc-title">إغلاق إجباري للوردية</h2>
-          <p class="fc-sub">الكاشير لم يُغلق الوردية. أكّد المبلغ المتوقع لإغلاقها بشكل موثّق.</p>
+          <p class="fc-sub">
+            جهاز {{ deviceCode }} — الكاشير لم يُغلق الوردية. أكّد المبلغ المتوقع لإغلاقها بشكل موثّق.
+          </p>
         </div>
       </div>
 

@@ -1325,6 +1325,19 @@ function onWaSend(payload: { phone: string; text: string }) {
   background: linear-gradient(135deg, rgba(26,86,219,0.18), rgba(255,255,255,0.06));
 }
 
+/* BUG-L03 (/history) fix: the base rule above gave every paginator button
+   (including first/prev/next/last when disabled, e.g. a single-page result)
+   the same fully-colored, fully-opaque look as an active one, with only a
+   hover exclusion — nothing ever visually communicated the disabled state. */
+.sale-datatable :deep(.p-paginator .p-paginator-first:disabled),
+.sale-datatable :deep(.p-paginator .p-paginator-prev:disabled),
+.sale-datatable :deep(.p-paginator .p-paginator-next:disabled),
+.sale-datatable :deep(.p-paginator .p-paginator-last:disabled) {
+  opacity: 0.35;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
 .sale-datatable :deep(.p-paginator .p-paginator-page.p-paginator-page-selected) {
   background: linear-gradient(135deg, #1A56DB, #1248B3);
   border-color: transparent;
@@ -1568,10 +1581,13 @@ function onWaSend(payload: { phone: string; text: string }) {
 
 /* ─── Sale data atoms ─────────────────────────────────────── */
 .sale-number {
+  /* BUG-M01 (/history) fix: this was styled with link-blue but has no click
+     handler and nothing to navigate to — reads as plain text now instead of
+     a misleading affordance. */
   font-family: 'Tajawal', monospace;
   font-size: 0.9375rem;
   font-weight: 600;
-  color: #60A5FA;
+  color: #E8EDF5;
 }
 
 .sale-amount {

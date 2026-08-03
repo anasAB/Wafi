@@ -42,10 +42,23 @@ const drawerForCurrency = computed(() =>
 const isOverdraw = computed(() =>
   direction.value === 'out' && amountValid.value && amount.value > drawerForCurrency.value)
 
-const canConfirm = computed(() => amountValid.value && category.value !== null)
+// BUG-M03 (/history) fix: confirm() used to be a silent no-op when invalid
+// (e.g. a negative amount) — this surfaces exactly why, same as the
+// over-drawer-cash warning already does above.
+const confirmError = ref<string | null>(null)
 
 function confirm() {
-  if (!canConfirm.value || category.value === null) return
+  if (category.value === null) {
+    confirmError.value = 'اختر نوع الحركة أولاً'
+    return
+  }
+  if (!amountValid.value) {
+    confirmError.value = currency.value === 'SYP' && amount.value > 0 && !Number.isInteger(amount.value)
+      ? 'المبلغ بالليرة يجب أن يكون عدداً صحيحاً'
+      : 'أدخل مبلغاً أكبر من صفر'
+    return
+  }
+  confirmError.value = null
   emit('record', {
     direction: direction.value, category: category.value,
     currency: currency.value, amount: amount.value,
@@ -82,17 +95,20 @@ function confirm() {
       data-test="amount" v-model="amountStr" type="number" inputmode="decimal"
       class="amount-input"
       :step="currency === 'SYP' ? '1' : 'any'" min="0" placeholder="المبلغ"
+      @input="confirmError = null"
     />
 
     <p v-if="isOverdraw" data-test="overdraw-warning" class="warn">
       أكثر مما يظهر في الصندوق ({{ drawerForCurrency }}) — تأكد من العدّ
     </p>
 
+    <p v-if="confirmError" data-test="confirm-error" class="error">{{ confirmError }}</p>
+
     <textarea v-model="note" data-test="note" class="note-input" placeholder="ملاحظة (اختياري)"></textarea>
 
     <footer class="sheet-footer">
       <button data-test="cancel" class="btn-ghost" @click="emit('close')">إلغاء</button>
-      <button data-test="confirm" class="btn-primary" :disabled="!canConfirm" @click="confirm">تأكيد</button>
+      <button data-test="confirm" class="btn-primary" @click="confirm">تأكيد</button>
     </footer>
   </div>
 </template>
@@ -140,6 +156,7 @@ function confirm() {
 }
 .note-input { min-height: 56px; resize: vertical; font-size: 0.95rem; }
 .warn { color: #FBBF24; font-size: 0.9rem; margin: 0; }
+.error { color: #F87171; font-size: 0.9rem; margin: 0; }
 .sheet-footer { display: flex; gap: 10px; justify-content: flex-end; }
 .btn-ghost, .btn-primary { padding: 10px 20px; border-radius: 10px; cursor: pointer; border: none; }
 .btn-ghost { background: rgba(255, 255, 255, 0.06); color: inherit; }

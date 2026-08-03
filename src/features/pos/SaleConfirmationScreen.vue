@@ -4,7 +4,6 @@ import { useRouter, useRoute } from 'vue-router'
 import { usePrinter } from '@/composables/usePrinter'
 import AppToast from '@/components/ui/AppToast.vue'
 import type { CompletedSale } from '@/features/payment/payment.types'
-import { useDeviceStore } from '@/store/device.store'
 import type { ReceiptData } from '@/composables/usePrinter'
 import { useReceiptSettings } from '@/features/receipt/composables/useReceiptSettings'
 import { loadCompletedSale } from './loadCompletedSale'
@@ -14,7 +13,6 @@ import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 
 const router  = useRouter()
 const route   = useRoute()
-const device  = useDeviceStore()
 const printer = usePrinter()
 const toast   = ref<{ message: string; type: 'success' | 'error' } | null>(null)
 
@@ -57,7 +55,9 @@ async function buildReceipt(): Promise<ReceiptData | null> {
   return {
     saleId:                 s.saleId,
     displaySaleNumber:      s.displaySaleNumber,
-    shopName:               receiptSettings.value.shopName || device.shopId,
+    // BUG-H02 (/history) fix: never fall back to the raw shop UUID here either
+    // — same leak, same fix, see useSaleHistory.ts's buildReceiptData.
+    shopName:               receiptSettings.value.shopName || 'المتجر',
     createdAt:              s.createdAt,
     lines:                  s.lines,
     totalUsd:               s.totalUsd,

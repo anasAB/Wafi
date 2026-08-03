@@ -177,9 +177,12 @@ watch(
       :lang="settings.language"
       class="h-dvh bg-bg-void text-text-primary flex overflow-hidden"
     >
-      <div class="sidebar-wrap">
-        <AppSidebar v-if="showSidebar" />
-      </div>
+      <!-- BUG-L02 (/history) fix: the sidebar used to come first in DOM order,
+           forcing keyboard users through all 10+ nav links before ever reaching
+           page content. Tab order follows DOM order (flex `order` below only
+           affects visual position, not tab order), so the main content is now
+           first in markup; `order: -1` on the sidebar keeps it visually where
+           it always was. -->
       <div class="flex-1 min-w-0 flex flex-col overflow-hidden">
         <div class="flex-1 overflow-y-auto">
           <RouterView />
@@ -187,6 +190,9 @@ watch(
         <div class="bottomnav-wrap">
           <AppBottomNav v-if="showBottomNav" />
         </div>
+      </div>
+      <div class="sidebar-wrap">
+        <AppSidebar v-if="showSidebar" />
       </div>
 
       <!-- Idle lock: dims the shell and requires PIN re-entry; the shift stays
@@ -200,6 +206,7 @@ watch(
 /* Sidebar: hidden on mobile, flex on desktop */
 .sidebar-wrap {
   display: none;
+  order: -1;
 }
 @media (min-width: 1024px) {
   .sidebar-wrap {

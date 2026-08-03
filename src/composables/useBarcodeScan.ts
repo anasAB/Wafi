@@ -107,6 +107,14 @@ export function useBarcodeScan() {
   }
 
   function handleKeyDown(e: KeyboardEvent) {
+    // BUG-C01 fix: never start treating keystrokes as a scanner burst while a
+    // real text/number field is focused — a scan happens with nothing
+    // deliberately focused. Without this guard, fast human typing into any
+    // input (Edit Quantity, cost price, ...) got diverted into the barcode
+    // buffer. `inBurst` is still honored so a burst already recognized before
+    // an unrelated focus change can still commit correctly.
+    if (!inBurst && isEditable(document.activeElement)) return
+
     const now = e.timeStamp
     const cfg = config()
 

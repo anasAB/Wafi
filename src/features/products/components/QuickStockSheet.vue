@@ -17,6 +17,28 @@ const reason   = ref<AdjustmentReason>('stocktake')
 const notes    = ref('')
 const saving   = ref(false)
 
+// BUG-M01 (/products) fix: native <input type="number"> plus v-model.number
+// briefly renders blank while focused after a select-all + retype, because
+// Vue's DOM patch is skipped whenever the parsed numeric model happens not to
+// change on an intermediate keystroke, leaving the field out of sync with
+// what was actually typed. Driving the input as plain text against its own
+// display ref (kept in lockstep with `newValue`) means what's on screen is
+// always exactly what was typed, never a value Vue decided not to re-render.
+const qtyDisplay = ref(String(props.currentStock))
+
+function onQtyInput(e: Event) {
+  const raw = (e.target as HTMLInputElement).value
+  qtyDisplay.value = raw
+  const digits = raw.replace(/[^0-9]/g, '')
+  if (digits !== '') newValue.value = Number(digits)
+}
+
+function onQtyBlur() {
+  // Re-sync display to the canonical numeric value — covers leaving the
+  // field empty/non-numeric, and just tidies up any leading zeros.
+  qtyDisplay.value = String(newValue.value)
+}
+
 const reasonOptions: { value: AdjustmentReason; label: string }[] = [
   { value: 'stocktake', label: 'جرد' },
   { value: 'damaged',   label: 'تالف' },
@@ -33,6 +55,7 @@ const canConfirm = computed(() =>
 
 function step(n: number) {
   newValue.value = Math.max(0, (Number(newValue.value) || 0) + n)
+  qtyDisplay.value = String(newValue.value)
 }
 
 function confirm() {
@@ -66,12 +89,14 @@ function confirm() {
         <div class="stepper">
           <button type="button" class="step-btn" aria-label="إنقاص" @click="step(-1)">−</button>
           <input
-            v-model.number="newValue"
-            type="number"
-            min="0"
+            :value="qtyDisplay"
+            type="text"
             inputmode="numeric"
+            pattern="[0-9]*"
             class="qty-input"
             aria-label="الكمية الجديدة"
+            @input="onQtyInput"
+            @blur="onQtyBlur"
           />
           <button type="button" class="step-btn" aria-label="زيادة" @click="step(1)">+</button>
         </div>

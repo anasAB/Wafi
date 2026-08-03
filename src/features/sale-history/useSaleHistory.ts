@@ -42,7 +42,11 @@ export async function buildReceiptData(
   return {
     saleId:            sale.id,
     displaySaleNumber: sale.display_sale_number,
-    shopName:          settings?.shop_name || device.shopId,
+    // BUG-H02 (/history) fix: this used to fall back to device.shopId, a raw
+    // internal UUID, which then became the literal first line of the
+    // customer-facing WhatsApp/print receipt whenever receipt_settings had no
+    // configured shop name. Never leak an internal id into customer-facing text.
+    shopName:          settings?.shop_name || 'المتجر',
     createdAt:         sale.created_at,
     lines: lines.map((l: any) => ({
       nameAr:       l.name_ar ?? '—',

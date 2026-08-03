@@ -7,6 +7,7 @@ import AppDatePicker from '@/components/ui/AppDatePicker.vue'
 import ZReportScreen from '@/features/shifts/components/ZReportScreen.vue'
 import { useShift, type ShiftHistoryFilters } from '@/features/shifts/composables/useShift'
 import { useStaff } from '@/features/staff/composables/useStaff'
+import { useDevices } from '@/features/devices/composables/useDevices'
 import { useCan } from '@/composables/useCan'
 import { varianceLevel, isLongOpen } from '@/features/shifts/shift.types'
 import type { CashierShift } from '@/features/shifts/shift.types'
@@ -16,6 +17,9 @@ const PAGE_SIZE = 25
 const router = useRouter()
 const { loadShiftHistory } = useShift()
 const { staff, loadStaff } = useStaff()
+// BUG-N01: zombie/open shift cards need a device identifier so an owner
+// managing multiple registers can tell which physical device each one is.
+const { devices, load: loadDevices } = useDevices()
 // WAFI-058: cash figures on the cards are owner-only.
 const { can } = useCan()
 const canViewMoney = can('can_view_reports')
@@ -125,7 +129,7 @@ function longOpen(s: CashierShift): boolean {
 }
 
 onMounted(async () => {
-  await loadStaff()
+  await Promise.all([loadStaff(), loadDevices()])
   await reload()
 })
 
@@ -137,6 +141,16 @@ const staffMap = computed(() => {
 
 function staffName(id: string): string {
   return staffMap.value[id] ?? '—'
+}
+
+const deviceCodeMap = computed(() => {
+  const m: Record<string, string> = {}
+  for (const d of devices.value) m[d.id] = d.code
+  return m
+})
+
+function deviceCode(id: string): string {
+  return deviceCodeMap.value[id] ?? '—'
 }
 
 // Arabic month/day names but Latin digits, to match the Latin amounts/durations
@@ -288,6 +302,10 @@ const closedShifts = computed(() => shifts.value.filter(s => s.status !== 'open'
                 <div class="open-status">
                   <span class="live-dot"></span>
                   <span class="open-label">مفتوحة</span>
+                  <!-- BUG-N01 fix: multiple open/zombie shifts are otherwise
+                       indistinguishable — the device code is the one thing
+                       that lets an owner tell them apart. -->
+                  <span class="badge-device">جهاز {{ deviceCode(s.deviceId) }}</span>
                 </div>
                 <span v-if="longOpen(s)" class="badge-zombie">مفتوحة منذ فترة طويلة</span>
                 <span v-else class="shift-date">{{ fmtDate(s.openedAt) }}</span>
@@ -972,6 +990,12 @@ const closedShifts = computed(() => shifts.value.filter(s => s.status !== 'open'
   font-size: 0.875rem;
   font-weight: 600;
   color: #22C55E;
+}
+
+.badge-device {
+  display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 20px;
+  font-size: 11px; font-weight: 700;
+  background: rgba(26, 86, 219, 0.12); border: 1px solid rgba(26, 86, 219, 0.30); color: #93C5FD;
 }
 
 /* ─── Date labels ─────────────────────────────────────────── */

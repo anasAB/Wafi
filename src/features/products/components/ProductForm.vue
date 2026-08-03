@@ -101,6 +101,9 @@ function validate(): boolean {
   if (costPrice.value === '') e['cost-price']    = 'هذا الحقل مطلوب'
   if (salePrice.value === '') e['sale-price']    = 'هذا الحقل مطلوب'
   if (stock.value === '')     e['current-stock'] = 'هذا الحقل مطلوب'
+  // BUG-L01 (/products): threshold previously accepted negative values with no
+  // validation at all, unlike every other numeric field on this form.
+  if (Number(threshold.value) < 0) e['threshold'] = 'يجب ألا يكون العدد أقل من صفر'
   errors.value = e
   return Object.keys(e).length === 0
 }
@@ -350,9 +353,12 @@ onUnmounted(() => {
           <label class="field-label">حد التنبيه للمخزون</label>
           <input v-model="threshold" data-testid="threshold" type="number" min="0" step="1"
             class="form-input"
-            @focus="($event.target as HTMLInputElement).style.borderColor = 'rgba(26,86,219,0.8)'"
-            @blur="($event.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.18)'" />
-          <p class="field-hint">إنذار عند الوصول لهذه الكمية (الافتراضي: 5)</p>
+            :class="{ 'input-error': errors['threshold'] }"
+            @focus="($event.target as HTMLInputElement).style.borderColor = errors['threshold'] ? '#EF4444' : 'rgba(26,86,219,0.8)'"
+            @blur="($event.target as HTMLInputElement).style.borderColor = errors['threshold'] ? '#EF4444' : 'rgba(255,255,255,0.18)'"
+            @input="delete errors['threshold']" />
+          <p v-if="errors['threshold']" class="field-error">{{ errors['threshold'] }}</p>
+          <p v-else class="field-hint">إنذار عند الوصول لهذه الكمية (الافتراضي: 5)</p>
         </div>
       </div>
 

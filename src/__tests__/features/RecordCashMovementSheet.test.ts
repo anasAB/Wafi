@@ -54,4 +54,23 @@ describe('RecordCashMovementSheet', () => {
     await w.get('[data-test="confirm"]').trigger('click')
     expect(w.emitted('record')).toBeFalsy()
   })
+
+  // BUG-M03: confirm() used to silently no-op on invalid input with zero
+  // feedback — this must now surface a specific reason instead.
+  it('shows an inline error instead of silently doing nothing on a negative amount', async () => {
+    const w = mountSheet()
+    await w.get('[data-test="cat-drop_to_safe"]').trigger('click')
+    await w.get('[data-test="amount"]').setValue('-50')
+    await w.get('[data-test="confirm"]').trigger('click')
+    expect(w.emitted('record')).toBeFalsy()
+    expect(w.get('[data-test="confirm-error"]').text()).toContain('أدخل مبلغاً أكبر من صفر')
+  })
+
+  it('shows an inline error when confirming with no category selected', async () => {
+    const w = mountSheet()
+    await w.get('[data-test="amount"]').setValue('50')
+    await w.get('[data-test="confirm"]').trigger('click')
+    expect(w.emitted('record')).toBeFalsy()
+    expect(w.get('[data-test="confirm-error"]').text()).toContain('اختر نوع الحركة أولاً')
+  })
 })

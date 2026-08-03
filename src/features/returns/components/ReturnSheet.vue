@@ -57,7 +57,15 @@ function dismissToast() {
 }
 
 async function handleConfirm() {
-  if (!canConfirm.value) return
+  if (!canConfirm.value) {
+    // BUG-M03 (/history) fix: this used to be a pure no-op with zero feedback.
+    toastType.value = 'error'
+    toastAutoDismiss.value = true
+    toast.value = !lines.value.some(l => l.selected)
+      ? 'اختر صنفاً واحداً على الأقل لإرجاعه'
+      : 'اختر طريقة استرداد المبلغ'
+    return
+  }
   loading.value = true
   try {
     const result = await confirm()
