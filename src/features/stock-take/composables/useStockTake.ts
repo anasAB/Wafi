@@ -2,6 +2,9 @@ import { ref, computed } from 'vue'
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
+import { useSessionStore } from '@/store/session.store'
+import { executeBusinessOperation } from '@/composables/executeBusinessOperation'
+import { StockTakeEventType, type StockTakenPayload } from '@/services/events/domainEvent.types'
 import type { StockTakeSession, StockTakeLine, StockTakeSessionRow, StockTakeLineRow } from '@/features/stock-take/stock-take.types'
 import { useProducts } from '@/features/products/composables/useProducts'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
@@ -180,15 +183,38 @@ export function useStockTake() {
       await adjustStockBy(line.productId, delta, 'stocktake', `جرد #${sessionId}`)
     }
 
+    const device = useDeviceStore()
+    const staffId = useSessionStore().activeStaff?.id ?? ''
     const now = new Date().toISOString()
-    await db.execute(
-      `UPDATE stock_take_sessions SET status = ?, completed_at = ?, sync_status = 'pending' WHERE id = ?`,
-      ['completed', now, sessionId]
-    )
-    currentSession.value.status = 'completed'
-    currentSession.value.completedAt = now
+    const varianceCount = reviewLines.value.length
+    const shrinkageUsd = totalShrinkageValueUsd.value
 
-    await logStockTakeCompleted(sessionId, reviewLines.value.length, totalShrinkageValueUsd.value)
+    await executeBusinessOperation(
+      async () => {
+        await db.execute(
+          `UPDATE stock_take_sessions SET status = ?, completed_at = ?, sync_status = 'pending' WHERE id = ?`,
+          ['completed', now, sessionId],
+        )
+        currentSession.value!.status = 'completed'
+        currentSession.value!.completedAt = now
+        return { sessionId, varianceCount, shrinkageUsd }
+      },
+      {
+        audit: (r) => logStockTakeCompleted(r.sessionId, r.varianceCount, r.shrinkageUsd),
+        toEvent: (r) => ({
+          type: StockTakeEventType.Taken,
+          entityId: r.sessionId,
+          payload: {
+            sessionId: r.sessionId, productCount: lines.value.length,
+            unexplainedVarianceCount: r.varianceCount,
+          } satisfies StockTakenPayload,
+          payloadVersion: 1,
+          staffId,
+          shopId: device.shopId,
+          occurredAt: now,
+        }),
+      },
+    )
     return 'committed'
   }
 

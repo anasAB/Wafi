@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
 vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
+vi.mock('@/services/events/publishEvent')
 
 // WAFI-121: the commit path goes through adjustStockBy (delta), never absolute
 // writes — spy on it so tests assert the exact deltas applied.
@@ -12,12 +13,14 @@ vi.mock('@/features/products/composables/useProducts', () => ({
 }))
 
 import { db } from '@/data/powersync/db'
+import { publishEvent } from '@/services/events/publishEvent'
 import { useStockTake, StockTakeOverlapError } from '@/features/stock-take/composables/useStockTake'
 
 describe('useStockTake — startSession', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    vi.mocked(publishEvent).mockResolvedValue(undefined)
   })
 
   it('creates a session row and one line per active product with frozen expected_stock', async () => {
@@ -92,6 +95,30 @@ describe('useStockTake — startSession', () => {
     expect(sessionUpdate![1]).toContain('completed')
   })
 
+  it('confirmSession publishes stock.taken with productCount and unexplainedVarianceCount', async () => {
+    vi.mocked(db.getOptional).mockResolvedValue({
+      id: 's1', shop_id: 'shop1', started_at: '2026-07-14T00:00:00Z',
+      completed_at: null, status: 'in_progress', created_by: 'dev1', scope: null,
+    } as any)
+    vi.mocked(db.getAll).mockResolvedValueOnce([
+      { id: 'l1', session_id: 's1', product_id: 'p1', name_ar: 'منتج ١', expected_stock: 10, counted_stock: 9, variance: -1, variance_value_usd: null },
+      { id: 'l2', session_id: 's1', product_id: 'p2', name_ar: 'منتج ٢', expected_stock: 3,  counted_stock: 3, variance: 0,  variance_value_usd: null },
+    ] as any)
+
+    const { loadSession, confirmSession } = useStockTake()
+    await loadSession('s1')
+    await confirmSession()
+
+    expect(publishEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'stock.taken',
+      payload: expect.objectContaining({
+        sessionId: 's1',
+        productCount: 2,
+        unexplainedVarianceCount: 1,
+      }),
+    }))
+  })
+
   it('recordCount computes variance_value_usd from the product cost_price_usd, or null if missing', async () => {
     vi.mocked(db.getOptional).mockImplementation(async (sql: string) => {
       if (/cost_price_usd/.test(sql)) return { cost_price_usd: 5 } as any
@@ -125,6 +152,7 @@ describe('useStockTake — WAFI-121 delta commit', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    vi.mocked(publishEvent).mockResolvedValue(undefined)
   })
 
   it('commits DELTAS so a sale rung mid-count survives: snapshot 10, sold 2 (live 8), counted 9 → delta −1', async () => {
