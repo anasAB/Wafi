@@ -237,6 +237,33 @@ describe('useReturnSheet — WAFI-140 event bus (sale.returned / customer.debt_c
     expect(types).toContain('sale.returned')
     expect(types).not.toContain('customer.debt_changed')
   })
+
+  it('publishes customer.debt_changed for a cash (non-credit) sale refunded via store credit', async () => {
+    // WAFI-140 final-review fix: a store-credit refund on a cash sale still
+    // changes what the shop owes the customer (useCustomerBalance's
+    // BALANCE_USD_SQL subtracts this case too), so it must raise the event
+    // even though the original sale was not a credit sale.
+    mockSale({ customerId: 'cust-1', isCredit: false })
+    mockConfirmTx()
+
+    const sheet = useReturnSheet('sale-1')
+    await sheet.load()
+    sheet.lines.value[0].selected = true
+    sheet.refundMethod.value = 'store_credit'
+    await sheet.confirm()
+
+    const eventInserts = vi.mocked(db.execute).mock.calls.filter(
+      ([sql]) => (sql as string).includes('insert into events'),
+    )
+    const types = eventInserts.map(([, params]) => (params as any[])[1])
+    expect(types).toContain('sale.returned')
+    expect(types).toContain('customer.debt_changed')
+
+    const debtCall = eventInserts.find(([, params]) => (params as any[])[1] === 'customer.debt_changed')
+    const debtPayload = JSON.parse((debtCall![1] as any[])[3])
+    expect(debtPayload.deltaUsd).toBeCloseTo(-10, 2)
+    expect(debtPayload.newBalanceUsd).toBe(12)
+  })
 })
 
 describe('useReturnSheet — WAFI-010 installment plan integration', () => {

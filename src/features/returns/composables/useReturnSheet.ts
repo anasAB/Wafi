@@ -14,6 +14,7 @@ import {
 } from '@/services/events/domainEvent.types'
 import { fetchOutstandingBalanceUsd } from '@/features/customers/composables/useCustomerBalance'
 import { publishEvent } from '@/services/events/publishEvent'
+import { logger } from '@/services/events/logger'
 
 export function useReturnSheet(saleId: string) {
   const { logReturnProcessed, logInstallmentPlanCancelled } = useAuditLog()
@@ -341,25 +342,41 @@ export function useReturnSheet(saleId: string) {
 
     // executeBusinessOperation's toEvent only supports one event per write
     // (Task 2's documented limitation) -- customer.debt_changed can't ride the
-    // same hook as sale.returned, so it's published directly here, and only
-    // when the original sale was a credit sale (a cash-sale return doesn't
-    // change what the customer owes).
-    if (isCreditSale.value && customerId.value) {
-      const newBalanceUsd = await fetchOutstandingBalanceUsd(customerId.value, shopId)
-      void publishEvent<DebtChangedPayload>({
-        type: CustomerEventType.DebtChanged,
-        entityId: customerId.value,
-        payload: {
-          customerId: customerId.value,
-          deltaUsd: -refundAmountUsd,
-          newBalanceUsd,
-          reason: 'return',
-        },
-        payloadVersion: 1,
-        staffId: useSessionStore().activeStaff?.id ?? '',
-        shopId,
-        occurredAt: now,
-      }).catch(() => {})
+    // same hook as sale.returned, so it's published directly here. Fires
+    // whenever the customer's balance actually changes: either the original
+    // sale was a credit sale, OR (WAFI-140 final-review fix) the refund was
+    // paid out as store credit on a CASH sale -- useCustomerBalance's
+    // BALANCE_USD_SQL deliberately subtracts that case too (it makes the shop
+    // owe the customer, i.e. negative balance / "customer credit"), so it must
+    // also raise this event.
+    //
+    // The whole block (balance fetch + publish) is wrapped so nothing here can
+    // ever throw out of confirm() -- the return/refund/restock above has
+    // already committed by this point, and executeBusinessOperation's
+    // invariant is that publish/event-side failures must never become write
+    // failures. A throw here (e.g. the balance fetch failing) would otherwise
+    // surface as a confirm() rejection on an already-committed return, risking
+    // a duplicate refund if the cashier re-taps confirm.
+    if (customerId.value && (isCreditSale.value || refundMethod.value === 'store_credit')) {
+      try {
+        const newBalanceUsd = await fetchOutstandingBalanceUsd(customerId.value, shopId)
+        await publishEvent<DebtChangedPayload>({
+          type: CustomerEventType.DebtChanged,
+          entityId: customerId.value,
+          payload: {
+            customerId: customerId.value,
+            deltaUsd: -refundAmountUsd,
+            newBalanceUsd,
+            reason: 'return',
+          },
+          payloadVersion: 1,
+          staffId: useSessionStore().activeStaff?.id ?? '',
+          shopId,
+          occurredAt: now,
+        })
+      } catch (err) {
+        logger.error('[useReturnSheet] failed to publish customer.debt_changed after a committed return', err)
+      }
     }
 
     return { warning }

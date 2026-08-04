@@ -18,6 +18,7 @@ import IdleLockOverlay   from '@/features/shifts/components/IdleLockOverlay.vue'
 import { useIdleLock }   from '@/composables/useIdleLock'
 import { db }            from '@/data/powersync/db'
 import { useSaleStore }  from '@/store/sale.store'
+import { startRetryQueueSweeper } from '@/services/events/eventPublishRetryQueue'
 
 const { offlineReady, dismissOfflineReady, needRefresh, applyUpdate, dismissNeedRefresh } = usePwaLifecycle()
 
@@ -106,6 +107,15 @@ onMounted(async () => {
   if (shiftStore.activeShiftId) {
     await loadActiveShift()  // validates and clears store if shift was closed
   }
+
+  // WAFI-140 Sprint 2 final review fix: start the event-publish retry queue
+  // sweeper once, at app startup, only after device/shop context is known
+  // (staffExist true means refreshShopId() above has already resolved a real
+  // shop_id) -- the same gating loadActiveShift() above relies on. Without
+  // this call the sweeper (and retryPendingEventPublishes) never ran in
+  // production; only its own unit tests exercised it.
+  startRetryQueueSweeper()
+
   appReady.value = true
 })
 onBeforeUnmount(() => mq.removeEventListener('change', onSystemThemeChange))
