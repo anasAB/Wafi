@@ -2,9 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
 vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
+vi.mock('@/services/events/publishEvent')
 
 import { useCashMovements } from '../useCashMovements'
 import { db } from '@/data/powersync/db'
+import { publishEvent } from '@/services/events/publishEvent'
 import type { CashierShift } from '../../shift.types'
 
 const openShift: CashierShift = {
@@ -24,6 +26,7 @@ describe('useCashMovements', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     vi.mocked(db.execute).mockResolvedValue({ rows: { _array: [] } } as any)
+    vi.mocked(publishEvent).mockResolvedValue(undefined)
   })
 
   it('record inserts a movement row with the right direction/currency/amount', async () => {
@@ -104,5 +107,23 @@ describe('useCashMovements', () => {
     expect(list[0].voidsMovementId).toBeNull()
     const call = vi.mocked(db.getAll).mock.calls[0]
     expect(/shift_id\s*=\s*\?/.test(sqlOf(call))).toBe(true)
+  })
+
+  it('record() publishes cash.movement_recorded with the movement id as entityId', async () => {
+    const { record } = useCashMovements()
+    await record({
+      shift: openShift, direction: 'in', category: 'float_topup',
+      currency: 'USD', amount: 20,
+    })
+
+    expect(publishEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'cash.movement_recorded',
+      payload: expect.objectContaining({
+        direction: 'in',
+        category: 'float_topup',
+        currency: 'USD',
+        amountUsd: 20,
+      }),
+    }))
   })
 })

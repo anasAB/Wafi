@@ -3,6 +3,7 @@ import { useDeviceStore }  from '@/store/device.store'
 import { useSessionStore } from '@/store/session.store'
 import { useAuditLog }     from '@/features/audit/composables/useAuditLog'
 import { executeBusinessOperation } from '@/composables/executeBusinessOperation'
+import { CashEventType, type CashMovementRecordedPayload } from '@/services/events/domainEvent.types'
 import { useZReport }      from './useZReport'
 import type { CashierShift } from '../shift.types'
 import type {
@@ -73,7 +74,22 @@ export function useCashMovements() {
         currency: input.currency, amount: input.amount, note: input.note ?? null,
         voidsMovementId: null,
       }),
-      { audit: (id) => logCashMovementRecorded(id, input.direction, input.category, input.currency, input.amount) },
+      {
+        audit: (id) => logCashMovementRecorded(id, input.direction, input.category, input.currency, input.amount),
+        toEvent: (id) => ({
+          type: CashEventType.MovementRecorded,
+          entityId: id,
+          payload: {
+            movementId: id, shiftId: input.shift.id,
+            direction: input.direction, category: input.category, currency: input.currency,
+            amountUsd: input.amount,
+          } satisfies CashMovementRecordedPayload,
+          payloadVersion: 1,
+          staffId: session.activeStaff?.id ?? '',
+          shopId: device.shopId,
+          occurredAt: new Date().toISOString(),
+        }),
+      },
     )
   }
 
