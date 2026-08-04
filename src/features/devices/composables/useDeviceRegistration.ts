@@ -1,6 +1,9 @@
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '@/data/powersync/db'
 import { supabase } from '@/data/supabase/client'
+import { publishEvent } from '@/services/events/publishEvent'
+import { useSessionStore } from '@/store/session.store'
+import { DeviceEventType, type DeviceRegisteredPayload } from '@/services/events/domainEvent.types'
 
 /**
  * Claims a device row for the current shop. Tries the server-allocated
@@ -29,10 +32,28 @@ export function useDeviceRegistration() {
   async function registerDevice(shopId: string): Promise<{ id: string; code: string; isTemporary: boolean }> {
     const id = uuidv4()
 
+    function publishRegistered(result: { id: string; code: string; isTemporary: boolean }) {
+      // Bespoke publish (WAFI-140 Sprint 2 design spec §5): registerDevice is an RPC call +
+      // local insert, not a local-write-then-audit pair -- it intentionally bypasses
+      // executeBusinessOperation, which has no RPC-aware variant today.
+      void publishEvent<DeviceRegisteredPayload>({
+        type: DeviceEventType.Registered,
+        entityId: result.id,
+        payload: { deviceId: result.id, deviceCode: result.code, isTemporary: result.isTemporary },
+        payloadVersion: 1,
+        // First-run bootstrap has no staff row yet -- '' is a documented, pre-existing-shape
+        // gap (mirrors paySettlement's shopId: '' from Sprint 1), not silently swallowed.
+        staffId: useSessionStore().activeStaff?.id ?? '',
+        shopId,
+        occurredAt: new Date().toISOString(),
+      }).catch(() => {})
+      return result
+    }
+
     try {
       const { data: code, error } = await supabase.rpc('register_device', { p_device_id: id })
       if (error) throw error
-      if (code) return { id, code, isTemporary: false }
+      if (code) return publishRegistered({ id, code, isTemporary: false })
       // code is null: auth_shop_id() resolved to NULL server-side (not
       // actually offline — a real, if unexpected, state) — fall through to
       // the temp-code path the same way an unreachable RPC would.
@@ -46,7 +67,7 @@ export function useDeviceRegistration() {
        VALUES (?, ?, ?, ?, ?, 'pending')`,
       [id, shopId, tempCode, 1, new Date().toISOString()]
     )
-    return { id, code: tempCode, isTemporary: true }
+    return publishRegistered({ id, code: tempCode, isTemporary: true })
   }
 
   return { registerDevice }

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
 vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
+vi.mock('@/services/events/publishEvent')
 
 const rpcMock = vi.fn()
 vi.mock('@/data/supabase/client', () => ({
@@ -11,12 +12,14 @@ vi.mock('@/data/supabase/client', () => ({
 }))
 
 import { db } from '@/data/powersync/db'
+import { publishEvent } from '@/services/events/publishEvent'
 import { useDeviceRegistration } from '@/features/devices/composables/useDeviceRegistration'
 
 describe('useDeviceRegistration', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    vi.mocked(publishEvent).mockResolvedValue(undefined)
   })
 
   it('registers a permanent code via the register_device RPC without a local INSERT', async () => {
@@ -75,5 +78,17 @@ describe('useDeviceRegistration', () => {
 
     expect(rpcMock).toHaveBeenCalledWith('register_device', { p_device_id: result.id })
     expect(result.id).toBeTruthy()
+  })
+
+  it('publishes device.registered with staffId from the active session if one exists', async () => {
+    rpcMock.mockResolvedValueOnce({ data: 'B', error: null })
+
+    const { registerDevice } = useDeviceRegistration()
+    const result = await registerDevice('shop1')
+
+    expect(publishEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'device.registered',
+      payload: expect.objectContaining({ isTemporary: expect.any(Boolean) }),
+    }))
   })
 })
