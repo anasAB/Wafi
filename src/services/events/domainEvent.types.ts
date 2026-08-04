@@ -39,8 +39,36 @@ export const StaffEventType = {
 } as const
 export type StaffEventType = typeof StaffEventType[keyof typeof StaffEventType]
 
+export const ReturnsEventType = {
+  Returned: 'sale.returned',
+} as const
+export type ReturnsEventType = typeof ReturnsEventType[keyof typeof ReturnsEventType]
+
+export const CashEventType = {
+  MovementRecorded: 'cash.movement_recorded',
+} as const
+export type CashEventType = typeof CashEventType[keyof typeof CashEventType]
+
+export const StockTakeEventType = {
+  Taken: 'stock.taken',
+} as const
+export type StockTakeEventType = typeof StockTakeEventType[keyof typeof StockTakeEventType]
+
+export const ProductEventType = {
+  PriceChanged: 'product.price_changed',
+  CostUpdated:  'product.cost_updated',
+  Created:      'product.created',
+} as const
+export type ProductEventType = typeof ProductEventType[keyof typeof ProductEventType]
+
+export const DeviceEventType = {
+  Registered: 'device.registered',
+} as const
+export type DeviceEventType = typeof DeviceEventType[keyof typeof DeviceEventType]
+
 export type DomainEventType =
   | ExpenseEventType | InventoryEventType | CustomerEventType | SalesEventType | StaffEventType
+  | ReturnsEventType | CashEventType | StockTakeEventType | ProductEventType | DeviceEventType
 
 export interface DomainEvent<TPayload = unknown> {
   type: DomainEventType
@@ -130,4 +158,60 @@ export interface ShiftClosedPayload {
   expectedCash: number
   countedCash: number
   variance: number
+}
+
+// WAFI-140 Sprint 2 payloads (design spec §6).
+
+export interface ReturnedPayload {
+  returnId: string
+  saleId: string
+  refundAmountUsd: number
+  restockedItemCount: number
+}
+
+export interface DebtChangedPayload {
+  customerId: string
+  /** Negative for a debt decrease (the only case this sprint wires -- a return). */
+  deltaUsd: number
+  newBalanceUsd: number
+  reason: 'return'
+}
+
+export interface CashMovementRecordedPayload {
+  movementId: string
+  shiftId: string
+  direction: import('@/features/shifts/cashMovement.types').CashMovementDirection
+  category: import('@/features/shifts/cashMovement.types').CashMovementCategory
+  currency: import('@/features/shifts/cashMovement.types').CashCurrency
+  amountUsd: number
+}
+
+export interface StockTakenPayload {
+  sessionId: string
+  productCount: number
+  unexplainedVarianceCount: number
+}
+
+export interface ProductPriceChangedPayload {
+  productId: string
+  oldPriceUsd: number
+  newPriceUsd: number
+}
+
+export interface ProductCostUpdatedPayload {
+  productId: string
+  oldCostUsd: number
+  newCostUsd: number
+}
+
+export interface ProductCreatedPayload {
+  productId: string
+  name: string
+  categoryId: string | null
+}
+
+export interface DeviceRegisteredPayload {
+  deviceId: string
+  deviceCode: string
+  isTemporary: boolean
 }
