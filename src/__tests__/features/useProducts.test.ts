@@ -2,9 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
 vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
+vi.mock('@/services/events/publishEvent')
 
 import { useProducts } from '@/features/products/composables/useProducts'
 import { db } from '@/data/powersync/db'
+import { publishEvent } from '@/services/events/publishEvent'
 
 const mockRow = (overrides = {}) => ({
   id: 'p1', shop_id: 's1', name_ar: 'منتج', name_en: null,
@@ -20,6 +22,7 @@ describe('useProducts', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    vi.mocked(publishEvent).mockResolvedValue(undefined)
   })
 
   it('load populates products from db', async () => {
@@ -169,6 +172,7 @@ describe('useProducts.save — cost_updated_at stamping (WAFI-013)', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    vi.mocked(publishEvent).mockResolvedValue(undefined)
   })
 
   it('creating a product with a real cost stamps cost_updated_at', async () => {
@@ -269,5 +273,64 @@ describe('useProducts.save — cost_updated_at stamping (WAFI-013)', () => {
     )
     expect(updateCall).toBeDefined()
     expect((updateCall![0] as string)).toContain('cost_updated_at')
+  })
+})
+
+describe('useProducts.save — domain events (WAFI-140 Sprint 2)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    // clearAllMocks does not drain a mockResolvedValueOnce queue left over from a
+    // prior test/describe block — reset explicitly so each test's queued value is
+    // the only one db.getOptional will return.
+    vi.mocked(db.getOptional).mockReset()
+    vi.mocked(publishEvent).mockResolvedValue(undefined)
+    vi.mocked(db.getAll).mockResolvedValue([])
+  })
+
+  it('save() update: emits product.cost_updated when cost changed (wins over a simultaneous price change)', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce({ price_usd: 10, cost_price_usd: 5 })
+    const { save } = useProducts()
+    await save({
+      id: 'p1', shopId: 'shop1', nameAr: 'قلم', salePriceUsd: 12, costPriceUsd: 7,
+      currentStock: 5, lowStockThreshold: 1, isActive: true,
+    } as any)
+
+    expect(publishEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'product.cost_updated' }))
+    expect(publishEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'product.price_changed' }))
+  })
+
+  it('save() update: emits product.price_changed when only price changed', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce({ price_usd: 10, cost_price_usd: 5 })
+    const { save } = useProducts()
+    await save({
+      id: 'p1', shopId: 'shop1', nameAr: 'قلم', salePriceUsd: 12, costPriceUsd: 5,
+      currentStock: 5, lowStockThreshold: 1, isActive: true,
+    } as any)
+
+    expect(publishEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'product.price_changed' }))
+    expect(publishEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'product.cost_updated' }))
+  })
+
+  it('save() update: emits no event when neither price nor cost changed', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce({ price_usd: 10, cost_price_usd: 5 })
+    const { save } = useProducts()
+    await save({
+      id: 'p1', shopId: 'shop1', nameAr: 'قلم محدث', salePriceUsd: 10, costPriceUsd: 5,
+      currentStock: 5, lowStockThreshold: 1, isActive: true,
+    } as any)
+
+    expect(publishEvent).not.toHaveBeenCalled()
+  })
+
+  it('save() insert: emits product.created', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce(null)
+    const { save } = useProducts()
+    await save({
+      shopId: 'shop1', nameAr: 'منتج جديد', salePriceUsd: 10, costPriceUsd: 5,
+      currentStock: 5, lowStockThreshold: 1, isActive: true,
+    } as any)
+
+    expect(publishEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'product.created' }))
   })
 })

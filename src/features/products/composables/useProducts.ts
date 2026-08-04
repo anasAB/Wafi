@@ -8,6 +8,11 @@ import type { AdjustmentReason } from '@/features/products/product.types'
 import { rowToProduct, type ProductRow } from '@/features/products/product.utils'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 import { adjustInventory } from '@/services/inventory.service'
+import { executeBusinessOperation } from '@/composables/executeBusinessOperation'
+import {
+  ProductEventType,
+  type ProductPriceChangedPayload, type ProductCostUpdatedPayload, type ProductCreatedPayload,
+} from '@/services/events/domainEvent.types'
 
 export function useProducts() {
   const products = ref<Product[]>([])
@@ -71,6 +76,7 @@ export function useProducts() {
         `SELECT price_usd, cost_price_usd FROM products WHERE id = ?`, [data.id]
       )
       const costChanged = old ? old.cost_price_usd !== data.costPriceUsd : false
+      const priceChanged = old ? old.price_usd !== data.salePriceUsd : false
       const sql = costChanged
         ? `UPDATE products SET name_ar=?, name_en=?, barcode=?, category_id=?, subcategory_id=?,
            price_usd=?, cost_price_usd=?, current_stock=?, low_stock_threshold=?,
@@ -87,13 +93,38 @@ export function useProducts() {
       const params = costChanged
         ? [...baseParams, now, now, data.id]
         : [...baseParams, now, data.id]
-      await db.execute(sql, params)
-      await load()
-      if (old && old.price_usd !== data.salePriceUsd) {
-        await logProductPriceChanged(data.id, data.nameAr, old.price_usd, data.salePriceUsd)
-      } else {
-        await logProductUpdated(data.id, data.nameAr)
-      }
+
+      const staffId = useSessionStore().activeStaff?.id ?? ''
+
+      await executeBusinessOperation(
+        async () => {
+          await db.execute(sql, params)
+          await load()
+          return { id: data.id!, name: data.nameAr }
+        },
+        {
+          audit: async (r) => {
+            if (priceChanged) await logProductPriceChanged(r.id, r.name, old!.price_usd, data.salePriceUsd)
+            else await logProductUpdated(r.id, r.name)
+          },
+          // WAFI-140 Sprint 2 design spec §5a: at most one event per write. Cost wins
+          // over price when both changed -- a framework limitation, not a claim that
+          // cost matters more; see executeBusinessOperation.ts's toEvent JSDoc.
+          toEvent: (r) => {
+            if (costChanged) return {
+              type: ProductEventType.CostUpdated, entityId: r.id,
+              payload: { productId: r.id, oldCostUsd: old!.cost_price_usd, newCostUsd: data.costPriceUsd } satisfies ProductCostUpdatedPayload,
+              payloadVersion: 1, staffId, shopId: data.shopId, occurredAt: now,
+            }
+            if (priceChanged) return {
+              type: ProductEventType.PriceChanged, entityId: r.id,
+              payload: { productId: r.id, oldPriceUsd: old!.price_usd, newPriceUsd: data.salePriceUsd } satisfies ProductPriceChangedPayload,
+              payloadVersion: 1, staffId, shopId: data.shopId, occurredAt: now,
+            }
+            return undefined
+          },
+        },
+      )
       return data.id
     } else {
       const id = uuidv4()
@@ -110,8 +141,26 @@ export function useProducts() {
          currentStock, data.lowStockThreshold, data.photoUrl ?? null,
          data.isActive ? 1 : 0, 0, 'pending', now, now, costUpdatedAt, data.createdVia ?? null]
       )
-      await load()
-      await logProductCreated(id, data.nameAr)
+
+      const staffId = useSessionStore().activeStaff?.id ?? ''
+      await executeBusinessOperation(
+        async () => {
+          await load()
+          return { id, name: data.nameAr }
+        },
+        {
+          audit: (r) => logProductCreated(r.id, r.name),
+          toEvent: (r) => ({
+            type: ProductEventType.Created,
+            entityId: r.id,
+            payload: { productId: r.id, name: r.name, categoryId: data.categoryId ?? null } satisfies ProductCreatedPayload,
+            payloadVersion: 1,
+            staffId,
+            shopId: data.shopId,
+            occurredAt: now,
+          }),
+        },
+      )
       return id
     }
   }
