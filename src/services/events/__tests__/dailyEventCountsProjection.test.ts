@@ -21,7 +21,11 @@ describe('startDailyEventCountsProjection', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('inserts a new daily_event_counts row (with an explicit id) when none exists for the day', async () => {
-    vi.mocked(db.getOptional).mockResolvedValue(null as any)
+    // Call order per row: 1) ledger check (no existing ledger row) 2) the
+    // projection's own existing-row lookup (none for the day either).
+    vi.mocked(db.getOptional)
+      .mockResolvedValueOnce(null as any) // ledger check
+      .mockResolvedValueOnce(null as any) // daily_event_counts existing-row lookup
     vi.mocked(db.watch).mockReturnValue(fakeAsyncIterable([
       { rows: { _array: [{
         id: 'e1', type: 'sale.completed', entity_id: 'sale-1',
@@ -33,8 +37,11 @@ describe('startDailyEventCountsProjection', () => {
     const { stop } = startDailyEventCountsProjection('shop-1')
     await new Promise((r) => setTimeout(r, 0))
 
-    // Lookup first (no ON CONFLICT: PowerSync local tables are views).
-    const [selectSql, selectParams] = vi.mocked(db.getOptional).mock.calls[0]
+    // Ledger check first, then the projection's own lookup (no ON CONFLICT:
+    // PowerSync local tables are views).
+    const [ledgerSelectSql] = vi.mocked(db.getOptional).mock.calls[0]
+    expect(ledgerSelectSql.toLowerCase()).toContain('select subscriber_id from local_event_processed_ledger')
+    const [selectSql, selectParams] = vi.mocked(db.getOptional).mock.calls[1]
     expect(selectSql.toLowerCase()).toContain('select id, count from daily_event_counts')
     expect(selectParams).toEqual(['shop-1', 'sale.completed', '2026-07-31'])
 
@@ -55,7 +62,11 @@ describe('startDailyEventCountsProjection', () => {
   })
 
   it('increments the existing row count when one already exists for the day', async () => {
-    vi.mocked(db.getOptional).mockResolvedValue({ id: 'row-1', count: 4 } as any)
+    // Ledger check finds nothing (first time processing this event); the
+    // projection's own lookup finds the existing daily_event_counts row.
+    vi.mocked(db.getOptional)
+      .mockResolvedValueOnce(null as any) // ledger check
+      .mockResolvedValueOnce({ id: 'row-1', count: 4 } as any) // daily_event_counts existing-row lookup
     vi.mocked(db.watch).mockReturnValue(fakeAsyncIterable([
       { rows: { _array: [{
         id: 'e1', type: 'sale.completed', entity_id: 'sale-1',
@@ -84,7 +95,6 @@ describe('startDailyEventCountsProjection', () => {
       payload: JSON.stringify({ saleId: 'sale-1' }), payload_version: 1,
       staff_id: 's1', shop_id: 'shop-1', occurred_at: '2026-07-31T10:00:00.000Z', created_at: '2026-07-31T10:00:00.000Z',
     }
-    vi.mocked(db.getOptional).mockResolvedValue(null as any)
     // Two SEPARATE subscriptions (not two emissions on one watch stream): the
     // in-memory occurred_at watermark inside useEventSubscription already
     // suppresses same-row redelivery within a single subscription (that's
@@ -96,14 +106,16 @@ describe('startDailyEventCountsProjection', () => {
       .mockReturnValueOnce(fakeAsyncIterable([{ rows: { _array: [sameRow] } }]) as any)
       .mockReturnValueOnce(fakeAsyncIterable([{ rows: { _array: [sameRow] } }]) as any)
 
-    // First subscription: ledger insert succeeds -> falls through to the real
-    // getOptional-then-insert write. Second subscription (post-"restart"):
-    // ledger insert rejects (unique violation on subscriber_id+event_id) ->
-    // action skipped entirely, so the real write is never reached again.
-    vi.mocked(db.execute)
-      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // ledger insert #1
-      .mockResolvedValueOnce({ rows: { _array: [] } } as any) // daily_event_counts insert #1
-      .mockRejectedValueOnce(new Error('UNIQUE constraint failed')) // ledger insert #2 -> skipped
+    // Check-then-insert (not insert-then-catch, see processProjectionAtMostOnce.ts
+    // for why): first subscription's ledger check finds nothing -> proceeds to the
+    // real getOptional-then-insert write. Second subscription's ledger check (post-
+    // "restart") finds the row the first subscription committed -> `existing` is
+    // truthy -> returns immediately, never reaching the real write's own
+    // getOptional call or any execute at all.
+    vi.mocked(db.getOptional)
+      .mockResolvedValueOnce(null as any)  // ledger check, subscription 1 -> not yet processed
+      .mockResolvedValueOnce(null as any)  // daily_event_counts existing-row lookup, subscription 1
+      .mockResolvedValueOnce({ subscriber_id: 'daily_event_counts_projection' } as any) // ledger check, subscription 2 -> already processed
 
     const first = startDailyEventCountsProjection('shop-1')
     await new Promise((r) => setTimeout(r, 0))
@@ -113,10 +125,12 @@ describe('startDailyEventCountsProjection', () => {
     second.stop()
 
     // Exactly one fold into daily_event_counts (the second subscription's
-    // ledger insert rejected before ever reaching the read/write) -- the
-    // ledger fixes what the original Sprint-1 test documented as an accepted
-    // double-counting gap on restart.
-    expect(db.execute).toHaveBeenCalledTimes(3)
+    // ledger check found the row already processed and skipped before ever
+    // reaching the read/write) -- the ledger fixes what the original Sprint-1
+    // test documented as an accepted double-counting gap on restart.
+    // 2, not 4: subscription 1 makes 2 execute calls (ledger insert + real
+    // insert); subscription 2 makes 0 (the ledger check short-circuits it).
+    expect(db.execute).toHaveBeenCalledTimes(2)
     const incrementCalls = vi.mocked(db.execute).mock.calls.filter(
       ([sql]) => sql.toLowerCase().includes('insert into daily_event_counts'),
     )

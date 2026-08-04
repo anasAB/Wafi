@@ -11,6 +11,16 @@ export type SubscriberId = typeof SubscriberId[keyof typeof SubscriberId]
  *  processed forever and `action()` never retries. This helper intentionally does not
  *  guarantee eventual execution -- "at most once" means 0-or-1 executions.
  *
+ *  Check-then-insert, NOT insert-then-catch-on-unique-violation: PowerSync's
+ *  `Table`/`Index` schema DSL has no way to declare a UNIQUE constraint (only plain,
+ *  non-unique indexes), so `local_event_processed_ledger` has no DB-enforced
+ *  uniqueness on (subscriber_id, event_id) to catch a rejection from in the first
+ *  place -- an insert-then-catch implementation would always succeed and the guard
+ *  would be a silent no-op. Mirrors `quarantineOp` in `src/data/powersync/dead-letter.ts`.
+ *  This is therefore race-free only against sequential redelivery on one device (the
+ *  documented single-device replay-protection scope), not against two concurrent
+ *  calls for the same (subscriberId, eventId) -- that would need a real DB constraint.
+ *
  *  Acceptable today only because the sole caller (`daily_event_counts`) is a
  *  best-effort dashboard number, not a financial ledger. Any future subscriber whose
  *  action is a financial write must NOT use this helper -- it needs a real
@@ -20,14 +30,16 @@ export async function processProjectionAtMostOnce(
   eventId: string,
   action: () => Promise<void>,
 ): Promise<void> {
-  try {
-    await db.execute(
-      `insert into local_event_processed_ledger (subscriber_id, event_id, processed_at) values (?, ?, ?)`,
-      [subscriberId, eventId, new Date().toISOString()],
-    )
-  } catch {
-    return // already processed (unique-violation on subscriber_id+event_id) -- skip silently
-  }
+  const existing = await db.getOptional<{ subscriber_id: string }>(
+    `select subscriber_id from local_event_processed_ledger where subscriber_id = ? and event_id = ?`,
+    [subscriberId, eventId],
+  )
+  if (existing) return // already processed -- skip silently
+
+  await db.execute(
+    `insert into local_event_processed_ledger (subscriber_id, event_id, processed_at) values (?, ?, ?)`,
+    [subscriberId, eventId, new Date().toISOString()],
+  )
   try {
     await action()
   } catch (err) {
