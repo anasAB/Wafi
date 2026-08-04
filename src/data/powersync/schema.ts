@@ -330,6 +330,25 @@ const sync_dead_letter = new Table({
   failed_at:     column.text,    // ISO timestamp of the last failed attempt
 }, { localOnly: true })
 
+// WAFI-140 Sprint 2 — at-most-once guard for subscriber re-processing (design spec §3).
+// Local-only: single-device replay protection only, not cross-device dedup (see spec §3).
+const local_event_processed_ledger = new Table({
+  subscriber_id: column.text,
+  event_id:      column.text,
+  processed_at:  column.text,
+}, { localOnly: true })
+
+// WAFI-140 Sprint 2 — publish-failure retry queue (design spec §4).
+const local_event_publish_retries = new Table({
+  serialized_event: column.text,  // JSON.stringify(DomainEvent) -- see design spec §4 for why
+                                   // this duplicates events' own columns rather than referencing them
+  failure_kind:     column.text,  // 'transient' | 'permanent'
+  attempts:         column.integer,
+  last_error:       column.text,
+  next_retry_at:    column.text,  // ISO string
+  created_at:       column.text,  // ISO string
+}, { localOnly: true })
+
 const events = new Table({
   type:            column.text,
   entity_id:       column.text,
@@ -461,6 +480,8 @@ export const AppSchema = new Schema({
   return_line_items,
   return_reasons,
   sync_dead_letter,
+  local_event_processed_ledger,
+  local_event_publish_retries,
   audit_log,
   events,
   daily_event_counts,
