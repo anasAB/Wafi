@@ -1,9 +1,11 @@
 import { ref } from 'vue'
 import { db } from '@/data/powersync/db'
+import { logger } from './logger'
+import { enqueueForRetry } from './eventPublishRetryQueue'
 import type { DomainEvent } from './domainEvent.types'
 
-/** Dev-visibility only (WAFI-140 Sprint 1) -- not owner-facing alerting, not
- *  retried. Full retry/replay is Sprint 2 (design spec §6). */
+/** Dev-visibility only (WAFI-140 Sprint 1) -- not owner-facing alerting. Sprint 2 adds
+ *  the actual retry/replay via enqueueForRetry (design spec §6). */
 export const eventPublishFailureCount = ref(0)
 
 // Called only from executeBusinessOperation, fire-and-forget -- never import
@@ -28,6 +30,10 @@ export async function publishEvent<T>(event: DomainEvent<T>): Promise<void> {
     )
   } catch (err) {
     eventPublishFailureCount.value += 1
-    console.error('[publishEvent] failed to persist event', event.type, err)
+    logger.error('[publishEvent] failed to persist event, queuing for retry', event.type, err)
+    await enqueueForRetry(event, err instanceof Error ? err.message : String(err)).catch(() => {
+      // even the retry-queue write can fail (e.g. local disk full) -- this event is
+      // genuinely lost, same as Sprint 1's behavior, but now the rare/logged case.
+    })
   }
 }

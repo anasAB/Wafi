@@ -52,4 +52,14 @@ describe('publishEvent', () => {
     await expect(publishEvent(baseEvent)).resolves.toBeUndefined()
     expect(eventPublishFailureCount.value).toBe(before + 1)
   })
+
+  it('enqueues the failed event for retry instead of only counting it', async () => {
+    vi.mocked(db.execute).mockRejectedValueOnce(new Error('database is locked'))
+    await publishEvent(baseEvent)
+    // second db.execute call (from enqueueForRetry) inserts into the retry table
+    const retryCall = vi.mocked(db.execute).mock.calls.find(
+      ([sql]) => sql.includes('local_event_publish_retries'),
+    )
+    expect(retryCall).toBeDefined()
+  })
 })
