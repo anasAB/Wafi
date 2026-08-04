@@ -154,6 +154,91 @@ describe('useReturnSheet — WAFI-011 sale-level discount proration', () => {
   })
 })
 
+describe('useReturnSheet — WAFI-140 event bus (sale.returned / customer.debt_changed)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  // db.execute is used for: the sale-header lookup, the exchange-rate lookup,
+  // the audit-log insert, and (this ticket) the events-table insert made by
+  // publishEvent. fetchOutstandingBalanceUsd goes through db.getOptional.
+  function mockSale(opts: { customerId: string | null; isCredit: boolean }) {
+    vi.mocked(db.execute).mockImplementation(async (sql: unknown) => {
+      const s = sql as string
+      if (s.includes('FROM sales s')) {
+        return {
+          rows: {
+            _array: [{
+              id: 'sale-1', display_sale_number: '1',
+              customer_id: opts.customerId, customer_name: opts.customerId ? 'زبون' : null,
+              sale_discount_amount_usd: 0, is_credit: opts.isCredit ? 1 : 0,
+            }],
+          },
+        } as any
+      }
+      if (s.includes('FROM exchange_rates')) return { rows: { _array: [{ rate: 1 }] } } as any
+      return { rows: { _array: [] } } as any
+    })
+    vi.mocked(db.getAll).mockImplementation(async (sql: unknown) => {
+      const s = sql as string
+      if (s.includes('FROM sale_line_items')) {
+        return [{ product_id: 'p1', product_name: 'قلم', quantity: 1, unit_price_usd: 10 }] as any
+      }
+      if (s.includes('FROM return_line_items')) return [] as any
+      return [] as any
+    })
+    vi.mocked(db.getOptional).mockResolvedValue({ balance_usd: 12 } as any)
+  }
+
+  function mockConfirmTx() {
+    const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [] } })
+    vi.mocked(db.writeTransaction).mockImplementation(async (fn: any) => { await fn({ execute: txExecute }) })
+    return txExecute
+  }
+
+  it('publishes sale.returned always, and customer.debt_changed only for a credit sale', async () => {
+    mockSale({ customerId: 'cust-1', isCredit: true })
+    mockConfirmTx()
+
+    const sheet = useReturnSheet('sale-1')
+    await sheet.load()
+    sheet.lines.value[0].selected = true
+    sheet.refundMethod.value = 'store_credit'
+    await sheet.confirm()
+
+    const eventInserts = vi.mocked(db.execute).mock.calls.filter(
+      ([sql]) => (sql as string).includes('insert into events'),
+    )
+    const types = eventInserts.map(([, params]) => (params as any[])[1])
+    expect(types).toContain('sale.returned')
+    expect(types).toContain('customer.debt_changed')
+
+    const debtCall = eventInserts.find(([, params]) => (params as any[])[1] === 'customer.debt_changed')
+    const debtPayload = JSON.parse((debtCall![1] as any[])[3])
+    expect(debtPayload.deltaUsd).toBeCloseTo(-10, 2) // a return decreases debt
+    expect(debtPayload.newBalanceUsd).toBe(12)
+  })
+
+  it('does not publish customer.debt_changed for a cash (non-credit) sale return', async () => {
+    mockSale({ customerId: 'cust-1', isCredit: false })
+    mockConfirmTx()
+
+    const sheet = useReturnSheet('sale-1')
+    await sheet.load()
+    sheet.lines.value[0].selected = true
+    sheet.refundMethod.value = 'cash_usd'
+    await sheet.confirm()
+
+    const eventInserts = vi.mocked(db.execute).mock.calls.filter(
+      ([sql]) => (sql as string).includes('insert into events'),
+    )
+    const types = eventInserts.map(([, params]) => (params as any[])[1])
+    expect(types).toContain('sale.returned')
+    expect(types).not.toContain('customer.debt_changed')
+  })
+})
+
 describe('useReturnSheet — WAFI-010 installment plan integration', () => {
   beforeEach(() => {
     setActivePinia(createPinia())

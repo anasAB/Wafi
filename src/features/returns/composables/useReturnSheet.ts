@@ -8,6 +8,12 @@ import type { ReturnLine, RefundMethod, ConfirmResult } from '../returns.types'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 import { executeBusinessOperation } from '@/composables/executeBusinessOperation'
 import { cancelPlanWithinTx } from '@/features/installments/composables/useInstallmentPlan'
+import {
+  ReturnsEventType, CustomerEventType,
+  type ReturnedPayload, type DebtChangedPayload,
+} from '@/services/events/domainEvent.types'
+import { fetchOutstandingBalanceUsd } from '@/features/customers/composables/useCustomerBalance'
+import { publishEvent } from '@/services/events/publishEvent'
 
 export function useReturnSheet(saleId: string) {
   const { logReturnProcessed, logInstallmentPlanCancelled } = useAuditLog()
@@ -20,6 +26,7 @@ export function useReturnSheet(saleId: string) {
   const customerId   = ref<string | null>(null)
   const customerName = ref<string | null>(null)   // original sale's customer (#8)
   const exchangeRate = ref(1)                       // rate at load, for SYP display (#7)
+  const isCreditSale = ref(false)
 
   // WAFI-011: a whole-sale (footer-level) discount is never baked into
   // sale_line_items.unit_price_usd (only per-line discounts are) — so refunding
@@ -56,7 +63,7 @@ export function useReturnSheet(saleId: string) {
 
     // 1. Fetch sale header + the customer it was sold to (#8)
     const saleResult = await db.execute(
-      `SELECT s.id, s.display_sale_number, s.customer_id, c.name AS customer_name, s.sale_discount_amount_usd
+      `SELECT s.id, s.display_sale_number, s.customer_id, c.name AS customer_name, s.sale_discount_amount_usd, s.is_credit
        FROM sales s LEFT JOIN customers c ON c.id = s.customer_id
        WHERE s.id = ?`,
       [saleId],
@@ -66,6 +73,7 @@ export function useReturnSheet(saleId: string) {
     customerId.value   = sale.customer_id ?? null
     customerName.value = sale.customer_name ?? null
     hasCustomer.value  = !!sale.customer_id
+    isCreditSale.value = !!sale.is_credit
     const saleDiscountAmountUsd: number = sale.sale_discount_amount_usd ?? 0
 
     // Current exchange rate, so the refund total can be shown in SYP (#7)
@@ -316,8 +324,43 @@ export function useReturnSheet(saleId: string) {
               : Promise.resolve(),
           ])
         },
+        toEvent: () => ({
+          type: ReturnsEventType.Returned,
+          entityId: returnId,
+          payload: {
+            returnId, saleId, refundAmountUsd,
+            restockedItemCount: selectedLines.filter(l => l.restock && !l.isOpenItem).length,
+          } satisfies ReturnedPayload,
+          payloadVersion: 1,
+          staffId: useSessionStore().activeStaff?.id ?? '',
+          shopId,
+          occurredAt: now,
+        }),
       },
     )
+
+    // executeBusinessOperation's toEvent only supports one event per write
+    // (Task 2's documented limitation) -- customer.debt_changed can't ride the
+    // same hook as sale.returned, so it's published directly here, and only
+    // when the original sale was a credit sale (a cash-sale return doesn't
+    // change what the customer owes).
+    if (isCreditSale.value && customerId.value) {
+      const newBalanceUsd = await fetchOutstandingBalanceUsd(customerId.value, shopId)
+      void publishEvent<DebtChangedPayload>({
+        type: CustomerEventType.DebtChanged,
+        entityId: customerId.value,
+        payload: {
+          customerId: customerId.value,
+          deltaUsd: -refundAmountUsd,
+          newBalanceUsd,
+          reason: 'return',
+        },
+        payloadVersion: 1,
+        staffId: useSessionStore().activeStaff?.id ?? '',
+        shopId,
+        occurredAt: now,
+      }).catch(() => {})
+    }
 
     return { warning }
   }
