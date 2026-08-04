@@ -55,8 +55,11 @@ async function attemptRetry(row: {
     const attempts = row.attempts + 1
     if (attempts >= MAX_ATTEMPTS) {
       logger.error('[eventPublishRetryQueue] row exhausted retries, leaving for manual inspection', row.id, err)
+      // Flip to 'permanent' so retryPendingEventPublishes' `where failure_kind =
+      // 'transient'` selection no longer matches this row -- otherwise it would keep
+      // matching forever since next_retry_at is never touched again past this point.
       await db.execute(
-        `update local_event_publish_retries set attempts = ?, last_error = ? where id = ?`,
+        `update local_event_publish_retries set attempts = ?, last_error = ?, failure_kind = 'permanent' where id = ?`,
         [attempts, String(err), row.id],
       )
     } else {
@@ -109,7 +112,7 @@ export async function getRetryQueueStats(): Promise<{
     `select count(*) as n from local_event_publish_retries where failure_kind = 'permanent'`,
   )
   const [oldestRow] = await db.getAll<{ created_at: string }>(
-    `select created_at from local_event_publish_retries order by created_at asc limit 1`,
+    `select created_at from local_event_publish_retries where failure_kind = 'transient' order by created_at asc limit 1`,
   )
   return {
     pendingCount: pendingRow?.n ?? 0,

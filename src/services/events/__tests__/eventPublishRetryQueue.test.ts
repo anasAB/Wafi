@@ -58,4 +58,47 @@ describe('eventPublishRetryQueue', () => {
     expect(stats.oldestPendingAt).toBe('2026-08-03T00:00:00.000Z')
     expect(typeof stats.oldestPendingAge).toBe('string')
   })
+
+  it('getRetryQueueStats.oldestPendingAt ignores permanent rows even if they are older', async () => {
+    // The "oldest overall" row (2020) is permanent-classified; the oldest *transient*
+    // row is 2026. The oldest-row query itself must filter by failure_kind = 'transient',
+    // so its mocked resolved value here represents what that filtered query would return
+    // (the transient row), not the true oldest row in the table.
+    vi.mocked(db.getAll)
+      .mockResolvedValueOnce([{ n: 1 }])   // pendingCount query
+      .mockResolvedValueOnce([{ n: 1 }])   // permanentCount query
+      .mockResolvedValueOnce([{ created_at: '2026-08-03T00:00:00.000Z' }]) // oldest TRANSIENT row query
+
+    const stats = await getRetryQueueStats()
+    expect(stats.oldestPendingAt).toBe('2026-08-03T00:00:00.000Z')
+
+    // Assert the oldest-row query itself carries the failure_kind filter, so a permanent
+    // row (e.g. one from 2020) genuinely cannot be selected by it.
+    const oldestCall = vi.mocked(db.getAll).mock.calls[2]
+    expect(oldestCall[0]).toContain(`failure_kind = 'transient'`)
+  })
+
+  it('attemptRetry flips an exhausted row to permanent so it stops being selected for retry', async () => {
+    const exhaustingRow = {
+      id: 'r-exhausted', serialized_event: JSON.stringify(event), failure_kind: 'transient', attempts: 3, next_retry_at: '2000-01-01',
+    }
+    vi.mocked(db.getAll).mockResolvedValueOnce([exhaustingRow])
+    vi.mocked(db.writeTransaction).mockImplementationOnce(async () => { throw new Error('boom') })
+
+    await retryPendingEventPublishes()
+
+    // attempts (3) + 1 = 4 = MAX_ATTEMPTS -> exhausted branch must flip failure_kind.
+    expect(db.execute).toHaveBeenCalledWith(
+      expect.stringContaining(`failure_kind = 'permanent'`),
+      expect.arrayContaining([4, 'r-exhausted']),
+    )
+
+    // Now simulate the next sweep: the selection query filters on failure_kind =
+    // 'transient', so this now-permanent row would not be returned by a real DB --
+    // verify the query issued by retryPendingEventPublishes carries that filter.
+    vi.mocked(db.getAll).mockResolvedValueOnce([])
+    await retryPendingEventPublishes()
+    const selectionCall = vi.mocked(db.getAll).mock.calls.at(-1)
+    expect(selectionCall![0]).toContain(`failure_kind = 'transient'`)
+  })
 })
