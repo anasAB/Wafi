@@ -8,9 +8,16 @@ export interface BusinessOperationHooks<T> {
   /** Awaited — a financial write is not considered complete until its audit row exists. */
   audit: (result: T) => Promise<void>
   /** Optional and fire-and-forget. Omit entirely for writes with no event contract yet
-   *  (e.g. installments/returns, out of WAFI-152's scope) rather than inventing a fake
-   *  mapping onto an unrelated DomainEventType just to satisfy this wrapper's shape. */
-  toEvent?: (result: T) => DomainEvent
+   *  (e.g. installments, out of WAFI-152's scope) rather than inventing a fake mapping
+   *  onto an unrelated DomainEventType just to satisfy this wrapper's shape.
+   *
+   *  @remarks At most ONE DomainEvent per write — this hook has no plural form. A write
+   *  that can produce more than one meaningful fact (e.g. a product edit changing both
+   *  price and cost) must pick one, or return `undefined` for "no event this write" — see
+   *  WAFI-140 Sprint 2 design spec §5a for a call site working around this limitation.
+   *  Multiple events per write remain unsupported until a future revision of this
+   *  wrapper (e.g. a plural `toEvents` hook). */
+  toEvent?: (result: T) => DomainEvent | undefined
 }
 
 /**
@@ -34,12 +41,11 @@ export async function executeBusinessOperation<T>(
   }
   const result = await write()
   await hooks.audit(result)
-  if (hooks.toEvent) {
+  const event = hooks.toEvent?.(result)
+  if (event) {
     // Fire-and-forget: publishing must never block the caller or turn a
-    // publish/bus failure into a write failure. Nothing consumes these events
-    // yet, and no future consumer should be able to make checkout depend on
-    // event-bus availability.
-    void publishEvent(hooks.toEvent(result)).catch(() => {})
+    // publish/bus failure into a write failure.
+    void publishEvent(event).catch(() => {})
   }
   return result
 }
