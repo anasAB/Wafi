@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
+vi.mock('@/services/events/publishRateLimiter', () => ({ tryConsumeToken: vi.fn().mockReturnValue(true) }))
 
 import { db } from '@/data/powersync/db'
 import { publishEvent, eventPublishFailureCount } from '@/services/events/publishEvent'
@@ -61,5 +62,26 @@ describe('publishEvent', () => {
       ([sql]) => sql.includes('local_event_publish_retries'),
     )
     expect(retryCall).toBeDefined()
+  })
+
+  it('routes a token-bucket rejection to the retry queue as a transient failure, without touching db.execute', async () => {
+    const { tryConsumeToken } = await import('@/services/events/publishRateLimiter')
+    vi.mocked(tryConsumeToken).mockReturnValueOnce(false)
+    await publishEvent(baseEvent)
+    expect(db.execute).toHaveBeenCalledTimes(1) // only the retry-queue insert, not the events insert
+    const [sql] = vi.mocked(db.execute).mock.calls[0]
+    expect(sql).toContain('local_event_publish_retries')
+  })
+
+  it('throws synchronously on an oversized payload, before any db.execute call', async () => {
+    const bigPayload = { note: 'x'.repeat(20_000) }
+    await expect(publishEvent({ ...baseEvent, payload: bigPayload })).rejects.toThrow(/exceeds/)
+    expect(db.execute).not.toHaveBeenCalled()
+  })
+
+  it('throws synchronously on a NaN/Infinity field, before any db.execute call', async () => {
+    const badPayload = { amountUsd: NaN }
+    await expect(publishEvent({ ...baseEvent, payload: badPayload })).rejects.toThrow(/non-finite/)
+    expect(db.execute).not.toHaveBeenCalled()
   })
 })

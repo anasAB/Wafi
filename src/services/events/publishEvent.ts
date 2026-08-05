@@ -2,16 +2,49 @@ import { ref } from 'vue'
 import { db } from '@/data/powersync/db'
 import { logger } from './logger'
 import { enqueueForRetry } from './eventPublishRetryQueue'
+import { tryConsumeToken } from './publishRateLimiter'
 import type { DomainEvent } from './domainEvent.types'
 
 /** Dev-visibility only (WAFI-140 Sprint 1) -- not owner-facing alerting. Sprint 2 adds
  *  the actual retry/replay via enqueueForRetry (design spec §6). */
 export const eventPublishFailureCount = ref(0)
 
+const MAX_PAYLOAD_BYTES = 16_384
+// The largest of all 17 wired payload shapes today serializes to well under 1 KB. 16 KB
+// gives over an order of magnitude of headroom for legitimate growth while still catching a
+// genuinely runaway/malformed value (design spec §6b).
+
+// Walks the payload for NaN/±Infinity specifically (the values JSON.stringify silently
+// turns into `null` rather than erroring on). Cycle safety: event payloads are required to
+// be JSON-serializable object graphs without cycles -- a cyclic payload would already throw
+// inside JSON.stringify (called before this function runs, in publishEvent below) with
+// "Converting circular structure to JSON," so this walk never actually encounters a cycle in
+// practice, but carries no cycle-detection of its own regardless (design spec §6b).
+function containsNonFiniteNumber(value: unknown): boolean {
+  if (typeof value === 'number') return !Number.isFinite(value)
+  if (Array.isArray(value)) return value.some(containsNonFiniteNumber)
+  if (value && typeof value === 'object') return Object.values(value).some(containsNonFiniteNumber)
+  return false
+}
+
 // Called only from executeBusinessOperation, fire-and-forget -- never import
 // this directly from a service (executeBusinessOperation already wraps every
 // call in `.catch(() => {})`; this function must never throw past that).
 export async function publishEvent<T>(event: DomainEvent<T>): Promise<void> {
+  if (!tryConsumeToken()) {
+    eventPublishFailureCount.value += 1
+    await enqueueForRetry(event, 'client_rate_limit_exceeded').catch(() => {})
+    return
+  }
+
+  const serialized = JSON.stringify(event.payload)
+  if (new TextEncoder().encode(serialized).length > MAX_PAYLOAD_BYTES) {
+    throw new Error(`event payload exceeds ${MAX_PAYLOAD_BYTES} bytes: ${event.type}`)
+  }
+  if (containsNonFiniteNumber(event.payload)) {
+    throw new Error(`event payload contains a non-finite number (NaN/Infinity): ${event.type}`)
+  }
+
   try {
     await db.execute(
       `insert into events (id, type, entity_id, payload, payload_version, staff_id, shop_id, occurred_at, created_at)
@@ -20,7 +53,7 @@ export async function publishEvent<T>(event: DomainEvent<T>): Promise<void> {
         crypto.randomUUID(),
         event.type,
         event.entityId,
-        JSON.stringify(event.payload),
+        serialized,
         event.payloadVersion,
         event.staffId,
         event.shopId,
