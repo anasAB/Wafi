@@ -17,6 +17,7 @@ export const db = {
   get: vi.fn().mockResolvedValue({}),
   connect: vi.fn(),
   disconnectAndClear: vi.fn(),
+  waitForFirstSync: vi.fn().mockResolvedValue(undefined),
   registerListener: vi.fn().mockReturnValue(() => {}),
   status: {
     connected: false,
