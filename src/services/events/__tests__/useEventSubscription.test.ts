@@ -116,4 +116,28 @@ describe('useEventSubscription', () => {
     stop()
     expect(capturedSignal?.aborted).toBe(true)
   })
+
+  it('stops delivering events after a role downgrade (result set shrinks)', async () => {
+    // Simulate role downgrade: first emission has two events, second has only one.
+    // The handler should be called for both in the first emission, but NOT called
+    // again when the second event disappears (indicating lost access).
+    const event1 = { id: 'e1', type: 'sale.completed', payload: '{}', payload_version: 1, shop_id: 'shop-1', occurred_at: '2026-07-31T10:00:00.000Z' }
+    const event2 = { id: 'e2', type: 'sale.completed', payload: '{}', payload_version: 1, shop_id: 'shop-1', occurred_at: '2026-07-31T11:00:00.000Z' }
+
+    vi.mocked(db.watch).mockReturnValue(fakeAsyncIterable([
+      { rows: { _array: [event2, event1] } }, // both events accessible initially
+      { rows: { _array: [event2] } }, // role downgrade: event1 is no longer returned
+    ]) as any)
+
+    const handler = vi.fn()
+    const { stop } = useEventSubscription(SalesEventType.Completed, handler, { shopId: 'shop-1' })
+    await new Promise((r) => setTimeout(r, 0))
+
+    // Both events should have been forwarded in the first emission
+    expect(handler).toHaveBeenCalledTimes(2)
+    expect(handler.mock.calls[0][0]).toMatchObject({ id: 'e2' })
+    expect(handler.mock.calls[1][0]).toMatchObject({ id: 'e1' })
+
+    stop()
+  })
 })
