@@ -84,6 +84,28 @@ Object-argument form (not positional) so a future caller adding, say, a
 `concurrency` or `sinceIso` option doesn't have to thread positional
 placeholders through every existing call site.
 
+### Subscriber identity is permanent
+
+`subscriber_name` is a durable key, not a display label: it is half of the
+ledger's dedup key (`(event_id, subscriber_name)` in
+`local_subscriber_processed_events`) and appears in
+`local_event_processing_retries` rows. Renaming a subscriber (e.g.
+`audit` → `audit_v2`) has two possible effects, and the choice must be
+made deliberately, not accidentally:
+
+- **Keep the name unchanged** across a subscriber's internal refactors —
+  its processed/retry history stays continuous.
+- **Change the name** only when the intent is "treat this as a new
+  subscriber that should reprocess history" (a full replay) — this is a
+  deliberate operational action, not a side effect of a rename during
+  cleanup.
+
+This ticket does not need replay and does not build tooling for it — the
+audit subscriber's `subscriber_name` (`'audit'`) should be treated as
+effectively permanent once shipped. Documented here so a future
+subscriber rename doesn't silently trigger an unintended full replay or
+an unintended loss of retry continuity.
+
 ### Guarantees
 
 - Sequential execution per subscriber (no concurrent handler invocations
@@ -150,10 +172,15 @@ already in local_subscriber_processed_events for (event_id, subscriber_name)?
 ```
 
 Retry execution: a sweeper (`startEventProcessingRetrySweeper`, same
-reconnect-listener + app-start pattern as the existing publish-retry and
-cleanup sweepers) polls `local_event_processing_retries` for
-`next_retry_at <= now()` and re-invokes the same handler closure, which
-goes through the identical success/failure branching as a live delivery.
+reconnect-listener + app-start pattern as `startRetryQueueSweeper` —
+`eventPublishRetryQueue.ts:128-136` — and the cleanup sweeper) runs once
+on start and again on every reconnect transition; each run queries
+`local_event_processing_retries` for `next_retry_at <= now()` and
+re-invokes the same handler closure. **This is not a polling/interval
+timer** — there is no `setInterval` anywhere in this pattern, matching
+the existing sweepers exactly, which is deliberate on a battery/CPU-
+constrained target device. A retried event goes through the identical
+success/failure branching as a live delivery.
 
 ### New local tables
 
@@ -193,6 +220,35 @@ Returning `null` means "this event intentionally produces no audit
 entry" — explicit, not an omission. Not every event on the bus deserves an
 audit row (a future `heartbeat.received` or `cache.invalidated` should be
 able to return `null` without anyone wondering if that's a bug).
+
+**A `null` mapping still counts as handler success.** The durable
+subscriber's ledger write happens after the handler returns normally,
+regardless of whether it produced a row — `mapEventToAuditEntry` returning
+`null` must still result in a `local_subscriber_processed_events` insert.
+Skipping that insert would mean the event is redelivered and skipped
+forever on every subsequent delivery, never actually settling.
+
+**Domain events must never contain secrets or highly sensitive
+credentials.** This is an event-bus-level invariant (belongs to WAFI-140,
+not something audit invents), but WAFI-150 is the first place it has
+real teeth: `meta` copies the payload verbatim into an append-only,
+permanent table. A payload publisher is responsible for never including
+raw PINs, unmasked full account numbers, or similar secrets — the audit
+subscriber has no ability to redact after the fact, and is not the place
+to add filtering logic (that would violate the "no transform" invariant
+above). If this constraint isn't already documented for `publishEvent()`,
+add it there as part of this ticket's implementation, since audit is what
+surfaces the risk.
+
+**Payload schema evolution**: `meta` will contain whatever shape a given
+event type's payload had at the time it was published — old and new
+shapes coexisting is expected, not a bug, per the existing platform-wide
+policy (`WAFI_Production_Readiness_Plan_v3.md`: "Event Versioning Policy —
+never modify payload, create v2, support both, deprecate after
+migration," documented under WAFI-142). The audit subscriber does nothing
+special to normalize this; any future reporting/compliance query over
+`audit_log.meta` must already be written to tolerate multiple historical
+payload versions, same as any other consumer of event payloads.
 
 **The audit subscriber copies the published payload verbatim into
 `meta`; it does not transform, enrich, or revalidate it.** This is an
@@ -327,6 +383,15 @@ For every event type handled by the audit subscriber:
    entry.
 3. Events for which `mapEventToAuditEntry` returns `null` produce zero
    rows, by design.
+4. `executeFinancialWrite` (or any other shared write+audit helper used by
+   non-bus call sites) still audits every action it covered before this
+   ticket. The PR must include a code-read confirmation that the helper
+   was refactored to conditionally skip its own audit write only for the
+   13 bus-wired event types, without changing behavior for security/
+   technical or otherwise-not-bus-wired call sites.
+5. A repository-wide search for `logAudit`-style calls matching the 13
+   bus-wired event types turns up zero remaining call sites, or each
+   remaining hit has an explicit documented reason for staying manual.
 
 ## Testing
 
@@ -343,7 +408,10 @@ For every event type handled by the audit subscriber:
     it's imported by both `publishEvent.ts` and `runDurableSubscriber.ts`.
   - `auditSubscriber.test.ts` — `mapEventToAuditEntry` returns the correct
     shape per event type, returns `null` for intentionally-excluded
-    types, and asserts `meta` is the verbatim payload (no transform).
+    types, and asserts `meta` is the verbatim payload (no transform). Also
+    asserts that when the mapping returns `null`, the durable subscriber
+    still writes a `local_subscriber_processed_events` row (no infinite
+    redelivery of intentionally-skipped events).
 - **Crash-recovery integration test** (the core reason this design
   exists — must be explicit, not implied): simulate handler success →
   audit row committed → process "crashes" before the ledger write →
@@ -363,6 +431,18 @@ For every event type handled by the audit subscriber:
   mistakes: forgot to remove the manual call (→ two rows), forgot to wire
   the subscriber (→ zero rows), subscriber forgot `source_event_id` (→
   dedup broken).
+
+## Definition of Done
+
+- All acceptance criteria above are met.
+- Repository-wide search for `logAudit`-style calls at each of the 13
+  bus-wired event types confirms zero remaining manual call sites, or
+  each survivor has a documented reason (e.g. it's actually a
+  security/technical event, not the business event it superficially
+  resembles).
+- Code-read confirmation attached to the PR that `executeFinancialWrite`
+  (and any other shared write+audit helper touched) still audits every
+  action it covered before this ticket for non-bus-wired call sites.
 
 ## Non-goals (explicitly deferred, do not build now)
 
