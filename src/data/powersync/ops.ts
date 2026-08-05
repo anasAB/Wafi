@@ -19,7 +19,16 @@ export async function runOp(
   // ON CONFLICT DO NOTHING (ignoreDuplicates), and never PATCH/DELETE.
   if (table === 'audit_log') {
     if (type !== UpdateType.PUT) return null
-    return (await supabase.from(table).upsert({ id, ...opData }, { ignoreDuplicates: true })).error
+    // WAFI-150: when the row carries a source_event_id (produced by the audit
+    // subscriber), that column is the real conflict target -- it catches the case
+    // where two independently-generated local rows (different `id`, same source
+    // event) both reach the server, which the plain `id` upsert below cannot detect.
+    // Legacy/manual rows have no source_event_id and keep the original id-based
+    // upsert, which already handles a re-synced (not duplicated) row.
+    const opts = opData?.source_event_id
+      ? { onConflict: 'source_event_id', ignoreDuplicates: true }
+      : { ignoreDuplicates: true }
+    return (await supabase.from(table).upsert({ id, ...opData }, opts)).error
   }
 
   switch (type) {

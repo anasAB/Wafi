@@ -40,6 +40,22 @@ describe('runOp — audit_log is append-only', () => {
     await runOp(UpdateType.PUT, 'sales', 's1', { total_usd: 10 })
     expect(upsert).toHaveBeenCalledWith({ id: 's1', total_usd: 10 })
   })
+
+  it('upserts audit_log on source_event_id (ignoreDuplicates) when the row carries one', async () => {
+    await runOp(UpdateType.PUT, 'audit_log', 'row1', { event: 'expense.recorded', source_event_id: 'evt1' })
+    expect(upsert).toHaveBeenCalledWith(
+      { id: 'row1', event: 'expense.recorded', source_event_id: 'evt1' },
+      { onConflict: 'source_event_id', ignoreDuplicates: true },
+    )
+  })
+
+  it('falls back to the existing id-based upsert when source_event_id is absent (legacy/manual rows)', async () => {
+    await runOp(UpdateType.PUT, 'audit_log', 'row2', { event: 'staff.pin_changed' })
+    expect(upsert).toHaveBeenCalledWith(
+      { id: 'row2', event: 'staff.pin_changed' },
+      { ignoreDuplicates: true },
+    )
+  })
 })
 
 describe('isPermanentError — quarantine classification', () => {

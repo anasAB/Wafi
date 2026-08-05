@@ -397,14 +397,16 @@ const daily_event_counts = new Table({
 })
 
 const audit_log = new Table({
-  shop_id:     column.text,
-  staff_id:    column.text,
-  staff_name:  column.text,
-  event:       column.text,
-  entity_type: column.text,
-  entity_id:   column.text,
-  meta:        column.text,
-  created_at:  column.text,
+  shop_id:          column.text,
+  staff_id:         column.text,
+  staff_name:       column.text,
+  event:            column.text,
+  entity_type:      column.text,
+  entity_id:        column.text,
+  meta:             column.text,
+  created_at:       column.text,
+  source_event_id:  column.text,  // WAFI-150 -- nullable; ties an audit row back to
+                                   // its originating events.id for idempotent retry
 })
 
 const suppliers = new Table({
