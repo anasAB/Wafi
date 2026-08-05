@@ -349,6 +349,35 @@ const local_event_publish_retries = new Table({
   created_at:       column.text,  // ISO string
 }, { localOnly: true })
 
+// WAFI-150 -- retry state for durable subscribers (mirrors local_event_publish_retries'
+// shape almost exactly, on the consumption side). subscriber_name distinguishes rows
+// when more than one durable subscriber exists in the future -- they share one table
+// rather than one-table-per-subscriber.
+const local_event_processing_retries = new Table({
+  subscriber_name:   column.text,
+  serialized_event:  column.text,  // JSON.stringify(DomainEvent) -- same convention as
+                                    // local_event_publish_retries.serialized_event
+  failure_kind:      column.text,  // 'transient' | 'permanent'
+  attempts:          column.integer,
+  last_error:        column.text,
+  next_retry_at:     column.text,  // ISO string
+  created_at:        column.text,  // ISO string
+}, { localOnly: true })
+
+// WAFI-150 -- durable-subscriber processed ledger. Deliberately a SEPARATE table from
+// local_event_processed_ledger (the lightweight/best-effort ledger, WAFI-140 Sprint 2):
+// that ledger writes BEFORE running its action (at-most-once, explicitly unsuitable for
+// durable writes per its own docstring); this one writes ONLY AFTER the handler
+// succeeds. Sharing one table with a mode column would force every future reader to
+// branch on lifecycle semantics throughout the framework -- two small tables are
+// clearer than one table with two contracts. Named for what it belongs to (the durable
+// subscriber framework), not for the abstract property "durable".
+const local_subscriber_processed_events = new Table({
+  subscriber_name: column.text,
+  event_id:        column.text,
+  processed_at:    column.text,  // ISO string
+}, { localOnly: true })
+
 const events = new Table({
   type:            column.text,
   entity_id:       column.text,
@@ -482,6 +511,8 @@ export const AppSchema = new Schema({
   sync_dead_letter,
   local_event_processed_ledger,
   local_event_publish_retries,
+  local_event_processing_retries,
+  local_subscriber_processed_events,
   audit_log,
   events,
   daily_event_counts,
