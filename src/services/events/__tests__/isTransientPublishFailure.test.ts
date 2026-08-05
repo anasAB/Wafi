@@ -18,4 +18,10 @@ describe('isTransientPublishFailure', () => {
     expect(isTransientPublishFailure(new Error('something entirely unexpected'))).toBe(false)
     expect(isTransientPublishFailure('not even an Error instance')).toBe(false)
   })
+
+  it('classifies rate-limit errors as transient (retry on backoff)', () => {
+    expect(isTransientPublishFailure(new Error('rate_limit_exceeded'))).toBe(true)
+    expect(isTransientPublishFailure(new Error('Rate_Limit_Exceeded'))).toBe(true)
+    expect(isTransientPublishFailure(new Error('RATE_LIMIT_EXCEEDED: too many requests'))).toBe(true)
+  })
 })
