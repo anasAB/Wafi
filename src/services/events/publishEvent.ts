@@ -32,8 +32,17 @@ function containsNonFiniteNumber(value: unknown): boolean {
 // call in `.catch(() => {})`; this function must never throw past that).
 export async function publishEvent<T>(event: DomainEvent<T>): Promise<void> {
   if (!tryConsumeToken()) {
+    // Dropped, not enqueued (WAFI-140 Sprint 3 final review): enqueueForRetry() is itself a
+    // local SQLite write, so routing here to the retry queue defeated this bucket's entire
+    // purpose -- avoiding wasted local writes during a runaway loop -- by substituting one
+    // local write for another. Worse, those rows classify as 'transient', which
+    // cleanupLocalEventTables() never prunes, so the retry table grew unbounded during the
+    // exact burst this bucket exists to dampen, and the later sweep replayed every row
+    // without re-checking the bucket -- amplifying the burst instead of damping it. An event
+    // is best-effort telemetry; losing one to a genuine client-side runaway loop is the
+    // cheaper failure.
     eventPublishFailureCount.value += 1
-    await enqueueForRetry(event, 'client_rate_limit_exceeded').catch(() => {})
+    logger.error('[publishEvent] client-side rate limit exceeded, dropping event', event.type)
     return
   }
 

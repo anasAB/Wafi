@@ -3,7 +3,7 @@ vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
 
 import { db } from '@/data/powersync/db'
 import { useEventSubscription } from '@/services/events/useEventSubscription'
-import { SalesEventType } from '@/services/events/domainEvent.types'
+import { SalesEventType, ExpenseEventType } from '@/services/events/domainEvent.types'
 
 function fakeAsyncIterable(results: any[]) {
   let i = 0
@@ -117,27 +117,41 @@ describe('useEventSubscription', () => {
     expect(capturedSignal?.aborted).toBe(true)
   })
 
-  it('stops delivering events after a role downgrade (result set shrinks)', async () => {
-    // Simulate role downgrade: first emission has two events, second has only one.
-    // The handler should be called for both in the first emission, but NOT called
-    // again when the second event disappears (indicating lost access).
-    const event1 = { id: 'e1', type: 'sale.completed', payload: '{}', payload_version: 1, shop_id: 'shop-1', occurred_at: '2026-07-31T10:00:00.000Z' }
-    const event2 = { id: 'e2', type: 'sale.completed', payload: '{}', payload_version: 1, shop_id: 'shop-1', occurred_at: '2026-07-31T11:00:00.000Z' }
-
+  // Replaces a test formerly titled "stops delivering events after a role downgrade (result
+  // set shrinks)" (WAFI-140 Sprint 3 final review). That test used sale.completed -- an
+  // UNGATED type (EVENT_SENSITIVITY marks it 'public') -- and asserted that BOTH rows of its
+  // first emission were delivered, which is not gating at all; it only re-proved the
+  // watermark behaviour already covered by "only forwards genuinely new rows when the watch
+  // re-emits the whole result set" above. Removed rather than renamed: it carried no coverage
+  // that test doesn't already provide.
+  it("never delivers a gated event type's row once RLS stops syncing it down after a role downgrade", async () => {
+    // Simulates: device syncs as owner (sees expense.recorded), the operator switches to
+    // cashier, the next sync cycle re-evaluates RLS server-side (077_events_per_type_rls.sql)
+    // and the watch stream's later emissions simply never include a NEW expense.recorded row
+    // published after the downgrade. The RLS enforcement itself is proven by the pgTAP suite;
+    // this test proves the client-side consequence -- a row that never arrives is never
+    // forwarded, needing no special client-side handling -- which is worth a dedicated
+    // regression test given it is the client-visible shape of this sprint's central change.
+    const preDowngradeRow = {
+      id: 'e1', type: 'expense.recorded', payload: '{"expenseId":"exp1"}',
+      payload_version: 1, shop_id: 'shop-1', occurred_at: '2026-08-05T10:00:00.000Z',
+    }
     vi.mocked(db.watch).mockReturnValue(fakeAsyncIterable([
-      { rows: { _array: [event2, event1] } }, // both events accessible initially
-      { rows: { _array: [event2] } }, // role downgrade: event1 is no longer returned
+      { rows: { _array: [preDowngradeRow] } }, // owner: sees the gated row
+      { rows: { _array: [preDowngradeRow] } }, // post-downgrade: same result set -- it is not
+                                               // that a visible row vanished, it is that a new
+                                               // gated row never got through RLS at all
     ]) as any)
 
     const handler = vi.fn()
-    const { stop } = useEventSubscription(SalesEventType.Completed, handler, { shopId: 'shop-1' })
+    const { stop } = useEventSubscription(ExpenseEventType.Recorded, handler, { shopId: 'shop-1' })
     await new Promise((r) => setTimeout(r, 0))
 
-    // Both events should have been forwarded in the first emission
-    expect(handler).toHaveBeenCalledTimes(2)
-    expect(handler.mock.calls[0][0]).toMatchObject({ id: 'e2' })
-    expect(handler.mock.calls[1][0]).toMatchObject({ id: 'e1' })
-
+    // Exactly one call: the pre-downgrade row, once. A hypothetical post-downgrade
+    // expense.recorded row is asserted by NEVER appearing in either emission above, so there
+    // is nothing for the handler to be called with a second time.
+    expect(handler).toHaveBeenCalledTimes(1)
+    expect(handler).toHaveBeenCalledWith(expect.objectContaining({ id: 'e1' }))
     stop()
   })
 })

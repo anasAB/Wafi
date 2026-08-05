@@ -64,13 +64,16 @@ describe('publishEvent', () => {
     expect(retryCall).toBeDefined()
   })
 
-  it('routes a token-bucket rejection to the retry queue as a transient failure, without touching db.execute', async () => {
+  it('drops a token-bucket-rejected event entirely -- no events insert AND no retry-queue write', async () => {
+    // WAFI-140 Sprint 3 final review: enqueueForRetry() is itself a local SQLite write, so
+    // enqueueing here would defeat the bucket's purpose (avoiding wasted local writes during
+    // a runaway loop) and grow local_event_publish_retries unboundedly during the burst.
     const { tryConsumeToken } = await import('@/services/events/publishRateLimiter')
     vi.mocked(tryConsumeToken).mockReturnValueOnce(false)
+    const before = eventPublishFailureCount.value
     await publishEvent(baseEvent)
-    expect(db.execute).toHaveBeenCalledTimes(1) // only the retry-queue insert, not the events insert
-    const [sql] = vi.mocked(db.execute).mock.calls[0]
-    expect(sql).toContain('local_event_publish_retries')
+    expect(db.execute).not.toHaveBeenCalled()
+    expect(eventPublishFailureCount.value).toBe(before + 1)
   })
 
   it('throws synchronously on an oversized payload, before any db.execute call', async () => {

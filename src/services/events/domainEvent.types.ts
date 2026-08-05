@@ -235,6 +235,10 @@ export interface DeviceRegisteredPayload {
 // cross-check test above, not the compiler -- SQL text isn't something TypeScript can check).
 export type EventSensitivity = 'public' | keyof import('@/features/staff/staff.types').StaffPermissions
 
+// Enforcement mechanism: __tests__/eventSensitivity.test.ts snapshots this entire object, so
+// ANY edit below shows up as a snapshot diff a reviewer must accept -- and when you accept one,
+// check whether 077_events_per_type_rls.sql's CASE needs the matching change (manual, by
+// design: generating SQL from TS is out of scope).
 export const EVENT_SENSITIVITY: Record<DomainEventType, EventSensitivity> = {
   'sale.completed':           'public',
   'sale.returned':            'public',
