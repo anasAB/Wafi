@@ -1,6 +1,6 @@
 import { db } from '@/data/powersync/db'
 import { logger } from './logger'
-import { isTransientPublishFailure } from './isTransientPublishFailure'
+import { isTransientEventFailure } from './isTransientEventFailure'
 import type { DomainEvent } from './domainEvent.types'
 
 /** 1 min, 5 min, 30 min, 2 hr, then stop (design spec §4). Indexed by `attempts` so far. */
@@ -16,7 +16,7 @@ function nextRetryAt(attempts: number): string {
 }
 
 export async function enqueueForRetry<T>(event: DomainEvent<T>, errorMessage: string): Promise<void> {
-  const failureKind = isTransientPublishFailure(new Error(errorMessage)) ? 'transient' : 'permanent'
+  const failureKind = isTransientEventFailure(new Error(errorMessage)) ? 'transient' : 'permanent'
   await db.execute(
     `insert into local_event_publish_retries
        (id, serialized_event, failure_kind, attempts, last_error, next_retry_at, created_at)
