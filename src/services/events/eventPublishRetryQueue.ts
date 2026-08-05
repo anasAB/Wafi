@@ -8,8 +8,11 @@ const BACKOFF_MINUTES = [1, 5, 30, 120]
 const MAX_ATTEMPTS = BACKOFF_MINUTES.length
 
 function nextRetryAt(attempts: number): string {
-  const minutes = BACKOFF_MINUTES[Math.min(attempts, BACKOFF_MINUTES.length - 1)]
-  return new Date(Date.now() + minutes * 60_000).toISOString()
+  const baseMinutes = BACKOFF_MINUTES[Math.min(attempts, BACKOFF_MINUTES.length - 1)]
+  // ±20% jitter (design spec §8b) so a batch of events that failed together doesn't all
+  // become due for retry at exactly the same synchronized moment.
+  const jitter = 0.8 + Math.random() * 0.4
+  return new Date(Date.now() + baseMinutes * 60_000 * jitter).toISOString()
 }
 
 export async function enqueueForRetry<T>(event: DomainEvent<T>, errorMessage: string): Promise<void> {
