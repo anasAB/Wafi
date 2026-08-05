@@ -87,7 +87,11 @@ registry and the live SQL policy disagree — turning "someone forgot" into "the
 someone decides":
 
 ```ts
-// src/services/events/eventSensitivity.ts
+// Appended to src/services/events/domainEvent.types.ts (not a separate eventSensitivity.ts) --
+// this registry is part of the event model itself, keyed on DomainEventType and using
+// StaffPermissionFlag, both already defined in this file. Living beside the type union it's
+// exhaustive over keeps the "every DomainEventType needs an entry" invariant visibly close to
+// the type it constrains, rather than in a separate module a reader has to go find.
 // Single source of truth for event-type sensitivity classification. Every DomainEventType MUST
 // have an entry -- the Record type below is exhaustive by construction, so adding a new event
 // type without adding a row here is a TypeScript compile error, not a silent gap.
@@ -255,6 +259,17 @@ CREATE TRIGGER events_rate_limit_trigger
 CREATE INDEX IF NOT EXISTS events_shop_created_at_idx ON public.events (shop_id, created_at);
 ```
 
+**The trigger is intentionally approximate under concurrent inserts, not exact.** Two concurrent
+transactions can each run their `SELECT count(*)` and both observe a count below 500 before either
+one commits its `INSERT` — both then proceed, so the real cap under concurrency is "500 plus however
+many inserts were in flight at the same instant," not a hard 500. This is acceptable for this
+project's workload because the goal is abuse prevention (stopping a runaway loop from flooding the
+table indefinitely), not enforcing an exact quota — a handful of rows over the nominal cap changes
+nothing about whether the mechanism did its job. A future rolling-counter implementation (the same
+one named below for the separate scaling concern) could close this race with an atomic
+`INSERT ... ON CONFLICT DO UPDATE ... RETURNING count` if a harder guarantee is ever required; not
+needed for this sprint's threat model.
+
 500 events/minute per shop — generous enough that no plausible legitimate burst (a busy sale rush, a
 large stock-take confirming many products at once) comes close, while a runaway loop hits the cap
 within seconds rather than flooding the table indefinitely.
@@ -285,8 +300,13 @@ in-memory token bucket, which never reaches Postgres to get a real error message
 transient, without a second special case.
 
 Classified `transient` because the window self-clears — Sprint 2's existing backoff schedule (1 min,
-5 min, 30 min, 2 hr) already handles "retry later" correctly for this case with zero changes to the
-retry queue's mechanics beyond this one new pattern entry.
+5 min, 30 min, 2 hr, now with jitter per §8b) already handles "retry later" correctly for this case
+with zero changes to the retry queue's mechanics beyond this one new pattern entry. Explicitly: both
+`events_rate_limit_exceeded` and `client_rate_limit_exceeded` retry on that same generic backoff
+schedule — neither gets a dedicated, tighter, or looser retry policy of its own. A rate-limit
+rejection is not special-cased at the retry-queue layer at all; classification (§4 here) is the only
+thing that changes, the backoff behavior after that point is identical to any other transient
+failure.
 
 ## 5. Event contract tests
 
@@ -309,16 +329,27 @@ import type {
 // time (e.g. via new Date() or a random uuid), specifically so the snapshot is stable across
 // runs. A snapshot built from non-deterministic fixture values would fail every run for the
 // wrong reason (a changed timestamp) instead of the right one (a changed shape).
+//
+// FIXTURE_PAYLOAD_VERSION/FIXTURE_STAFF_ID/etc. are frozen constants, not re-typed literals at
+// every entry -- one place to see "this is the value every fixture intentionally shares",
+// and one place to change if the fixture convention itself ever needs to shift.
+const FIXTURE_PAYLOAD_VERSION = 1
+const FIXTURE_STAFF_ID = 's1'
+const FIXTURE_SHOP_ID = 'shop1'
+const FIXTURE_OCCURRED_AT = '2026-08-05T00:00:00.000Z'
+
 const FIXTURES: Record<DomainEventType, DomainEvent> = {
   'sale.returned': {
     type: 'sale.returned', entityId: 'r1',
     payload: { returnId: 'r1', saleId: 's1', refundAmountUsd: 5, restockedItemCount: 1 } satisfies ReturnedPayload,
-    payloadVersion: 1, staffId: 's1', shopId: 'shop1', occurredAt: '2026-08-05T00:00:00.000Z',
+    payloadVersion: FIXTURE_PAYLOAD_VERSION, staffId: FIXTURE_STAFF_ID, shopId: FIXTURE_SHOP_ID,
+    occurredAt: FIXTURE_OCCURRED_AT,
   },
   'customer.debt_changed': {
     type: 'customer.debt_changed', entityId: 'c1',
     payload: { customerId: 'c1', deltaUsd: -5, newBalanceUsd: 10, reason: 'return' } satisfies DebtChangedPayload,
-    payloadVersion: 1, staffId: 's1', shopId: 'shop1', occurredAt: '2026-08-05T00:00:00.000Z',
+    payloadVersion: FIXTURE_PAYLOAD_VERSION, staffId: FIXTURE_STAFF_ID, shopId: FIXTURE_SHOP_ID,
+    occurredAt: FIXTURE_OCCURRED_AT,
   },
   // ...one entry per remaining event type (cash.movement_recorded, stock.taken,
   // product.price_changed, product.cost_updated, product.created, device.registered, plus
@@ -363,20 +394,31 @@ New `supabase/migrations/verification/verify_wafi140_events_isolation.sql`, mirr
   not affect shop B's counter or ability to insert.
 - The per-type `CASE` policy (§3) correctly denies a cashier-role session read access to all four
   gated types and correctly allows an owner-role session all of them, within the same shop.
-- **Registry/SQL cross-check (closes §3's `ELSE true` hazard):** a Vitest test (not SQL — reads the
-  migration file's text directly, no live DB needed) parses `events_select_scoped`'s `CASE`
-  statement out of the committed migration file, extracts the set of `type` literals with a
-  non-`true` branch, and asserts that set is *exactly* equal to the set of non-`'public'` keys in
-  `EVENT_SENSITIVITY` (§3) — not a subset either direction. A new event added to the TS registry
-  without its SQL branch, or a SQL branch added without a matching registry entry, fails this test
-  immediately rather than silently drifting.
+- **Registry/SQL cross-check (closes §3's `ELSE true` hazard):** runs against a live database in
+  this suite (not a text-parsing test against the migration file). Migrations are immutable and
+  additive in this codebase — a later migration (e.g. Sprint 4 adding `076_events_policy_v2.sql`)
+  can replace `events_select_scoped`'s definition entirely, at which point a test parsing the
+  *074/0NN migration file's source text* would still be checking an obsolete, superseded
+  definition, passing even if the live policy had since diverged from it. Instead, this test
+  queries `pg_get_expr(pg_policy.polqual, pg_policy.polrelid)` (or equivalently selects from
+  `pg_policies` for `events_select_scoped`) against the actual test database after migrations have
+  run, extracts the set of `type` literals with a non-`true` branch from that *live* expression
+  text, and asserts that set is exactly equal to the set of non-`'public'` keys in
+  `EVENT_SENSITIVITY` (§3) — not a subset either direction. This validates the policy that is
+  actually in effect, immune to which migration file most recently defined it.
 
 ### 6b. Payload input validation
 
 `publishEvent()` gains a size guard, checked before the `db.execute` try/catch:
 
 ```ts
-const MAX_PAYLOAD_BYTES = 16_384 // generous headroom over any current payload shape
+// The largest of all 17 wired payload shapes today (a handful of IDs, amounts, and short
+// strings each) serializes to well under 1 KB. 16 KB gives over an order of magnitude of
+// headroom above that -- room for legitimate growth (a longer note field, an extra ID or two
+// in a future payload revision) while still catching a genuinely runaway/malformed value
+// (e.g. a bug accidentally embedding an entire object graph or a base64 blob into a payload
+// field) long before it becomes a real storage or sync-bandwidth problem.
+const MAX_PAYLOAD_BYTES = 16_384
 
 export async function publishEvent<T>(event: DomainEvent<T>): Promise<void> {
   const serialized = JSON.stringify(event.payload)
@@ -410,6 +452,18 @@ function containsNonFiniteNumber(value: unknown): boolean {
   return false
 }
 ```
+
+**Cycle safety, stated as a contract rather than left implicit.** This function recurses without a
+visited-set guard, so a self-referential object graph (`const x = {}; x.self = x`) would recurse
+forever. Not reachable today — event payload interfaces are flat, JSON-serializable data by
+construction, and this call only happens *after* `serialized = JSON.stringify(event.payload)` has
+already succeeded (§6b's byte-length check runs first), which itself throws synchronously
+("Converting circular structure to JSON") on any cyclic input before `containsNonFiniteNumber` ever
+runs — so a cycle can never actually reach this function in practice, not just in theory. Recorded
+as an explicit constraint anyway, since relying on "JSON.stringify happens to run first" is a subtle
+invariant a future refactor could break: **event payloads are required to be JSON-serializable
+object graphs without cycles** — the same requirement `DomainEvent<T>`'s payload has always
+implicitly carried, now written down.
 
 Thrown synchronously, **outside** the try/catch that leads to `enqueueForRetry` — an oversized
 payload is a caller bug (something produced malformed/runaway data), not a transient infrastructure
@@ -483,8 +537,15 @@ export async function cleanupLocalEventTables(): Promise<void> {
   // Step 2 (must run before step 3's effects are visible locally): a ledger row referencing
   // an event_id no longer present in the local (now sync-rule-scoped) events table can never
   // be re-processed anyway.
+  //
+  // NOT EXISTS, not NOT IN -- NOT IN has a well-known NULL-handling trap (if the subquery
+  // ever returns a NULL id, `x NOT IN (...)` becomes UNKNOWN for every row, silently matching
+  // nothing at all). events.id is a NOT NULL uuid primary key, so that trap cannot actually
+  // fire here today, but NOT EXISTS carries no such caveat to reason about in the first place
+  // and is the generally-preferred form for exactly this shape of query.
   await db.execute(
-    `delete from local_event_processed_ledger where event_id not in (select id from events)`,
+    `delete from local_event_processed_ledger l
+     where not exists (select 1 from events e where e.id = l.event_id)`,
   )
   // Step 4: independent of the events cutoff — only rows already flagged for manual
   // inspection (permanent or exhausted-transient) persist past their own resolution.
@@ -542,8 +603,10 @@ function nextRetryAt(attempts: number): string {
 confirmed via codebase-wide grep for `useEventSubscription(` — the same dormancy bug the Sprint 2
 final-review pass found and fixed for `startRetryQueueSweeper` (commit `a064079`), flagged there for
 follow-up rather than fixed on the spot. Fix: call it from `App.vue`'s `onMounted`, alongside
-`startRetryQueueSweeper()` and the new `cleanupLocalEventTables()` call, gated identically (after
-device/shop context resolves, matching `loadActiveShift()`'s existing gating).
+`startRetryQueueSweeper()` and the new `startEventTableCleanupSweeper()` call (§8a — not
+`cleanupLocalEventTables()` directly; the sweeper wraps it and also wires the reconnect listener),
+gated identically (after device/shop context resolves, matching `loadActiveShift()`'s existing
+gating).
 
 ## 9. Testing
 
@@ -609,7 +672,12 @@ Updated DOMAIN INTERACTION MATRIX row (`AI_PRINCIPAL_ENGINEER_REVIEW.md`):
 
 | Domain | Writes to (tables) | Reads from (other domains) | Key composables | Reports/Dashboards affected |
 |---|---|---|---|---|
-| Events | `events`, `daily_event_counts`, `local_event_processed_ledger` (local-only), `local_event_publish_retries` (local-only) | Sales, Returns, Customer Credit, Inventory, Staff, Expense, Cash/Shifts, Products, Suppliers, Devices (all event producers); Identity (`auth_role()`/`can()` for per-type RLS) | `useEventSubscription`, `processProjectionAtMostOnce`, `retryPendingEventPublishes`, `isTransientPublishFailure`, `getRetryQueueStats`, `cleanupLocalEventTables`, `startEventTableCleanupSweeper`, `tryConsumeToken`, `EVENT_SENSITIVITY`, `enforce_events_rate_limit` (SQL trigger) | none yet (still no user-facing consumer — WAFI-143/144/145/146) |
+| Events | `events`, `daily_event_counts`, `local_event_processed_ledger` (local-only), `local_event_publish_retries` (local-only) | Sales, Returns, Customer Credit, Inventory, Staff, Expense, Cash/Shifts, Products, Suppliers, Devices (all event producers); Identity (`auth_role()`/`can()` for per-type RLS) | `useEventSubscription`, `processProjectionAtMostOnce`, `retryPendingEventPublishes`, `isTransientPublishFailure`, `getRetryQueueStats`, `cleanupLocalEventTables`, `startEventTableCleanupSweeper`, `tryConsumeToken`, `enforce_events_rate_limit` (SQL trigger) | none yet (still no user-facing consumer — WAFI-143/144/145/146) |
+
+`EVENT_SENSITIVITY` is deliberately not listed in "Key composables" above — it's a static
+classification registry (shared type-level infrastructure, per §3), not a composable/function
+consumers call at runtime. Recorded here rather than folded into that column so the matrix doesn't
+conflate "things you call" with "things you look up."
 
 ## 11. Out-of-scope call-outs (explicitly deferred, not silently dropped)
 
