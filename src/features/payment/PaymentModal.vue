@@ -395,7 +395,7 @@ async function confirmAsHigherPrice() {
         <div class="keypad-wrap">
           <NumericKeypad
             :confirm-disabled="!canConfirmSingle"
-            :hide-confirm="showChangeDue && pendingPayments.length === 0"
+            :hide-confirm="pendingPayments.length > 0 || showChangeDue"
             @digit="handleDigit"
             @delete="handleDelete"
             @confirm="handleConfirm"
