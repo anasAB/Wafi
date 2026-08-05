@@ -70,4 +70,14 @@ describe('runDurableSubscriber', () => {
     const [, params] = retryInsert!
     expect(params).toContain('permanent')
   })
+
+  it('does not propagate when the dedup lookup itself rejects, and routes to the retry queue', async () => {
+    vi.mocked(db.getOptional).mockRejectedValueOnce(new Error('database is locked'))
+    const handler = vi.fn().mockResolvedValue(undefined)
+    runDurableSubscriber({ subscriberName: 'audit', eventType: 'sale.completed', shopId: 'shop1', handler })
+    await expect(capturedHandler!(row)).resolves.not.toThrow()
+    expect(handler).not.toHaveBeenCalled()
+    const retryInsert = vi.mocked(db.execute).mock.calls.find(([sql]) => sql.includes('local_event_processing_retries'))
+    expect(retryInsert).toBeDefined()
+  })
 })

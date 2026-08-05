@@ -43,12 +43,6 @@ export function runDurableSubscriber<T>(opts: {
   return useEventSubscription<T>(
     opts.eventType,
     async (row) => {
-      const already = await db.getOptional<{ event_id: string }>(
-        `select event_id from local_subscriber_processed_events where subscriber_name = ? and event_id = ?`,
-        [opts.subscriberName, row.id],
-      )
-      if (already) return
-
       const event: DurableEvent<T> = {
         eventId: row.id,
         type: row.type,
@@ -60,14 +54,35 @@ export function runDurableSubscriber<T>(opts: {
         occurredAt: row.occurred_at,
       }
 
+      // Tracks whether opts.handler(event) itself completed successfully, so the
+      // catch block below can tell a genuine handler failure apart from a failure in
+      // the dedup lookup or the ledger write that happens around it -- see invariant 3.
+      let handlerSucceeded = false
+
       try {
+        const already = await db.getOptional<{ event_id: string }>(
+          `select event_id from local_subscriber_processed_events where subscriber_name = ? and event_id = ?`,
+          [opts.subscriberName, row.id],
+        )
+        if (already) return
+
         await opts.handler(event)
+        handlerSucceeded = true
         await db.execute(
           `insert into local_subscriber_processed_events (id, subscriber_name, event_id, processed_at) values (?, ?, ?, ?)`,
           [crypto.randomUUID(), opts.subscriberName, row.id, new Date().toISOString()],
         )
       } catch (err) {
-        logger.error('[runDurableSubscriber] handler failed, queuing for retry', opts.subscriberName, row.id, err)
+        if (handlerSucceeded) {
+          logger.error(
+            '[runDurableSubscriber] handler succeeded but ledger write failed, event will be redelivered',
+            opts.subscriberName,
+            row.id,
+            err,
+          )
+        } else {
+          logger.error('[runDurableSubscriber] handler failed, queuing for retry', opts.subscriberName, row.id, err)
+        }
         await enqueueForProcessingRetry(opts.subscriberName, event, err instanceof Error ? err.message : String(err))
           .catch(() => {
             // even the retry-queue write can fail (e.g. local disk full) -- this event's
