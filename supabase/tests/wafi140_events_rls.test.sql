@@ -73,14 +73,31 @@ SELECT throws_ok(
 );
 RESET ROLE;
 
--- Rate limit: seed 500 events as Shop 1 (bypassing RLS, as postgres), then assert the
--- 501st insert -- still as postgres, still Shop 1 -- raises the trigger's exception.
+-- Rate limit: top Shop 1 up to exactly 500 events within the trigger's trailing-60s
+-- window (bypassing RLS, as postgres), then assert the 501st insert -- still as postgres,
+-- still Shop 1 -- raises the trigger's exception. The loop count is computed dynamically
+-- (500 minus however many Shop 1 events already exist within the window) rather than
+-- hardcoded to 500: by this point in the file Shop 1 already has 5 event rows (the
+-- sale-1 seed row + the 4 gated-type fixture rows above), all inserted moments ago in
+-- this same transaction, and the trigger counts ALL of Shop 1's events in the window
+-- (not just sale.completed). A hardcoded `FOR i IN 1..500` would push the running total
+-- to 505 partway through the loop, tripping the trigger's `>= 500` check inside this
+-- unguarded DO block around iteration ~495 and aborting the whole test transaction
+-- before the intended throws_ok/lives_ok assertions ever run. Computing v_needed makes
+-- the loop top up to exactly 500, so the very next insert (the throws_ok below) is
+-- genuinely the 501st -- a real test of the boundary, not an accidental early trip.
 -- Uses a distinct entity_id prefix ('rl-') so this block's rows don't interfere with the
 -- earlier count-based assertions above (which ran before this block, so no ordering
 -- hazard either way, but kept distinct for clarity).
 DO $$
+DECLARE
+  v_current_count integer;
+  v_needed integer;
 BEGIN
-  FOR i IN 1..500 LOOP
+  SELECT count(*) INTO v_current_count FROM public.events
+  WHERE shop_id = 'e0000000-0000-0000-0000-000000000001' AND created_at > now() - interval '1 minute';
+  v_needed := 500 - v_current_count;
+  FOR i IN 1..v_needed LOOP
     INSERT INTO public.events (type, entity_id, payload, staff_id, shop_id, occurred_at)
     VALUES ('sale.completed', 'rl-' || i, '{}'::jsonb, 'e0000000-0000-0000-0000-000000000005', 'e0000000-0000-0000-0000-000000000001', now());
   END LOOP;
