@@ -2,12 +2,26 @@
 -- WAFI-140 Sprint 3 -- server-side rate limit on events inserts (design spec §4b). The
 -- real boundary; the client-side token bucket (publishRateLimiter.ts) is a cheap first
 -- line of defense in front of this, not a replacement for it.
+--
+-- The trigger also server-stamps NEW.created_at (see the function body): the column the cap
+-- counts on must not be client-writable, or the cap is bypassable by backdating.
 
 CREATE OR REPLACE FUNCTION public.enforce_events_rate_limit()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
   v_count integer;
 BEGIN
+  -- Server-stamped, not client-trusted: overwrite any client-supplied created_at with the
+  -- actual server insert time BEFORE counting. Without this line the whole cap is trivially
+  -- defeated -- publishEvent.ts sends created_at explicitly in its INSERT column list (which
+  -- is NOT the same as relying on the column's DEFAULT now()), and powersync/schema.ts
+  -- declares created_at as a normal writable/synced column, so a compromised or simply buggy
+  -- client could backdate every row out of the trailing-60s window and the count below would
+  -- never see them. Found in the WAFI-140 Sprint 3 final review. Overwriting here (BEFORE
+  -- INSERT) also guarantees the stored value is monotonic with real insert order, which the
+  -- count below depends on.
+  NEW.created_at := now();
+
   -- created_at (wall-clock insert time), not occurred_at (business time) -- deliberately:
   -- occurred_at can be backdated by the retry queue replaying an event whose original
   -- occurredAt is hours old (Sprint 2 design spec §4), so filtering on it would

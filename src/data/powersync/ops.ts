@@ -58,5 +58,15 @@ export function isPermanentError(error: PostgrestError): boolean {
   // PostgREST emits its own PGRSTxxx codes for schema-cache / RLS / parse
   // rejections — all of which are deterministic given the same request.
   if (code.startsWith('PGRST')) return true
+  // WAFI-140 Sprint 3 final review: a rate-limited events insert (076_events_rate_limit.sql
+  // raises 'events_rate_limit_exceeded' with SQLSTATE P0001) must NOT block the shared upload
+  // batch. Without this, it classifies as transient, and connector.ts re-queues the WHOLE
+  // batch of up to 100 ops -- sales, payments, shift closes -- behind it indefinitely. An
+  // event is best-effort telemetry (this ticket's posture throughout), so losing one to
+  // quarantine is strictly better than stalling unrelated financial writes. Scoped to this
+  // exact message rather than the whole P0001 SQLSTATE class: P0001 is used nowhere else in
+  // this codebase's migrations today, but "all P0001 is permanent" is a broader claim than
+  // the evidence for this finding supports.
+  if (error.message?.includes('events_rate_limit_exceeded')) return true
   return false
 }
