@@ -1,0 +1,23 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`EVENT_SENSITIVITY > matches its committed snapshot (any change here must be a deliberate, reviewed edit) 1`] = `
+{
+  "cash.movement_recorded": "public",
+  "customer.debt_changed": "public",
+  "device.registered": "public",
+  "expense.recorded": "can_view_expenses",
+  "installment.due_paid": "public",
+  "inventory.adjusted": "public",
+  "product.cost_updated": "can_view_reports",
+  "product.created": "public",
+  "product.price_changed": "public",
+  "sale.completed": "public",
+  "sale.returned": "public",
+  "settlement.paid": "can_view_staff_ledger",
+  "shift.closed": "public",
+  "shift.opened": "public",
+  "staff.ledger_entry_added": "can_view_staff_ledger",
+  "stock.received": "public",
+  "stock.taken": "public",
+}
+`;

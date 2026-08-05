@@ -215,3 +215,46 @@ export interface DeviceRegisteredPayload {
   deviceCode: string
   isTemporary: boolean
 }
+
+// WAFI-140 Sprint 3 (design spec §3). Single source of truth for event-type sensitivity
+// classification. Every DomainEventType MUST have an entry -- the Record type below is
+// exhaustive by construction, so adding a new event type without adding a row here is a
+// TypeScript compile error, not a silent gap.
+//
+// This registry does NOT generate the SQL policy in 077_events_per_type_rls.sql (no build
+// step wires TS into migrations in this codebase) -- it is the documented, type-checked
+// intent, cross-verified against the live policy by a pgTAP test (see
+// supabase/tests/wafi140_events_rls.test.sql) that reads pg_get_expr() against a real
+// database after migrations have run and asserts every non-'public' entry here has a
+// matching WHEN branch, and vice versa. Two independent lists, one automated equality check
+// between them -- neither can silently drift from the other without a failing test.
+//
+// Process rule: adding a new DomainEventType requires adding a row here (compiler-enforced)
+// and, if that row is not 'public', adding the matching WHEN branch to
+// 077_events_per_type_rls.sql's events_select_scoped policy (enforced by the pgTAP
+// cross-check test above, not the compiler -- SQL text isn't something TypeScript can check).
+export type EventSensitivity = 'public' | keyof import('@/features/staff/staff.types').StaffPermissions
+
+// Enforcement mechanism: __tests__/eventSensitivity.test.ts snapshots this entire object, so
+// ANY edit below shows up as a snapshot diff a reviewer must accept -- and when you accept one,
+// check whether 077_events_per_type_rls.sql's CASE needs the matching change (manual, by
+// design: generating SQL from TS is out of scope).
+export const EVENT_SENSITIVITY: Record<DomainEventType, EventSensitivity> = {
+  'sale.completed':           'public',
+  'sale.returned':            'public',
+  'customer.debt_changed':    'public',
+  'installment.due_paid':     'public',
+  'cash.movement_recorded':   'public',
+  'stock.taken':               'public',
+  'stock.received':           'public',
+  'shift.opened':              'public',
+  'shift.closed':              'public',
+  'inventory.adjusted':       'public',
+  'device.registered':        'public',
+  'product.price_changed':    'public',
+  'product.created':          'public',
+  'staff.ledger_entry_added': 'can_view_staff_ledger',
+  'settlement.paid':          'can_view_staff_ledger',
+  'expense.recorded':         'can_view_expenses',
+  'product.cost_updated':     'can_view_reports',
+}

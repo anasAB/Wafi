@@ -66,6 +66,15 @@ describe('isPermanentError — quarantine classification', () => {
     expect(isPermanentError(err('PGRST204'))).toBe(true)
   })
 
+  it('treats a rate-limited events insert as permanent, so it cannot stall the shared batch', () => {
+    // 076_events_rate_limit.sql raises this with SQLSTATE P0001; PostgREST may or may not
+    // surface a .code for a custom-raised exception, so the classification matches on the
+    // message. An event is best-effort telemetry -- quarantining one beats re-queueing the
+    // whole batch (sales included) behind it forever.
+    expect(isPermanentError(err('P0001', 'events_rate_limit_exceeded'))).toBe(true)
+    expect(isPermanentError(err('', 'events_rate_limit_exceeded'))).toBe(true)
+  })
+
   it('treats a missing/empty code (network failure, fetch error) as transient', () => {
     expect(isPermanentError(err(''))).toBe(false)
     expect(isPermanentError(err(undefined as unknown as string))).toBe(false)

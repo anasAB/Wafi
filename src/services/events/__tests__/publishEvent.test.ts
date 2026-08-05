@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
+vi.mock('@/services/events/publishRateLimiter', () => ({ tryConsumeToken: vi.fn().mockReturnValue(true) }))
 
 import { db } from '@/data/powersync/db'
 import { publishEvent, eventPublishFailureCount } from '@/services/events/publishEvent'
@@ -61,5 +62,29 @@ describe('publishEvent', () => {
       ([sql]) => sql.includes('local_event_publish_retries'),
     )
     expect(retryCall).toBeDefined()
+  })
+
+  it('drops a token-bucket-rejected event entirely -- no events insert AND no retry-queue write', async () => {
+    // WAFI-140 Sprint 3 final review: enqueueForRetry() is itself a local SQLite write, so
+    // enqueueing here would defeat the bucket's purpose (avoiding wasted local writes during
+    // a runaway loop) and grow local_event_publish_retries unboundedly during the burst.
+    const { tryConsumeToken } = await import('@/services/events/publishRateLimiter')
+    vi.mocked(tryConsumeToken).mockReturnValueOnce(false)
+    const before = eventPublishFailureCount.value
+    await publishEvent(baseEvent)
+    expect(db.execute).not.toHaveBeenCalled()
+    expect(eventPublishFailureCount.value).toBe(before + 1)
+  })
+
+  it('throws synchronously on an oversized payload, before any db.execute call', async () => {
+    const bigPayload = { note: 'x'.repeat(20_000) }
+    await expect(publishEvent({ ...baseEvent, payload: bigPayload })).rejects.toThrow(/exceeds/)
+    expect(db.execute).not.toHaveBeenCalled()
+  })
+
+  it('throws synchronously on a NaN/Infinity field, before any db.execute call', async () => {
+    const badPayload = { amountUsd: NaN }
+    await expect(publishEvent({ ...baseEvent, payload: badPayload })).rejects.toThrow(/non-finite/)
+    expect(db.execute).not.toHaveBeenCalled()
   })
 })

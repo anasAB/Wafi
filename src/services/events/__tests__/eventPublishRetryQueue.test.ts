@@ -101,4 +101,24 @@ describe('eventPublishRetryQueue', () => {
     const selectionCall = vi.mocked(db.getAll).mock.calls.at(-1)
     expect(selectionCall![0]).toContain(`failure_kind = 'transient'`)
   })
+
+  it('jitters next_retry_at by roughly ±20% of the base backoff, across many samples', async () => {
+    vi.useFakeTimers().setSystemTime(new Date('2026-08-05T00:00:00.000Z'))
+    const baseMs = 60_000 // 1 min, attempts = 0
+    const samples: number[] = []
+    for (let i = 0; i < 50; i++) {
+      await enqueueForRetry(event, 'database is locked')
+      const [, params] = vi.mocked(db.execute).mock.calls.at(-1)!
+      const nextRetryAt = new Date(params[5] as string).getTime()
+      samples.push(nextRetryAt - Date.now())
+    }
+    // every sample must fall within the documented ±20% band around the base backoff
+    for (const delta of samples) {
+      expect(delta).toBeGreaterThanOrEqual(baseMs * 0.8)
+      expect(delta).toBeLessThanOrEqual(baseMs * 1.2)
+    }
+    // and it must not be a constant (i.e. jitter is actually applied, not a no-op)
+    expect(new Set(samples).size).toBeGreaterThan(1)
+    vi.useRealTimers()
+  })
 })

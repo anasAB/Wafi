@@ -1,0 +1,294 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`event contract: cash.movement_recorded > matches its committed shape snapshot 1`] = `
+{
+  "entityId": "m1",
+  "occurredAt": "2026-08-05T00:00:00.000Z",
+  "payload": {
+    "amountUsd": 20,
+    "category": "float_topup",
+    "currency": "USD",
+    "direction": "in",
+    "movementId": "m1",
+    "shiftId": "sh1",
+  },
+  "payloadVersion": 1,
+  "shopId": "shop1",
+  "staffId": "s1",
+  "type": "cash.movement_recorded",
+}
+`;
+
+exports[`event contract: customer.debt_changed > matches its committed shape snapshot 1`] = `
+{
+  "entityId": "c1",
+  "occurredAt": "2026-08-05T00:00:00.000Z",
+  "payload": {
+    "customerId": "c1",
+    "deltaUsd": -5,
+    "newBalanceUsd": 10,
+    "reason": "return",
+  },
+  "payloadVersion": 1,
+  "shopId": "shop1",
+  "staffId": "s1",
+  "type": "customer.debt_changed",
+}
+`;
+
+exports[`event contract: device.registered > matches its committed shape snapshot 1`] = `
+{
+  "entityId": "d1",
+  "occurredAt": "2026-08-05T00:00:00.000Z",
+  "payload": {
+    "deviceCode": "ABC123",
+    "deviceId": "d1",
+    "isTemporary": false,
+  },
+  "payloadVersion": 1,
+  "shopId": "shop1",
+  "staffId": "s1",
+  "type": "device.registered",
+}
+`;
+
+exports[`event contract: expense.recorded > matches its committed shape snapshot 1`] = `
+{
+  "entityId": "e1",
+  "occurredAt": "2026-08-05T00:00:00.000Z",
+  "payload": {
+    "amountUsd": 50,
+    "category": "صيانة",
+    "expenseId": "e1",
+    "photoUrl": undefined,
+    "staffId": "s1",
+  },
+  "payloadVersion": 1,
+  "shopId": "shop1",
+  "staffId": "s1",
+  "type": "expense.recorded",
+}
+`;
+
+exports[`event contract: installment.due_paid > matches its committed shape snapshot 1`] = `
+{
+  "entityId": "c1",
+  "occurredAt": "2026-08-05T00:00:00.000Z",
+  "payload": {
+    "amount": 20,
+    "customerId": "c1",
+    "remainingBalance": 80,
+  },
+  "payloadVersion": 1,
+  "shopId": "shop1",
+  "staffId": "s1",
+  "type": "installment.due_paid",
+}
+`;
+
+exports[`event contract: inventory.adjusted > matches its committed shape snapshot 1`] = `
+{
+  "entityId": "p1",
+  "occurredAt": "2026-08-05T00:00:00.000Z",
+  "payload": {
+    "deltaQty": -3,
+    "productId": "p1",
+    "reason": "damaged",
+  },
+  "payloadVersion": 1,
+  "shopId": "shop1",
+  "staffId": "s1",
+  "type": "inventory.adjusted",
+}
+`;
+
+exports[`event contract: product.cost_updated > matches its committed shape snapshot 1`] = `
+{
+  "entityId": "p1",
+  "occurredAt": "2026-08-05T00:00:00.000Z",
+  "payload": {
+    "newCostUsd": 6,
+    "oldCostUsd": 5,
+    "productId": "p1",
+  },
+  "payloadVersion": 1,
+  "shopId": "shop1",
+  "staffId": "s1",
+  "type": "product.cost_updated",
+}
+`;
+
+exports[`event contract: product.created > matches its committed shape snapshot 1`] = `
+{
+  "entityId": "p1",
+  "occurredAt": "2026-08-05T00:00:00.000Z",
+  "payload": {
+    "categoryId": null,
+    "name": "Widget",
+    "productId": "p1",
+  },
+  "payloadVersion": 1,
+  "shopId": "shop1",
+  "staffId": "s1",
+  "type": "product.created",
+}
+`;
+
+exports[`event contract: product.price_changed > matches its committed shape snapshot 1`] = `
+{
+  "entityId": "p1",
+  "occurredAt": "2026-08-05T00:00:00.000Z",
+  "payload": {
+    "newPriceUsd": 12,
+    "oldPriceUsd": 10,
+    "productId": "p1",
+  },
+  "payloadVersion": 1,
+  "shopId": "shop1",
+  "staffId": "s1",
+  "type": "product.price_changed",
+}
+`;
+
+exports[`event contract: sale.completed > matches its committed shape snapshot 1`] = `
+{
+  "entityId": "sale1",
+  "occurredAt": "2026-08-05T00:00:00.000Z",
+  "payload": {
+    "discountApplied": false,
+    "itemCount": 2,
+    "paymentSummary": {
+      "cardTotal": 0,
+      "cashSyp": 0,
+      "cashUsd": 10,
+      "creditTotal": 0,
+      "methodCount": 1,
+    },
+    "saleId": "sale1",
+    "shopId": "shop1",
+    "staffId": "s1",
+    "totalSyp": 150000,
+    "totalUsd": 10,
+  },
+  "payloadVersion": 1,
+  "shopId": "shop1",
+  "staffId": "s1",
+  "type": "sale.completed",
+}
+`;
+
+exports[`event contract: sale.returned > matches its committed shape snapshot 1`] = `
+{
+  "entityId": "r1",
+  "occurredAt": "2026-08-05T00:00:00.000Z",
+  "payload": {
+    "refundAmountUsd": 5,
+    "restockedItemCount": 1,
+    "returnId": "r1",
+    "saleId": "sale1",
+  },
+  "payloadVersion": 1,
+  "shopId": "shop1",
+  "staffId": "s1",
+  "type": "sale.returned",
+}
+`;
+
+exports[`event contract: settlement.paid > matches its committed shape snapshot 1`] = `
+{
+  "entityId": "s1",
+  "occurredAt": "2026-08-05T00:00:00.000Z",
+  "payload": {
+    "amount": 15,
+    "ledgerBalanceAfter": 0,
+    "staffId": "s1",
+  },
+  "payloadVersion": 1,
+  "shopId": "shop1",
+  "staffId": "s1",
+  "type": "settlement.paid",
+}
+`;
+
+exports[`event contract: shift.closed > matches its committed shape snapshot 1`] = `
+{
+  "entityId": "sh1",
+  "occurredAt": "2026-08-05T00:00:00.000Z",
+  "payload": {
+    "countedCash": 98,
+    "expectedCash": 100,
+    "shiftId": "sh1",
+    "staffId": "s1",
+    "variance": -2,
+  },
+  "payloadVersion": 1,
+  "shopId": "shop1",
+  "staffId": "s1",
+  "type": "shift.closed",
+}
+`;
+
+exports[`event contract: shift.opened > matches its committed shape snapshot 1`] = `
+{
+  "entityId": "sh1",
+  "occurredAt": "2026-08-05T00:00:00.000Z",
+  "payload": {
+    "openingCash": 50,
+    "shiftId": "sh1",
+    "staffId": "s1",
+  },
+  "payloadVersion": 1,
+  "shopId": "shop1",
+  "staffId": "s1",
+  "type": "shift.opened",
+}
+`;
+
+exports[`event contract: staff.ledger_entry_added > matches its committed shape snapshot 1`] = `
+{
+  "entityId": "s1",
+  "occurredAt": "2026-08-05T00:00:00.000Z",
+  "payload": {
+    "amount": 15,
+    "entryType": "advance",
+    "staffId": "s1",
+  },
+  "payloadVersion": 1,
+  "shopId": "shop1",
+  "staffId": "s1",
+  "type": "staff.ledger_entry_added",
+}
+`;
+
+exports[`event contract: stock.received > matches its committed shape snapshot 1`] = `
+{
+  "entityId": "rc1",
+  "occurredAt": "2026-08-05T00:00:00.000Z",
+  "payload": {
+    "receivingId": "rc1",
+    "skuCount": 5,
+    "supplierId": "sup1",
+    "totalCost": 100,
+  },
+  "payloadVersion": 1,
+  "shopId": "shop1",
+  "staffId": "s1",
+  "type": "stock.received",
+}
+`;
+
+exports[`event contract: stock.taken > matches its committed shape snapshot 1`] = `
+{
+  "entityId": "st1",
+  "occurredAt": "2026-08-05T00:00:00.000Z",
+  "payload": {
+    "productCount": 10,
+    "sessionId": "st1",
+    "unexplainedVarianceCount": 0,
+  },
+  "payloadVersion": 1,
+  "shopId": "shop1",
+  "staffId": "s1",
+  "type": "stock.taken",
+}
+`;

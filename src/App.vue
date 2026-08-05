@@ -19,6 +19,8 @@ import { useIdleLock }   from '@/composables/useIdleLock'
 import { db }            from '@/data/powersync/db'
 import { useSaleStore }  from '@/store/sale.store'
 import { startRetryQueueSweeper } from '@/services/events/eventPublishRetryQueue'
+import { startDailyEventCountsProjection } from '@/services/events/dailyEventCountsProjection'
+import { startEventTableCleanupSweeper } from '@/services/events/cleanupLocalEventTables'
 
 const { offlineReady, dismissOfflineReady, needRefresh, applyUpdate, dismissNeedRefresh } = usePwaLifecycle()
 
@@ -115,6 +117,18 @@ onMounted(async () => {
   // this call the sweeper (and retryPendingEventPublishes) never ran in
   // production; only its own unit tests exercised it.
   startRetryQueueSweeper()
+
+  // WAFI-140 Sprint 3: startDailyEventCountsProjection (Sprint 1) had the identical
+  // dormancy bug -- confirmed via codebase-wide grep for useEventSubscription( turning
+  // up zero callers outside its own test file -- flagged in the Sprint 2 final-review
+  // commit (a064079) for follow-up rather than fixed on the spot. Fixed here, gated
+  // identically to the retry sweeper above.
+  startDailyEventCountsProjection(useDeviceStore().shopId)
+
+  // WAFI-140 Sprint 3: bounds local_event_processed_ledger/local_event_publish_retries
+  // growth (design spec §8a) -- same gating and reconnect-listener mechanism as the
+  // retry sweeper above.
+  startEventTableCleanupSweeper()
 
   appReady.value = true
 })
