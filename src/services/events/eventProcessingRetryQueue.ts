@@ -1,0 +1,96 @@
+import { db } from '@/data/powersync/db'
+import { logger } from './logger'
+import { isTransientEventFailure } from './isTransientEventFailure'
+import type { DomainEvent } from './domainEvent.types'
+
+/** Same schedule as eventPublishRetryQueue.ts's BACKOFF_MINUTES -- no reason for
+ *  consumption to back off on a different schedule than publication. */
+const BACKOFF_MINUTES = [1, 5, 30, 120]
+const MAX_ATTEMPTS = BACKOFF_MINUTES.length
+
+function nextRetryAt(attempts: number): string {
+  const baseMinutes = BACKOFF_MINUTES[Math.min(attempts, BACKOFF_MINUTES.length - 1)]
+  const jitter = 0.8 + Math.random() * 0.4
+  return new Date(Date.now() + baseMinutes * 60_000 * jitter).toISOString()
+}
+
+export async function enqueueForProcessingRetry<T>(
+  subscriberName: string,
+  event: DomainEvent<T>,
+  errorMessage: string,
+): Promise<void> {
+  const failureKind = isTransientEventFailure(new Error(errorMessage)) ? 'transient' : 'permanent'
+  await db.execute(
+    `insert into local_event_processing_retries
+       (id, subscriber_name, serialized_event, failure_kind, attempts, last_error, next_retry_at, created_at)
+     values (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      crypto.randomUUID(),
+      subscriberName,
+      JSON.stringify(event),
+      failureKind,
+      0,
+      errorMessage,
+      failureKind === 'transient' ? nextRetryAt(0) : new Date(0).toISOString(),
+      new Date().toISOString(),
+    ],
+  )
+}
+
+type RetryRow = {
+  id: string; subscriber_name: string; serialized_event: string
+  failure_kind: string; attempts: number
+}
+
+/** Never aborts partway through -- one permanently-stuck row must not starve every row
+ *  behind it (mirrors eventPublishRetryQueue.ts's retryPendingEventPublishes). `handlers`
+ *  maps subscriber_name -> the handler closure that subscriber was started with, so a
+ *  retried event goes through the exact same success/failure branching as a live
+ *  delivery, not a duplicate code path. */
+export async function retryPendingEventProcessing(
+  handlers: Map<string, (event: DomainEvent) => Promise<void>>,
+): Promise<void> {
+  const dueRows = await db.getAll<RetryRow>(
+    `select id, subscriber_name, serialized_event, failure_kind, attempts
+     from local_event_processing_retries
+     where failure_kind = 'transient' and next_retry_at <= ? order by next_retry_at asc`,
+    [new Date().toISOString()],
+  )
+  for (const row of dueRows) {
+    const handler = handlers.get(row.subscriber_name)
+    if (!handler) continue // subscriber not registered in this process -- skip, don't drop
+    try {
+      const event = JSON.parse(row.serialized_event) as DomainEvent
+      await handler(event)
+      await db.execute(`delete from local_event_processing_retries where id = ?`, [row.id])
+    } catch (err) {
+      const attempts = row.attempts + 1
+      if (attempts >= MAX_ATTEMPTS) {
+        logger.error('[eventProcessingRetryQueue] row exhausted retries, leaving for manual inspection', row.id, err)
+        await db.execute(
+          `update local_event_processing_retries set attempts = ?, last_error = ?, failure_kind = 'permanent' where id = ?`,
+          [attempts, String(err), row.id],
+        )
+      } else {
+        await db.execute(
+          `update local_event_processing_retries set attempts = ?, last_error = ?, next_retry_at = ? where id = ?`,
+          [attempts, String(err), nextRetryAt(attempts), row.id],
+        )
+      }
+    }
+  }
+}
+
+/** Same reconnect-listener + app-start pattern as startRetryQueueSweeper -- no polling
+ *  timer, deliberately (battery/CPU on cheap target devices). */
+export function startProcessingRetrySweeper(
+  handlers: Map<string, (event: DomainEvent) => Promise<void>>,
+): { stop: () => void } {
+  void retryPendingEventProcessing(handlers)
+  const unsubscribe = db.registerListener?.({
+    statusChanged: (status: { connected: boolean }) => {
+      if (status.connected) void retryPendingEventProcessing(handlers)
+    },
+  })
+  return { stop: () => unsubscribe?.() }
+}
