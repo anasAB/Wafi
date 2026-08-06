@@ -163,6 +163,36 @@ async function hydrateReceivingMeta(entries: AuditLog[], shopId: string): Promis
   })
 }
 
+/** Final review I1: subscriber-generated rows (WAFI-150) always write staff_name =
+ *  'system' -- the durable subscriber has no session context, unlike _write() which
+ *  reads useSessionStore().activeStaff?.name at call time. Rather than reconstructing
+ *  business state from a DB read inside the subscriber's write path (prohibited by the
+ *  design spec), resolve the real name here, at render time, the same way
+ *  hydrateReceivingMeta() above resolves receiving detail the subscriber's payload
+ *  can't carry. staff_id is always correctly populated by the subscriber, so this is a
+ *  cheap join keyed on the ids already collected. */
+async function hydrateStaffNames(entries: AuditLog[]): Promise<AuditLog[]> {
+  const staffIds = [...new Set(
+    entries
+      .filter(e => e.staffName === 'system' && e.staffId)
+      .map(e => e.staffId as string),
+  )]
+  if (!staffIds.length) return entries
+
+  const placeholders = staffIds.map(() => '?').join(',')
+  const rows = await db.getAll<{ id: string; name: string }>(
+    `SELECT id, name FROM staff WHERE id IN (${placeholders})`,
+    staffIds,
+  )
+  const nameById = new Map(rows.map(r => [r.id, r.name]))
+
+  return entries.map((entry) => {
+    if (entry.staffName !== 'system' || !entry.staffId) return entry
+    const name = nameById.get(entry.staffId)
+    return name ? { ...entry, staffName: name } : entry
+  })
+}
+
 export function useAuditLog() {
   const entries = ref<AuditLog[]>([])
   const device  = useDeviceStore()
@@ -236,7 +266,8 @@ export function useAuditLog() {
     sql += ' ORDER BY created_at DESC LIMIT 200'
     const rows = await db.getAll<AuditRow>(sql, params)
     const parsed = rows.map(rowToAuditLog)
-    entries.value = await hydrateReceivingMeta(parsed, device.shopId)
+    const withReceivingMeta = await hydrateReceivingMeta(parsed, device.shopId)
+    entries.value = await hydrateStaffNames(withReceivingMeta)
   }
 
   async function loadEntityHistory(
@@ -250,8 +281,10 @@ export function useAuditLog() {
       [entityType, entityId],
     )
     const parsed = rows.map(rowToAuditLog)
-    if (entityType !== 'receiving') return parsed
-    return hydrateReceivingMeta(parsed, device.shopId)
+    const withReceivingMeta = entityType === 'receiving'
+      ? await hydrateReceivingMeta(parsed, device.shopId)
+      : parsed
+    return hydrateStaffNames(withReceivingMeta)
   }
 
   // ── Typed helpers ──────────────────────────────────────────────────────────
