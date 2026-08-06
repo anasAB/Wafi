@@ -2,7 +2,7 @@
 
 ## Problem statement
 
-WAFI-140 shipped the event bus (26+ canonical events planned, 17 currently wired) and
+WAFI-140 shipped the event bus (a canonical event catalog, 17 currently wired) and
 WAFI-150 (in progress) adds the durable-subscriber primitive plus the first durable
 consumer (audit). But per the `DOMAIN INTERACTION MATRIX`'s own Events row, there is
 still **no user-facing consumer** of the bus — `dailyEventCountsProjection` writes to a
@@ -64,7 +64,7 @@ note that 144/145/146 follow 143):**
 ## Architecture
 
 ```
-Payment/Discount Service (WAFI-152 layer)
+Payment/Discount business service
      │
      ├─▶ publishEvent('sale.completed', ...)   (existing)
      └─▶ publishEvent('sale.discounted', ...)   (new)
@@ -133,6 +133,15 @@ local_today_revenue_projection
 shop_id, date, revenue_usd, revenue_syp, updated_at
 ```
 
+Like `daily_event_counts` before it, this is a PowerSync `Table`/`column`-DSL table —
+it always carries an implicit `id` UUID primary key, and the DSL has no way to declare a
+composite `PRIMARY KEY(shop_id, date)` on top of that. `(shop_id, date)` is instead a
+**logical** key, enforced the same way `dailyEventCountsProjection.ts` already enforces
+`(shop_id, event_type, day)`: read-then-insert-or-update, not a SQL upsert — PowerSync
+client tables are SQLite views over CRUD-queue triggers, and SQLite rejects `ON CONFLICT`
+against a view. `dashboardRevenueProjection.ts` mirrors that exact query shape (`SELECT`
+by `shop_id`+`date`; `UPDATE` the existing row or `INSERT` a new one).
+
 **Documented explicitly, in code and in the convention doc: this projection is a
 disposable read model.** It may drift under event loss and is never treated as a
 source of truth for anything financial — reconciliation, reporting, and payouts continue
@@ -172,9 +181,15 @@ export function mapEventToNotification(event: DomainEvent): NotificationInsert |
 replay-safe — redelivery of the same event must not duplicate side effects. Enforced here
 identically to `auditSubscriber.ts`'s existing guard: check-then-insert against
 `notifications.source_event_id` before writing, with the real backstop at sync-upload
-time via a partial unique index (same `ON CONFLICT (source_event_id) WHERE
-source_event_id IS NOT NULL DO NOTHING` pattern as `audit_log`, including `ops.ts`'s
-upload-path dedup extension).
+time via a full (non-partial) unique index and `ON CONFLICT (source_event_id) DO NOTHING`
+in `ops.ts`'s upload-path dedup extension.
+
+`source_event_id` is `NOT NULL` here — unlike `audit_log`'s nullable/partial-index
+version, every `notifications` row in this ticket's scope originates from exactly one
+event; there is no legacy/manual-row case to accommodate yet. If WAFI-145 later
+introduces manual or system-generated notifications with no originating event, that's the
+point to revisit nullability — not before, since a premature `NULL` allowance here would
+just be unused optionality.
 
 ## Data model & migrations
 
@@ -194,13 +209,13 @@ CREATE TABLE public.notifications (
   entity_id         TEXT,
   severity          TEXT NOT NULL DEFAULT 'INFO'
                       CHECK (severity IN ('INFO', 'WARNING', 'CRITICAL')),
-  source_event_id   UUID,
+  source_event_id   UUID NOT NULL,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   read_at           TIMESTAMPTZ
 );
 
 CREATE UNIQUE INDEX notifications_source_event_id_unique
-  ON public.notifications (source_event_id) WHERE source_event_id IS NOT NULL;
+  ON public.notifications (source_event_id);
 
 CREATE INDEX idx_notifications_shop_created
   ON public.notifications (shop_id, created_at DESC);
@@ -221,8 +236,12 @@ independently enforce this same per-recipient scoping. Server-side RLS alone is 
 sufficient — a device's local PowerSync database downloads whatever its sync rule permits,
 and a notification addressed to a different staff member arriving on-device (even if the
 UI never renders it) is a confidentiality gap, the same class of issue the
-`DOMAIN INTERACTION MATRIX`'s Identity/RLS notes already call out elsewhere. Verify sync
-rules scope `notifications` by recipient during implementation, not just by `shop_id`.
+`DOMAIN INTERACTION MATRIX`'s Identity/RLS notes already call out elsewhere.
+
+**Acceptance criterion (see Testing below), not merely a note to check later**:
+notifications addressed to another staff member must never appear in that device's local
+database — sync rules need to scope `notifications` by recipient, not just by `shop_id`,
+and this needs a real test against that behavior, not just a Postgres RLS policy review.
 
 **New local-only table** (schema.ts only): `local_today_revenue_projection`, as described
 above — disposable, never synced, no migration.
@@ -263,10 +282,21 @@ startNotificationSubscribers(shopId)
   plus an explicit redelivery/dedup test (same `source_event_id` delivered twice → exactly
   one row) — required because idempotency is an explicit design requirement here, not
   incidental.
-- pgTAP: `notifications.source_event_id` partial-unique-index + dedup test, mirroring
-  WAFI-150's `wafi150_audit_dedup.test.sql`; plus an RLS cross-check — staff A cannot see
-  a notification targeted at staff B, and a role-targeted notification is visible to every
-  staff member in that role within the same shop, and invisible cross-shop.
+- pgTAP: `notifications.source_event_id` unique-index + dedup test, mirroring WAFI-150's
+  `wafi150_audit_dedup.test.sql` (unqualified, not partial, since the column is `NOT
+  NULL` here); plus an RLS cross-check — staff A cannot see a notification targeted at
+  staff B, and a role-targeted notification is visible to every staff member in that role
+  within the same shop, and invisible cross-shop.
+- **Acceptance criterion, not just an implementation note**: notifications addressed to
+  another staff member never appear in that device's local (PowerSync/SQLite) database —
+  verified against a real sync-rule test, not only the server-side pgTAP RLS check above.
+  This is the concrete, checkable form of the "open cross-feature question" flagged below;
+  the ticket is not done until this passes.
+- Notification subscriber: an explicit unrelated-event test — feeding
+  `mapEventToNotification()` a `sale.completed` event (or any type other than
+  `sale.discounted`) must return `null`. Small, but protects the mapping boundary: a
+  future refactor that widens the `switch`/`if` accidentally could otherwise generate
+  notifications for events it was never meant to react to.
 
 ## `EVENT_SUBSCRIBERS.md` (new convention doc)
 
@@ -282,9 +312,12 @@ startNotificationSubscribers(shopId)
 2. **Decision rule**: "can this be silently rebuilt from source data with nobody worse
    off?" → lightweight. "would losing this delivery matter to the business?" → durable.
 3. **Idempotency requirement** (durable only): a handler must be safe to invoke more than
-   once for the same event. Standard mechanism: a `source_event_id` column + partial
-   unique index on the target table, checked before insert in the handler and enforced
-   again at sync-upload time in `ops.ts` — not a per-subscriber reinvention.
+   once for the same event. Standard mechanism: a `source_event_id` column + unique index
+   on the target table (partial — `WHERE source_event_id IS NOT NULL` — if the table also
+   has legacy/manual rows with no originating event, as `audit_log` does; unqualified if
+   every row always originates from an event, as `notifications` does in this ticket),
+   checked before insert in the handler and enforced again at sync-upload time in
+   `ops.ts` — not a per-subscriber reinvention.
 4. **Wiring convention**: every subscriber is a `start*()` function, called once in
    `App.vue`'s startup sequence after shop/device context resolves, alongside the
    existing sweepers.
