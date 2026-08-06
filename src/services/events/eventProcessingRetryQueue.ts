@@ -62,6 +62,23 @@ export async function retryPendingEventProcessing(
     try {
       const event = JSON.parse(row.serialized_event) as DomainEvent
       await handler(event)
+      // Final review I2: a successful retry must go through the identical
+      // success/failure branching as a live delivery (design spec invariant 1) --
+      // that includes writing the durable ledger row runDurableSubscriber writes on
+      // its own success path. Without this, every retried event is silently
+      // re-handled on each subsequent redelivery/app restart, and any future
+      // subscriber that relies on the ledger for idempotency (rather than carrying
+      // its own dedup key, as auditSubscriber.ts currently does) would double-write.
+      // `event` is typed as DomainEvent here (the retry queue's public handler
+      // signature), but runDurableSubscriber always serializes a DurableEvent<T> --
+      // eventId is an own enumerable property and survives the JSON round-trip
+      // (verified: see auditSubscriber.test.ts / this file's own tests), so the cast
+      // reflects the real runtime shape, not a hope.
+      const eventId = (event as unknown as { eventId: string }).eventId
+      await db.execute(
+        `insert into local_subscriber_processed_events (id, subscriber_name, event_id, processed_at) values (?, ?, ?, ?)`,
+        [crypto.randomUUID(), row.subscriber_name, eventId, new Date().toISOString()],
+      )
       await db.execute(`delete from local_event_processing_retries where id = ?`, [row.id])
     } catch (err) {
       const attempts = row.attempts + 1
