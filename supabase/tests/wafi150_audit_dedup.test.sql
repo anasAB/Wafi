@@ -19,7 +19,7 @@ VALUES ('e0000000-0000-0000-0000-000000000001', NULL, 'system', 'expense.created
 SELECT lives_ok(
   $$INSERT INTO public.audit_log (shop_id, staff_id, staff_name, event, entity_type, entity_id, source_event_id)
     VALUES ('e0000000-0000-0000-0000-000000000001', NULL, 'system', 'expense.created', 'expense', 'e1', 'ee000000-0000-0000-0000-000000000001')
-    ON CONFLICT (source_event_id) DO NOTHING$$,
+    ON CONFLICT (source_event_id) WHERE source_event_id IS NOT NULL DO NOTHING$$,
   'a second insert sharing source_event_id is silently absorbed, not a unique-violation error'
 );
 
