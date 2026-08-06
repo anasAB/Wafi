@@ -116,6 +116,13 @@ export async function receiveStock(
   }
 
   return executeBusinessOperation(write, {
+    // WAFI-150 final review (C3): NOT retired. StockReceivedPayload doesn't carry the
+    // supplier name or per-line detail (product/qty/unit cost/costUpdated) that this
+    // manual call's audit_log meta -- and AuditLogPage.vue's expanded receiving detail
+    // view -- both require. Faking that shape from the payload alone is impossible
+    // (the data genuinely isn't there), so this call stays manual (documented escape
+    // hatch per the design spec) and auditSubscriber.ts's mapEventToAuditEntry maps
+    // 'stock.received' to null so the subscriber does not double-log.
     audit: async (receiving) => {
       const auditSupplierName = input.supplierName.trim() ||
         (await db.getOptional<{ name: string }>(
@@ -198,6 +205,13 @@ export async function adjustInventory(
   }
 
   return executeBusinessOperation(write, {
+    // WAFI-150 final review (C3): NOT retired. InventoryAdjustedPayload's `deltaQty`
+    // cannot reconstruct the old/new quantities (or the product name) this manual
+    // call's audit_log meta -- and eventLabel's 'stock.adjusted' rendering -- both
+    // require, without a state-reconstructing DB read, which the subscriber must not
+    // do. This call stays manual (documented escape hatch per the design spec) and
+    // auditSubscriber.ts's mapEventToAuditEntry maps 'inventory.adjusted' to null so
+    // the subscriber does not double-log.
     audit: async (adjustment) => {
       const nameRow = await db.getOptional<{ name_ar: string }>(
         `SELECT name_ar FROM products WHERE id = ?`, [input.productId],

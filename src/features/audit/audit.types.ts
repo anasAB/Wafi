@@ -50,6 +50,8 @@ export type AuditEvent =
   | 'staff_settlement.finalized'
   | 'staff_settlement.paid'
   | 'messaging.whatsapp_composed'
+  | 'device.registered'
+  | 'customer.debt_changed'
 
 export type AuditEntityType =
   | 'sale' | 'return' | 'product' | 'expense'

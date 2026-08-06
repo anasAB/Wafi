@@ -333,4 +333,48 @@ describe('useProducts.save — domain events (WAFI-140 Sprint 2)', () => {
 
     expect(publishEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'product.created' }))
   })
+
+  it('does not write a manual audit_log row for a price change (WAFI-150: now handled by the audit subscriber off product.price_changed)', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce({ price_usd: 10, cost_price_usd: 5 })
+    const { save } = useProducts()
+    await save({
+      id: 'p1', shopId: 'shop1', nameAr: 'قلم', salePriceUsd: 12, costPriceUsd: 5,
+      currentStock: 5, lowStockThreshold: 1, isActive: true,
+    } as any)
+
+    const auditCalls = vi.mocked(db.execute).mock.calls.filter(
+      (c: any[]) => String(c[0]).includes('INSERT INTO audit_log'),
+    )
+    expect(auditCalls.some((c: any[]) => c[1][4] === 'product.price_changed')).toBe(false)
+  })
+
+  it('does not write a manual audit_log row for product creation (WAFI-150: now handled by the audit subscriber off product.created)', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce(null)
+    const { save } = useProducts()
+    await save({
+      shopId: 'shop1', nameAr: 'منتج جديد', salePriceUsd: 10, costPriceUsd: 5,
+      currentStock: 5, lowStockThreshold: 1, isActive: true,
+    } as any)
+
+    const auditCalls = vi.mocked(db.execute).mock.calls.filter(
+      (c: any[]) => String(c[0]).includes('INSERT INTO audit_log'),
+    )
+    expect(auditCalls.some((c: any[]) => c[1][4] === 'product.created')).toBe(false)
+  })
+
+  it('a price change still publishes product.price_changed and writes no manual audit row (WAFI-150 seam: audit is now the subscriber\'s job, not save()\'s)', async () => {
+    vi.mocked(db.getOptional).mockResolvedValueOnce({ price_usd: 10, cost_price_usd: 5 })
+    const { save } = useProducts()
+    await save({
+      id: 'p1', shopId: 'shop1', nameAr: 'قلم', salePriceUsd: 15, costPriceUsd: 5,
+      currentStock: 5, lowStockThreshold: 1, isActive: true,
+    } as any)
+
+    expect(publishEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'product.price_changed' }))
+
+    const auditCalls = vi.mocked(db.execute).mock.calls.filter(
+      (c: any[]) => String(c[0]).includes('INSERT INTO audit_log'),
+    )
+    expect(auditCalls.some((c: any[]) => c[1][4] === 'product.price_changed')).toBe(false)
+  })
 })

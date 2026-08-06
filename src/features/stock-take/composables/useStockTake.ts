@@ -7,7 +7,6 @@ import { executeBusinessOperation } from '@/composables/executeBusinessOperation
 import { StockTakeEventType, type StockTakenPayload } from '@/services/events/domainEvent.types'
 import type { StockTakeSession, StockTakeLine, StockTakeSessionRow, StockTakeLineRow } from '@/features/stock-take/stock-take.types'
 import { useProducts } from '@/features/products/composables/useProducts'
-import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 
 /** Scope of a stock-take session (WAFI-134: real categories, not free text).
  *  null / all-null fields = all products. scopeName is the human-readable
@@ -174,7 +173,6 @@ export function useStockTake() {
     }
 
     const { adjustStockBy } = useProducts()
-    const { logStockTakeCompleted } = useAuditLog()
 
     for (const line of lines.value) {
       if (line.countedStock === null) continue
@@ -200,7 +198,9 @@ export function useStockTake() {
         return { sessionId, varianceCount, shrinkageUsd }
       },
       {
-        audit: (r) => logStockTakeCompleted(r.sessionId, r.varianceCount, r.shrinkageUsd),
+        // WAFI-150: stock-take completion is now audited automatically by the
+        // audit subscriber off stock.taken (see toEvent below).
+        audit: async () => {},
         toEvent: (r) => ({
           type: StockTakeEventType.Taken,
           entityId: r.sessionId,

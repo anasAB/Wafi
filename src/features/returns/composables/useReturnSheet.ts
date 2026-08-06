@@ -17,7 +17,7 @@ import { publishEvent } from '@/services/events/publishEvent'
 import { logger } from '@/services/events/logger'
 
 export function useReturnSheet(saleId: string) {
-  const { logReturnProcessed, logInstallmentPlanCancelled } = useAuditLog()
+  const { logInstallmentPlanCancelled } = useAuditLog()
 
   const lines        = ref<ReturnLine[]>([])
   const refundMethod = ref<RefundMethod | null>(null)
@@ -317,13 +317,13 @@ export function useReturnSheet(saleId: string) {
         return { cancelledPlanId, warning }
       },
       {
+        // WAFI-150: the return itself is now audited automatically by the
+        // audit subscriber off sale.returned (see toEvent below) — only the
+        // installment-plan-cancellation side effect still needs a manual entry.
         audit: async ({ cancelledPlanId }) => {
-          await Promise.all([
-            logReturnProcessed(returnId, saleId, refundAmountUsd),
-            cancelledPlanId
-              ? logInstallmentPlanCancelled(cancelledPlanId, { reason: 'sale_returned', returnId })
-              : Promise.resolve(),
-          ])
+          if (cancelledPlanId) {
+            await logInstallmentPlanCancelled(cancelledPlanId, { reason: 'sale_returned', returnId })
+          }
         },
         toEvent: () => ({
           type: ReturnsEventType.Returned,

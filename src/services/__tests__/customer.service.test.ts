@@ -69,7 +69,7 @@ describe('CustomerService.recordPayment', () => {
     expect(params).toContain('device1')
   })
 
-  it('calls the injected audit port with the customer id and total paid', async () => {
+  it('does not call the injected audit port (WAFI-150: now handled by the audit subscriber off installment.due_paid)', async () => {
     vi.mocked(db.getOptional).mockResolvedValue({ remaining_usd: 1000 } as any)
     const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [] } })
     vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
@@ -77,7 +77,7 @@ describe('CustomerService.recordPayment', () => {
     await recordPayment('shop1', 'c1', [
       { saleId: 's1', amountUsd: 100, currency: 'USD', amountRaw: 100, method: 'cash' },
     ], fakeAudit, 'staff1')
-    expect(fakeAudit.logCustomerPaymentRecorded).toHaveBeenCalledWith('c1', 100)
+    expect(fakeAudit.logCustomerPaymentRecorded).not.toHaveBeenCalled()
   })
 
   it('returns the fresh outstanding balance after the write', async () => {

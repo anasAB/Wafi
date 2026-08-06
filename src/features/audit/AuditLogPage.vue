@@ -95,6 +95,8 @@ const eventOptions: Array<{ value: AuditEvent | null; label: string }> = [
   { value: 'staff_settlement.finalized', label: 'إغلاق تسوية موظف' },
   { value: 'staff_settlement.paid', label: 'دفع تسوية موظف' },
   { value: 'messaging.whatsapp_composed', label: 'فتح واتساب' },
+  { value: 'device.registered', label: 'تسجيل جهاز جديد' },
+  { value: 'customer.debt_changed', label: 'تغيّر دين عميل' },
 ]
 
 const isOwner = computed(() => session.activeStaff?.role === 'owner')

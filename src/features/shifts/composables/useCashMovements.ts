@@ -39,7 +39,7 @@ function rowToMovement(r: any): CashMovement {
 export function useCashMovements() {
   const device  = useDeviceStore()
   const session = useSessionStore()
-  const { logCashMovementRecorded, logCashMovementVoided } = useAuditLog()
+  const { logCashMovementVoided } = useAuditLog()
 
   async function insert(m: {
     shiftId: string; direction: CashMovementDirection; category: CashMovementCategory
@@ -75,7 +75,9 @@ export function useCashMovements() {
         voidsMovementId: null,
       }),
       {
-        audit: (id) => logCashMovementRecorded(id, input.direction, input.category, input.currency, input.amount),
+        // WAFI-150: recorded cash movements are now audited automatically by
+        // the audit subscriber off cash.movement_recorded (see toEvent below).
+        audit: async () => {},
         toEvent: (id) => ({
           type: CashEventType.MovementRecorded,
           entityId: id,

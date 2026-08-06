@@ -21,6 +21,9 @@ import { useSaleStore }  from '@/store/sale.store'
 import { startRetryQueueSweeper } from '@/services/events/eventPublishRetryQueue'
 import { startDailyEventCountsProjection } from '@/services/events/dailyEventCountsProjection'
 import { startEventTableCleanupSweeper } from '@/services/events/cleanupLocalEventTables'
+import { startAuditSubscribers, handleAuditableEvent } from '@/services/events/auditSubscriber'
+import { startProcessingRetrySweeper } from '@/services/events/eventProcessingRetryQueue'
+import type { DomainEvent } from '@/services/events/domainEvent.types'
 
 const { offlineReady, dismissOfflineReady, needRefresh, applyUpdate, dismissNeedRefresh } = usePwaLifecycle()
 
@@ -129,6 +132,23 @@ onMounted(async () => {
   // growth (design spec §8a) -- same gating and reconnect-listener mechanism as the
   // retry sweeper above.
   startEventTableCleanupSweeper()
+
+  // WAFI-150: start the audit subscribers -- the first durable-subscriber consumer
+  // -- at the same gate as the sweepers above (device/shop context resolved).
+  startAuditSubscribers(useDeviceStore().shopId)
+
+  // WAFI-150 review fix (Task 9, closing a gap surfaced by Task 4's review):
+  // eventProcessingRetryQueue.ts's startProcessingRetrySweeper existed since Task 3/4
+  // but nothing ever called it -- any event that failed durable-subscriber processing
+  // got queued into local_event_processing_retries and then just sat there forever,
+  // the exact same dormant-consumer bug already hit twice above (startRetryQueueSweeper,
+  // startDailyEventCountsProjection). Wired here with the one handler that exists today.
+  // Cast is safe: every event this sweeper re-delivers to the 'audit' subscriber
+  // was serialized from a DurableEvent in the first place (enqueueForProcessingRetry
+  // is only ever called from within runDurableSubscriber's failure path), so it
+  // always has the eventId field handleAuditableEvent requires -- the two types
+  // just aren't structurally assignable through the Map's invariant parameter type.
+  startProcessingRetrySweeper(new Map([['audit', handleAuditableEvent as (event: DomainEvent) => Promise<void>]]))
 
   appReady.value = true
 })

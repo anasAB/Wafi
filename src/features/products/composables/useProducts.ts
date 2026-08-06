@@ -18,7 +18,7 @@ export function useProducts() {
   const products = ref<Product[]>([])
 
   const {
-    logProductCreated, logProductUpdated, logProductPriceChanged,
+    logProductUpdated,
     logProductDeleted, logStockAdjusted,
   } = useAuditLog()
 
@@ -103,9 +103,11 @@ export function useProducts() {
           return { id: data.id!, name: data.nameAr }
         },
         {
+          // WAFI-150: a price change is now audited automatically by the audit
+          // subscriber off product.price_changed (see toEvent below) — only a
+          // non-price update still needs this manual audit entry.
           audit: async (r) => {
-            if (priceChanged) await logProductPriceChanged(r.id, r.name, old!.price_usd, data.salePriceUsd)
-            else await logProductUpdated(r.id, r.name)
+            if (!priceChanged) await logProductUpdated(r.id, r.name)
           },
           // WAFI-140 Sprint 2 design spec §5a: at most one event per write. Cost wins
           // over price when both changed -- a framework limitation, not a claim that
@@ -149,7 +151,9 @@ export function useProducts() {
           return { id, name: data.nameAr }
         },
         {
-          audit: (r) => logProductCreated(r.id, r.name),
+          // WAFI-150: product creation is now audited automatically by the
+          // audit subscriber off product.created (see toEvent below).
+          audit: async () => {},
           toEvent: (r) => ({
             type: ProductEventType.Created,
             entityId: r.id,

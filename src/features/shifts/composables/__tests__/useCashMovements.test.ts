@@ -46,6 +46,16 @@ describe('useCashMovements', () => {
     expect(p).toContain('مورد الكهربائيات')
   })
 
+  it('does not write a manual audit_log row for a recorded movement (WAFI-150: now handled by the audit subscriber off cash.movement_recorded)', async () => {
+    const { record } = useCashMovements()
+    await record({
+      shift: openShift, direction: 'out', category: 'paid_supplier',
+      currency: 'USD', amount: 80, note: 'مورد الكهربائيات',
+    })
+    const auditCalls = vi.mocked(db.execute).mock.calls.filter(c => /INSERT INTO audit_log/.test(sqlOf(c)))
+    expect(auditCalls.some(c => paramsOf(c)[4] === 'cash_movement.recorded')).toBe(false)
+  })
+
   it('record rejects a non-open shift', async () => {
     const { record } = useCashMovements()
     await expect(record({

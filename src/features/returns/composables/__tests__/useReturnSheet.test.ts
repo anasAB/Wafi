@@ -220,6 +220,22 @@ describe('useReturnSheet — WAFI-140 event bus (sale.returned / customer.debt_c
     expect(debtPayload.newBalanceUsd).toBe(12)
   })
 
+  it('does not write a manual audit_log row for the return (WAFI-150: now handled by the audit subscriber off sale.returned)', async () => {
+    mockSale({ customerId: 'cust-1', isCredit: true })
+    mockConfirmTx()
+
+    const sheet = useReturnSheet('sale-1')
+    await sheet.load()
+    sheet.lines.value[0].selected = true
+    sheet.refundMethod.value = 'store_credit'
+    await sheet.confirm()
+
+    const auditInserts = vi.mocked(db.execute).mock.calls.filter(
+      ([sql]) => (sql as string).includes('INSERT INTO audit_log'),
+    )
+    expect(auditInserts.some(([, params]) => (params as any[])[4] === 'return.processed')).toBe(false)
+  })
+
   it('does not publish customer.debt_changed for a cash (non-credit) sale return', async () => {
     mockSale({ customerId: 'cust-1', isCredit: false })
     mockConfirmTx()
@@ -339,7 +355,7 @@ describe('useReturnSheet — WAFI-010 installment plan integration', () => {
     })
   }
 
-  it('cancels an active plan and logs both audit events when the return exhausts the whole sale', async () => {
+  it('cancels an active plan and logs the plan-cancellation audit event when the return exhausts the whole sale (WAFI-150: the return itself is audited automatically by the audit subscriber off sale.returned, not manually here)', async () => {
     mockLoad([{ product_id: 'p1', product_name: 'قلم', quantity: 1, unit_price_usd: 10 }])
     const txExecute = mockTx({
       plan: { id: 'plan-1', status: 'active' },
@@ -359,9 +375,9 @@ describe('useReturnSheet — WAFI-010 installment plan integration', () => {
     const calls = txExecute.mock.calls.map((c: any[]) => c[0] as string)
     expect(calls.some(sql => sql.includes('UPDATE installment_dues') && sql.includes(`'voided'`))).toBe(true)
     expect(calls.some(sql => sql.includes('UPDATE installment_plans') && sql.includes(`'cancelled'`))).toBe(true)
-    expect(db.execute).toHaveBeenCalledWith(
+    expect(db.execute).not.toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO audit_log'),
-      expect.arrayContaining(['return.processed', 'return']),
+      expect.arrayContaining(['return.processed']),
     )
     // returnId is a freshly-generated uuid inside confirm(), so match the meta
     // JSON loosely (nested asymmetric matcher inside arrayContaining) rather

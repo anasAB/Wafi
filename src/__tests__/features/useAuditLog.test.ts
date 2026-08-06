@@ -113,6 +113,27 @@ describe('useAuditLog', () => {
     expect(entries.value[0].meta).toEqual({ name: 'أحمد', role: 'cashier' })
     expect(eventLabel(entries.value[0])).toBe('أضاف موظف: أحمد (cashier)')
   })
+
+  it('loadLog resolves a subscriber-generated row\'s staff_name from staff_id at read time (final review I1)', async () => {
+    vi.mocked(db.getAll)
+      .mockResolvedValueOnce([
+        {
+          id: 'a1', shop_id: 'shop-1', staff_id: 's1', staff_name: 'system',
+          event: 'expense.created', entity_type: 'expense', entity_id: 'e1',
+          meta: '{}', created_at: '2026-01-01T00:00:00Z',
+        },
+      ] as any)
+      .mockResolvedValueOnce([{ id: 's1', name: 'سارة' }] as any) // staff lookup
+
+    const { entries, loadLog } = useAuditLog()
+    await loadLog({ startDate: '2026-01-01', endDate: '2026-01-01' })
+
+    expect(entries.value[0].staffName).toBe('سارة')
+    const staffLookupCall = vi.mocked(db.getAll).mock.calls.find(
+      ([sql]) => sql.includes('FROM staff'),
+    )
+    expect(staffLookupCall).toBeDefined()
+  })
 })
 
 describe('useAuditLog — supplier & receiving helpers', () => {

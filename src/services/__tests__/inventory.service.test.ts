@@ -82,26 +82,14 @@ describe('InventoryService.receiveStock', () => {
     expect(costUpdateCall).toBeUndefined()
   })
 
-  it('calls the injected audit port with the created receiving id/supplier/total/lines', async () => {
+  it('still calls the injected audit port for a receiving (WAFI-150 final review C3: NOT retired -- StockReceivedPayload cannot carry supplier name/line detail)', async () => {
     const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [{ current_stock: 10 }] } })
     vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
 
-    const result = await receiveStock('shop1', 'staff1', input, fakeAudit)
+    await receiveStock('shop1', 'staff1', input, fakeAudit)
 
     expect(fakeAudit.logReceivingCreated).toHaveBeenCalledWith(
-      result.id, 'مورد الكتروني', result.totalCostUsd, 1, expect.any(Array),
-    )
-  })
-
-  it('falls back to the supplier table name when supplierName is blank', async () => {
-    const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [{ current_stock: 10 }] } })
-    vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
-    vi.mocked(db.getOptional).mockResolvedValueOnce({ name: 'Real Supplier Name' } as any)
-
-    await receiveStock('shop1', 'staff1', { ...input, supplierName: '' }, fakeAudit)
-
-    expect(fakeAudit.logReceivingCreated).toHaveBeenCalledWith(
-      expect.any(String), 'Real Supplier Name', expect.any(Number), 1, expect.any(Array),
+      expect.any(String), input.supplierName, 5 * 210, input.lines.length, expect.any(Array),
     )
   })
 
@@ -179,7 +167,7 @@ describe('InventoryService.adjustInventory', () => {
     expect(result).toBeNull()
   })
 
-  it('calls the injected audit port with product name/old/new value', async () => {
+  it('still calls the injected audit port for a stock adjustment (WAFI-150 final review C3: NOT retired -- InventoryAdjustedPayload cannot carry old/new qty or product name)', async () => {
     const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [{ current_stock: 10 }] } })
     vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
     vi.mocked(db.getOptional).mockResolvedValueOnce({ name_ar: 'Samsung A55' } as any)
