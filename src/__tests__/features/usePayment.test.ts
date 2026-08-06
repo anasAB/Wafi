@@ -260,15 +260,13 @@ describe('usePayment', () => {
     expect(db.writeTransaction).toHaveBeenCalledTimes(1)
     const calls = tx.mock.calls.map(c => c[0] as string)
     expect(calls.some(sql => sql.includes('INSERT INTO sales'))).toBe(true)
-    // Audit log is written outside transaction via db.execute (separate from main sale tx).
-    // WAFI-140: sale.completed now also publishes a real event via db.execute
-    // (fire-and-forget), so db.execute is called twice, not once -- find the
-    // audit-log call by content rather than assuming it's the only/first call.
+    // WAFI-150: sale.completed is no longer manually audited -- it's now
+    // handled automatically by the audit subscriber off the sale.completed
+    // domain event, so no audit_log row is written here.
     const auditCall = (db.execute as any).mock.calls.find(
       (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('INSERT INTO audit_log'),
     )
-    expect(auditCall).toBeDefined()
-    expect(auditCall[0]).toContain('INSERT INTO audit_log')
+    expect(auditCall).toBeUndefined()
   })
 
   it('attributes the sale to the active operator (staff_id) at confirm', async () => {
@@ -613,8 +611,9 @@ describe('usePayment', () => {
       const auditCalls = (db.execute as any).mock.calls.filter(
         (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('INSERT INTO audit_log'),
       )
-      // One for sale.completed, one for the discounted line, one for the sale discount.
-      expect(auditCalls.length).toBe(3)
+      // WAFI-150: sale.completed is no longer manually audited -- only the
+      // discounted-line and sale-level discount audit entries remain.
+      expect(auditCalls.length).toBe(2)
 
       const discountAuditCalls = auditCalls.filter((c: unknown[]) => c[1] && (c[1] as unknown[])[4] === 'sale.discount_applied')
       expect(discountAuditCalls).toHaveLength(2)
@@ -640,7 +639,9 @@ describe('usePayment', () => {
       const auditCalls = (db.execute as any).mock.calls.filter(
         (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('INSERT INTO audit_log'),
       )
-      expect(auditCalls).toHaveLength(1) // sale.completed only
+      // WAFI-150: sale.completed is no longer manually audited -- with no
+      // discount, no manual audit_log row is written for this sale at all.
+      expect(auditCalls).toHaveLength(0)
     })
   })
 })

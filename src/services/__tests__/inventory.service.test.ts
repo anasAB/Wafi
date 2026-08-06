@@ -82,27 +82,13 @@ describe('InventoryService.receiveStock', () => {
     expect(costUpdateCall).toBeUndefined()
   })
 
-  it('calls the injected audit port with the created receiving id/supplier/total/lines', async () => {
+  it('does not call the injected audit port for a receiving (WAFI-150: now handled by the audit subscriber off stock.received)', async () => {
     const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [{ current_stock: 10 }] } })
     vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
 
-    const result = await receiveStock('shop1', 'staff1', input, fakeAudit)
+    await receiveStock('shop1', 'staff1', input, fakeAudit)
 
-    expect(fakeAudit.logReceivingCreated).toHaveBeenCalledWith(
-      result.id, 'مورد الكتروني', result.totalCostUsd, 1, expect.any(Array),
-    )
-  })
-
-  it('falls back to the supplier table name when supplierName is blank', async () => {
-    const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [{ current_stock: 10 }] } })
-    vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
-    vi.mocked(db.getOptional).mockResolvedValueOnce({ name: 'Real Supplier Name' } as any)
-
-    await receiveStock('shop1', 'staff1', { ...input, supplierName: '' }, fakeAudit)
-
-    expect(fakeAudit.logReceivingCreated).toHaveBeenCalledWith(
-      expect.any(String), 'Real Supplier Name', expect.any(Number), 1, expect.any(Array),
-    )
+    expect(fakeAudit.logReceivingCreated).not.toHaveBeenCalled()
   })
 
   it('throws without inserting when supplierId is missing', async () => {
@@ -179,7 +165,7 @@ describe('InventoryService.adjustInventory', () => {
     expect(result).toBeNull()
   })
 
-  it('calls the injected audit port with product name/old/new value', async () => {
+  it('does not call the injected audit port for a stock adjustment (WAFI-150: now handled by the audit subscriber off inventory.adjusted)', async () => {
     const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [{ current_stock: 10 }] } })
     vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
     vi.mocked(db.getOptional).mockResolvedValueOnce({ name_ar: 'Samsung A55' } as any)
@@ -188,7 +174,7 @@ describe('InventoryService.adjustInventory', () => {
       mode: 'delta', productId: 'p1', delta: -4, reason: 'stocktake',
     }, fakeAdjustAudit)
 
-    expect(fakeAdjustAudit.logStockAdjusted).toHaveBeenCalledWith('p1', 'Samsung A55', 10, 6)
+    expect(fakeAdjustAudit.logStockAdjusted).not.toHaveBeenCalled()
   })
 
   it('the returned adjustment id matches the id actually inserted (regression: id must not be regenerated on return)', async () => {

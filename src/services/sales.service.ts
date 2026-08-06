@@ -66,7 +66,6 @@ export interface CompleteSaleInput {
 /** Narrow audit interface this service needs — implemented by the caller via
  *  useAuditLog(), never imported here. */
 export interface CompleteSaleAuditPort {
-  logSaleCompleted: (saleId: string, totalUsd: number, itemCount: number) => Promise<void>
   logDiscountApplied: (
     saleId: string,
     meta: {
@@ -244,9 +243,10 @@ export async function completeSale(
   }
 
   return executeBusinessOperation(write, {
+    // WAFI-150: sale completion is now audited automatically by the audit
+    // subscriber off sale.completed (see toEvent below) — only per-line/
+    // sale-level discount audit entries still need a manual call.
     audit: async (completed) => {
-      await audit.logSaleCompleted(completed.saleId, completed.totalUsd, completed.lines.length)
-
       // WAFI-100: one audit entry per discounted line, plus one for a
       // sale-level discount if present. Reads from the captured `sale`
       // snapshot (built above from `input`, not any live store) so nothing

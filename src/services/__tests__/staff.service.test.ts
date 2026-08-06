@@ -57,11 +57,9 @@ describe('StaffService.addLedgerEntry', () => {
     expect(result.amountUsd).toBe(10)
   })
 
-  it('calls the injected audit port with the created entry id/staffId/type/amount', async () => {
-    const result = await addLedgerEntry('shop1', 'creator1', baseEntry, fakeAudit)
-    expect(fakeAudit.logStaffLedgerEntryCreated).toHaveBeenCalledWith(
-      result.id, result.staffId, result.entryType, result.amountUsd,
-    )
+  it('does not call the injected audit port (WAFI-150: now handled by the audit subscriber off staff.ledger_entry_added)', async () => {
+    await addLedgerEntry('shop1', 'creator1', baseEntry, fakeAudit)
+    expect(fakeAudit.logStaffLedgerEntryCreated).not.toHaveBeenCalled()
   })
 
   it('publishes staff.ledger_entry_added with exactly the StaffLedgerEntryAddedPayload keys', async () => {
@@ -93,9 +91,9 @@ describe('StaffService.paySettlement', () => {
     expect(params).toContain('settle1')
   })
 
-  it('calls the injected audit port', async () => {
+  it('does not call the injected audit port (WAFI-150: now handled by the audit subscriber off settlement.paid)', async () => {
     await paySettlement('shop1', 'settle1', 'staff1', 'owner1', 'bank', fakeSettlementAudit)
-    expect(fakeSettlementAudit.logStaffSettlementPaid).toHaveBeenCalledWith('settle1', 'staff1', 'bank')
+    expect(fakeSettlementAudit.logStaffSettlementPaid).not.toHaveBeenCalled()
   })
 
   it('publishes settlement.paid with exactly the SettlementPaidPayload keys', async () => {

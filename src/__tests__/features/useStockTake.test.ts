@@ -119,6 +119,25 @@ describe('useStockTake — startSession', () => {
     }))
   })
 
+  it('confirmSession does not write a manual audit_log row (WAFI-150: now handled by the audit subscriber off stock.taken)', async () => {
+    vi.mocked(db.getOptional).mockResolvedValue({
+      id: 's1', shop_id: 'shop1', started_at: '2026-07-14T00:00:00Z',
+      completed_at: null, status: 'in_progress', created_by: 'dev1', scope: null,
+    } as any)
+    vi.mocked(db.getAll).mockResolvedValueOnce([
+      { id: 'l1', session_id: 's1', product_id: 'p1', name_ar: 'منتج ١', expected_stock: 10, counted_stock: 9, variance: -1, variance_value_usd: null },
+    ] as any)
+
+    const { loadSession, confirmSession } = useStockTake()
+    await loadSession('s1')
+    await confirmSession()
+
+    const auditInserts = vi.mocked(db.execute).mock.calls.filter(
+      ([sql]) => (sql as string).includes('INSERT INTO audit_log'),
+    )
+    expect(auditInserts.some(([, params]) => (params as any[])[4] === 'stock_take.completed')).toBe(false)
+  })
+
   it('recordCount computes variance_value_usd from the product cost_price_usd, or null if missing', async () => {
     vi.mocked(db.getOptional).mockImplementation(async (sql: string) => {
       if (/cost_price_usd/.test(sql)) return { cost_price_usd: 5 } as any

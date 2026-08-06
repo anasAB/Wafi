@@ -32,7 +32,6 @@ describe('SalesService.completeSale', () => {
   })
 
   const fakeAudit = {
-    logSaleCompleted: vi.fn().mockResolvedValue(undefined),
     logDiscountApplied: vi.fn().mockResolvedValue(undefined),
   }
 
@@ -125,10 +124,11 @@ describe('SalesService.completeSale', () => {
     expect(result.splitPayments).toHaveLength(2)
   })
 
-  it('calls logSaleCompleted with the sale id/total/item count', async () => {
+  it('does not require/call a logSaleCompleted audit hook (WAFI-150: sale completion is now audited automatically by the audit subscriber off sale.completed)', async () => {
     setupTx({ cost_price_usd: 0, current_stock: 10 })
     const result = await completeSale(baseInput, fakeAudit)
-    expect(fakeAudit.logSaleCompleted).toHaveBeenCalledWith(result.saleId, 10, 1)
+    expect(result.saleId).toBeTruthy()
+    expect((fakeAudit as any).logSaleCompleted).toBeUndefined()
   })
 
   it('calls logDiscountApplied once for a discounted line (WAFI-100)', async () => {

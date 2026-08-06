@@ -62,7 +62,7 @@ export async function recordExpense(
   staffId: string,
   input: NewExpense,
   context: RecordExpenseContext,
-  audit: ExpenseAuditPort,
+  _audit: ExpenseAuditPort,
 ): Promise<Expense> {
   const id = uuidv4()
   const now = new Date().toISOString()
@@ -99,7 +99,9 @@ export async function recordExpense(
   }
 
   return executeBusinessOperation(write, {
-    audit: (expense) => audit.logExpenseCreated(expense.id, expense.category, expense.amountUsd),
+    // WAFI-150: an expense record is now audited automatically by the audit
+    // subscriber off expense.recorded (see toEvent below).
+    audit: async () => {},
     toEvent: (expense) => ({
       type: ExpenseEventType.Recorded,
       entityId: expense.id,

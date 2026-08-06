@@ -21,7 +21,7 @@ export async function recordPayment(
   shopId: string,
   customerId: string,
   allocations: PaymentAllocation[],
-  audit: RecordPaymentAuditPort,
+  _audit: RecordPaymentAuditPort,
   staffId: string,
   shiftId: string | null = null,
   deviceId: string | null = null,
@@ -91,9 +91,9 @@ export async function recordPayment(
   }
 
   await executeBusinessOperation(write, {
-    audit: async ({ totalPaid }) => {
-      await audit.logCustomerPaymentRecorded(customerId, totalPaid)
-    },
+    // WAFI-150: a customer payment is now audited automatically by the audit
+    // subscriber off installment.due_paid (see toEvent below).
+    audit: async () => {},
     // TODO(WAFI-140): remainingBalance is not the true post-payment balance —
     // computing it requires a second query after publish (below), deferred
     // until the event actually has a subscriber. Not worth the complexity for

@@ -19,7 +19,7 @@ export async function addLedgerEntry(
   shopId: string,
   createdByStaffId: string,
   entry: NewStaffLedgerEntry,
-  audit: StaffLedgerAuditPort,
+  _audit: StaffLedgerAuditPort,
 ): Promise<StaffLedgerEntry> {
   if (entry.amount <= 0) throw new Error('amount must be positive')
   if (entry.currency === 'syp' && !(entry.lockedRate! > 0)) {
@@ -62,7 +62,9 @@ export async function addLedgerEntry(
   }
 
   return executeBusinessOperation(write, {
-    audit: (created) => audit.logStaffLedgerEntryCreated(created.id, created.staffId, created.entryType, created.amountUsd),
+    // WAFI-150: a staff ledger entry is now audited automatically by the
+    // audit subscriber off staff.ledger_entry_added (see toEvent below).
+    audit: async () => {},
     toEvent: (created) => ({
       type: StaffEventType.LedgerEntryAdded,
       entityId: created.id,
@@ -89,7 +91,7 @@ export async function paySettlement(
   staffId: string,
   paidByStaffId: string,
   paymentMethod: 'cash' | 'bank' | 'other',
-  audit: PaySettlementAuditPort,
+  _audit: PaySettlementAuditPort,
 ): Promise<void> {
   const now = new Date().toISOString()
 
@@ -101,7 +103,9 @@ export async function paySettlement(
   }
 
   await executeBusinessOperation(write, {
-    audit: () => audit.logStaffSettlementPaid(settlementId, staffId, paymentMethod),
+    // WAFI-150: a settlement payment is now audited automatically by the
+    // audit subscriber off settlement.paid (see toEvent below).
+    audit: async () => {},
     toEvent: () => ({
       type: StaffEventType.SettlementPaid,
       entityId: settlementId,

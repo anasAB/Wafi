@@ -44,9 +44,9 @@ describe('ExpenseService.recordExpense', () => {
     expect(db.writeTransaction).not.toHaveBeenCalled()
   })
 
-  it('calls the injected audit port with the created expense id/category/amount', async () => {
-    const result = await recordExpense('shop1', 'staff1', baseInput, context, fakeAudit)
-    expect(fakeAudit.logExpenseCreated).toHaveBeenCalledWith(result.id, 'صيانة', 50)
+  it('does not call the injected audit port (WAFI-150: now handled by the audit subscriber off expense.recorded)', async () => {
+    await recordExpense('shop1', 'staff1', baseInput, context, fakeAudit)
+    expect(fakeAudit.logExpenseCreated).not.toHaveBeenCalled()
   })
 
   it('re-costs a SYP expense using the exchange rate effective on its date (WAFI-025)', async () => {

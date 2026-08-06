@@ -14,7 +14,7 @@ export function usePayment() {
   const shiftStore     = useShiftStore()
   const sessionStore   = useSessionStore()
   const { clearDraft } = useSaleDraft()
-  const { logSaleCompleted, logDiscountApplied } = useAuditLog()
+  const { logDiscountApplied } = useAuditLog()
 
   const state          = ref<PaymentState>('method-selection')
   const isOpen         = ref(true)
@@ -185,7 +185,7 @@ export function usePayment() {
           lines: saleStore.lines,
           saleDiscount: saleStore.saleDiscount,
         },
-        { logSaleCompleted, logDiscountApplied },
+        { logDiscountApplied },
       )
 
       // Write succeeded — only now commit the sequence advance (WAFI-004).
