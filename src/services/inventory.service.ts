@@ -40,7 +40,7 @@ export async function receiveStock(
   shopId: string,
   staffId: string | null,
   input: ReceiveStockInput,
-  _audit: ReceiveStockAuditPort,
+  audit: ReceiveStockAuditPort,
 ): Promise<Receiving> {
   if (!input.supplierId || input.lines.length === 0 || input.lines.some(l => l.qtyReceived <= 0)) {
     throw new Error('confirm() called without valid state')
@@ -116,12 +116,28 @@ export async function receiveStock(
   }
 
   return executeBusinessOperation(write, {
-    // WAFI-150: a stock receiving is now audited automatically by the audit
-    // subscriber off stock.received (see toEvent below) — `audit` (still
-    // required by executeBusinessOperation's hook contract, and still
-    // accepted as a parameter so callers/tests are unaffected) is now a
-    // deliberate no-op.
-    audit: async () => {},
+    // WAFI-150 final review (C3): NOT retired. StockReceivedPayload doesn't carry the
+    // supplier name or per-line detail (product/qty/unit cost/costUpdated) that this
+    // manual call's audit_log meta -- and AuditLogPage.vue's expanded receiving detail
+    // view -- both require. Faking that shape from the payload alone is impossible
+    // (the data genuinely isn't there), so this call stays manual (documented escape
+    // hatch per the design spec) and auditSubscriber.ts's mapEventToAuditEntry maps
+    // 'stock.received' to null so the subscriber does not double-log.
+    audit: async (receiving) => {
+      const auditSupplierName = input.supplierName.trim() ||
+        (await db.getOptional<{ name: string }>(
+          `SELECT name FROM suppliers WHERE id = ? LIMIT 1`, [input.supplierId],
+        ))?.name || 'مورد غير معروف'
+      await audit.logReceivingCreated(
+        receiving.id, auditSupplierName, receiving.totalCostUsd, input.lines.length,
+        input.lines.map((line) => ({
+          productId: line.productId, productName: line.productName,
+          qtyReceived: Number(line.qtyReceived) || 0, unitCostUsd: Number(line.unitCostUsd) || 0,
+          lineTotalUsd: (Number(line.qtyReceived) || 0) * (Number(line.unitCostUsd) || 0),
+          costUpdated: line.updateCost,
+        })),
+      )
+    },
     toEvent: (receiving) => ({
       type: InventoryEventType.StockReceived,
       entityId: receiving.id,
@@ -152,7 +168,7 @@ export async function adjustInventory(
   deviceId: string,
   staffId: string,
   input: AdjustInventoryInput,
-  _audit: InventoryAdjustAuditPort,
+  audit: InventoryAdjustAuditPort,
 ): Promise<StockAdjustment | null> {
   if (input.mode === 'delta' && input.delta === 0) return null
 
@@ -189,11 +205,19 @@ export async function adjustInventory(
   }
 
   return executeBusinessOperation(write, {
-    // WAFI-150: a stock adjustment is now audited automatically by the audit
-    // subscriber off inventory.adjusted (see toEvent below) — `audit` is now
-    // a deliberate no-op (kept as a required hook and as a parameter so
-    // callers/tests are unaffected).
-    audit: async () => {},
+    // WAFI-150 final review (C3): NOT retired. InventoryAdjustedPayload's `deltaQty`
+    // cannot reconstruct the old/new quantities (or the product name) this manual
+    // call's audit_log meta -- and eventLabel's 'stock.adjusted' rendering -- both
+    // require, without a state-reconstructing DB read, which the subscriber must not
+    // do. This call stays manual (documented escape hatch per the design spec) and
+    // auditSubscriber.ts's mapEventToAuditEntry maps 'inventory.adjusted' to null so
+    // the subscriber does not double-log.
+    audit: async (adjustment) => {
+      const nameRow = await db.getOptional<{ name_ar: string }>(
+        `SELECT name_ar FROM products WHERE id = ?`, [input.productId],
+      )
+      await audit.logStockAdjusted(input.productId, nameRow?.name_ar ?? input.productId, adjustment.oldValue, adjustment.newValue)
+    },
     toEvent: (adjustment) => ({
       type: InventoryEventType.Adjusted,
       entityId: input.productId,

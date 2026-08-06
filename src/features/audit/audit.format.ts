@@ -99,6 +99,12 @@ export function eventLabel(entry: AuditLog): string {
       const to   = (m.to_name as string) ?? 'مستخدم غير معروف'
       return `تبديل المستخدم: من ${from} إلى ${to}`
     }
+    case 'device.registered': {
+      const code = str(m.deviceCode)
+      return m.isTemporary ? `سجّل جهاز جديد: ${code} (مؤقت)` : `سجّل جهاز جديد: ${code}`
+    }
+    case 'customer.debt_changed':
+      return `تغيّر دين عميل: ${usd(m.deltaUsd)} (الرصيد الجديد ${usd(m.newBalanceUsd)})`
     case 'messaging.whatsapp_composed': {
       const channelLabels: Record<string, string> = {
         receipt: 'فاتورة', statement: 'كشف حساب',

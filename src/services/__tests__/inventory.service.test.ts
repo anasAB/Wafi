@@ -82,13 +82,15 @@ describe('InventoryService.receiveStock', () => {
     expect(costUpdateCall).toBeUndefined()
   })
 
-  it('does not call the injected audit port for a receiving (WAFI-150: now handled by the audit subscriber off stock.received)', async () => {
+  it('still calls the injected audit port for a receiving (WAFI-150 final review C3: NOT retired -- StockReceivedPayload cannot carry supplier name/line detail)', async () => {
     const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [{ current_stock: 10 }] } })
     vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
 
     await receiveStock('shop1', 'staff1', input, fakeAudit)
 
-    expect(fakeAudit.logReceivingCreated).not.toHaveBeenCalled()
+    expect(fakeAudit.logReceivingCreated).toHaveBeenCalledWith(
+      expect.any(String), input.supplierName, 5 * 210, input.lines.length, expect.any(Array),
+    )
   })
 
   it('throws without inserting when supplierId is missing', async () => {
@@ -165,7 +167,7 @@ describe('InventoryService.adjustInventory', () => {
     expect(result).toBeNull()
   })
 
-  it('does not call the injected audit port for a stock adjustment (WAFI-150: now handled by the audit subscriber off inventory.adjusted)', async () => {
+  it('still calls the injected audit port for a stock adjustment (WAFI-150 final review C3: NOT retired -- InventoryAdjustedPayload cannot carry old/new qty or product name)', async () => {
     const txExecute = vi.fn().mockResolvedValue({ rows: { _array: [{ current_stock: 10 }] } })
     vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
     vi.mocked(db.getOptional).mockResolvedValueOnce({ name_ar: 'Samsung A55' } as any)
@@ -174,7 +176,7 @@ describe('InventoryService.adjustInventory', () => {
       mode: 'delta', productId: 'p1', delta: -4, reason: 'stocktake',
     }, fakeAdjustAudit)
 
-    expect(fakeAdjustAudit.logStockAdjusted).not.toHaveBeenCalled()
+    expect(fakeAdjustAudit.logStockAdjusted).toHaveBeenCalledWith('p1', 'Samsung A55', 10, 6)
   })
 
   it('the returned adjustment id matches the id actually inserted (regression: id must not be regenerated on return)', async () => {

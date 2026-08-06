@@ -10,12 +10,12 @@ const baseEvent = {
 }
 
 describe('mapEventToAuditEntry', () => {
-  it('maps product.cost_updated to an audit_log insert with the verbatim payload as meta', () => {
-    const event: DomainEvent = { ...baseEvent, type: 'product.cost_updated', payload: { productId: 'p1', oldCostUsd: 5, newCostUsd: 6 } }
+  it('maps device.registered (genuinely new, no legacy event) to an audit_log insert with the verbatim payload as meta', () => {
+    const event: DomainEvent = { ...baseEvent, type: 'device.registered', payload: { deviceId: 'd1', deviceCode: 'D-001', isTemporary: false } }
     const entry = mapEventToAuditEntry(event)
     expect(entry).not.toBeNull()
-    expect(entry!.event).toBe('product.cost_updated')
-    expect(entry!.entity_type).toBe('product')
+    expect(entry!.event).toBe('device.registered')
+    expect(entry!.entity_type).toBe('device')
     expect(entry!.entity_id).toBe('p1')
     expect(entry!.staff_id).toBe('s1')
     expect(entry!.meta).toEqual(event.payload) // verbatim, no transform
@@ -26,7 +26,70 @@ describe('mapEventToAuditEntry', () => {
     expect(mapEventToAuditEntry(event)).toBeNull()
   })
 
-  it('maps every one of the 15 non-excluded event types to a non-null entry', () => {
+  // Final review I4: product.cost_updated's audit coverage is deferred (not a
+  // regression -- it never had a manual audit call before this ticket). audit_log's
+  // RLS gate is coarser than events' per-type gate for this type; mapping to null
+  // avoids widening cost/margin visibility as a side effect of this subscriber.
+  it('returns null for product.cost_updated (final review I4: deferred, RLS gate mismatch)', () => {
+    const event: DomainEvent = { ...baseEvent, type: 'product.cost_updated', payload: { productId: 'p1', oldCostUsd: 5, newCostUsd: 6 } }
+    expect(mapEventToAuditEntry(event)).toBeNull()
+  })
+
+  // Final review C3: these two retirements were reverted -- the domain event payload
+  // cannot carry enough information to reproduce the legacy audit_log meta shape
+  // (supplier name/line detail; old/new quantities + product name), so the manual
+  // useAuditLog() call in inventory.service.ts stays in place and the subscriber is a
+  // deliberate no-op for these two types (must not double-log).
+  it('returns null for stock.received (final review C3: manual logReceivingCreated call kept)', () => {
+    const event: DomainEvent = { ...baseEvent, type: 'stock.received', payload: { receivingId: 'r1', supplierId: 'sup1', skuCount: 1, totalCost: 100 } }
+    expect(mapEventToAuditEntry(event)).toBeNull()
+  })
+
+  it('returns null for inventory.adjusted (final review C3: manual logStockAdjusted call kept)', () => {
+    const event: DomainEvent = { ...baseEvent, type: 'inventory.adjusted', payload: { productId: 'p1', deltaQty: -4, reason: 'stocktake' } }
+    expect(mapEventToAuditEntry(event)).toBeNull()
+  })
+
+  // Final review C2/C3: these mappings must write the LEGACY audit event string and
+  // remap the payload's keys into the shape audit.format.ts's eventLabel() already
+  // reads -- not the raw domain event name/payload -- so the existing Arabic audit
+  // log UI keeps working for rows the subscriber now generates.
+  it('maps sale.returned to legacy return.processed with refundUsd remapped from refundAmountUsd', () => {
+    const event: DomainEvent = { ...baseEvent, type: 'sale.returned', payload: { returnId: 'ret1', saleId: 'sale1', refundAmountUsd: 42, restockedItemCount: 2 } }
+    const entry = mapEventToAuditEntry(event)
+    expect(entry!.event).toBe('return.processed')
+    expect(entry!.meta.refundUsd).toBe(42)
+  })
+
+  it('maps installment.due_paid to legacy customer.payment_recorded with amountUsd remapped from amount', () => {
+    const event: DomainEvent = { ...baseEvent, type: 'installment.due_paid', payload: { customerId: 'c1', amount: 20, remainingBalance: 0 } }
+    const entry = mapEventToAuditEntry(event)
+    expect(entry!.event).toBe('customer.payment_recorded')
+    expect(entry!.meta.amountUsd).toBe(20)
+  })
+
+  it('maps stock.taken to legacy stock_take.completed', () => {
+    const event: DomainEvent = { ...baseEvent, type: 'stock.taken', payload: { sessionId: 'sess1', productCount: 5, unexplainedVarianceCount: 1 } }
+    const entry = mapEventToAuditEntry(event)
+    expect(entry!.event).toBe('stock_take.completed')
+  })
+
+  it('maps cash.movement_recorded to legacy cash_movement.recorded with amount remapped from amountUsd', () => {
+    const event: DomainEvent = { ...baseEvent, type: 'cash.movement_recorded', payload: { movementId: 'm1', shiftId: 'sh1', direction: 'in', category: 'sale', currency: 'USD', amountUsd: 15 } }
+    const entry = mapEventToAuditEntry(event)
+    expect(entry!.event).toBe('cash_movement.recorded')
+    expect(entry!.meta.amount).toBe(15)
+  })
+
+  it('maps product.price_changed to old_price/new_price remapped from oldPriceUsd/newPriceUsd', () => {
+    const event: DomainEvent = { ...baseEvent, type: 'product.price_changed', payload: { productId: 'p1', oldPriceUsd: 10, newPriceUsd: 12 } }
+    const entry = mapEventToAuditEntry(event)
+    expect(entry!.event).toBe('product.price_changed')
+    expect(entry!.meta.old_price).toBe(10)
+    expect(entry!.meta.new_price).toBe(12)
+  })
+
+  it('maps every one of the non-excluded, non-deferred event types to a non-null entry', () => {
     const sample: DomainEvent = { ...baseEvent, type: 'expense.recorded', payload: { expenseId: 'e1', category: 'x', amountUsd: 1, staffId: 's1', photoUrl: undefined } }
     expect(mapEventToAuditEntry(sample)).not.toBeNull()
   })
