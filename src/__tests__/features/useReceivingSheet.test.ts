@@ -160,7 +160,7 @@ describe('useReceivingSheet — confirm()', () => {
     expect(costUpd).toBeUndefined()
   })
 
-  it('does not write a manual audit_log row for the receiving (WAFI-150: now handled by the audit subscriber off stock.received)', async () => {
+  it('still writes a manual audit_log row for the receiving (WAFI-150 final review: stock.received\'s domain event payload cannot carry supplierName/lineItems, so the audit subscriber maps this event to null and the manual logReceivingCreated call stays, documented in mapEventToAuditEntry)', async () => {
     setupWriteTransaction()
     const sheet = await ready()
     await sheet.confirm()
@@ -168,7 +168,7 @@ describe('useReceivingSheet — confirm()', () => {
     const auditCall = vi.mocked(db.execute).mock.calls.find(
       c => typeof c[0] === 'string' && c[0].includes('INSERT INTO audit_log'),
     )
-    expect(auditCall).toBeUndefined()
+    expect(auditCall).toBeDefined()
   })
 
   it('throws when confirm() called without valid state', async () => {

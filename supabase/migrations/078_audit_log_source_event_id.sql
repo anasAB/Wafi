@@ -17,5 +17,10 @@ ALTER TABLE public.audit_log ADD COLUMN IF NOT EXISTS source_event_id uuid;
 COMMENT ON COLUMN public.audit_log.source_event_id IS
   'References the originating row in events.id; exists solely for idempotency and traceability. Every audit entry generated from the event bus stores the originating event''s ID. Legacy/manual audit rows leave this column NULL.';
 
-CREATE UNIQUE INDEX IF NOT EXISTS audit_log_source_event_id_unique
+-- DROP + recreate, not a bare IF NOT EXISTS: any environment that already applied this
+-- migration's original (partial, broken) version has an index of this same name on
+-- disk, so IF NOT EXISTS alone would silently no-op and leave the broken partial index
+-- in place. Drop unconditionally by name first so the plain version below always wins.
+DROP INDEX IF EXISTS audit_log_source_event_id_unique;
+CREATE UNIQUE INDEX audit_log_source_event_id_unique
   ON public.audit_log (source_event_id);
