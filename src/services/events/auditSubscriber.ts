@@ -80,7 +80,14 @@ const AUDITED_EVENT_TYPES: DomainEventType[] = [
   'staff.ledger_entry_added', 'settlement.paid', 'expense.recorded',
 ]
 
-async function handleAuditableEvent(event: DurableEvent<unknown>): Promise<void> {
+// Exported (WAFI-150 Task 9) so App.vue can also register it directly with
+// startProcessingRetrySweeper()'s handlers Map -- it is already exactly the shape
+// that sweeper expects: (event: DomainEvent) => Promise<void>, since
+// DurableEvent<T> extends DomainEvent<T>. Without this, a failed audit-subscriber
+// delivery gets queued into local_event_processing_retries (Task 3/4) but nothing
+// ever re-invokes the handler for it -- the same dormant-consumer bug class as
+// startRetryQueueSweeper/startDailyEventCountsProjection above.
+export async function handleAuditableEvent(event: DurableEvent<unknown>): Promise<void> {
   const entry = mapEventToAuditEntry(event)
   if (!entry) return // null mapping is success -- runDurableSubscriber still writes the ledger
 
