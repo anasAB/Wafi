@@ -16,10 +16,14 @@ SELECT has_index('public', 'audit_log', 'audit_log_source_event_id_unique',
 INSERT INTO public.audit_log (shop_id, staff_id, staff_name, event, entity_type, entity_id, source_event_id)
 VALUES ('e0000000-0000-0000-0000-000000000001', NULL, 'system', 'expense.created', 'expense', 'e1', 'ee000000-0000-0000-0000-000000000001');
 
+-- WAFI-150 final review (C1): ON CONFLICT (source_event_id) with no predicate --
+-- this mirrors what supabase-js's .upsert({ onConflict: 'source_event_id',
+-- ignoreDuplicates: true }) actually generates against the now-total unique index.
+-- A WHERE clause here would test something ops.ts cannot produce.
 SELECT lives_ok(
   $$INSERT INTO public.audit_log (shop_id, staff_id, staff_name, event, entity_type, entity_id, source_event_id)
     VALUES ('e0000000-0000-0000-0000-000000000001', NULL, 'system', 'expense.created', 'expense', 'e1', 'ee000000-0000-0000-0000-000000000001')
-    ON CONFLICT (source_event_id) WHERE source_event_id IS NOT NULL DO NOTHING$$,
+    ON CONFLICT (source_event_id) DO NOTHING$$,
   'a second insert sharing source_event_id is silently absorbed, not a unique-violation error'
 );
 
