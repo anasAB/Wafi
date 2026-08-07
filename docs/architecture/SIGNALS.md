@@ -8,10 +8,9 @@ not the aspirational roadmap in `WAFI_Production_Readiness_Plan_v3.md`'s "Canoni
 registry enforces by convention.
 
 Maintenance: whoever adds a new event, a new producer for an existing event, or a new
-consumer, updates the table below in the same PR — the same discipline already used for
-`EVENT_SUBSCRIBERS.md`. This doc is reviewed at PR time, not CI-enforced; automated
-staleness detection and an auto-generated dependency graph are explicitly out of scope here
-(WAFI-142 Phase 2, not this ticket).
+consumer, updates the table below in the same PR. This doc is reviewed at PR time, not
+CI-enforced; automated staleness detection and an auto-generated dependency graph are
+explicitly out of scope here (WAFI-142 Phase 2, not this ticket).
 
 ## Golden Rules
 
