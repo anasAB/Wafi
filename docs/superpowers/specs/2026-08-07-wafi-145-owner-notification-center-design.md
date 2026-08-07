@@ -196,6 +196,29 @@ two separate notifications for the same underlying `sale.discounted` occurrence.
 Low Stock crossing example (`min_stock = 5`): `6 → 4` fires; `4 → 3` does not (already below);
 `3 → 6` resets (crossed back above); `6 → 5` fires again (crossed down through the boundary).
 
+**Low Stock must be checked synchronously inside the inventory mutation flow, not via an
+independent best-effort listener.** Because Low Stock is classified as state-derived (not an
+event subscriber), "best-effort" here specifically means: computed as part of the same
+inventory-adjustment/stock-receiving call that changes the stock row —
+
+```
+inventory adjustment
+       ↓
+read previous stock
+       ↓
+apply stock change
+       ↓
+check crossing (previous vs. new stock, against min_stock)
+       ↓
+create notification (if crossed)
+```
+
+— not a separately-scheduled or event-subscriber-driven check that might run after the
+mutation, out of order, or not at all. The "missed check is caught on the next stock-affecting
+event" reasoning for treating this as best-effort only holds if every stock mutation performs
+the crossing check inline; it does not license a background/async listener for this
+particular check.
+
 ## Notification Center UI
 
 - **`NotificationBell.vue`** (extends WAFI-143's version): unread-count badge (`db.watch`),
@@ -205,11 +228,12 @@ Low Stock crossing example (`min_stock = 5`): `6 → 4` fires; `4 → 3` does no
   distinct **Acknowledge** action (`acknowledged_at`) separate from read/dismiss; 30-day
   window. No free-text search — the four filters cover the real use cases over 30 days of
   data.
-- **`NotificationSettingsScreen.vue`**: one row per type in `NotificationTypeSettings` (10 of
-  the 11 — everything except Low Stock), enable/disable toggle + its typed threshold field(s)
-  where applicable (After-Hours Expense, Cashier Lockout, New Device, Settlement Paid are
-  binary — no threshold UI). Low Stock has no row here at all: it has no shop-level setting,
-  since its threshold is per-product `min_stock` on the product edit form.
+- **`NotificationSettingsScreen.vue`**: **11 notification types, 10 shop-level notification
+  settings.** One row per type in `NotificationTypeSettings`, enable/disable toggle + its
+  typed threshold field(s) where applicable (After-Hours Expense, Cashier Lockout, New
+  Device, Settlement Paid are binary — no threshold UI). Low Stock is configured per product
+  through `products.min_stock` and therefore has no row in `notification_settings` and no row
+  on this screen — this is intentional, not a missing feature.
 - Business hours (`open_time`/`close_time`) editable from shop settings, with the
   `open_time < close_time` validation surfaced as a form error.
 
