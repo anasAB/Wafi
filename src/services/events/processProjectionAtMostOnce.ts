@@ -22,10 +22,11 @@ export type SubscriberId = typeof SubscriberId[keyof typeof SubscriberId]
  *  documented single-device replay-protection scope), not against two concurrent
  *  calls for the same (subscriberId, eventId) -- that would need a real DB constraint.
  *
- *  Acceptable today only because the sole caller (`daily_event_counts`) is a
- *  best-effort dashboard number, not a financial ledger. Any future subscriber whose
- *  action is a financial write must NOT use this helper -- it needs a real
- *  transactional guarantee this ledger does not provide. */
+ *  Acceptable because every current caller (e.g. `daily_event_counts`,
+ *  `today_revenue_projection`) is a best-effort, disposable projection, not a
+ *  financial ledger. Any future subscriber whose action is a financial write must NOT
+ *  use this helper -- it needs a real transactional guarantee this ledger does not
+ *  provide. */
 export async function processProjectionAtMostOnce(
   subscriberId: SubscriberId,
   eventId: string,
