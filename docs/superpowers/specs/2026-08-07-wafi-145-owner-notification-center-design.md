@@ -49,13 +49,19 @@ enable/disable and thresholds.
 These don't exist anywhere in the codebase today and are being built inline as part of this
 ticket, not deferred:
 
-1. **`products.min_stock`** column (nullable; `NULL` = check disabled for that product) — Low
-   Stock has no threshold field today.
+1. **Reuse `products.low_stock_threshold`** (already exists, migration 007:
+   `INTEGER NOT NULL DEFAULT 5`, already read by `useLowStockAlerts.ts`'s dashboard widget
+   via `current_stock <= low_stock_threshold`). **No new column** — an earlier draft of this
+   spec proposed a duplicate `min_stock` column; corrected after review. Because this column
+   is `NOT NULL DEFAULT 5`, every product has an active threshold from creation (no "disabled
+   via NULL" state, unlike the earlier draft) — the crossing check always runs, using
+   whatever threshold the owner has set (or the 5-unit default).
 2. **`shops.open_time` / `shops.close_time`** (nullable TIME columns) — no business-hours
    concept exists; needed for After-Hours Expense, Shift Late Close, and after-hours
-   suppression. Validation: `open_time < close_time` enforced at save time — **overnight
-   schedules (e.g. open 22:00, close 06:00) are unsupported this ticket**, rejected as a
-   validation error rather than silently mishandled.
+   suppression. **Overnight windows are supported**, not rejected: `open_time > close_time`
+   is treated as a midnight-crossing window (e.g. open `08:00`, close `02:00` means "open"
+   from `08:00`–`24:00` and `00:00`–`02:00`) — see the Business Hours section below for the
+   comparison semantics and the `is_24_7` convenience toggle.
 3. **`staff.pin_locked_out` event** — bridges the existing local-only PIN lockout
    (`usePinLockout.ts`, 5-attempt threshold, WAFI-012) into the event system for the first
    time. Reuses the existing 5-attempt threshold as-is (no new/independent 3-attempt
@@ -74,43 +80,63 @@ ticket, not deferred:
 ## Data model & migrations
 
 ```sql
--- products: low-stock threshold
-ALTER TABLE public.products ADD COLUMN min_stock INTEGER;
--- NULL = check disabled. No backfill; existing products don't suddenly alert.
+-- products.low_stock_threshold already exists (migration 007) — no new column.
 
 -- shops: business hours
 ALTER TABLE public.shops ADD COLUMN open_time TIME;
 ALTER TABLE public.shops ADD COLUMN close_time TIME;
-ALTER TABLE public.shops ADD CONSTRAINT shops_hours_order
-  CHECK (open_time IS NULL OR close_time IS NULL OR open_time < close_time);
--- NULL/NULL = no operating-hours checks for that shop (After-Hours Expense, Shift Late
--- Close, after-hours suppression all skip). Overnight schedules unsupported: the CHECK
--- rejects open_time >= close_time outright.
+ALTER TABLE public.shops ADD COLUMN is_24_7 BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.shops ADD CONSTRAINT shops_hours_not_equal
+  CHECK (open_time IS NULL OR close_time IS NULL OR open_time <> close_time);
+-- NULL/NULL (or is_24_7 = true, which the app enforces by setting both to NULL) = no
+-- operating-hours checks for that shop. open_time = close_time is rejected as degenerate
+-- (a zero-width or full-24h window expressed this way is ambiguous — use is_24_7 for the
+-- "always open" case instead). open_time > close_time is a valid, SUPPORTED overnight
+-- window (see Business Hours below for comparison semantics) — not rejected.
 
 -- notifications: acknowledgment for CRITICAL rows (distinct from read_at)
 ALTER TABLE public.notifications ADD COLUMN acknowledged_at TIMESTAMPTZ;
 
 -- notification_settings: sparse per-type overrides
 CREATE TABLE public.notification_settings (
-  shop_id        TEXT NOT NULL,
+  shop_id        UUID NOT NULL REFERENCES public.shops(id),
   type           TEXT NOT NULL,
   enabled        BOOLEAN NOT NULL DEFAULT true,
   threshold_json JSONB,
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (shop_id, type)
 );
+-- shop_id is UUID REFERENCES shops(id), matching the dominant convention used by events,
+-- products, sales, etc. (Note: the existing `notifications.shop_id`, shipped in WAFI-143,
+-- is TEXT — a pre-existing inconsistency this ticket does not retroactively fix, since
+-- notifications itself is out of this migration's scope; not repeating it here.)
+--
 -- Sparse by design: a missing row resolves to the type's hardcoded default (enabled=true,
 -- default threshold). A row is written only when the owner overrides something — not
--- pre-seeded for all 11 types × every shop.
+-- pre-seeded for all 10 settings-bearing types × every shop.
 ```
 
 RLS: `notification_settings` follows the same shop-scoped pattern as other owner-config
 tables (`shops`); `notifications.acknowledged_at` updates follow the existing
 `notifications_update_scoped` policy (already permits recipient-scoped UPDATE).
 
+### Business hours & overnight semantics
+
+- **`is_24_7 = true`**: the app sets `open_time`/`close_time` to `NULL` when the owner enables
+  this toggle (one concept, not two independent states to keep in sync) — all operating-hours
+  checks (After-Hours Expense, Shift Late Close, after-hours suppression) are skipped.
+- **`open_time < close_time`** (normal day, e.g. `09:00`–`21:00`): a timestamp `t` is
+  "within hours" iff `open_time <= t < close_time`.
+- **`open_time > close_time`** (overnight, e.g. `08:00`–`02:00`): the window crosses
+  midnight — `t` is "within hours" iff `t >= open_time OR t < close_time`. Genuinely
+  supported, not a degraded/rejected case — covers cafes, bakeries, pharmacies, and other
+  shops that legitimately operate past midnight without being fully 24/7.
+- **`open_time = close_time`**: rejected at save time as a validation error (ambiguous —
+  the owner should use the `is_24_7` toggle instead).
+
 `threshold_json` is untyped at the database level but structurally typed in TypeScript.
 **11 notification types ≠ 11 shop-level settings** — `inventory.low_stock` is a real
-notification type but has no shop-level setting at all (its threshold is `products.min_stock`,
+notification type but has no shop-level setting at all (its threshold is `products.low_stock_threshold`,
 per product); the two are deliberately separate types so that distinction is explicit rather
 than papered over with a no-op settings entry:
 
@@ -130,8 +156,8 @@ type NotificationType =
   | 'settlement.paid'
 
 // Only the types with shop-level settings (i.e. NOT 'inventory.low_stock', whose threshold
-// lives on products.min_stock instead) appear in this union — one row per shop per type in
-// notification_settings, keyed by `type`.
+// lives on products.low_stock_threshold instead) appear in this union — one row per shop per
+// type in notification_settings, keyed by `type`.
 type NotificationTypeSettings =
   | { type: 'discount.large_applied'; discountPercentCap: number }
   | { type: 'drawer.variance'; varianceUsdCap: number }
@@ -175,9 +201,9 @@ re-evaluates on every subsequent stock-affecting event).
 |---|---|---|---|
 | Discount Alert | `sale.discounted` | `belowCost` OR `discountPercentage > cap` | CRITICAL if `belowCost`, else WARNING |
 | Drawer Variance | `shift.closed` | `\|variance\| > varianceUsdCap` (default $15) | CRITICAL |
-| Customer Debt | `customer.debt_changed` where `payload.reason === 'credit_sale' && deltaUsd > 0` | daily cumulative credit-sale debt for the shop crosses from `<= cap` to `> cap` (default $500) — one notification per crossing per day, not per sale | CRITICAL |
+| Customer Debt | `customer.debt_changed` where `payload.reason === 'credit_sale' && deltaUsd > 0` | sum of **today's new** credit-sale debt for the shop (resets to $0 at each local calendar-day boundary — this is new debt issued today, not the customer's total outstanding balance) crosses from `<= cap` to `> cap` (default $500) — one notification per crossing per day, not per sale, and not re-fired if it climbs further the same day | CRITICAL |
 | Shift Late Close | `shift.closed` | event's `occurredAt` (not device local time) later than `shops.close_time + graceMinutes` (default 15) | WARNING |
-| After-Hours Expense | `expense.recorded` | event's `occurredAt` outside `[open_time, close_time]` | WARNING |
+| After-Hours Expense | `expense.recorded` | event's `occurredAt` outside operating hours, using the overnight-aware comparison above (skipped entirely if `is_24_7` or `open_time`/`close_time` are `NULL`) | WARNING |
 | Large Return | `sale.returned` | `refundAmountUsd > refundUsdCap` (default $100) | WARNING |
 | Cashier Lockout | `staff.pin_locked_out` (new) | always | CRITICAL |
 | New Device | `device.registered` | always | INFO |
@@ -190,25 +216,26 @@ two separate notifications for the same underlying `sale.discounted` occurrence.
 
 | Type | Trigger point | Rule | Severity |
 |---|---|---|---|
-| Low Stock | `inventory.adjusted` / `stock.received` handler | resulting current stock crosses from `> min_stock` to `<= min_stock` on this event (boundary inclusive — `min_stock` itself counts as low); disabled entirely if `min_stock IS NULL` | WARNING |
-| Sync Failure | app-foreground | any device with `last_seen_at` older than `staleHours` (default 2h) not already notified for this staleness episode | INFO |
+| Low Stock | every stock-mutating flow — `sale.completed` (the most common cause of a low-stock crossing in a retail shop), plus `inventory.adjusted` and `stock.received` | resulting current stock crosses from `> low_stock_threshold` to `<= low_stock_threshold` on this mutation (boundary inclusive — the threshold itself counts as low); the column is `NOT NULL DEFAULT 5`, so the check always runs (no disabled state) | WARNING |
+| Sync Failure | app-foreground | any device **other than the current device** (`device_id <> deviceStore.deviceId` — a device is never stale relative to itself) with `last_seen_at` older than `staleHours` (default 2h), not already notified for this staleness episode | INFO |
 
-Low Stock crossing example (`min_stock = 5`): `6 → 4` fires; `4 → 3` does not (already below);
-`3 → 6` resets (crossed back above); `6 → 5` fires again (crossed down through the boundary).
+Low Stock crossing example (`low_stock_threshold = 5`): `6 → 4` fires (a sale deducting 2
+units); `4 → 3` does not (already below); `3 → 6` resets (crossed back above, e.g. a
+receiving); `6 → 5` fires again (crossed down through the boundary).
 
-**Low Stock must be checked synchronously inside the inventory mutation flow, not via an
+**Low Stock must be checked synchronously inside each stock-mutating flow, not via an
 independent best-effort listener.** Because Low Stock is classified as state-derived (not an
 event subscriber), "best-effort" here specifically means: computed as part of the same
-inventory-adjustment/stock-receiving call that changes the stock row —
+sale-completion / inventory-adjustment / stock-receiving call that changes the stock row —
 
 ```
-inventory adjustment
+stock-mutating action (sale completes, manual adjustment, or receiving)
        ↓
 read previous stock
        ↓
 apply stock change
        ↓
-check crossing (previous vs. new stock, against min_stock)
+check crossing (previous vs. new stock, against low_stock_threshold)
        ↓
 create notification (if crossed)
 ```
@@ -232,7 +259,7 @@ particular check.
   settings.** One row per type in `NotificationTypeSettings`, enable/disable toggle + its
   typed threshold field(s) where applicable (After-Hours Expense, Cashier Lockout, New
   Device, Settlement Paid are binary — no threshold UI). Low Stock is configured per product
-  through `products.min_stock` and therefore has no row in `notification_settings` and no row
+  through `products.low_stock_threshold` and therefore has no row in `notification_settings` and no row
   on this screen — this is intentional, not a missing feature.
 - Business hours (`open_time`/`close_time`) editable from shop settings, with the
   `open_time < close_time` validation surfaced as a form error.
@@ -296,6 +323,20 @@ Open cross-feature questions:
 - Generic cross-type rate limiting / "3+ similar → one summary" batching.
 - "Suggest disabling after 3 dismissals" smart rule.
 - True independently-configurable quiet hours (separate from business hours).
-- Overnight business-hour schedules (open time > close time).
 - Settlement Ready (period-end trigger) — no settlement-generation concept exists.
 - Free-text search over notification history.
+- **Per-customer or total-outstanding-AR debt thresholds** — Customer Debt in this ticket
+  measures new credit-sale debt issued today (shop-wide, resets daily), matching the
+  roadmap's literal "new debt... today" wording. A total-outstanding-balance risk signal is a
+  different notification and would need its own per-customer crossing state; not built here.
+
+## Dependency note for WAFI-117 (Practice Mode)
+
+WAFI-117 does not exist yet — there is no session flag or event field marking an event as
+originating from a practice/training session. When WAFI-117 is designed, it must account for
+this ticket's notification subscribers: either practice-mode actions should not call
+`publishEvent` at all, or `DomainEvent` needs a field notification (and other) subscribers can
+check to skip practice-session events. Without one of those, a cashier's practice-mode
+below-cost sale would generate a real CRITICAL notification to the owner. **No code changes
+in WAFI-145 for this** — the source mechanism doesn't exist to hook into yet; this is a
+forward note for whoever designs WAFI-117.
