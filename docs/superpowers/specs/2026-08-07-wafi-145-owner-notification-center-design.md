@@ -320,23 +320,28 @@ test)** — one per mutation path, plus the full crossing sequence:
 ### Deep-link routing
 
 **Every notification type that references an entity must resolve to a deterministic in-app
-destination when selected** — opening the exact underlying record, not just the generic
-center. Types with no meaningful entity destination are exempt; the table below is the
-complete destination mapping (no type defaults to "just open the list"):
+destination when selected.** Verified against the actual router (`src/router/index.ts`,
+which uses plain paths with no `name` fields): per-record detail routes exist today for only
+4 of the 8 entity types this ticket needs — `/shifts/:id`, `/customers/:id`,
+`/products/:id/edit`, `/staff/:staffId/ledger`. **Sale, expense, return, and device have no
+per-record detail page in this codebase** — building four new detail screens is out of
+scope for this ticket, so those four deliberately resolve to their closest existing **list**
+page instead of "the exact record." This is a documented scope limit, not the ideal end
+state; revisit if a later ticket adds those detail pages.
 
 | Type | `entity_type` | Destination |
 |---|---|---|
-| Discount Alert | `sale` | Sale detail |
-| Drawer Variance | `shift` | Shift detail |
-| Customer Debt | `customer` | Customer detail |
-| Low Stock | `product` | Product detail |
-| Shift Late Close | `shift` | Shift detail |
-| After-Hours Expense | `expense` | Expense detail |
-| Large Return | `return` | Return/sale detail |
-| Cashier Lockout | `staff` | Staff detail |
-| Sync Failure | `device` | Device detail |
-| New Device | `device` | Device detail |
-| Settlement Paid | `staff` (settlement's owning staff member) | Staff settlement detail |
+| Discount Alert | `sale` | `/history` (list — no per-sale detail page exists) |
+| Drawer Variance | `shift` | `/shifts/:id` (exact record) |
+| Customer Debt | `customer` | `/customers/:id` (exact record) |
+| Low Stock | `product` | `/products/:id/edit` (exact record) |
+| Shift Late Close | `shift` | `/shifts/:id` (exact record) |
+| After-Hours Expense | `expense` | `/expenses` (list — no per-expense detail page exists) |
+| Large Return | `return` | `/history` (list — no per-return detail page exists) |
+| Cashier Lockout | `staff` | `/staff/:staffId/ledger` (exact record) |
+| Sync Failure | `device` | `/settings/devices` (list — no per-device detail page exists) |
+| New Device | `device` | `/settings/devices` (list) |
+| Settlement Paid | `staff` (settlement's owning staff member) | `/staff/:staffId/ledger` (exact record) |
 
 The subscriber's only job is populating the existing `entity_type`/`entity_id` columns
 correctly (e.g. `{ entity_type: 'shift', entity_id: shiftId }` for Drawer Variance) — it has
