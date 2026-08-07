@@ -162,6 +162,67 @@ describe('SalesService.completeSale', () => {
     }))
   })
 
+  it('publishes a sale.discounted event for a discounted line, in addition to sale.completed', async () => {
+    setupTx({ cost_price_usd: 0, current_stock: 10 })
+    const { publishEvent } = await import('@/services/events/publishEvent')
+    const discountedInput = {
+      ...baseInput,
+      lines: [{
+        ...baseInput.lines[0],
+        // belowCost reads line.unitCostUsd directly (sales.service.ts line ~266), NOT
+        // the transaction-read cost_price_usd (that local var only feeds the
+        // stock_adjustments insert) -- set it on the input line itself. unitPriceUsd
+        // stays at baseInput's 10 (this service never recomputes it from discountValue;
+        // the caller is expected to have already applied the discount upstream), so
+        // unitCostUsd: 11 > unitPriceUsd: 10 gives belowCost=true.
+        unitCostUsd: 11,
+        discountType: 'percent' as const, discountValue: 10, discountPinApproved: false, listPriceUsd: 12,
+      }],
+    }
+
+    const result = await completeSale(discountedInput, fakeAudit)
+
+    const discountEvents = vi.mocked(publishEvent).mock.calls
+      .map(([e]) => e)
+      .filter((e) => e.type === 'sale.discounted')
+    expect(discountEvents).toHaveLength(1)
+    expect(discountEvents[0].entityId).toBe(result.saleId)
+    expect(discountEvents[0].payload).toMatchObject({
+      discountType: 'percent', discountValue: 10, discountPercentage: 10, pinApproval: false, belowCost: true,
+    })
+  })
+
+  it('publishes a sale.discounted event for a sale-level discount too', async () => {
+    setupTx({ cost_price_usd: 0, current_stock: 10 })
+    const { publishEvent } = await import('@/services/events/publishEvent')
+    const saleDiscountInput = {
+      ...baseInput,
+      saleDiscount: { type: 'fixed' as const, value: 2, amountUsd: 2, pinApproved: true },
+    }
+
+    await completeSale(saleDiscountInput, fakeAudit)
+
+    const discountEvents = vi.mocked(publishEvent).mock.calls
+      .map(([e]) => e)
+      .filter((e) => e.type === 'sale.discounted')
+    expect(discountEvents).toHaveLength(1)
+    expect(discountEvents[0].payload).toMatchObject({
+      discountType: 'fixed', discountValue: 2, pinApproval: true, belowCost: false,
+    })
+  })
+
+  it('publishes no sale.discounted event when nothing was discounted', async () => {
+    setupTx({ cost_price_usd: 0, current_stock: 10 })
+    const { publishEvent } = await import('@/services/events/publishEvent')
+
+    await completeSale(baseInput, fakeAudit)
+
+    const discountEvents = vi.mocked(publishEvent).mock.calls
+      .map(([e]) => e)
+      .filter((e) => e.type === 'sale.discounted')
+    expect(discountEvents).toHaveLength(0)
+  })
+
   it('does not call logDiscountApplied when nothing was discounted', async () => {
     setupTx({ cost_price_usd: 0, current_stock: 10 })
     await completeSale(baseInput, fakeAudit)

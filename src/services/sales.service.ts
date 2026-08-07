@@ -2,10 +2,11 @@ import { v4 as uuidv4 } from 'uuid'
 import { db } from '@/data/powersync/db'
 import { executeBusinessOperation } from '@/composables/executeBusinessOperation'
 import { SalesEventType } from '@/services/events/domainEvent.types'
+import { publishEvent } from '@/services/events/publishEvent'
 import type { PaymentMethod, SplitPaymentEntry, CompletedSale } from '@/features/payment/payment.types'
 import type { SaleLine, SaleDiscount } from '@/store/sale.store'
 import type { DiscountType } from '@/features/pos/discounts'
-import type { SaleCompletedPayload } from '@/services/events/domainEvent.types'
+import type { SaleCompletedPayload, SaleDiscountedPayload } from '@/services/events/domainEvent.types'
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100
@@ -255,6 +256,8 @@ export async function completeSale(
       for (const line of completed.lines) {
         if (!line.discountType) continue
         const base = line.listPriceUsd ?? line.unitPriceUsd
+        const belowCost = line.unitPriceUsd < (line.unitCostUsd ?? 0)
+        const pinApproval = Boolean(line.discountPinApproved)
         await audit.logDiscountApplied(completed.saleId, {
           operatorId:    input.staffId,
           tierApplied:   'retail',
@@ -262,12 +265,34 @@ export async function completeSale(
           discountType:  line.discountType,
           discountValue: line.discountValue ?? 0,
           finalPriceUsd: line.unitPriceUsd,
-          pinApproval:   Boolean(line.discountPinApproved),
-          belowCost:     line.unitPriceUsd < (line.unitCostUsd ?? 0),
+          pinApproval,
+          belowCost,
         })
+        // WAFI-143: executeBusinessOperation's toEvent slot is already taken by
+        // sale.completed for this write, and a sale can have multiple discount
+        // instances (this loop + the sale-level block below) -- publishEvent() is
+        // called directly here, fire-and-forget, the same escape hatch
+        // device.registered already uses (Sprint 2 design spec §5a).
+        void publishEvent({
+          type: SalesEventType.Discounted,
+          entityId: completed.saleId,
+          payload: {
+            discountType: line.discountType,
+            discountValue: line.discountValue ?? 0,
+            discountPercentage: line.discountType === 'percent' ? (line.discountValue ?? 0) : undefined,
+            finalPriceUsd: line.unitPriceUsd,
+            belowCost,
+            pinApproval,
+          } satisfies SaleDiscountedPayload,
+          payloadVersion: 1,
+          staffId: input.staffId ?? '',
+          shopId: input.shopId,
+          occurredAt: now,
+        }).catch(() => {})
       }
       if (completed.saleDiscount) {
         const sd = completed.saleDiscount
+        const pinApproval = Boolean(sd.pinApproved)
         await audit.logDiscountApplied(completed.saleId, {
           operatorId:    input.staffId,
           tierApplied:   'retail',
@@ -275,9 +300,25 @@ export async function completeSale(
           discountType:  sd.type,
           discountValue: sd.value,
           finalPriceUsd: completed.totalUsd,
-          pinApproval:   Boolean(sd.pinApproved),
+          pinApproval,
           belowCost:     false,
         })
+        void publishEvent({
+          type: SalesEventType.Discounted,
+          entityId: completed.saleId,
+          payload: {
+            discountType: sd.type,
+            discountValue: sd.value,
+            discountPercentage: sd.type === 'percent' ? sd.value : undefined,
+            finalPriceUsd: completed.totalUsd,
+            belowCost: false,
+            pinApproval,
+          } satisfies SaleDiscountedPayload,
+          payloadVersion: 1,
+          staffId: input.staffId ?? '',
+          shopId: input.shopId,
+          occurredAt: now,
+        }).catch(() => {})
       }
     },
     toEvent: (completed) => ({
