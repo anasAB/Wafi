@@ -28,6 +28,7 @@ export type CustomerEventType = typeof CustomerEventType[keyof typeof CustomerEv
 
 export const SalesEventType = {
   Completed: 'sale.completed',
+  Discounted: 'sale.discounted',
 } as const
 export type SalesEventType = typeof SalesEventType[keyof typeof SalesEventType]
 
@@ -132,6 +133,19 @@ export interface SaleCompletedPayload {
   }
   itemCount: number
   discountApplied: boolean
+}
+
+export interface SaleDiscountedPayload {
+  discountType: import('@/features/pos/discounts').DiscountType
+  discountValue: number
+  /** Included only when the discount service already computes it naturally
+   *  (percentage-type discounts); never derived/backfilled for fixed-amount discounts
+   *  where it isn't a natural value -- so every consumer reads the same number instead
+   *  of each re-deriving discountValue / originalPrice inconsistently. */
+  discountPercentage?: number
+  finalPriceUsd: number
+  belowCost: boolean
+  pinApproval: boolean
 }
 
 export interface StaffLedgerEntryAddedPayload {
@@ -241,6 +255,7 @@ export type EventSensitivity = 'public' | keyof import('@/features/staff/staff.t
 // design: generating SQL from TS is out of scope).
 export const EVENT_SENSITIVITY: Record<DomainEventType, EventSensitivity> = {
   'sale.completed':           'public',
+  'sale.discounted':          'public',
   'sale.returned':            'public',
   'customer.debt_changed':    'public',
   'installment.due_paid':     'public',

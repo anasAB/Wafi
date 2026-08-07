@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type {
   DomainEvent, DomainEventType,
-  SaleCompletedPayload, ReturnedPayload, DebtChangedPayload, InstallmentDuePaidPayload,
+  SaleCompletedPayload, SaleDiscountedPayload, ReturnedPayload, DebtChangedPayload, InstallmentDuePaidPayload,
   CashMovementRecordedPayload, StockTakenPayload, StockReceivedPayload,
   ShiftOpenedPayload, ShiftClosedPayload, InventoryAdjustedPayload,
   ProductPriceChangedPayload, ProductCostUpdatedPayload, ProductCreatedPayload,
@@ -24,6 +24,14 @@ const FIXTURES: Record<DomainEventType, DomainEvent> = {
       paymentSummary: { cashUsd: 10, cashSyp: 0, cardTotal: 0, creditTotal: 0, methodCount: 1 },
       itemCount: 2, discountApplied: false,
     } satisfies SaleCompletedPayload,
+    payloadVersion: V, staffId: STAFF, shopId: SHOP, occurredAt: WHEN,
+  },
+  'sale.discounted': {
+    type: 'sale.discounted', entityId: 'sale1',
+    payload: {
+      discountType: 'percent', discountValue: 10, discountPercentage: 10,
+      finalPriceUsd: 9, belowCost: false, pinApproval: false,
+    } satisfies SaleDiscountedPayload,
     payloadVersion: V, staffId: STAFF, shopId: SHOP, occurredAt: WHEN,
   },
   'sale.returned': {

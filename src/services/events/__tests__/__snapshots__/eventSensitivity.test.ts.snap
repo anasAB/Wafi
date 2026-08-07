@@ -12,6 +12,7 @@ exports[`EVENT_SENSITIVITY > matches its committed snapshot (any change here mus
   "product.created": "public",
   "product.price_changed": "public",
   "sale.completed": "public",
+  "sale.discounted": "public",
   "sale.returned": "public",
   "settlement.paid": "can_view_staff_ledger",
   "shift.closed": "public",

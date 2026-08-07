@@ -177,6 +177,25 @@ exports[`event contract: sale.completed > matches its committed shape snapshot 1
 }
 `;
 
+exports[`event contract: sale.discounted > matches its committed shape snapshot 1`] = `
+{
+  "entityId": "sale1",
+  "occurredAt": "2026-08-05T00:00:00.000Z",
+  "payload": {
+    "belowCost": false,
+    "discountPercentage": 10,
+    "discountType": "percent",
+    "discountValue": 10,
+    "finalPriceUsd": 9,
+    "pinApproval": false,
+  },
+  "payloadVersion": 1,
+  "shopId": "shop1",
+  "staffId": "s1",
+  "type": "sale.discounted",
+}
+`;
+
 exports[`event contract: sale.returned > matches its committed shape snapshot 1`] = `
 {
   "entityId": "r1",
