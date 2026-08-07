@@ -65,7 +65,13 @@ ticket, not deferred:
 3. **`staff.pin_locked_out` event** — bridges the existing local-only PIN lockout
    (`usePinLockout.ts`, 5-attempt threshold, WAFI-012) into the event system for the first
    time. Reuses the existing 5-attempt threshold as-is (no new/independent 3-attempt
-   constant to keep in sync).
+   constant to keep in sync). **`entityId` is a freshly-generated ID for this specific
+   lockout occurrence (e.g. `crypto.randomUUID()` at trip time), not the staff ID.** Since
+   lockout state is per-device (by design, per WAFI-012) and this same staff member can
+   independently trip a lockout on two different devices, using `staffId` as `entityId`
+   would make two genuinely distinct lockout occurrences collide under any identity-keyed
+   logic downstream; `staffId` still travels in the payload for targeting/display, it's just
+   not the entity identity.
 4. **Sync-staleness check** — no background timer exists in this offline-first PWA;
    implemented as a foreground-triggered sweep (on app becoming active) comparing each
    `devices.last_seen_at` to now, not a periodic in-app timer. Accepted limitation: staleness
@@ -195,6 +201,13 @@ and are not subscribers; they run at their trigger point on a best-effort basis 
 foreground check is caught at the next app open, and Low Stock's crossing logic already
 re-evaluates on every subsequent stock-affecting event).
 
+**Idempotency requirement:** `runDurableSubscriber` retries on failure, so **the entire
+mapping-and-insert operation for every event-driven rule must be idempotent, not merely the
+pure mapping function.** `source_event_id` uniqueness makes the *insert* replay-safe, but a
+handler that does anything else non-idempotent before or after that insert (e.g. Customer
+Debt's cumulative-sum read — see below) must also produce the same outcome on a second
+delivery of the same event.
+
 ### A. Event-driven
 
 | Type | Source event | Rule | Severity |
@@ -211,6 +224,32 @@ re-evaluates on every subsequent stock-affecting event).
 
 Discount Alert is **one rule, one notification type**, severity-routed by `belowCost` — not
 two separate notifications for the same underlying `sale.discounted` occurrence.
+
+**Customer Debt: persistence and replay-safety strategy.** The cumulative "today's new
+credit-sale debt" figure must **not** be kept as an in-memory accumulator in the subscriber —
+`runDurableSubscriber` gives at-least-once delivery, so the handler can see the same
+`customer.debt_changed` event twice, and an in-memory running total would double-count on
+redelivery. Instead, the handler derives the crossing decision entirely from authoritative,
+already-persisted data on every invocation:
+
+```
+on customer.debt_changed (reason='credit_sale', deltaUsd > 0):
+  after  = SUM(deltaUsd) over today's credit_sale-reason debt_changed events for this shop
+           (an aggregate query against the source event/sales data, not a running counter)
+  before = after - event.payload.deltaUsd
+  if before <= cap AND after > cap AND no Customer Debt notification already exists
+     for (shop, today):
+    insert notification
+```
+
+Because `after`/`before` are recomputed from immutable, already-committed source data (the
+day's already-persisted sales), redelivering the same event yields identical `before`/`after`
+values every time — the crossing decision is deterministic under replay without any new
+mutable state table. The "no notification already exists for (shop, today)" check (a query
+against `notifications`, not a separate rate-limit table) is what actually prevents a
+duplicate insert on redelivery or on a later same-day sale that doesn't re-cross; it plays
+the same role `source_event_id` plays for the other rules, adapted for a rule whose trigger
+condition is about accumulated state rather than a single event's own payload.
 
 ### B. State-derived (not event subscribers)
 
@@ -246,6 +285,17 @@ event" reasoning for treating this as best-effort only holds if every stock muta
 the crossing check inline; it does not license a background/async listener for this
 particular check.
 
+**Required tests (Low Stock is not satisfied by a single generic "add low-stock check"
+test)** — one per mutation path, plus the full crossing sequence:
+
+- Sale path: stock `6 → 4` via `sale.completed` deducting 2 units → notification fires.
+- Manual adjustment path: stock `6 → 5` via `inventory.adjusted` → notification fires.
+- Receiving path: stock `4 → 6` via `stock.received` → **no** notification (crossing back
+  above the threshold resets, doesn't fire).
+- Full crossing sequence on one product (`low_stock_threshold = 5`): `6 → 4` fires;
+  `4 → 3` does **not** fire (already below); `3 → 6` resets; `6 → 5` fires again (crossed
+  down through the boundary a second time).
+
 ## Notification Center UI
 
 - **`NotificationBell.vue`** (extends WAFI-143's version): unread-count badge (`db.watch`),
@@ -261,8 +311,11 @@ particular check.
   Device, Settlement Paid are binary — no threshold UI). Low Stock is configured per product
   through `products.low_stock_threshold` and therefore has no row in `notification_settings` and no row
   on this screen — this is intentional, not a missing feature.
-- Business hours (`open_time`/`close_time`) editable from shop settings, with the
-  `open_time < close_time` validation surfaced as a form error.
+- Business hours (`open_time`/`close_time`) editable from shop settings, plus the `is_24_7`
+  toggle. The UI must accept `open_time > close_time` as a valid overnight schedule (e.g.
+  `08:00`–`02:00`) — **only `open_time === close_time` is a form validation error**; the
+  screen must not impose a stricter "close must be after open" rule than the database
+  constraint allows, or the two would silently disagree.
 
 ### Deep-link routing
 
