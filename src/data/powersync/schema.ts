@@ -409,6 +409,38 @@ const audit_log = new Table({
                                    // its originating events.id for idempotent retry
 })
 
+// WAFI-143 -- disposable, rebuildable read model (design spec, "Dashboard consumer").
+// Never a source of truth for anything financial; may drift under event loss and
+// self-corrects on the next full resync. (shop_id, date) is a LOGICAL key only --
+// PowerSync's Table DSL has no composite-primary-key support, and this table's implicit
+// `id` is the real primary key, same as daily_event_counts. The projection subscriber
+// enforces uniqueness itself via read-then-insert-or-update, not a DB constraint.
+const local_today_revenue_projection = new Table({
+  shop_id:      column.text,
+  date:         column.text,   // YYYY-MM-DD
+  revenue_usd:  column.real,
+  revenue_syp:  column.real,
+  updated_at:   column.text,   // ISO string
+}, { localOnly: true })
+
+// WAFI-143 -- durable business facts produced by notificationSubscriber.ts (design spec,
+// "Notification consumer"). Synced (unlike the projection above): the owner must see
+// this on every device, not just the one that generated it.
+const notifications = new Table({
+  shop_id:             column.text,
+  recipient_staff_id:  column.text,
+  recipient_role:      column.text,
+  type:                column.text,
+  title:               column.text,
+  message:             column.text,
+  entity_type:         column.text,
+  entity_id:           column.text,
+  severity:            column.text,
+  source_event_id:     column.text,
+  created_at:          column.text,
+  read_at:             column.text,
+})
+
 const suppliers = new Table({
   shop_id:        column.text,
   name:           column.text,
@@ -518,6 +550,8 @@ export const AppSchema = new Schema({
   audit_log,
   events,
   daily_event_counts,
+  local_today_revenue_projection,
+  notifications,
   suppliers,
   stock_receivings,
   stock_receiving_line_items,
