@@ -3,6 +3,7 @@ import { logger } from './logger'
 
 export const SubscriberId = {
   DailyEventCounts: 'daily_event_counts_projection',
+  TodayRevenueProjection: 'today_revenue_projection',
 } as const
 export type SubscriberId = typeof SubscriberId[keyof typeof SubscriberId]
 
