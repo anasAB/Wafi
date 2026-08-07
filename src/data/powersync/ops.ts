@@ -31,6 +31,13 @@ export async function runOp(
     return (await supabase.from(table).upsert({ id, ...opData }, opts)).error
   }
 
+  // WAFI-143: notifications is NOT append-only like audit_log -- marking read_at is a
+  // legitimate update, so only PUT gets special dedup treatment here; PATCH/DELETE fall
+  // through to the generic switch below.
+  if (table === 'notifications' && type === UpdateType.PUT) {
+    return (await supabase.from(table).upsert({ id, ...opData }, { onConflict: 'source_event_id', ignoreDuplicates: true })).error
+  }
+
   switch (type) {
     case UpdateType.PUT:
       return (await supabase.from(table).upsert({ id, ...opData })).error

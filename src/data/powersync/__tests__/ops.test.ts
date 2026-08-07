@@ -58,6 +58,23 @@ describe('runOp — audit_log is append-only', () => {
   })
 })
 
+describe('runOp — notifications source_event_id dedup', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('upserts notifications on source_event_id (ignoreDuplicates) on PUT', async () => {
+    await runOp(UpdateType.PUT, 'notifications', 'row1', { type: 'discount.large_applied', source_event_id: 'evt1' })
+    expect(upsert).toHaveBeenCalledWith(
+      { id: 'row1', type: 'discount.large_applied', source_event_id: 'evt1' },
+      { onConflict: 'source_event_id', ignoreDuplicates: true },
+    )
+  })
+
+  it('falls through to a normal per-id UPDATE for notifications on PATCH (marking read_at)', async () => {
+    await runOp(UpdateType.PATCH, 'notifications', 'row1', { read_at: '2026-08-06T00:00:00.000Z' })
+    expect(update).toHaveBeenCalledWith({ read_at: '2026-08-06T00:00:00.000Z' })
+  })
+})
+
 describe('isPermanentError — quarantine classification', () => {
   const err = (code: string, message = 'x'): PostgrestError =>
     ({ code, message, details: '', hint: '', name: 'PostgrestError' } as unknown as PostgrestError)
