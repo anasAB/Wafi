@@ -14,6 +14,7 @@ import ExchangeRateWidget from '@/features/exchange-rate/ExchangeRateWidget.vue'
 import ExchangeRateEditor from '@/features/exchange-rate/ExchangeRateEditor.vue'
 import ConnectionPill from '@/components/ui/ConnectionPill.vue'
 import OperatorSwitchAction from '@/features/staff/components/OperatorSwitchAction.vue'
+import NotificationBell from '@/features/notifications/components/NotificationBell.vue'
 import { useDailyDigest } from '@/features/messaging'
 import { useInstallmentsDueAlert } from '@/features/installments/composables/useInstallmentsDueAlert'
 
@@ -238,10 +239,6 @@ const avgPerInvoice = computed(() => {
   return Math.round(metrics.revenueUsd.value / metrics.invoiceCount.value * 100) / 100
 })
 
-const hasAlerts = computed(() =>
-  !allClear.value || openCreditCount.value > 0
-)
-
 const recentActivity = computed(() =>
   history.sales.value.slice(0, 5)
 )
@@ -348,12 +345,7 @@ const ACTIVITY_HEADING: Record<string, string> = { today: 'اليوم', week: '�
       <div class="hp-header-actions">
         <OperatorSwitchAction variant="compact" />
         <ConnectionPill />
-        <button class="icon-btn" :class="{ 'has-alert': hasAlerts }" aria-label="التنبيهات">
-          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-          </svg>
-        </button>
+        <NotificationBell />
       </div>
     </header>
 
