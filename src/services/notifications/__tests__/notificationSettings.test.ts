@@ -24,4 +24,10 @@ describe('getNotificationSettings', () => {
     const s = await getNotificationSettings('shop1', 'sale.large_return')
     expect(s).toEqual({ type: 'sale.large_return', enabled: true, refundUsdCap: 100 })
   })
+
+  it('falls back to the default threshold without throwing when threshold_json is malformed JSON', async () => {
+    vi.mocked(db.getOptional).mockResolvedValue({ enabled: 1, threshold_json: '{not valid json' } as any)
+    const s = await getNotificationSettings('shop1', 'sale.large_return')
+    expect(s).toEqual({ type: 'sale.large_return', enabled: true, refundUsdCap: 100 })
+  })
 })
