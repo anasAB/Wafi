@@ -439,6 +439,7 @@ const notifications = new Table({
   source_event_id:     column.text,
   created_at:          column.text,
   read_at:             column.text,
+  acknowledged_at:     column.text,   // WAFI-145: CRITICAL rows require this, distinct from read_at
 })
 
 const suppliers = new Table({
@@ -522,6 +523,17 @@ const shops = new Table({
   features:                    column.text,   // WAFI-131: per-shop pack flags (JSON, server-set)
   cashier_discount_cap_pct:    column.real,   // WAFI-100
   manager_discount_cap_pct:    column.real,   // WAFI-100
+  open_time:                   column.text,    // WAFI-145: 'HH:MM', NULL = no operating-hours checks
+  close_time:                  column.text,    // WAFI-145
+  is_24_7:                     column.integer, // WAFI-145: 0/1
+})
+
+const notification_settings = new Table({
+  shop_id:        column.text,
+  type:           column.text,
+  enabled:        column.integer,  // 0/1
+  threshold_json: column.text,     // JSON-encoded NotificationTypeSettings, see notificationSettings.ts
+  updated_at:     column.text,
 })
 
 export const AppSchema = new Schema({
@@ -552,6 +564,7 @@ export const AppSchema = new Schema({
   daily_event_counts,
   local_today_revenue_projection,
   notifications,
+  notification_settings,
   suppliers,
   stock_receivings,
   stock_receiving_line_items,
