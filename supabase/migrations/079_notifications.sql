@@ -40,7 +40,7 @@ DROP POLICY IF EXISTS notifications_select_scoped ON public.notifications;
 CREATE POLICY notifications_select_scoped ON public.notifications
   FOR SELECT TO authenticated, anon
   USING (
-    shop_id = (SELECT public.auth_shop_id())
+    shop_id = (SELECT public.auth_shop_id())::text
     AND (
       recipient_staff_id = (SELECT public.auth_staff_id())::text
       OR recipient_role = (SELECT public.auth_role())
@@ -55,7 +55,7 @@ CREATE POLICY notifications_select_scoped ON public.notifications
 DROP POLICY IF EXISTS notifications_insert_all ON public.notifications;
 CREATE POLICY notifications_insert_all ON public.notifications
   FOR INSERT TO authenticated, anon
-  WITH CHECK (shop_id = (SELECT public.auth_shop_id()));
+  WITH CHECK (shop_id = (SELECT public.auth_shop_id())::text);
 
 -- UPDATE: only for marking read_at -- shop-scoped AND recipient-scoped, same predicate
 -- as SELECT (a staff member may only mark their own/their role's notifications read).
@@ -63,12 +63,12 @@ DROP POLICY IF EXISTS notifications_update_scoped ON public.notifications;
 CREATE POLICY notifications_update_scoped ON public.notifications
   FOR UPDATE TO authenticated, anon
   USING (
-    shop_id = (SELECT public.auth_shop_id())
+    shop_id = (SELECT public.auth_shop_id())::text
     AND (
       recipient_staff_id = (SELECT public.auth_staff_id())::text
       OR recipient_role = (SELECT public.auth_role())
     )
   )
-  WITH CHECK (shop_id = (SELECT public.auth_shop_id()));
+  WITH CHECK (shop_id = (SELECT public.auth_shop_id())::text);
 
 GRANT ALL ON TABLE public.notifications TO anon, authenticated, service_role;
