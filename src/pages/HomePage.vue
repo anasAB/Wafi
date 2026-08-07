@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import VueApexCharts from 'vue3-apexcharts'
@@ -203,7 +203,30 @@ const greeting = computed(() => {
   return 'مساء النور'
 })
 
-const revenueSyp = computed(() => currentRate.value ? Math.round(metrics.revenueUsd.value * currentRate.value) : 0)
+// Today's revenue tile is sourced live from local_today_revenue_projection
+// (WAFI-143) via db.watch below. metrics.revenueUsd itself remains used
+// elsewhere on this page (period-range views, best sellers) and is not touched.
+const liveRevenueUsd = ref(0)
+const liveRevenueSyp = ref(0)
+
+onMounted(() => {
+  const shopId = device.shopId
+  const today = new Date().toISOString().slice(0, 10)
+  const controller = new AbortController()
+  ;(async () => {
+    const iterable = db.watch(
+      `SELECT revenue_usd, revenue_syp FROM local_today_revenue_projection WHERE shop_id = ? AND date = ?`,
+      [shopId, today],
+      { signal: controller.signal },
+    )
+    for await (const result of iterable) {
+      const row = (result as any).rows?._array?.[0]
+      liveRevenueUsd.value = row?.revenue_usd ?? 0
+      liveRevenueSyp.value = row?.revenue_syp ?? 0
+    }
+  })().catch(() => {})
+  onBeforeUnmount(() => controller.abort())
+})
 
 const profitMarginPct = computed(() => {
   if (!metrics.revenueUsd.value) return 0
@@ -395,9 +418,9 @@ const ACTIVITY_HEADING: Record<string, string> = { today: 'اليوم', week: '�
             </svg>
           </div>
           <div class="kc-label">المال الداخل</div>
-          <div class="kc-value" dir="ltr">${{ metrics.revenueUsd.value.toLocaleString() }}</div>
+          <div class="kc-value" dir="ltr">${{ liveRevenueUsd.toLocaleString() }}</div>
           <div class="kc-accent-bar"></div>
-          <div class="kc-sub" v-if="revenueSyp" dir="ltr">{{ revenueSyp.toLocaleString() }} ل.س</div>
+          <div class="kc-sub" v-if="liveRevenueSyp" dir="ltr">{{ liveRevenueSyp.toLocaleString() }} ل.س</div>
         </div>
         <div class="kpi-card" @click="showProfitSheet = true">
           <div class="kc-icon">
