@@ -106,10 +106,30 @@ RLS: `notification_settings` follows the same shop-scoped pattern as other owner
 tables (`shops`); `notifications.acknowledged_at` updates follow the existing
 `notifications_update_scoped` policy (already permits recipient-scoped UPDATE).
 
-`threshold_json` is untyped at the database level but structurally typed in TypeScript via a
-discriminated union keyed by `type`:
+`threshold_json` is untyped at the database level but structurally typed in TypeScript.
+**11 notification types ≠ 11 shop-level settings** — `inventory.low_stock` is a real
+notification type but has no shop-level setting at all (its threshold is `products.min_stock`,
+per product); the two are deliberately separate types so that distinction is explicit rather
+than papered over with a no-op settings entry:
 
 ```ts
+// All 11 notification types that can produce a `notifications` row.
+type NotificationType =
+  | 'discount.large_applied'
+  | 'drawer.variance'
+  | 'customer.debt_threshold'
+  | 'inventory.low_stock'
+  | 'shift.late_close'
+  | 'expense.after_hours'
+  | 'sale.large_return'
+  | 'staff.pin_locked_out'
+  | 'device.sync_stale'
+  | 'device.registered'
+  | 'settlement.paid'
+
+// Only the types with shop-level settings (i.e. NOT 'inventory.low_stock', whose threshold
+// lives on products.min_stock instead) appear in this union — one row per shop per type in
+// notification_settings, keyed by `type`.
 type NotificationTypeSettings =
   | { type: 'discount.large_applied'; discountPercentCap: number }
   | { type: 'drawer.variance'; varianceUsdCap: number }
@@ -169,10 +189,11 @@ Low Stock crossing example (`min_stock = 5`): `6 → 4` fires; `4 → 3` does no
   distinct **Acknowledge** action (`acknowledged_at`) separate from read/dismiss; 30-day
   window. No free-text search — the four filters cover the real use cases over 30 days of
   data.
-- **`NotificationSettingsScreen.vue`**: one row per of the 11 types, enable/disable toggle +
-  its typed threshold field(s) where applicable (After-Hours Expense, Cashier Lockout, New
-  Device, Settlement Paid are binary — no threshold UI). Low Stock's threshold is per-product
-  on the product edit form, not here.
+- **`NotificationSettingsScreen.vue`**: one row per type in `NotificationTypeSettings` (10 of
+  the 11 — everything except Low Stock), enable/disable toggle + its typed threshold field(s)
+  where applicable (After-Hours Expense, Cashier Lockout, New Device, Settlement Paid are
+  binary — no threshold UI). Low Stock has no row here at all: it has no shop-level setting,
+  since its threshold is per-product `min_stock` on the product edit form.
 - Business hours (`open_time`/`close_time`) editable from shop settings, with the
   `open_time < close_time` validation surfaced as a form error.
 
