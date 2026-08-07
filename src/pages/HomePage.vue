@@ -229,9 +229,46 @@ onMounted(() => {
   onBeforeUnmount(() => controller.abort())
 })
 
+// Reintroduce the SYP-equivalent-of-metrics computed that the live-wiring task (a8739a9)
+// dropped in favor of the live projection's own revenue_syp column. Needed again below
+// for periods other than "today", where the live projection doesn't apply.
+const revenueSyp = computed(() =>
+  currentRate.value ? Math.round(metrics.revenueUsd.value * currentRate.value) : 0
+)
+
+// WAFI-143 final-review fix (C2): the revenue tile was always showing the live
+// today's-revenue projection regardless of the selected period, while every sibling
+// tile (profit, invoices, avg ticket) reads from metrics.load(period). Gate the
+// displayed revenue on the active period: only "today" uses the live, sub-day-granular
+// projection; "week"/"month" fall back to the period-scoped metrics value, matching the
+// other tiles.
+const displayRevenueUsd = computed(() => {
+  if (period.value === 'today') {
+    // Stopgap fallback (not the primary path): a freshly-provisioned device / local-DB
+    // clear has no local_today_revenue_projection row yet (no events have been locally
+    // processed to accumulate into it), so the live value reads 0 even though today's
+    // sales already exist and are reflected in metrics (synced from the server). Only
+    // fall back when the live value is genuinely empty and metrics has real data --
+    // once the projection catches up, the live value takes over again automatically.
+    if (!liveRevenueUsd.value && metrics.revenueUsd.value) return metrics.revenueUsd.value
+    return liveRevenueUsd.value
+  }
+  return metrics.revenueUsd.value
+})
+
+const displayRevenueSyp = computed(() => {
+  if (period.value === 'today') {
+    if (!liveRevenueUsd.value && metrics.revenueUsd.value) return revenueSyp.value
+    return liveRevenueSyp.value
+  }
+  return revenueSyp.value
+})
+
 const profitMarginPct = computed(() => {
-  if (!metrics.revenueUsd.value) return 0
-  return Math.round((metrics.profitUsd.value / metrics.revenueUsd.value) * 100)
+  // Use the SAME revenue value actually displayed in the tile for this period, so the
+  // margin ratio never disagrees with the number the owner is looking at.
+  if (!displayRevenueUsd.value) return 0
+  return Math.round((metrics.profitUsd.value / displayRevenueUsd.value) * 100)
 })
 
 const avgPerInvoice = computed(() => {
@@ -410,9 +447,9 @@ const ACTIVITY_HEADING: Record<string, string> = { today: 'اليوم', week: '�
             </svg>
           </div>
           <div class="kc-label">المال الداخل</div>
-          <div class="kc-value" dir="ltr">${{ liveRevenueUsd.toLocaleString() }}</div>
+          <div class="kc-value" dir="ltr">${{ displayRevenueUsd.toLocaleString() }}</div>
           <div class="kc-accent-bar"></div>
-          <div class="kc-sub" v-if="liveRevenueSyp" dir="ltr">{{ liveRevenueSyp.toLocaleString() }} ل.س</div>
+          <div class="kc-sub" v-if="displayRevenueSyp" dir="ltr">{{ displayRevenueSyp.toLocaleString() }} ل.س</div>
         </div>
         <div class="kpi-card" @click="showProfitSheet = true">
           <div class="kc-icon">

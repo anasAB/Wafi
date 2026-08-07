@@ -29,7 +29,7 @@ describe('per-domain event type registries', () => {
     expect(Object.values(CustomerEventType)).toEqual(['customer.debt_changed', 'installment.due_paid'])
   })
   it('SalesEventType has exactly the sales events', () => {
-    expect(Object.values(SalesEventType)).toEqual(['sale.completed'])
+    expect(Object.values(SalesEventType)).toEqual(['sale.completed', 'sale.discounted'])
   })
   it('StaffEventType has exactly the staff events', () => {
     expect(Object.values(StaffEventType)).toEqual([

@@ -38,7 +38,7 @@ export function mapEventToNotification(event: DomainEvent): NotificationInsert |
   }
 }
 
-async function handleDiscountEvent(event: DurableEvent<unknown>): Promise<void> {
+export async function handleDiscountEvent(event: DurableEvent<unknown>): Promise<void> {
   const entry = mapEventToNotification(event)
   if (!entry) return // null mapping is success -- runDurableSubscriber still writes the ledger
 

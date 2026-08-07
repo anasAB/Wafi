@@ -1658,7 +1658,7 @@ to:
 Dashboard (today's revenue tile), Notifications (WAFI-143's two reference consumers)
 ```
 
-- [ ] **Step 3: Fill in the Cross-Epic Edge-Case Checklist (final review) block**
+- [x] **Step 3: Fill in the Cross-Epic Edge-Case Checklist (final review) block**
 
 Per this file's own instructions, append to this ticket's final-review write-up (wherever
 that's tracked — the WAFI status doc or a dedicated review note):
@@ -1666,7 +1666,17 @@ that's tracked — the WAFI status doc or a dedicated review note):
 ```
 ## Cross-Epic Edge-Case Checklist (final review)
 Matrix rows re-checked after implementation: Sales, Events, Staff, Notifications.
-Domains touched but not covered in the original spec checklist: none.
+Domains touched but not covered in the original spec checklist: Dashboard/Reports. This
+was NOT in the original design-time checklist because Task 6's live-wiring of the
+revenue tile (via db.watch on local_today_revenue_projection) silently changed the
+tile's period semantics -- it always showed live today's-revenue regardless of the
+selected period toggle, disagreeing with every sibling KPI tile that reads
+metrics.load(period), and made profitMarginPct's ratio inconsistent with the number
+actually displayed. The final whole-branch review caught this gap and it was corrected
+in the WAFI-143 final-review fix wave (period-gated the tile: live value only for
+period="today", metrics.revenueUsd/its SYP equivalent otherwise, with a documented
+stopgap fallback to metrics.revenueUsd for a fresh device whose local projection has no
+row yet).
 ```
 
 If implementation actually touched a domain the design-time checklist didn't list (e.g.

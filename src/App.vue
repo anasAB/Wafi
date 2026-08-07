@@ -24,7 +24,7 @@ import { startEventTableCleanupSweeper } from '@/services/events/cleanupLocalEve
 import { startAuditSubscribers, handleAuditableEvent } from '@/services/events/auditSubscriber'
 import { startProcessingRetrySweeper } from '@/services/events/eventProcessingRetryQueue'
 import { startDashboardRevenueProjection } from '@/services/events/dashboardRevenueProjection'
-import { startNotificationSubscribers } from '@/services/events/notificationSubscriber'
+import { startNotificationSubscribers, handleDiscountEvent } from '@/services/events/notificationSubscriber'
 import type { DomainEvent } from '@/services/events/domainEvent.types'
 
 const { offlineReady, dismissOfflineReady, needRefresh, applyUpdate, dismissNeedRefresh } = usePwaLifecycle()
@@ -153,7 +153,15 @@ onMounted(async () => {
   // is only ever called from within runDurableSubscriber's failure path), so it
   // always has the eventId field handleAuditableEvent requires -- the two types
   // just aren't structurally assignable through the Map's invariant parameter type.
-  startProcessingRetrySweeper(new Map([['audit', handleAuditableEvent as (event: DomainEvent) => Promise<void>]]))
+  startProcessingRetrySweeper(new Map([
+    ['audit', handleAuditableEvent as (event: DomainEvent) => Promise<void>],
+    // WAFI-143 final-review fix (C3): 'notifications' durable retries were enqueued under
+    // this subscriber name (see notificationSubscriber.ts's runDurableSubscriber call) but
+    // never registered here, so failed notification handlers sat in
+    // local_event_processing_retries forever and never fired. Registered with the same
+    // type-cast reasoning as 'audit' above.
+    ['notifications', handleDiscountEvent as (event: DomainEvent) => Promise<void>],
+  ]))
 
   appReady.value = true
 })
