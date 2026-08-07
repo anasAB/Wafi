@@ -14,19 +14,21 @@ settings, and delivery-channel configuration to this ticket.
 
 ## Vision
 
-A notification system surfacing only important events — not spam — covering the roadmap's
-11 notification types (see "12 vs 11" below), in-app only (no push/WhatsApp this ticket),
-with per-type owner-configurable enable/disable and thresholds.
+A notification system surfacing only important events — not spam — covering 11 notification
+types, in-app only (no push/WhatsApp this ticket), with per-type owner-configurable
+enable/disable and thresholds.
 
 ## Scope decisions (from brainstorming)
 
 - **Delivery channel:** in-app only. Push (FCM) and WhatsApp are explicitly out of scope —
   separate follow-up tickets once this ticket's notification *logic* exists to feed them.
 - **Settings:** per-type on/off + threshold editing (not just on/off).
-- **All 12 roadmap-listed types pursued**, but **Below-Cost Sale is not a separate
-  notification type** — it's a severity variant of Discount Alert (see below), yielding
-  **11 actual notification types**. Several types need new, previously-nonexistent
-  subsystems built inline as part of this ticket (see "New subsystems required").
+- **The roadmap originally listed 12 notification types, but Below-Cost Sale is a severity
+  variant of Discount Alert rather than a separate notification type** (see the Discount
+  Alert rule below) — **yielding 11 actual notification types, final and unambiguous: the
+  list in "Notification rules" below is the complete set to implement.** Several of the 11
+  need new, previously-nonexistent subsystems built inline as part of this ticket (see "New
+  subsystems required").
 - **No generic rate limiting.** Considered and rejected: it's genuinely racy across two
   devices in the same shop (both could pass a "no recent notification" check and insert
   concurrently), and the real spam pressure is removed by threshold-crossing semantics
@@ -153,6 +155,20 @@ Uniform evaluation order for every rule: **enabled? → NO: stop (threshold logi
 → YES: evaluate threshold/crossing logic → after-hours suppression (non-CRITICAL only) →
 insert.**
 
+**Durability:** all event-driven notification subscribers (section A below) use
+`runDurableSubscriber` (WAFI-150's primitive), **regardless of severity.** A notification is
+a durable business side effect, not a disposable projection (`useEventSubscription`'s
+best-effort tier is for read-model/projection work, not this); therefore delivery must be
+at-least-once and retryable whether the type is INFO, WARNING, or CRITICAL. Severity controls
+presentation and acknowledgment requirements (see Notification Center UI), not subscriber
+durability — making durability conditional on severity would force a severity debate onto
+every future notification type just to decide its infrastructure. Durable handlers remain
+replay-safe via the existing `source_event_id` unique index, same as today's
+`handleDiscountEvent`. State-derived checks (section B) have no source event to replay from
+and are not subscribers; they run at their trigger point on a best-effort basis (a missed
+foreground check is caught at the next app open, and Low Stock's crossing logic already
+re-evaluates on every subsequent stock-affecting event).
+
 ### A. Event-driven
 
 | Type | Source event | Rule | Severity |
@@ -196,6 +212,35 @@ Low Stock crossing example (`min_stock = 5`): `6 → 4` fires; `4 → 3` does no
   since its threshold is per-product `min_stock` on the product edit form.
 - Business hours (`open_time`/`close_time`) editable from shop settings, with the
   `open_time < close_time` validation surfaced as a form error.
+
+### Deep-link routing
+
+**Every notification type that references an entity must resolve to a deterministic in-app
+destination when selected** — opening the exact underlying record, not just the generic
+center. Types with no meaningful entity destination are exempt; the table below is the
+complete destination mapping (no type defaults to "just open the list"):
+
+| Type | `entity_type` | Destination |
+|---|---|---|
+| Discount Alert | `sale` | Sale detail |
+| Drawer Variance | `shift` | Shift detail |
+| Customer Debt | `customer` | Customer detail |
+| Low Stock | `product` | Product detail |
+| Shift Late Close | `shift` | Shift detail |
+| After-Hours Expense | `expense` | Expense detail |
+| Large Return | `return` | Return/sale detail |
+| Cashier Lockout | `staff` | Staff detail |
+| Sync Failure | `device` | Device detail |
+| New Device | `device` | Device detail |
+| Settlement Paid | `staff` (settlement's owning staff member) | Staff settlement detail |
+
+The subscriber's only job is populating the existing `entity_type`/`entity_id` columns
+correctly (e.g. `{ entity_type: 'shift', entity_id: shiftId }` for Drawer Variance) — it has
+no knowledge of Vue routes. Routing is entirely the frontend's concern: a
+`entity_type + entity_id → route` lookup owned by the Notification Center UI, kept as one
+small mapping table in the frontend layer rather than scattered per-component `if` checks.
+This keeps the domain/event layer independent of presentation, matching how `entity_type`/
+`entity_id` are already used by `audit_log`.
 
 ## Cross-Epic Edge-Case Checklist (design time)
 
