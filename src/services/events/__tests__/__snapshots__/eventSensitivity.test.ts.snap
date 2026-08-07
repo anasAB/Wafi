@@ -18,6 +18,7 @@ exports[`EVENT_SENSITIVITY > matches its committed snapshot (any change here mus
   "shift.closed": "public",
   "shift.opened": "public",
   "staff.ledger_entry_added": "can_view_staff_ledger",
+  "staff.pin_locked_out": "can_view_staff_ledger",
   "stock.received": "public",
   "stock.taken": "public",
 }

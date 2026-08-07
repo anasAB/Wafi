@@ -6,7 +6,7 @@ import type {
   ShiftOpenedPayload, ShiftClosedPayload, InventoryAdjustedPayload,
   ProductPriceChangedPayload, ProductCostUpdatedPayload, ProductCreatedPayload,
   StaffLedgerEntryAddedPayload, SettlementPaidPayload, ExpenseRecordedPayload,
-  DeviceRegisteredPayload,
+  DeviceRegisteredPayload, PinLockedOutPayload,
 } from '@/services/events/domainEvent.types'
 
 // Every field fixed to a literal value -- occurredAt/staffId/shopId are NOT generated at
@@ -112,6 +112,11 @@ const FIXTURES: Record<DomainEventType, DomainEvent> = {
   'device.registered': {
     type: 'device.registered', entityId: 'd1',
     payload: { deviceId: 'd1', deviceCode: 'ABC123', isTemporary: false } satisfies DeviceRegisteredPayload,
+    payloadVersion: V, staffId: STAFF, shopId: SHOP, occurredAt: WHEN,
+  },
+  'staff.pin_locked_out': {
+    type: 'staff.pin_locked_out', entityId: 'lockout-occurrence-1',
+    payload: { staffId: STAFF, lockoutMinutes: 5 } satisfies PinLockedOutPayload,
     payloadVersion: V, staffId: STAFF, shopId: SHOP, occurredAt: WHEN,
   },
 }

@@ -37,6 +37,7 @@ export const StaffEventType = {
   ShiftClosed: 'shift.closed',
   SettlementPaid: 'settlement.paid',
   LedgerEntryAdded: 'staff.ledger_entry_added',
+  PinLockedOut: 'staff.pin_locked_out',
 } as const
 export type StaffEventType = typeof StaffEventType[keyof typeof StaffEventType]
 
@@ -188,7 +189,11 @@ export interface DebtChangedPayload {
   /** Negative for a debt decrease (the only case this sprint wires -- a return). */
   deltaUsd: number
   newBalanceUsd: number
-  reason: 'return'
+  /** 'return': existing WAFI-140 producer (useReturnSheet.ts), always a decrease.
+   *  'credit_sale' (WAFI-145): new producer (sales.service.ts), always an increase
+   *  -- the Customer Debt notification rule checks this discriminant explicitly
+   *  rather than inferring intent from deltaUsd's sign alone. */
+  reason: 'return' | 'credit_sale'
 }
 
 export interface CashMovementRecordedPayload {
@@ -228,6 +233,16 @@ export interface DeviceRegisteredPayload {
   deviceId: string
   deviceCode: string
   isTemporary: boolean
+}
+
+export interface PinLockedOutPayload {
+  /** The staff member who tripped the lockout. NOT the entityId -- see the
+   *  comment on entityId generation at the publish call site (usePinLockout.ts):
+   *  the same staff member can independently lock out on two different devices
+   *  (lockout state is per-device, WAFI-012), so two genuinely distinct lockout
+   *  occurrences must not collide on entity identity. */
+  staffId: string
+  lockoutMinutes: number
 }
 
 // WAFI-140 Sprint 3 (design spec §3). Single source of truth for event-type sensitivity
@@ -270,6 +285,7 @@ export const EVENT_SENSITIVITY: Record<DomainEventType, EventSensitivity> = {
   'product.created':          'public',
   'staff.ledger_entry_added': 'can_view_staff_ledger',
   'settlement.paid':          'can_view_staff_ledger',
+  'staff.pin_locked_out':     'can_view_staff_ledger',
   'expense.recorded':         'can_view_expenses',
   'product.cost_updated':     'can_view_reports',
 }

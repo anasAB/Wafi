@@ -279,6 +279,21 @@ exports[`event contract: staff.ledger_entry_added > matches its committed shape 
 }
 `;
 
+exports[`event contract: staff.pin_locked_out > matches its committed shape snapshot 1`] = `
+{
+  "entityId": "lockout-occurrence-1",
+  "occurredAt": "2026-08-05T00:00:00.000Z",
+  "payload": {
+    "lockoutMinutes": 5,
+    "staffId": "s1",
+  },
+  "payloadVersion": 1,
+  "shopId": "shop1",
+  "staffId": "s1",
+  "type": "staff.pin_locked_out",
+}
+`;
+
 exports[`event contract: stock.received > matches its committed shape snapshot 1`] = `
 {
   "entityId": "rc1",
