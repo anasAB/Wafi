@@ -23,6 +23,8 @@ import { startDailyEventCountsProjection } from '@/services/events/dailyEventCou
 import { startEventTableCleanupSweeper } from '@/services/events/cleanupLocalEventTables'
 import { startAuditSubscribers, handleAuditableEvent } from '@/services/events/auditSubscriber'
 import { startProcessingRetrySweeper } from '@/services/events/eventProcessingRetryQueue'
+import { startDashboardRevenueProjection } from '@/services/events/dashboardRevenueProjection'
+import { startNotificationSubscribers } from '@/services/events/notificationSubscriber'
 import type { DomainEvent } from '@/services/events/domainEvent.types'
 
 const { offlineReady, dismissOfflineReady, needRefresh, applyUpdate, dismissNeedRefresh } = usePwaLifecycle()
@@ -132,6 +134,9 @@ onMounted(async () => {
   // growth (design spec §8a) -- same gating and reconnect-listener mechanism as the
   // retry sweeper above.
   startEventTableCleanupSweeper()
+
+  startDashboardRevenueProjection(useDeviceStore().shopId)
+  startNotificationSubscribers(useDeviceStore().shopId)
 
   // WAFI-150: start the audit subscribers -- the first durable-subscriber consumer
   // -- at the same gate as the sweepers above (device/shop context resolved).
