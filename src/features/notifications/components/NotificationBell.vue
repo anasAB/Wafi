@@ -17,6 +17,7 @@ interface NotificationRow {
   severity: string
   created_at: string
   read_at: string | null
+  acknowledged_at: string | null
 }
 
 const notifications = ref<NotificationRow[]>([])
@@ -35,6 +36,14 @@ async function markRead(id: string) {
   await db.execute(`UPDATE notifications SET read_at = ? WHERE id = ?`, [new Date().toISOString(), id])
 }
 
+function severityClass(severity: string): string {
+  switch (severity) {
+    case 'CRITICAL': return 'severity-critical'
+    case 'WARNING': return 'severity-warning'
+    default: return 'severity-info'
+  }
+}
+
 function formatTime(iso: string): string {
   try {
     return new Intl.DateTimeFormat('ar-SY', {
@@ -51,7 +60,8 @@ onMounted(() => {
   controller = new AbortController()
   ;(async () => {
     const iterable = db.watch(
-      `SELECT * FROM notifications WHERE shop_id = ? ORDER BY created_at DESC LIMIT 50`,
+      `SELECT id, title, message, entity_type, entity_id, severity, created_at, read_at, acknowledged_at
+       FROM notifications WHERE shop_id = ? ORDER BY created_at DESC LIMIT 50`,
       [shopId],
       { signal: controller!.signal },
     )
@@ -109,11 +119,25 @@ onBeforeUnmount(() => {
             :class="{ unread: !n.read_at }"
             @click="markRead(n.id)"
           >
-            <div class="notification-title">{{ n.title }}</div>
+            <div class="notification-row">
+              <span
+                class="severity-dot"
+                :class="severityClass(n.severity)"
+                :data-testid="n.severity === 'CRITICAL' && !n.acknowledged_at ? 'notification-critical-marker' : undefined"
+                aria-hidden="true"
+              />
+              <div class="notification-title">{{ n.title }}</div>
+            </div>
             <div class="notification-message">{{ n.message }}</div>
             <div class="notification-time" dir="ltr">{{ formatTime(n.created_at) }}</div>
           </div>
           <div v-if="!notifications.length" class="notification-empty">لا توجد إشعارات</div>
+        </div>
+
+        <div class="nb-panel-footer">
+          <a href="/notifications" class="nb-view-all-link" @click="panelOpen = false">
+            عرض كل الإشعارات
+          </a>
         </div>
       </div>
     </Transition>
@@ -245,6 +269,32 @@ onBeforeUnmount(() => {
   background: rgba(26, 86, 219, 0.10);
 }
 
+.notification-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.severity-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.severity-dot.severity-critical {
+  background: #EF4444;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.25);
+}
+
+.severity-dot.severity-warning {
+  background: #F59E0B;
+}
+
+.severity-dot.severity-info {
+  background: #1A56DB;
+}
+
 .notification-title {
   font-size: 13px;
   font-weight: 700;
@@ -290,5 +340,26 @@ onBeforeUnmount(() => {
 .nb-panel-pop-leave-to {
   opacity: 0;
   transform: translateY(-8px) scale(.985);
+}
+
+.nb-panel-footer {
+  flex-shrink: 0;
+  padding: 8px 14px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.nb-view-all-link {
+  display: block;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1A56DB;
+  padding: 8px 0 0;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.nb-view-all-link:hover {
+  text-decoration: underline;
 }
 </style>
