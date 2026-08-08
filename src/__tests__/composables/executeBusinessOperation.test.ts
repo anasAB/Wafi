@@ -33,7 +33,7 @@ describe('per-domain event type registries', () => {
   })
   it('StaffEventType has exactly the staff events', () => {
     expect(Object.values(StaffEventType)).toEqual([
-      'shift.opened', 'shift.closed', 'settlement.paid', 'staff.ledger_entry_added',
+      'shift.opened', 'shift.closed', 'settlement.paid', 'staff.ledger_entry_added', 'staff.pin_locked_out',
     ])
   })
 })
