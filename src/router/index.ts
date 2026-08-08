@@ -18,6 +18,11 @@ const router = createRouter({
     { path: '/pos',               component: () => import('@/pages/PosPage.vue'), meta: { requiresOpenShift: true } },
     { path: '/pos/confirmation',  component: () => import('@/features/pos/SaleConfirmationScreen.vue'), meta: { requiresOpenShift: true } },
     { path: '/history',           component: () => import('@/pages/SaleHistoryPage.vue') },
+    // WAFI-145: no permission gate — RLS on `notifications` already scopes rows
+    // to the signed-in staff member's own recipient_staff_id/recipient_role, so
+    // this list can never surface a notification not meant for the viewer (same
+    // precedent as /history above).
+    { path: '/notifications',     component: () => import('@/features/notifications/screens/NotificationCenterScreen.vue') },
     { path: '/back-office',       component: () => import('@/features/products/BackOfficePage.vue') },
     { path: '/products',          component: () => import('@/features/products/ProductsPage.vue'),     meta: { permission: 'can_manage_products' } },
     { path: '/products/add',      component: () => import('@/features/products/AddProductPage.vue'),   meta: { permission: 'can_manage_products' } },
