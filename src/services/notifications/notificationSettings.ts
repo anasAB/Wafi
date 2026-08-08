@@ -27,7 +27,10 @@ export type NotificationTypeSettings =
   | { type: 'shift.late_close'; graceMinutes: number }
   | { type: 'sale.large_return'; refundUsdCap: number }
   | { type: 'device.sync_stale'; staleHours: number }
-  | { type: 'expense.after_hours' | 'staff.pin_locked_out' | 'device.registered' | 'settlement.paid' }
+  | { type: 'expense.after_hours' }
+  | { type: 'staff.pin_locked_out' }
+  | { type: 'device.registered' }
+  | { type: 'settlement.paid' }
 
 export const DEFAULT_SETTINGS: Record<SettingsBearingType, NotificationTypeSettings> = {
   'discount.large_applied':  { type: 'discount.large_applied', discountPercentCap: 30 },
