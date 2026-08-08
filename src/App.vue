@@ -25,6 +25,7 @@ import { startAuditSubscribers, handleAuditableEvent } from '@/services/events/a
 import { startProcessingRetrySweeper } from '@/services/events/eventProcessingRetryQueue'
 import { startDashboardRevenueProjection } from '@/services/events/dashboardRevenueProjection'
 import { startNotificationSubscribers, handleDiscountEvent } from '@/services/events/notificationSubscriber'
+import { checkDeviceSyncStaleness } from '@/services/notifications/syncStalenessCheck'
 import type { DomainEvent } from '@/services/events/domainEvent.types'
 
 const { offlineReady, dismissOfflineReady, needRefresh, applyUpdate, dismissNeedRefresh } = usePwaLifecycle()
@@ -68,8 +69,15 @@ function applyTheme(theme: Theme) {
 watch(() => settings.theme, applyTheme, { immediate: true })
 
 function onSystemThemeChange() { applyTheme(settings.theme) }
+function onVisibilityChange() {
+  if (document.visibilityState === 'visible') {
+    void checkDeviceSyncStaleness(useDeviceStore().shopId, useDeviceStore().deviceId)
+  }
+}
+
 onMounted(async () => {
   mq.addEventListener('change', onSystemThemeChange)
+  document.addEventListener('visibilitychange', onVisibilityChange)
 
   // A freshly-provisioned device starts with an empty local DB: the owner's
   // staff row arrives via the first sync. Decide "no owner → setup wizard" only
@@ -138,6 +146,12 @@ onMounted(async () => {
   startDashboardRevenueProjection(useDeviceStore().shopId)
   startNotificationSubscribers(useDeviceStore().shopId)
 
+  // WAFI-145 Task 14: Sync Failure / stale-device check. State-derived, not event
+  // driven -- this offline-first PWA has no periodic in-app timer, so it runs on
+  // every app-foreground moment instead: once here on mount, and again on every
+  // visibilitychange back to 'visible' (see the listener registered below).
+  void checkDeviceSyncStaleness(useDeviceStore().shopId, useDeviceStore().deviceId)
+
   // WAFI-150: start the audit subscribers -- the first durable-subscriber consumer
   // -- at the same gate as the sweepers above (device/shop context resolved).
   startAuditSubscribers(useDeviceStore().shopId)
@@ -165,7 +179,10 @@ onMounted(async () => {
 
   appReady.value = true
 })
-onBeforeUnmount(() => mq.removeEventListener('change', onSystemThemeChange))
+onBeforeUnmount(() => {
+  mq.removeEventListener('change', onSystemThemeChange)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+})
 
 // --- Text size ---
 watch(
