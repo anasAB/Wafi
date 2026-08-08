@@ -47,15 +47,15 @@ interface SettingsRow { enabled: number; threshold_json: string | null }
 /** Sparse-settings resolution (WAFI-145 design spec): a missing row resolves to
  *  the type's hardcoded default. Never throws -- a malformed threshold_json falls
  *  back to the default rather than blocking every notification of that type. */
-export async function getNotificationSettings(
+export async function getNotificationSettings<T extends SettingsBearingType>(
   shopId: string,
-  type: SettingsBearingType,
-): Promise<NotificationTypeSettings & { enabled: boolean }> {
+  type: T,
+): Promise<Extract<NotificationTypeSettings, { type: T }> & { enabled: boolean }> {
   const row = await db.getOptional<SettingsRow>(
     `select enabled, threshold_json from notification_settings where shop_id = ? and type = ?`,
     [shopId, type],
   )
-  if (!row) return { ...DEFAULT_SETTINGS[type], enabled: true }
+  if (!row) return { ...DEFAULT_SETTINGS[type], enabled: true } as Extract<NotificationTypeSettings, { type: T }> & { enabled: boolean }
 
   let threshold: NotificationTypeSettings = DEFAULT_SETTINGS[type]
   if (row.threshold_json) {
@@ -65,5 +65,5 @@ export async function getNotificationSettings(
       threshold = DEFAULT_SETTINGS[type]
     }
   }
-  return { ...threshold, enabled: !!row.enabled }
+  return { ...threshold, enabled: !!row.enabled } as Extract<NotificationTypeSettings, { type: T }> & { enabled: boolean }
 }
