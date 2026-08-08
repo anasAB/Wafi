@@ -71,6 +71,55 @@ Flat under `src/services/events/`, one file per subscriber, named for what it do
 split — this repo's event-bus code has always been flat, and restructuring existing
 files is out of scope for any single subscriber-adding ticket.
 
+## Registered subscribers
+
+Every durable subscriber currently wired in `startNotificationSubscribers`
+(`src/services/events/notificationSubscriber.ts`), called from `App.vue`'s
+`onMounted` block (WAFI-143/WAFI-145):
+
+| Subscriber name | Event type | Handler file |
+|---|---|---|
+| `notifications-discount` | `sale.discounted` | `notificationSubscriber.ts` (`handleDiscountEvent`) |
+| `notifications-drawer-variance` | `shift.closed` | `src/services/notifications/rules/drawerVariance.rule.ts` |
+| `notifications-shift-late-close` | `shift.closed` | `src/services/notifications/rules/shiftLateClose.rule.ts` |
+| `notifications-customer-debt` | `customer.debt_changed` | `src/services/notifications/rules/customerDebtThreshold.rule.ts` |
+| `notifications-after-hours-expense` | `expense.recorded` | `src/services/notifications/rules/afterHoursExpense.rule.ts` |
+| `notifications-large-return` | `sale.returned` | `src/services/notifications/rules/largeReturn.rule.ts` |
+| `notifications-cashier-lockout` | `staff.pin_locked_out` | `src/services/notifications/rules/cashierLockout.rule.ts` |
+| `notifications-new-device` | `device.registered` | `src/services/notifications/rules/newDevice.rule.ts` |
+| `notifications-settlement-paid` | `settlement.paid` | `src/services/notifications/rules/settlementPaid.rule.ts` |
+
+Note two rules (drawer variance, late close) share the same source event
+(`shift.closed`) but run as independently retryable subscribers, per the
+decision rule above.
+
+`customer.debt_changed` has two producers: `useReturnSheet.ts` (reason=`return`)
+and, as of WAFI-145, `sales.service.ts`'s `completeSale` (reason=`credit_sale`).
+`staff.pin_locked_out` is a WAFI-145 addition, published from
+`usePinLockout.ts`'s `recordFailure` (called from `LockScreen.vue`,
+`IdleLockOverlay.vue`, and `PinRecovery.vue`).
+
+## State-derived checks (not event subscribers)
+
+Two notification triggers are deliberately **not** event subscribers and have
+no entry in the event registry, because they aren't reacting to a published
+event — they're synchronous checks against current state, run inline where
+that state changes or becomes visible:
+
+- **Low Stock** — `checkLowStockCrossing` (`src/services/notifications/lowStockCheck.ts`),
+  called synchronously from inside the write transactions of `completeSale`
+  (`src/services/sales.service.ts`) and `receiveStock`/`adjustInventory`
+  (`src/services/inventory.service.ts`). It writes `notifications` rows
+  directly with `source_event_id = NULL` (migration 080 made that column
+  nullable specifically for this case).
+- **Sync Failure** — `checkDeviceSyncStaleness` (`src/services/notifications/syncStalenessCheck.ts`),
+  called from `App.vue` on mount and on every `visibilitychange` to `'visible'`
+  (i.e. whenever the app comes back into the foreground), not on any event.
+
+Do not add these to the subscriber table above or wire them through
+`runDurableSubscriber`/`useEventSubscription` — they have no source event to
+subscribe to.
+
 ## Minimum test bar
 
 Every subscriber needs:

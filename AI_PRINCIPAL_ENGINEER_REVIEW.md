@@ -299,12 +299,13 @@ spec for a feature touching this table keeps it current.
 | Inventory | `stock_adjustments`, `stock_receivings`, `stock_receiving_line_items`, `stock_take_sessions`, `stock_take_lines` | Sales, Returns (both write to inventory via `stock_adjustments`) | `useInventoryMovements` (WAFI-009), `useReceivingSheet`, `useStockTake` | Cost freshness indicator, Dashboard, Profit report |
 | Installments | `installment_plans`, `installment_dues` | Sales (originating sale), Returns (cancellation trigger) | `useInstallmentPlan` | Money Owed, Collections worklist |
 | Cash / Shifts | `cash_movements`, `cashier_shifts` | Sales (cash totals), Staff (attribution) | `useCashMovements`, shift composables | Z-report, Reports (deliberately excluded — WAFI-016) |
-| Customer Credit | `customer_payments` | Sales, Returns | `useCustomerBalance` | Money Owed, Collections worklist |
+| Customer Credit | `customer_payments` | Sales (producers: `useReturnSheet.ts` reason=`return`, and as of WAFI-145 `sales.service.ts`'s `completeSale` reason=`credit_sale`), Returns | `useCustomerBalance` | Money Owed, Collections worklist |
 | Staff | `staff_ledger`, `staff_settlements` | Sales (attribution), Cash/Shifts | staff-ledger composables | Staff performance dashboard |
 | Products / Cost | `products` | Receiving, Import | `useProducts`, `useReceivingSheet`, `useProductImport` | Cost freshness indicator, Dashboard, Profit report |
 | Audit | `audit_log` | All of the above | `executeFinancialWrite` wrapper | Audit log page |
-| Events | `events`, `daily_event_counts`, `local_event_processed_ledger` (local-only), `local_event_publish_retries` (local-only) | Sales, Returns, Customer Credit, Inventory, Staff, Expense, Cash/Shifts, Products, Devices (all event producers); Identity (`auth_role()`/`can()` for per-type RLS) | `useEventSubscription`, `processProjectionAtMostOnce`, `retryPendingEventPublishes`, `isTransientPublishFailure`, `getRetryQueueStats`, `cleanupLocalEventTables`, `startEventTableCleanupSweeper`, `tryConsumeToken`, `enforce_events_rate_limit` (SQL trigger) | Dashboard (today's revenue tile), Notifications (WAFI-143's two reference consumers) |
-| Notifications | `notifications` | Sales (via `sale.discounted`), Staff (recipient targeting) | `notificationSubscriber`, (future) notification-center composable | HomePage badge (this ticket); full center is WAFI-145 |
+| Events | `events`, `daily_event_counts`, `local_event_processed_ledger` (local-only), `local_event_publish_retries` (local-only) | Sales, Returns, Customer Credit, Inventory, Staff, Expense, Cash/Shifts, Products, Devices (all event producers); Identity (`auth_role()`/`can()` for per-type RLS) | `useEventSubscription`, `processProjectionAtMostOnce`, `retryPendingEventPublishes`, `isTransientPublishFailure`, `getRetryQueueStats`, `cleanupLocalEventTables`, `startEventTableCleanupSweeper`, `tryConsumeToken`, `enforce_events_rate_limit` (SQL trigger) | Dashboard (today's revenue tile), Notifications (9 event-driven subscribers) |
+| Notifications | `notifications`, `notification_settings` | Sales (`sale.discounted`, `sale.returned`, credit-sale debt), Returns (`sale.returned`, return debt), Customer Credit (`customer.debt_changed`), Staff (`staff.pin_locked_out`, recipient targeting), Cash/Shifts (`shift.closed`), Expense (`expense.recorded`), Devices (`device.registered`), Staff (`settlement.paid` — `staff_settlements`), Shops (business-hours config), Inventory (low-stock state), Sync (device staleness state) | `notificationSubscriber` + per-rule modules under `src/services/notifications/rules/`, `lowStockCheck.ts`, `syncStalenessCheck.ts`, `notificationRouting.ts`, notification-center composables | Full center (`NotificationCenterScreen`, `NotificationSettingsScreen`); 11 types across 9 event-driven subscribers + 2 state-derived checks |
+| Shops | `shops` (`open_time`, `close_time`, `is_24_7`) | n/a | — | Notifications (after-hours-expense rule is the only consumer today) |
 
 If a feature touches a domain not listed here, add a new row rather
 than leaving it undocumented.
@@ -337,6 +338,14 @@ Copy this block into the feature's final whole-branch review write-up:
 ## Cross-Epic Edge-Case Checklist (final review)
 Matrix rows re-checked after implementation: [list]
 Domains touched but not covered in the original spec checklist: [list, or "none"]
+```
+
+### WAFI-145 — Owner Notification Center (final review)
+
+```
+## Cross-Epic Edge-Case Checklist (final review)
+Matrix rows re-checked after implementation: Notifications, Customer Credit, Staff
+Domains touched but not covered in the original spec checklist: none
 ```
 
 If final review finds a domain touched but not in the spec's
