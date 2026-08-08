@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
 vi.mock('@/services/events/publishEvent', () => ({ publishEvent: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('@/features/customers/composables/useCustomerBalance', () => ({ fetchOutstandingBalanceUsd: vi.fn() }))
 
 import { db } from '@/data/powersync/db'
 import { completeSale } from '@/services/sales.service'
 import type { CompleteSaleInput } from '@/services/sales.service'
+import { fetchOutstandingBalanceUsd } from '@/features/customers/composables/useCustomerBalance'
 
 function columnIndex(sql: string, column: string): number {
   const match = sql.match(/\(([^)]+)\)\s*VALUES/i)
@@ -246,5 +248,43 @@ describe('SalesService.completeSale', () => {
       ['saleId', 'shopId', 'staffId', 'totalUsd', 'totalSyp', 'paymentSummary', 'itemCount', 'discountApplied'].sort(),
     )
     expect(event.payloadVersion).toBe(1)
+  })
+
+  it('publishes customer.debt_changed with reason=credit_sale for a credit sale with a customer', async () => {
+    setupTx({ cost_price_usd: 0, current_stock: 10 })
+    vi.mocked(fetchOutstandingBalanceUsd).mockResolvedValue(150)
+    const { publishEvent } = await import('@/services/events/publishEvent')
+    const creditInput = { ...baseInput, method: 'credit' as const, customerId: 'c1' }
+
+    const result = await completeSale(creditInput, fakeAudit)
+    await vi.waitFor(() => {
+      expect(vi.mocked(publishEvent).mock.calls.some(([e]) => e.type === 'customer.debt_changed')).toBe(true)
+    })
+
+    const debtCall = vi.mocked(publishEvent).mock.calls.find(([e]) => e.type === 'customer.debt_changed')
+    expect(debtCall?.[0].entityId).toBe('c1')
+    expect(debtCall?.[0].payload).toMatchObject({
+      customerId: 'c1', deltaUsd: result.totalUsd, newBalanceUsd: 150, reason: 'credit_sale',
+    })
+    expect(fetchOutstandingBalanceUsd).toHaveBeenCalledWith('c1', 'shop1')
+  })
+
+  it('does not publish customer.debt_changed for a cash sale', async () => {
+    setupTx({ cost_price_usd: 0, current_stock: 10 })
+    const { publishEvent } = await import('@/services/events/publishEvent')
+
+    await completeSale({ ...baseInput, customerId: 'c1' }, fakeAudit)
+
+    expect(vi.mocked(publishEvent).mock.calls.some(([e]) => e.type === 'customer.debt_changed')).toBe(false)
+    expect(fetchOutstandingBalanceUsd).not.toHaveBeenCalled()
+  })
+
+  it('does not publish customer.debt_changed for a credit sale with no customerId', async () => {
+    setupTx({ cost_price_usd: 0, current_stock: 10 })
+    const { publishEvent } = await import('@/services/events/publishEvent')
+
+    await completeSale({ ...baseInput, method: 'credit' as const }, fakeAudit)
+
+    expect(vi.mocked(publishEvent).mock.calls.some(([e]) => e.type === 'customer.debt_changed')).toBe(false)
   })
 })

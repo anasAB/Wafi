@@ -1,12 +1,14 @@
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '@/data/powersync/db'
 import { executeBusinessOperation } from '@/composables/executeBusinessOperation'
-import { SalesEventType } from '@/services/events/domainEvent.types'
+import { SalesEventType, CustomerEventType } from '@/services/events/domainEvent.types'
 import { publishEvent } from '@/services/events/publishEvent'
+import { fetchOutstandingBalanceUsd } from '@/features/customers/composables/useCustomerBalance'
+import { logger } from '@/services/events/logger'
 import type { PaymentMethod, SplitPaymentEntry, CompletedSale } from '@/features/payment/payment.types'
 import type { SaleLine, SaleDiscount } from '@/store/sale.store'
 import type { DiscountType } from '@/features/pos/discounts'
-import type { SaleCompletedPayload, SaleDiscountedPayload } from '@/services/events/domainEvent.types'
+import type { SaleCompletedPayload, SaleDiscountedPayload, DebtChangedPayload } from '@/services/events/domainEvent.types'
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100
@@ -319,6 +321,37 @@ export async function completeSale(
           shopId: input.shopId,
           occurredAt: now,
         }).catch(() => {})
+      }
+
+      // WAFI-145: a credit sale against a known customer raises new debt the
+      // same way a return retires it (see useReturnSheet's customer.debt_changed
+      // publish). Skipped for walk-in credit sales with no customerId -- there's
+      // no customer record to track debt against. Fire-and-forget, wrapped: the
+      // sale itself has already committed by this point, and a failure here
+      // (e.g. the balance fetch failing) must never surface as a completeSale()
+      // rejection, which would risk a duplicate sale on retry.
+      if (isCredit && input.customerId) {
+        void (async () => {
+          try {
+            const newBalanceUsd = await fetchOutstandingBalanceUsd(input.customerId!, input.shopId)
+            await publishEvent<DebtChangedPayload>({
+              type: CustomerEventType.DebtChanged,
+              entityId: input.customerId!,
+              payload: {
+                customerId: input.customerId!,
+                deltaUsd: completed.totalUsd,
+                newBalanceUsd,
+                reason: 'credit_sale',
+              },
+              payloadVersion: 1,
+              staffId: input.staffId ?? '',
+              shopId: input.shopId,
+              occurredAt: now,
+            })
+          } catch (err) {
+            logger.error('[completeSale] failed to publish customer.debt_changed after a committed credit sale', err)
+          }
+        })()
       }
     },
     toEvent: (completed) => ({
