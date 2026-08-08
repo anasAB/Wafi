@@ -66,6 +66,7 @@ const router = createRouter({
         { path: 'exports',   component: () => import('@/features/exports/ExportPage.vue') },
         { path: 'denominations', component: () => import('@/features/settings/screens/DenominationSettingsScreen.vue') },
         { path: 'discount-caps', component: () => import('@/features/pos/DiscountCapsSettingsScreen.vue') },
+        { path: 'notifications', component: () => import('@/features/settings/screens/NotificationSettingsScreen.vue') },
       ],
     },
     { path: '/reports',         component: () => import('@/features/dashboard/components/ReportsPage.vue'),      meta: { permission: 'can_view_reports', feature: 'reporting_pack' } },
