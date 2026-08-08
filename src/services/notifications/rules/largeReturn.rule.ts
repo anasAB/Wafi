@@ -9,6 +9,15 @@ export async function handleLargeReturnEvent(event: DurableEvent<ReturnedPayload
   if (!settings.enabled) return
   if (event.payload.refundAmountUsd <= settings.refundUsdCap) return
 
+  // Check-then-insert, same reasoning as notificationSubscriber.ts's handleDiscountEvent
+  // and afterHoursExpense.rule.ts: guards the partial UNIQUE index on source_event_id
+  // against at-least-once redelivery from runDurableSubscriber.
+  const existing = await db.getOptional<{ id: string }>(
+    `select id from notifications where source_event_id = ?`,
+    [event.eventId],
+  )
+  if (existing) return
+
   await db.execute(
     `insert into notifications (id, shop_id, recipient_staff_id, recipient_role, type, title, message, entity_type, entity_id, severity, source_event_id, created_at)
      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
