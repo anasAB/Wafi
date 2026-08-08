@@ -4,6 +4,7 @@ import { useSessionStore } from '@/store/session.store'
 import { verifyPin }     from '@/features/staff/composables/usePinAuth'
 import { usePinLockout } from '@/features/staff/composables/usePinLockout'
 import { useAuditLog }   from '@/features/audit/composables/useAuditLog'
+import { useDeviceStore } from '@/store/device.store'
 import PinPad            from '@/features/staff/components/PinPad.vue'
 import LockScreen        from '@/features/shifts/components/LockScreen.vue'
 
@@ -35,7 +36,7 @@ async function onPinComplete(pin: string) {
   const ok = await verifyPin(pin, s.pinHash, s.pinSalt)
   if (!ok) {
     pinPadRef.value?.shake()
-    const { locked, minutes } = lockout.recordFailure(s.id)
+    const { locked, minutes } = lockout.recordFailure(s.id, useDeviceStore().shopId)
     try {
       await logLoginFailed(s.id, s.name)
       if (locked) await logLockedOut(s.id, s.name, minutes)

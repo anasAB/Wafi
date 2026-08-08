@@ -52,7 +52,7 @@ describe('useStaff.resetStaffPin (WAFI-056)', () => {
     const lockout = usePinLockout()
     const target = staff('cashier')
     // Lock the target out first.
-    for (let i = 0; i < MAX_PIN_ATTEMPTS; i++) lockout.recordFailure(target.id)
+    for (let i = 0; i < MAX_PIN_ATTEMPTS; i++) lockout.recordFailure(target.id, 'shop-1')
     expect(lockout.isLockedOut(target.id)).toBe(true)
 
     const { resetStaffPin } = useStaff()
@@ -105,7 +105,7 @@ describe('useStaff.updateStaffPin also clears the lockout (WAFI-056 gap #2)', ()
 
   it('a fresh PIN clears a standing lockout for that staff member', async () => {
     const lockout = usePinLockout()
-    for (let i = 0; i < MAX_PIN_ATTEMPTS; i++) lockout.recordFailure('staff-2')
+    for (let i = 0; i < MAX_PIN_ATTEMPTS; i++) lockout.recordFailure('staff-2', 'shop-1')
     expect(lockout.isLockedOut('staff-2')).toBe(true)
 
     const { updateStaffPin } = useStaff()

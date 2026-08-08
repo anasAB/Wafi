@@ -10,6 +10,10 @@
 export const MAX_PIN_ATTEMPTS = 5
 export const LOCKOUT_MINUTES = 5
 
+import { publishEvent } from '@/services/events/publishEvent'
+import { StaffEventType } from '@/services/events/domainEvent.types'
+import type { PinLockedOutPayload } from '@/services/events/domainEvent.types'
+
 const STORAGE_KEY = 'wafi.pin_lockout'
 
 type Entry = { attempts: number; lockedUntil: number }
@@ -35,9 +39,15 @@ export function usePinLockout() {
     return e ? Math.max(0, e.lockedUntil - now) : 0
   }
 
-  /** Record one wrong PIN. Returns whether this attempt tripped the lockout. */
+  /** Record one wrong PIN. Returns whether this attempt tripped the lockout.
+   *  shopId is required so a tripped lockout can publish staff.pin_locked_out --
+   *  entityId is a freshly-generated id for THIS lockout occurrence, not staffId:
+   *  lockout state is per-device (WAFI-012), so the same staff member can
+   *  independently trip a lockout on two different devices, and those must not
+   *  collide on entity identity (WAFI-145 design spec). */
   function recordFailure(
     staffId: string,
+    shopId: string,
     now: number = Date.now(),
   ): { locked: boolean; minutes: number } {
     const state = read()
@@ -51,6 +61,19 @@ export function usePinLockout() {
     }
     state[staffId] = e
     write(state)
+
+    if (locked) {
+      void publishEvent<PinLockedOutPayload>({
+        type: StaffEventType.PinLockedOut,
+        entityId: crypto.randomUUID(),
+        payload: { staffId, lockoutMinutes: LOCKOUT_MINUTES },
+        payloadVersion: 1,
+        staffId,
+        shopId,
+        occurredAt: new Date(now).toISOString(),
+      }).catch(() => {})
+    }
+
     return { locked, minutes: LOCKOUT_MINUTES }
   }
 

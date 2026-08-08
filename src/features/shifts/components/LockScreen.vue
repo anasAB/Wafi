@@ -8,6 +8,7 @@ import { usePinLockout }   from '@/features/staff/composables/usePinLockout'
 import { useShift }        from '@/features/shifts/composables/useShift'
 import { useOperatorSwitch, OperatorSwitchBlockedError } from '@/features/staff/composables/useOperatorSwitch'
 import { useAuditLog }     from '@/features/audit/composables/useAuditLog'
+import { useDeviceStore }  from '@/store/device.store'
 import PinPad              from '@/features/staff/components/PinPad.vue'
 import PinRecovery         from '@/features/staff/components/PinRecovery.vue'
 import ForceCloseSheet     from '@/features/shifts/components/ForceCloseSheet.vue'
@@ -119,7 +120,7 @@ async function onPinComplete(pin: string) {
   const ok = await verifyPin(pin, s.pinHash, s.pinSalt)
   if (!ok) {
     pinPadRef.value?.shake()
-    const { locked, minutes } = lockout.recordFailure(s.id)
+    const { locked, minutes } = lockout.recordFailure(s.id, useDeviceStore().shopId)
     // Audit writes for security events surface failures (see useAuditLog); a
     // broken local log must not crash the gate, so report it inline instead.
     try {

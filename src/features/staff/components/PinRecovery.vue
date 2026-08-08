@@ -8,6 +8,7 @@ import { canResetPin } from '@/router/permissions'
 import { verifyAccountPassword } from '@/data/supabase/auth'
 import { useRecoveryCodes } from '../composables/useRecoveryCodes'
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
+import { useDeviceStore } from '@/store/device.store'
 import PinPad from './PinPad.vue'
 import type { Staff } from '../staff.types'
 import { roleLabel } from '../staff.types'
@@ -103,7 +104,7 @@ async function onSupervisorPin(pin: string) {
   }
   const ok = await verifyPin(pin, s.pinHash, s.pinSalt)
   if (!ok) {
-    const { locked } = lockout.recordFailure(s.id)
+    const { locked } = lockout.recordFailure(s.id, useDeviceStore().shopId)
     fail(locked ? t('staff.supervisorLocked') : t('staff.wrongPin'))
     return
   }
