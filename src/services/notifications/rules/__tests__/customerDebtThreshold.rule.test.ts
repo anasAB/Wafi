@@ -26,6 +26,27 @@ it('fires when today\'s cumulative crosses from <= cap to > cap', async () => {
   expect(db.execute).toHaveBeenCalledWith(expect.stringContaining('insert into notifications'), expect.anything())
 })
 
+it('fires on a shop-wide crossing driven by other customers\' credit sales, not just this event\'s own customer', async () => {
+  // customer A's earlier $300 credit sale + customer B's (this event's) $100 sale +
+  // some other earlier $150 sale today = $550 shop-wide total, crosses the $500 cap --
+  // even though this triggering event's own deltaUsd (100) is far short of the cap.
+  vi.mocked(db.getOptional)
+    .mockResolvedValueOnce({ total: 550 } as any)
+    .mockResolvedValueOnce(undefined)
+  await handleCustomerDebtThresholdEvent(baseEvent)
+  expect(db.execute).toHaveBeenCalledWith(expect.stringContaining('insert into notifications'), expect.anything())
+})
+
+it('scopes the aggregate query shop-wide, not per-customer (pins against re-introducing a customer_id filter)', async () => {
+  vi.mocked(db.getOptional)
+    .mockResolvedValueOnce({ total: 550 } as any)
+    .mockResolvedValueOnce(undefined)
+  await handleCustomerDebtThresholdEvent(baseEvent)
+  const [aggregateSql, aggregateParams] = vi.mocked(db.getOptional).mock.calls[0]
+  expect(aggregateSql).not.toContain('customer_id')
+  expect(aggregateParams).toEqual(['shop1', '2026-01-01'])
+})
+
 it('does not fire when already above the cap before this event (no re-crossing)', async () => {
   vi.mocked(db.getOptional).mockResolvedValueOnce({ total: 700 } as any) // before = 700-100=600, already > cap
   await handleCustomerDebtThresholdEvent(baseEvent)

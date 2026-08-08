@@ -20,14 +20,16 @@ export async function handleCustomerDebtThresholdEvent(event: DurableEvent<DebtC
 
   const today = event.occurredAt.slice(0, 10) // 'YYYY-MM-DD' -- same day-extraction used for the dedup check below
 
-  // Authoritative aggregate over already-persisted sales -- NOT an in-memory
-  // accumulator. Recomputing this on every invocation (including redelivery of
-  // the same event) yields the same before/after every time, since the
-  // underlying sales data is immutable once committed.
+  // Shop-wide (NOT per-customer) authoritative aggregate over already-persisted
+  // sales -- NOT an in-memory accumulator. Design spec: "Customer Debt in this
+  // ticket measures new credit-sale debt issued today (shop-wide, resets daily)".
+  // Recomputing this on every invocation (including redelivery of the same event)
+  // yields the same before/after every time, since the underlying sales data is
+  // immutable once committed.
   const totalRow = await db.getOptional<{ total: number }>(
     `select coalesce(sum(total_usd), 0) as total from sales
-     where shop_id = ? and is_credit = 1 and customer_id = ? and substr(created_at, 1, 10) = ?`,
-    [event.shopId, event.payload.customerId, today],
+     where shop_id = ? and is_credit = 1 and substr(created_at, 1, 10) = ?`,
+    [event.shopId, today],
   )
   const after = totalRow?.total ?? 0
   const before = after - deltaUsd
@@ -45,6 +47,11 @@ export async function handleCustomerDebtThresholdEvent(event: DurableEvent<DebtC
   )
   if (existing) return
 
+  // entity_id/entity_type: even though the cap itself is shop-wide, we still deep-link
+  // to the triggering customer -- "here's the credit sale that pushed the shop over
+  // today's cap" is a more actionable click-through than the shop itself (which has no
+  // dedicated screen to land on). entity_type stays 'customer' per the design spec's
+  // deep-link table.
   await db.execute(
     `insert into notifications (id, shop_id, recipient_role, type, title, message, entity_type, entity_id, severity, source_event_id, created_at)
      values (?, ?, 'owner', 'customer.debt_threshold', ?, ?, 'customer', ?, 'CRITICAL', ?, ?)`,
