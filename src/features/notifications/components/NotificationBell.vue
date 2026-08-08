@@ -5,6 +5,7 @@
 // expected to replace or significantly extend this component; keep it small
 // and easy to swap out.
 import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { RouterLink } from 'vue-router'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
 
@@ -135,9 +136,9 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="nb-panel-footer">
-          <a href="/notifications" class="nb-view-all-link" @click="panelOpen = false">
+          <RouterLink to="/notifications" class="nb-view-all-link" @click="panelOpen = false">
             عرض كل الإشعارات
-          </a>
+          </RouterLink>
         </div>
       </div>
     </Transition>

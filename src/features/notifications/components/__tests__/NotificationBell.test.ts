@@ -1,6 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { createRouter, createMemoryHistory } from 'vue-router'
 import NotificationBell from '../NotificationBell.vue'
+
+vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
+
+import { db } from '@/data/powersync/db'
+
+vi.mock('@/store/device.store', () => ({
+  useDeviceStore: () => ({ shopId: 'shop-1' }),
+}))
 
 const fixtureRows = [
   {
@@ -16,35 +25,32 @@ const fixtureRows = [
   },
 ]
 
-vi.mock('@/data/powersync/db', () => ({
-  db: {
-    execute: vi.fn(),
-    watch: (_sql: string, _params: unknown[], _opts: unknown) => ({
-      [Symbol.asyncIterator]() {
-        let done = false
-        return {
-          async next() {
-            if (done) return { done: true, value: undefined }
-            done = true
-            return { done: false, value: { rows: { _array: fixtureRows } } }
-          },
-        }
-      },
-    }),
-  },
-}))
+const router = createRouter({
+  history: createMemoryHistory(),
+  routes: [{ path: '/:p(.*)', component: { template: '<div/>' } }],
+})
 
-vi.mock('@/store/device.store', () => ({
-  useDeviceStore: () => ({ shopId: 'shop-1' }),
-}))
+function mountBell() {
+  return mount(NotificationBell, {
+    global: { plugins: [router] },
+  })
+}
 
 describe('NotificationBell', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(db.watch).mockReturnValue({
+      [Symbol.asyncIterator]: vi.fn().mockReturnValue({
+        next: vi.fn()
+          .mockResolvedValueOnce({ value: { rows: { _array: fixtureRows } }, done: false })
+          .mockResolvedValue({ value: undefined, done: true }),
+        return: vi.fn().mockResolvedValue({ value: undefined, done: true }),
+      }),
+    } as any)
   })
 
   it('renders a distinct visual marker for an unacknowledged CRITICAL notification', async () => {
-    const wrapper = mount(NotificationBell)
+    const wrapper = mountBell()
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
     await wrapper.find('.nb-trigger').trigger('click')
@@ -53,7 +59,7 @@ describe('NotificationBell', () => {
   })
 
   it('links to the full notification center', async () => {
-    const wrapper = mount(NotificationBell)
+    const wrapper = mountBell()
     await wrapper.vm.$nextTick()
     await wrapper.find('.nb-trigger').trigger('click')
     await wrapper.vm.$nextTick()
