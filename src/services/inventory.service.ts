@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { db } from '@/data/powersync/db'
 import { executeBusinessOperation } from '@/composables/executeBusinessOperation'
 import { InventoryEventType } from '@/services/events/domainEvent.types'
+import { checkLowStockCrossing } from '@/services/notifications/lowStockCheck'
 import type { ReceivingLine, Receiving } from '@/features/suppliers/receiving.types'
 import type { AdjustmentReason, StockAdjustment } from '@/features/products/product.types'
 import type { StockReceivedPayload, InventoryAdjustedPayload } from '@/services/events/domainEvent.types'
@@ -90,6 +91,7 @@ export async function receiveStock(
           `UPDATE products SET current_stock = ?, updated_at = ?, sync_status = 'pending' WHERE id = ?`,
           [newStock, now, line.productId],
         )
+        await checkLowStockCrossing(tx, shopId, line.productId, oldStock, newStock, now)
 
         // Update standing cost only if toggled AND the cost is real (WAFI-021): a
         // zero/blank unit cost must never overwrite the product's standing cost — that
@@ -192,6 +194,7 @@ export async function adjustInventory(
         `UPDATE products SET current_stock = ?, updated_at = ?, sync_status = 'pending' WHERE id = ?`,
         [clampedValue, now, input.productId],
       )
+      await checkLowStockCrossing(tx, shopId, input.productId, oldValue, clampedValue, now)
       await tx.execute(
         `INSERT INTO stock_adjustments (id, shop_id, product_id, old_value, new_value, reason, notes, created_at, device_id)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,

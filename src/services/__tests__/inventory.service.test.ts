@@ -112,6 +112,27 @@ describe('InventoryService.receiveStock', () => {
     )
     expect(event.payloadVersion).toBe(1)
   })
+
+  it('does not fire Low Stock on a receiving that crosses back above the threshold (4 -> 6)', async () => {
+    const txExecute = vi.fn().mockImplementation(async (sql: unknown) => {
+      const s = String(sql)
+      if (s.trim().startsWith('SELECT current_stock')) {
+        return { rows: { _array: [{ current_stock: 4 }] } }
+      }
+      if (s.includes('select low_stock_threshold')) {
+        return { rows: { _array: [{ low_stock_threshold: 5, name_ar: 'منتج' }] } }
+      }
+      return { rows: { _array: [] } }
+    })
+    vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
+
+    await receiveStock('shop1', 'staff1', {
+      ...input,
+      lines: [{ ...input.lines[0], qtyReceived: 2 }],
+    }, fakeAudit)
+
+    expect(txExecute.mock.calls.some((c: any[]) => String(c[0]).includes('insert into notifications'))).toBe(false)
+  })
 })
 
 describe('InventoryService.adjustInventory', () => {
@@ -206,5 +227,26 @@ describe('InventoryService.adjustInventory', () => {
       ['productId', 'deltaQty', 'reason'].sort(),
     )
     expect(event.payloadVersion).toBe(1)
+  })
+
+  it('fires Low Stock on a manual adjustment crossing the threshold (6 -> 5)', async () => {
+    const txExecute = vi.fn().mockImplementation(async (sql: unknown) => {
+      const s = String(sql)
+      if (s.trim().startsWith('SELECT current_stock')) {
+        return { rows: { _array: [{ current_stock: 6 }] } }
+      }
+      if (s.includes('select low_stock_threshold')) {
+        return { rows: { _array: [{ low_stock_threshold: 5, name_ar: 'منتج' }] } }
+      }
+      return { rows: { _array: [] } }
+    })
+    vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => fn({ execute: txExecute }))
+
+    await adjustInventory('shop1', 'device1', 'staff1', {
+      mode: 'delta', productId: 'p1', delta: -1, reason: 'stocktake',
+    }, fakeAdjustAudit)
+
+    const notifCall = txExecute.mock.calls.find((c: any[]) => String(c[0]).includes('insert into notifications'))
+    expect(notifCall).toBeDefined()
   })
 })

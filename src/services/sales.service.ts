@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '@/data/powersync/db'
 import { executeBusinessOperation } from '@/composables/executeBusinessOperation'
+import { checkLowStockCrossing } from '@/services/notifications/lowStockCheck'
 import { SalesEventType, CustomerEventType } from '@/services/events/domainEvent.types'
 import { publishEvent } from '@/services/events/publishEvent'
 import { fetchOutstandingBalanceUsd } from '@/features/customers/composables/useCustomerBalance'
@@ -239,6 +240,7 @@ export async function completeSale(
            VALUES (?, ?, ?, ?, ?, 'sale', ?, ?, ?)`,
           [uuidv4(), input.shopId, line.productId, currentStock, newStock, adjustNote, now, input.deviceId],
         )
+        await checkLowStockCrossing(tx, input.shopId, line.productId, currentStock, newStock, now)
       }
     })
 

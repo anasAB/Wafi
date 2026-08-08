@@ -287,4 +287,25 @@ describe('SalesService.completeSale', () => {
 
     expect(vi.mocked(publishEvent).mock.calls.some(([e]) => e.type === 'customer.debt_changed')).toBe(false)
   })
+
+  it('fires Low Stock when a sale crosses the threshold (6 -> 4)', async () => {
+    const exec = vi.fn().mockImplementation(async (sql: unknown) => {
+      const s = String(sql)
+      if (s.trim().startsWith('SELECT cost_price_usd')) {
+        return { rows: { _array: [{ cost_price_usd: 0, current_stock: 6 }] } }
+      }
+      if (s.includes('select low_stock_threshold')) {
+        return { rows: { _array: [{ low_stock_threshold: 5, name_ar: 'منتج' }] } }
+      }
+      return { rows: { _array: [] } }
+    })
+    vi.mocked(db.writeTransaction).mockImplementationOnce(async (fn: any) => { await fn({ execute: exec }) })
+
+    const lowStockInput = { ...baseInput, lines: [{ ...baseInput.lines[0], quantity: 2 }] }
+    await completeSale(lowStockInput, fakeAudit)
+
+    const notifCall = exec.mock.calls.find((c: any[]) => String(c[0]).includes('insert into notifications'))
+    expect(notifCall).toBeDefined()
+    expect(String(notifCall![0])).toContain('inventory.low_stock')
+  })
 })
