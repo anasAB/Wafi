@@ -2,6 +2,7 @@ import { db } from '@/data/powersync/db'
 import { runDurableSubscriber } from './runDurableSubscriber'
 import type { DurableEvent } from './runDurableSubscriber'
 import type { DomainEvent, DomainEventType, SaleDiscountedPayload } from './domainEvent.types'
+import { getNotificationSettings } from '@/services/notifications/notificationSettings'
 
 export interface NotificationInsert {
   type: string
@@ -16,15 +17,24 @@ export interface NotificationInsert {
 
 /**
  * Maps a domain event to its notifications row, or null if this event doesn't cross the
- * notify threshold (design spec: reuse useAuditLog's existing belowCost || pinApproval
- * significance criterion -- no new numeric threshold). Only sale.discounted produces a
- * notification today; every other event type returns null (protects the mapping boundary
- * -- see the "unrelated event type" test).
+ * notify threshold. Severity is CRITICAL for belowCost, WARNING for pinApproval OR a
+ * discount percentage exceeding the shop's configurable discountPercentCap (WAFI-145 --
+ * generalizes the original hardcoded belowCost || pinApproval check from WAFI-143).
+ * If the rule is disabled in notification_settings, returns null regardless of
+ * belowCost/pinApproval/percentage. Only sale.discounted produces a notification today;
+ * every other event type returns null (protects the mapping boundary -- see the
+ * "unrelated event type" test).
  */
-export function mapEventToNotification(event: DomainEvent): NotificationInsert | null {
+export async function mapEventToNotification(event: DomainEvent): Promise<NotificationInsert | null> {
   if ((event.type as DomainEventType) !== 'sale.discounted') return null
-  const { belowCost, pinApproval, discountType, discountValue, finalPriceUsd } = event.payload as SaleDiscountedPayload
-  if (!belowCost && !pinApproval) return null
+  const { belowCost, pinApproval, discountType, discountValue, discountPercentage, finalPriceUsd } =
+    event.payload as SaleDiscountedPayload
+
+  const settings = await getNotificationSettings(event.shopId, 'discount.large_applied')
+  if (!settings.enabled) return null
+
+  const overCap = discountPercentage !== undefined && discountPercentage > settings.discountPercentCap
+  if (!belowCost && !pinApproval && !overCap) return null
 
   return {
     type: 'discount.large_applied',
@@ -39,7 +49,7 @@ export function mapEventToNotification(event: DomainEvent): NotificationInsert |
 }
 
 export async function handleDiscountEvent(event: DurableEvent<unknown>): Promise<void> {
-  const entry = mapEventToNotification(event)
+  const entry = await mapEventToNotification(event)
   if (!entry) return // null mapping is success -- runDurableSubscriber still writes the ledger
 
   // Check-then-insert, same reasoning as auditSubscriber.ts: safe on this single-
