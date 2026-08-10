@@ -4,6 +4,7 @@ export default {
   nav: {
     menu:       'Menu',
     dashboard:  'Dashboard',
+    dashboard2: 'Dashboard 2',
     home:       'Home',
     pos:        'Point of Sale',
     posShort:   'POS',

@@ -4,6 +4,7 @@ export default {
   nav: {
     menu:       'القائمة',
     dashboard:  'لوحة التحكم',
+    dashboard2: 'لوحة التحكم الجديدة',
     home:       'الرئيسية',
     pos:        'نقطة البيع',
     posShort:   'POS',

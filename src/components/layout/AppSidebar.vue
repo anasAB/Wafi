@@ -42,6 +42,7 @@ const allNavItems: NavItem[] = [
   // WAFI-131: `feature` keys hide nav entries for packs the shop hasn't
   // subscribed to (roles hide by permission; packs hide by flag).
   { key: 'reports',     labelKey: 'nav.reports',    href: '/reports',        permission: 'can_view_reports', feature: 'reporting_pack' as const },
+  { key: 'dashboard2',  labelKey: 'nav.dashboard2', href: '/dashboard',      permission: 'can_view_reports', feature: 'reporting_pack' as const },
 ]
 
 const flags = useFlagsStore()
@@ -125,6 +126,12 @@ function isActive(href: string | null): boolean {
           <!-- Reports -->
           <svg v-if="item.key === 'reports'" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+          </svg>
+          <!-- Dashboard (line chart) -->
+          <svg v-if="item.key === 'dashboard2'" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 3h18a2 2 0 012 2v14a2 2 0 01-2 2H3a2 2 0 01-2-2V5a2 2 0 012-2z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 14l4-4 3 3 7-7" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M17 9h4v4" />
           </svg>
           <!-- Expenses -->
           <svg v-if="item.key === 'expenses'" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">

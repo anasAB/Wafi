@@ -70,6 +70,7 @@ const router = createRouter({
       ],
     },
     { path: '/reports',         component: () => import('@/features/dashboard/components/ReportsPage.vue'),      meta: { permission: 'can_view_reports', feature: 'reporting_pack' } },
+    { path: '/dashboard',       component: () => import('@/features/dashboard/components/Dashboard2Screen.vue'),   meta: { permission: 'can_view_reports', feature: 'reporting_pack' } },
     // WAFI-018: structurally owner-only — can_view_staff_performance is never
     // granted to a manager (see permissionsForRole), unlike can_view_reports.
     { path: '/reports/staff',   component: () => import('@/features/dashboard/components/StaffPerformancePage.vue'), meta: { permission: 'can_view_staff_performance', feature: 'reporting_pack' } },

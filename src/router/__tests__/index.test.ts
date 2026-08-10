@@ -93,3 +93,11 @@ describe('router meta.permission wiring for staff ledger/settlement routes (WAFI
     expect(resolved.meta.permission).toBe('can_view_expenses')
   })
 })
+
+describe('router meta.permission wiring for dashboard route (WAFI-146)', () => {
+  it('registers /dashboard gated by can_view_reports + reporting_pack, same as /reports', () => {
+    const route = router.getRoutes().find(r => r.path === '/dashboard')
+    expect(route).toBeDefined()
+    expect(route?.meta).toEqual({ permission: 'can_view_reports', feature: 'reporting_pack' })
+  })
+})
