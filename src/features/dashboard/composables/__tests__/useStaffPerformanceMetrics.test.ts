@@ -17,7 +17,7 @@ describe('useStaffPerformanceMetrics — discountUsd/discountRate', () => {
       if (/SUM\(sli\.quantity/.test(s)) return [] as any
       if (/cs\.staff_id AS staffId, COALESCE\(SUM\(r\.refund_amount_usd\)/.test(s)) return [] as any
       if (/rli\.qty_returned/.test(s)) return [] as any
-      if (/SUM\(sale_discount_amount_usd\)/.test(s)) {
+      if (/SUM\(s\.?sale_discount_amount_usd\)/.test(s)) {
         return [{ staffId: 's1', discountUsd: 100 }] as any
       }
       return [] as any

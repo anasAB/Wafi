@@ -93,7 +93,7 @@ export function useStaffPerformanceMetrics() {
       // Sale-level discount total per staff member, same column/precedent as
       // useDashboardMetrics.ts (WAFI-146 Task 1) — SUM(sale_discount_amount_usd).
       db.getAll<{ staffId: string; discountUsd: number }>(
-        `SELECT s.staff_id AS staffId, COALESCE(SUM(sale_discount_amount_usd), 0) AS discountUsd
+        `SELECT s.staff_id AS staffId, COALESCE(SUM(s.sale_discount_amount_usd), 0) AS discountUsd
          FROM sales s
          WHERE s.shop_id = ? AND s.staff_id IS NOT NULL
            AND DATE(s.created_at, 'localtime') BETWEEN ? AND ?
