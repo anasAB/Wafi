@@ -12,7 +12,11 @@ describe('useDashboardMetrics — returnCount and discountUsd', () => {
 
   it('exposes returnCount from a COUNT(*) query against returns, separate from refundsUsd', async () => {
     vi.mocked(db.getOptional).mockImplementation(async (sql: unknown) => {
-      const s = sql as string
+      // Normalize whitespace/line-wrapping before matching, so this test
+      // asserts on query intent (which table/aggregate is queried) rather
+      // than on how the SQL template literal happens to be wrapped across
+      // physical lines in the source.
+      const s = (sql as string).replace(/\s+/g, ' ')
       if (/COUNT\(\*\) as count FROM returns/.test(s)) return { count: 7 } as any
       if (/SUM\(r\.refund_amount_usd\)/.test(s)) return { total: 340 } as any
       return { total: 0, count: 0 } as any
@@ -25,7 +29,7 @@ describe('useDashboardMetrics — returnCount and discountUsd', () => {
 
   it('exposes discountUsd from SUM(sale_discount_amount_usd) FROM sales', async () => {
     vi.mocked(db.getOptional).mockImplementation(async (sql: unknown) => {
-      const s = sql as string
+      const s = (sql as string).replace(/\s+/g, ' ')
       if (/SUM\(sale_discount_amount_usd\)/.test(s)) return { total: 120.5 } as any
       return { total: 0, count: 0 } as any
     })
