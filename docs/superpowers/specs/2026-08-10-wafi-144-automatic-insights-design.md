@@ -57,6 +57,36 @@ period is truncated to the equivalent elapsed portion — e.g. "today
 This prevents a nonsensical "revenue is down 65%" reading purely
 because the current day/week/month isn't finished yet.
 
+**Data-layer constraint discovered during planning, and its
+resolution:** `week`/`month` truncation needs only whole-day
+granularity (e.g. "this week so far" = Mon–Wed, compared against last
+week's Mon–Wed) — the existing date-bounded queries already handle
+this with no change. `day` is different: it needs *sub-day* (hour-level)
+truncation, and while `sales`/`sale_line_items` carry a real
+`created_at` timestamp (so **Revenue** supports true intraday
+partial-period comparison), **`expenses` only has a date-granularity
+`expense_date` column with no time-of-day** — there is no way to know
+whether last Tuesday's recorded expenses happened before or after
+11:27am. Rather than approximate this (pro-rating an expense total by
+elapsed-day-fraction would produce a number that looks precise but
+isn't, which is unacceptable for a financial insight), the rule is:
+
+- **Revenue's `day` insight** supports true intraday comparison
+  (today-so-far vs last-Tuesday-so-far, using real timestamps) at any
+  time of day.
+- **Profit's `day` insight** is only generated once the current day is
+  complete — full current day vs full comparison day, both fully
+  elapsed, no truncation needed. While today is still in progress, no
+  profit insight is generated for `day` (this is consistent with the
+  existing rule that a metric can independently produce zero, one, or
+  two cards — during the day you may see only a revenue card; once the
+  day ends, both can appear).
+- No pro-rating, estimation, or schema change (`expenses` gains no new
+  column) — this ticket accepts the data-layer's current precision
+  rather than fabricating false precision or expanding scope.
+- `week`/`month` profit insights are unaffected by this — both metrics
+  use the same whole-day-truncated comparison there, same as today.
+
 All date math (today's cutoff, the comparison window's matching
 cutoff, week/month boundaries) uses local wall-clock time via JS
 `Date`'s local getters (`getHours()`, `getDate()`, etc.) — the same
@@ -116,6 +146,9 @@ evaluated on the dollar-only path while a missing period is skipped.
   AND `abs(current - previous) >= INSIGHT_MIN_ABSOLUTE_CHANGE_USD`.
 
 **Profit:**
+- If `period === 'day'` and today is still in progress (not yet past
+  midnight), skip — see the data-layer constraint above. This check
+  runs before any other profit rule.
 - If the comparison period is missing, skip.
 - If either period's profit is `≤ $0` (a loss, or exactly break-even),
   percentages are not computed — profit can cross zero, and a percent
@@ -257,12 +290,16 @@ introducing a new visual pattern.
   including both loss-widening and loss-narrowing — the exact-$0
   "no sales today" case, and the zero-vs-missing distinction driven
   by `shops.created_at`).
-- Partial-period truncation needs an explicit test for a mid-day/
-  mid-week/mid-month clock, asserting the comparison window's elapsed
-  portion matches the current period's, not the full prior period —
-  plus a DST-boundary regression test in the style of
-  `businessHours.test.ts`'s TZ-stubbed case, confirming local-getter
-  math doesn't shift the cutoff across a DST transition.
+- Partial-period truncation needs an explicit test for a mid-week/
+  mid-month clock, asserting the comparison window's elapsed portion
+  matches the current period's, not the full prior period — plus a
+  DST-boundary regression test in the style of `businessHours.test.ts`'s
+  TZ-stubbed case, confirming local-getter math doesn't shift the
+  cutoff across a DST transition.
+- `day`-period asymmetry needs its own explicit tests: a mid-day clock
+  (e.g. 14:00) produces a Revenue insight (if thresholds are met) and
+  **no** Profit insight regardless of thresholds; a post-midnight clock
+  (day complete) can produce both.
 - No new migration, no new RLS surface, no new event type — this
   reduces the testing surface considerably relative to a typical WAFI
   ticket.
