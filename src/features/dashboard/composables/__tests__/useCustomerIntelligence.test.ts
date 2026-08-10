@@ -33,23 +33,24 @@ describe('useCustomerIntelligence', () => {
     expect(days).toBe(30)
   })
 
-  it('excludes soft-deleted customers from query', async () => {
-    // The query itself should exclude soft-deleted customers via WHERE clause
-    // This test verifies the query is called with proper parameters
+  it('SQL includes customers.deleted exclusion clause', async () => {
+    // Unit test: verify the SQL query text includes the soft-delete filter.
+    // Note: This checks the query string, not behavioral filtering. A true
+    // exclusion test would require an integration test with actual DB rows.
     vi.mocked(db.getAll).mockResolvedValue([])
     const { load } = useCustomerIntelligence()
     await load()
 
-    // Verify db.getAll was called with the correct SQL that includes soft-delete check
-    expect(vi.mocked(db.getAll)).toHaveBeenCalled()
     const callArgs = vi.mocked(db.getAll).mock.calls[0]
     const sql = callArgs[0] as string
     expect(sql).toContain('(c.deleted = 0 OR c.deleted IS NULL)')
   })
 
-  it('uses INNER JOIN to exclude customers with zero qualifying sales', async () => {
-    // The query should use INNER JOIN (not LEFT JOIN) so customers with no sales
-    // don't appear in the result set at all
+  it('SQL uses INNER JOIN (not LEFT JOIN) to customers', async () => {
+    // Unit test: verify the SQL query text uses INNER JOIN instead of LEFT JOIN.
+    // Note: This checks the query string. A true behavioral test would require
+    // integration test with actual DB rows (zero-sales customer exclusion is
+    // enforced by SQL aggregation, not by mock behavior).
     vi.mocked(db.getAll).mockResolvedValue([])
     const { load } = useCustomerIntelligence()
     await load()
