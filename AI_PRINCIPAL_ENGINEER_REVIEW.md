@@ -294,13 +294,13 @@ spec for a feature touching this table keeps it current.
 
 | Domain | Writes to (tables) | Reads from (other domains) | Key composables | Reports/Dashboards affected |
 |---|---|---|---|---|
-| Sales | `sales`, `sale_line_items`, `sale_payments`, `stock_adjustments`; updates `products` (stock/cost) | Inventory (stock/cost), Customer Credit (debt), Installments | `usePayment` | Profit report, Staff performance, Dashboard, Cost freshness |
-| Returns | `returns`, `return_line_items`, `stock_adjustments`; updates `products` | Sales (original sale), Installments (plan status), Inventory (restock) | `useReturnSheet` | Profit report, Money Owed |
-| Inventory | `stock_adjustments`, `stock_receivings`, `stock_receiving_line_items`, `stock_take_sessions`, `stock_take_lines` | Sales, Returns (both write to inventory via `stock_adjustments`) | `useInventoryMovements` (WAFI-009), `useReceivingSheet`, `useStockTake` | Cost freshness indicator, Dashboard, Profit report |
+| Sales | `sales`, `sale_line_items`, `sale_payments`, `stock_adjustments`; updates `products` (stock/cost) | Inventory (stock/cost), Customer Credit (debt), Installments | `usePayment` | Profit report, Staff performance, Dashboard, Cost freshness, Dashboard 2.0 |
+| Returns | `returns`, `return_line_items`, `stock_adjustments`; updates `products` | Sales (original sale), Installments (plan status), Inventory (restock) | `useReturnSheet` | Profit report, Money Owed, Dashboard 2.0 |
+| Inventory | `stock_adjustments`, `stock_receivings`, `stock_receiving_line_items`, `stock_take_sessions`, `stock_take_lines` | Sales, Returns (both write to inventory via `stock_adjustments`) | `useInventoryMovements` (WAFI-009), `useReceivingSheet`, `useStockTake` | Cost freshness indicator, Dashboard, Profit report, Dashboard 2.0 |
 | Installments | `installment_plans`, `installment_dues` | Sales (originating sale), Returns (cancellation trigger) | `useInstallmentPlan` | Money Owed, Collections worklist |
 | Cash / Shifts | `cash_movements`, `cashier_shifts` | Sales (cash totals), Staff (attribution) | `useCashMovements`, shift composables | Z-report, Reports (deliberately excluded — WAFI-016) |
-| Customer Credit | `customer_payments` | Sales (producers: `useReturnSheet.ts` reason=`return`, and as of WAFI-145 `sales.service.ts`'s `completeSale` reason=`credit_sale`), Returns | `useCustomerBalance` | Money Owed, Collections worklist |
-| Staff | `staff_ledger`, `staff_settlements` | Sales (attribution), Cash/Shifts | staff-ledger composables | Staff performance dashboard |
+| Customer Credit | `customer_payments` | Sales (producers: `useReturnSheet.ts` reason=`return`, and as of WAFI-145 `sales.service.ts`'s `completeSale` reason=`credit_sale`), Returns | `useCustomerBalance` | Money Owed, Collections worklist, Dashboard 2.0 |
+| Staff | `staff_ledger`, `staff_settlements` | Sales (attribution), Cash/Shifts | staff-ledger composables | Staff performance dashboard, Dashboard 2.0 |
 | Products / Cost | `products` | Receiving, Import | `useProducts`, `useReceivingSheet`, `useProductImport` | Cost freshness indicator, Dashboard, Profit report |
 | Audit | `audit_log` | All of the above | `executeFinancialWrite` wrapper | Audit log page |
 | Events | `events`, `daily_event_counts`, `local_event_processed_ledger` (local-only), `local_event_publish_retries` (local-only) | Sales, Returns, Customer Credit, Inventory, Staff, Expense, Cash/Shifts, Products, Devices (all event producers); Identity (`auth_role()`/`can()` for per-type RLS) | `useEventSubscription`, `processProjectionAtMostOnce`, `retryPendingEventPublishes`, `isTransientPublishFailure`, `getRetryQueueStats`, `cleanupLocalEventTables`, `startEventTableCleanupSweeper`, `tryConsumeToken`, `enforce_events_rate_limit` (SQL trigger) | Dashboard (today's revenue tile), Notifications (9 event-driven subscribers) |
@@ -346,6 +346,14 @@ Domains touched but not covered in the original spec checklist: [list, or "none"
 ```
 ## Cross-Epic Edge-Case Checklist (final review)
 Matrix rows re-checked after implementation: Notifications, Customer Credit, Staff
+Domains touched but not covered in the original spec checklist: none
+```
+
+### WAFI-146 — Dashboard 2.0 (final review)
+
+```
+## Cross-Epic Edge-Case Checklist (final review)
+Matrix rows re-checked after implementation: Sales, Returns, Inventory, Staff, Customer Credit, Insights
 Domains touched but not covered in the original spec checklist: none
 ```
 
