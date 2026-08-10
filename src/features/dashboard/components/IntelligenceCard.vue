@@ -21,7 +21,9 @@ const emit = defineEmits<{ toggle: []; retry: [] }>()
     </button>
 
     <div v-if="state === 'error'" data-testid="ic-error" class="ic-error">
-      <span>حدث خطأ في التحميل</span>
+      <slot name="error">
+        <span>حدث خطأ في التحميل</span>
+      </slot>
       <button type="button" data-testid="ic-retry" class="ic-retry-btn" @click="emit('retry')">إعادة المحاولة</button>
     </div>
     <div v-else-if="expanded" class="ic-body">
@@ -53,7 +55,7 @@ const emit = defineEmits<{ toggle: []; retry: [] }>()
 .ic-chevron--open { transform: rotate(180deg); }
 .ic-body { padding: 0 18px 16px; }
 .ic-loading { color: #637285; font-size: 12px; text-align: center; padding: 12px 0; }
-.ic-error { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 0; color: #EF4444; font-size: 12px; }
+.ic-error { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 18px; color: #EF4444; font-size: 12px; }
 .ic-retry-btn {
   border: 1px solid rgba(239,68,68,0.4); background: rgba(239,68,68,0.12); color: #EF4444;
   border-radius: 8px; padding: 5px 12px; font-size: 11px; font-weight: 700; cursor: pointer;
