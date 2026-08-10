@@ -181,6 +181,26 @@ export default {
     CASH_SHIFT_VARIANCE: { title: 'Cash shift variance', message: '{count} shift(s) closed with an unusual cash variance this period.' },
     INVENTORY_SHRINKAGE: { title: 'Inventory shrinkage', message: '{count} product(s) had an unusual stock-take variance this period.' },
   },
+  insights: {
+    revenue: {
+      up: 'Revenue is {percent}% higher than {label}',
+      down: 'Revenue is {percent}% lower than {label}',
+      noSalesToday: 'No sales today, compared to ${previous} {label}',
+    },
+    profit: {
+      up: 'Profit is {percent}% higher than {label}',
+      down: 'Profit is {percent}% lower than {label}',
+      loss_to_profit: 'Profit improved by ${amount} — from a loss to a profit',
+      profit_to_loss: 'Profit dropped by ${amount} — from a profit to a loss',
+      loss_widened: 'Loss widened by ${amount}',
+      loss_narrowed: 'Loss narrowed by ${amount}',
+    },
+    comparisonLabel: {
+      day: 'last {weekday}',
+      week: 'last week',
+      month: 'last month',
+    },
+  },
   // WAFI-015: Anomaly banner on home screen — alert banner and expand UI.
   home: {
     anomalyBannerTitle: '{count} thing(s) need your attention',

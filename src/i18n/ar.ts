@@ -182,6 +182,30 @@ export default {
     CASH_SHIFT_VARIANCE: { title: 'تفاوت في الصندوق', message: '{count} وردية أغلقت برصيد نقدي غير معتاد في هذه الفترة' },
     INVENTORY_SHRINKAGE: { title: 'نقص في المخزون', message: '{count} منتج به نقص غير معتاد في هذه الفترة' },
   },
+  // WAFI-144: Automatic Insights — period-over-period revenue/profit
+  // comparisons. Consumed by InsightBanner.vue. `direction` (from
+  // evaluateInsight.ts) picks the phrase; {percent}/{current}/{previous} are
+  // always positive numbers (sign is baked into the phrase, not the number).
+  insights: {
+    revenue: {
+      up: 'المبيعات أعلى بنسبة {percent}% مقارنة بـ {label}',
+      down: 'المبيعات أقل بنسبة {percent}% مقارنة بـ {label}',
+      noSalesToday: 'لا توجد مبيعات اليوم، مقارنة بـ ${previous} في {label}',
+    },
+    profit: {
+      up: 'الربح أعلى بنسبة {percent}% مقارنة بـ {label}',
+      down: 'الربح أقل بنسبة {percent}% مقارنة بـ {label}',
+      loss_to_profit: 'تحسن الربح بمقدار ${amount} — من خسارة إلى ربح',
+      profit_to_loss: 'انخفض الربح بمقدار ${amount} — من ربح إلى خسارة',
+      loss_widened: 'زادت الخسارة بمقدار ${amount}',
+      loss_narrowed: 'تراجعت الخسارة بمقدار ${amount}',
+    },
+    comparisonLabel: {
+      day: 'يوم {weekday} الماضي',
+      week: 'الأسبوع الماضي',
+      month: 'الشهر الماضي',
+    },
+  },
   // WAFI-015: Anomaly banner on home screen — alert banner and expand UI.
   home: {
     anomalyBannerTitle: '{count} أمور تحتاج انتباهك',
