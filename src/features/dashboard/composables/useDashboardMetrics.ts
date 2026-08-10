@@ -34,6 +34,8 @@ export function useDashboardMetrics() {
   // which counts currently-active products — that signal can disagree with the
   // period being shown, so the profit caveat must be driven by this one.
   const costlessSalesInPeriod = ref(0)
+  const returnCount = ref(0)
+  const discountUsd = ref(0)
 
   const grossIncomeUsd = computed(() => revenueUsd.value + refundsUsd.value)
   const profitUsd = computed(() => revenueUsd.value - cogsUsd.value - expensesUsd.value)
@@ -49,7 +51,7 @@ export function useDashboardMetrics() {
     const sales    = sourceFilter('sales', options?.sources)
     const s        = sourceFilter('s', options?.sources)
 
-    const [revRow, cogsRow, expRow, refundRow, cogsReversalRow, missingRow, countRow, costlessRow] = await Promise.all([
+    const [revRow, cogsRow, expRow, refundRow, cogsReversalRow, missingRow, countRow, costlessRow, returnCountRow, discountRow] = await Promise.all([
       db.getOptional<{ total: number }>(
         `SELECT COALESCE(SUM(total_usd), 0) as total
          FROM sales WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?${sales.clause}`,
@@ -131,6 +133,17 @@ export function useDashboardMetrics() {
                )`,
         [device.shopId, start, end, ...s.params]
       ),
+      db.getOptional<{ count: number }>(
+        `SELECT COUNT(*) as count FROM returns r
+         JOIN sales s ON s.id = r.original_sale_id
+         WHERE r.shop_id = ? AND DATE(r.created_at, 'localtime') BETWEEN ? AND ?${s.clause}`,
+        [device.shopId, start, end, ...s.params]
+      ),
+      db.getOptional<{ total: number }>(
+        `SELECT COALESCE(SUM(sale_discount_amount_usd), 0) as total
+         FROM sales WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?${sales.clause}`,
+        [device.shopId, start, end, ...sales.params]
+      ),
     ])
 
     refundsUsd.value       = refundRow?.total ?? 0
@@ -140,6 +153,8 @@ export function useDashboardMetrics() {
     missingCostCount.value = missingRow?.count ?? 0
     invoiceCount.value     = countRow?.count   ?? 0
     costlessSalesInPeriod.value = costlessRow?.count ?? 0
+    returnCount.value      = returnCountRow?.count ?? 0
+    discountUsd.value      = discountRow?.total ?? 0
   }
 
   async function load(period: Period, options?: MetricsOptions) {
@@ -154,5 +169,6 @@ export function useDashboardMetrics() {
   return {
     revenueUsd, grossIncomeUsd, cogsUsd, expensesUsd, refundsUsd, profitUsd,
     missingCostCount, invoiceCount, costlessSalesInPeriod, profitIsEstimated, load, loadRange,
+    returnCount, discountUsd,
   }
 }
