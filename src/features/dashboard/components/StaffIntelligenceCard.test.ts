@@ -30,8 +30,23 @@ describe('StaffIntelligenceCard', () => {
   })
 
   it('exposes reload() function for parent refresh', () => {
-    const wrapper = mount(StaffIntelligenceCard, { props: { period: 'week' } })
+    const wrapper = mount(StaffIntelligenceCard, { props: { period: 'week', expanded: false } })
     expect(typeof wrapper.vm.reload).toBe('function')
+  })
+
+  it('emits toggle when header is clicked instead of managing expand state internally', async () => {
+    vi.mocked(useStaffIntelligence).mockReturnValue({
+      data: ref(null),
+      state: ref('loading'),
+      load: vi.fn(),
+    } as any)
+
+    const wrapper = mount(StaffIntelligenceCard, { props: { period: 'week', expanded: false } })
+    await flushPromises()
+
+    await wrapper.find('[data-testid="ic-header"]').trigger('click')
+    expect(wrapper.emitted('toggle')).toBeTruthy()
+    expect(wrapper.emitted('toggle')).toHaveLength(1)
   })
 
   it('shows top performer and highest discount rate as two separate facts', async () => {
@@ -46,12 +61,8 @@ describe('StaffIntelligenceCard', () => {
       load: mockLoad,
     } as any)
 
-    const wrapper = mount(StaffIntelligenceCard, { props: { period: 'week' } })
+    const wrapper = mount(StaffIntelligenceCard, { props: { period: 'week', expanded: true } })
     await flushPromises()
-
-    // Expand the card to see content
-    await wrapper.find('[data-testid="ic-header"]').trigger('click')
-    await wrapper.vm.$nextTick()
 
     // Check that headline contains top performer name and revenue
     const headline = wrapper.find('[data-testid="ic-header"] .ic-headline')
@@ -83,12 +94,8 @@ describe('StaffIntelligenceCard', () => {
       load: mockLoad,
     } as any)
 
-    const wrapper = mount(StaffIntelligenceCard, { props: { period: 'week' } })
+    const wrapper = mount(StaffIntelligenceCard, { props: { period: 'week', expanded: true } })
     await flushPromises()
-
-    // Expand the card
-    await wrapper.find('[data-testid="ic-header"]').trigger('click')
-    await wrapper.vm.$nextTick()
 
     // Check that headline still shows top performer
     const headline = wrapper.find('[data-testid="ic-header"] .ic-headline')
@@ -112,12 +119,8 @@ describe('StaffIntelligenceCard', () => {
       load: mockLoad,
     } as any)
 
-    const wrapper = mount(StaffIntelligenceCard, { props: { period: 'week' } })
+    const wrapper = mount(StaffIntelligenceCard, { props: { period: 'week', expanded: true } })
     await flushPromises()
-
-    // Expand the card
-    await wrapper.find('[data-testid="ic-header"]').trigger('click')
-    await wrapper.vm.$nextTick()
 
     // Find and click the action link
     const actionLink = wrapper.find('.staff-action-link')
@@ -136,7 +139,7 @@ describe('StaffIntelligenceCard', () => {
       load: mockLoad,
     } as any)
 
-    const wrapper = mount(StaffIntelligenceCard, { props: { period: 'week' } })
+    const wrapper = mount(StaffIntelligenceCard, { props: { period: 'week', expanded: false } })
     await flushPromises()
     expect(mockLoad).toHaveBeenCalledWith('week')
 
@@ -154,7 +157,7 @@ describe('StaffIntelligenceCard', () => {
       load: mockLoad,
     } as any)
 
-    mount(StaffIntelligenceCard, { props: { period: 'week' } })
+    mount(StaffIntelligenceCard, { props: { period: 'week', expanded: false } })
     await flushPromises()
 
     expect(mockLoad).toHaveBeenCalledWith('week')

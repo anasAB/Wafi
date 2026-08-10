@@ -86,6 +86,7 @@ describe('CustomerIntelligenceCard', () => {
     } as any)
 
     const wrapper = mount(CustomerIntelligenceCard, {
+      props: { expanded: true },
       global: { plugins: [router, i18n] },
     })
     await flushPromises()
@@ -114,6 +115,7 @@ describe('CustomerIntelligenceCard', () => {
     } as any)
 
     const wrapper = mount(CustomerIntelligenceCard, {
+      props: { expanded: true },
       global: { plugins: [router, i18n] },
     })
     await flushPromises()
@@ -142,6 +144,7 @@ describe('CustomerIntelligenceCard', () => {
     } as any)
 
     const wrapper = mount(CustomerIntelligenceCard, {
+      props: { expanded: true },
       global: { plugins: [router, i18n] },
     })
     await flushPromises()
@@ -170,6 +173,7 @@ describe('CustomerIntelligenceCard', () => {
     } as any)
 
     const wrapper = mount(CustomerIntelligenceCard, {
+      props: { expanded: true },
       global: { plugins: [router, i18n] },
     })
     await flushPromises()
@@ -198,6 +202,7 @@ describe('CustomerIntelligenceCard', () => {
     } as any)
 
     const wrapper = mount(CustomerIntelligenceCard, {
+      props: { expanded: true },
       global: { plugins: [router, i18n] },
     })
     await flushPromises()
@@ -222,6 +227,7 @@ describe('CustomerIntelligenceCard', () => {
     } as any)
 
     mount(CustomerIntelligenceCard, {
+      props: { expanded: true },
       global: { plugins: [router, i18n] },
     })
     await flushPromises()

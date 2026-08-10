@@ -1,17 +1,17 @@
 <!-- src/features/dashboard/components/RevenueIntelligenceCard.vue -->
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import IntelligenceCard from './IntelligenceCard.vue'
 import { useRevenueIntelligence } from '../composables/useRevenueIntelligence'
 import type { InsightPeriod } from '../composables/insightRanges'
 
-const props = defineProps<{ period: InsightPeriod }>()
+const props = defineProps<{ period: InsightPeriod; expanded: boolean }>()
+const emit = defineEmits<{ toggle: [] }>()
 const { t } = useI18n()
 const router = useRouter()
 const { data, state, load } = useRevenueIntelligence()
-const expanded = ref(false)
 
 async function reload() { await load(props.period) }
 defineExpose({ reload })
@@ -40,7 +40,7 @@ function driverLabel(key: string): string {
   <IntelligenceCard
     :state="cardState"
     :expanded="expanded"
-    @toggle="expanded = !expanded"
+    @toggle="emit('toggle')"
     @retry="reload"
   >
     <template #headline>{{ headline }}</template>

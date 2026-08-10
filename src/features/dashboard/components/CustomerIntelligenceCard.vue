@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import IntelligenceCard from './IntelligenceCard.vue'
@@ -7,12 +7,13 @@ import { useCustomerIntelligence } from '../composables/useCustomerIntelligence'
 import { useSendChurnReminder } from '@/features/messaging/useSendChurnReminder'
 import { useReceiptSettings } from '@/features/receipt/composables/useReceiptSettings'
 
+const props = defineProps<{ expanded: boolean }>()
+const emit = defineEmits<{ toggle: [] }>()
 const { t } = useI18n()
 const router = useRouter()
 const { data, state, load } = useCustomerIntelligence()
 const { prepare, send } = useSendChurnReminder()
 const { settings: receiptSettings, load: loadReceiptSettings } = useReceiptSettings()
-const expanded = ref(true)
 
 async function reload() {
   await Promise.all([load(), loadReceiptSettings()])
@@ -41,7 +42,7 @@ function sendReminder(row: { customerName: string; phone?: string | null; mobile
 </script>
 
 <template>
-  <IntelligenceCard :state="state" :expanded="expanded" @toggle="expanded = !expanded" @retry="reload">
+  <IntelligenceCard :state="state" :expanded="props.expanded" @toggle="emit('toggle')" @retry="reload">
     <template #headline>{{ headline }}</template>
 
     <ul v-if="data" class="cust-list">

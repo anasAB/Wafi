@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import IntelligenceCard from './IntelligenceCard.vue'
 import { useInventoryIntelligence } from '../composables/useInventoryIntelligence'
 
+const props = defineProps<{ expanded: boolean }>()
+const emit = defineEmits<{ toggle: [] }>()
 const { t } = useI18n()
 const router = useRouter()
 const { data, state, load } = useInventoryIntelligence()
-const expanded = ref(false)
 
 async function reload() { await load() }
 defineExpose({ reload })
@@ -23,7 +24,7 @@ const supporting = computed(() =>
 </script>
 
 <template>
-  <IntelligenceCard :state="state" :expanded="expanded" @toggle="expanded = !expanded" @retry="reload">
+  <IntelligenceCard :state="state" :expanded="props.expanded" @toggle="emit('toggle')" @retry="reload">
     <template #headline>
       <div>{{ headline }}</div>
       <div class="inv-supporting">{{ supporting }}</div>

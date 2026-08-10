@@ -47,12 +47,8 @@ describe('InventoryIntelligenceCard', () => {
       load: mockLoad,
     } as any)
 
-    const wrapper = mount(InventoryIntelligenceCard)
+    const wrapper = mount(InventoryIntelligenceCard, { props: { expanded: true } })
     await flushPromises()
-
-    // Expand the card to see the full content
-    await wrapper.find('[data-testid="ic-header"]').trigger('click')
-    await wrapper.vm.$nextTick()
 
     // Verify the headline contains the dollar figure prominently
     const headline = wrapper.find('[data-testid="ic-header"] .ic-headline')
@@ -100,12 +96,8 @@ describe('InventoryIntelligenceCard', () => {
       load: mockLoad,
     } as any)
 
-    const wrapper = mount(InventoryIntelligenceCard)
+    const wrapper = mount(InventoryIntelligenceCard, { props: { expanded: true } })
     await flushPromises()
-
-    // Expand the card
-    await wrapper.find('[data-testid="ic-header"]').trigger('click')
-    await wrapper.vm.$nextTick()
 
     // Verify the offenders list renders in order
     const offenderRows = wrapper.findAll('.inv-offender-row')
@@ -124,12 +116,8 @@ describe('InventoryIntelligenceCard', () => {
       load: mockLoad,
     } as any)
 
-    const wrapper = mount(InventoryIntelligenceCard)
+    const wrapper = mount(InventoryIntelligenceCard, { props: { expanded: true } })
     await flushPromises()
-
-    // Expand the card
-    await wrapper.find('[data-testid="ic-header"]').trigger('click')
-    await wrapper.vm.$nextTick()
 
     // Verify loading state shows the loading indicator
     expect(wrapper.find('.ic-loading').exists()).toBe(true)
@@ -144,7 +132,7 @@ describe('InventoryIntelligenceCard', () => {
       load: mockLoad,
     } as any)
 
-    const wrapper = mount(InventoryIntelligenceCard)
+    const wrapper = mount(InventoryIntelligenceCard, { props: { expanded: false } })
     await flushPromises()
 
     // Verify error state shows the error message and retry button
@@ -161,14 +149,14 @@ describe('InventoryIntelligenceCard', () => {
       load: mockLoad,
     } as any)
 
-    mount(InventoryIntelligenceCard)
+    mount(InventoryIntelligenceCard, { props: { expanded: false } })
     await flushPromises()
 
     expect(mockLoad).toHaveBeenCalled()
   })
 
   it('exposes reload() function for parent refresh', () => {
-    const wrapper = mount(InventoryIntelligenceCard)
+    const wrapper = mount(InventoryIntelligenceCard, { props: { expanded: false } })
     expect(typeof wrapper.vm.reload).toBe('function')
   })
 
@@ -180,7 +168,7 @@ describe('InventoryIntelligenceCard', () => {
       load: mockLoad,
     } as any)
 
-    const wrapper = mount(InventoryIntelligenceCard)
+    const wrapper = mount(InventoryIntelligenceCard, { props: { expanded: false } })
     await flushPromises()
 
     mockLoad.mockClear()
@@ -198,7 +186,7 @@ describe('InventoryIntelligenceCard', () => {
       load: mockLoad,
     } as any)
 
-    const wrapper = mount(InventoryIntelligenceCard)
+    const wrapper = mount(InventoryIntelligenceCard, { props: { expanded: false } })
     await flushPromises()
 
     mockLoad.mockClear()
@@ -208,21 +196,21 @@ describe('InventoryIntelligenceCard', () => {
     expect(mockLoad).toHaveBeenCalled()
   })
 
-  it('toggles expanded state when header is clicked', async () => {
+  it('emits toggle when header is clicked (expand state is now owned by the parent)', async () => {
     vi.mocked(useInventoryIntelligence).mockReturnValue({
       data: ref(null),
       state: ref('ready'),
       load: vi.fn(),
     } as any)
 
-    const wrapper = mount(InventoryIntelligenceCard)
-    expect(wrapper.vm.expanded).toBe(false)
+    const wrapper = mount(InventoryIntelligenceCard, { props: { expanded: false } })
 
     await wrapper.find('[data-testid="ic-header"]').trigger('click')
-    expect(wrapper.vm.expanded).toBe(true)
+    expect(wrapper.emitted('toggle')).toBeTruthy()
+    expect(wrapper.emitted('toggle')).toHaveLength(1)
 
     await wrapper.find('[data-testid="ic-header"]').trigger('click')
-    expect(wrapper.vm.expanded).toBe(false)
+    expect(wrapper.emitted('toggle')).toHaveLength(2)
   })
 
   it('renders viewDeadStock link when data is ready', async () => {
@@ -239,6 +227,7 @@ describe('InventoryIntelligenceCard', () => {
     } as any)
 
     const wrapper = mount(InventoryIntelligenceCard, {
+      props: { expanded: true },
       global: {
         mocks: {
           $router: { push: mockPush },
@@ -246,10 +235,6 @@ describe('InventoryIntelligenceCard', () => {
       },
     })
     await flushPromises()
-
-    // Expand the card
-    await wrapper.find('[data-testid="ic-header"]').trigger('click')
-    await wrapper.vm.$nextTick()
 
     // Verify the viewDeadStock link is rendered
     const link = wrapper.find('.inv-action-link')

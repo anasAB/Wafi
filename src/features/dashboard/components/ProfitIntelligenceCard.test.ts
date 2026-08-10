@@ -22,8 +22,23 @@ describe('ProfitIntelligenceCard', () => {
   beforeEach(() => vi.resetAllMocks())
 
   it('exposes reload() function for parent refresh', () => {
-    const wrapper = mount(ProfitIntelligenceCard, { props: { period: 'week' } })
+    const wrapper = mount(ProfitIntelligenceCard, { props: { period: 'week', expanded: false } })
     expect(typeof wrapper.vm.reload).toBe('function')
+  })
+
+  it('emits toggle when header is clicked instead of managing expand state internally', async () => {
+    vi.mocked(useProfitIntelligence).mockReturnValue({
+      data: ref(null),
+      state: ref('loading'),
+      load: vi.fn(),
+    } as any)
+
+    const wrapper = mount(ProfitIntelligenceCard, { props: { period: 'week', expanded: false } })
+    await flushPromises()
+
+    await wrapper.find('[data-testid="ic-header"]').trigger('click')
+    expect(wrapper.emitted('toggle')).toBeTruthy()
+    expect(wrapper.emitted('toggle')).toHaveLength(1)
   })
 
   it('renders headline with profit dollar change, not margin percentage', async () => {
@@ -49,7 +64,7 @@ describe('ProfitIntelligenceCard', () => {
       load: mockLoad,
     } as any)
 
-    const wrapper = mount(ProfitIntelligenceCard, { props: { period: 'week' } })
+    const wrapper = mount(ProfitIntelligenceCard, { props: { period: 'week', expanded: false } })
     await flushPromises()
 
     // Verify the headline contains the profit direction and PERCENT CHANGE IN PROFIT
@@ -81,7 +96,7 @@ describe('ProfitIntelligenceCard', () => {
       load: mockLoad,
     } as any)
 
-    const wrapper = mount(ProfitIntelligenceCard, { props: { period: 'week' } })
+    const wrapper = mount(ProfitIntelligenceCard, { props: { period: 'week', expanded: false } })
     await flushPromises()
 
     // Verify the headline contains the expected Arabic text and percent
@@ -112,12 +127,8 @@ describe('ProfitIntelligenceCard', () => {
       load: mockLoad,
     } as any)
 
-    const wrapper = mount(ProfitIntelligenceCard, { props: { period: 'week' } })
+    const wrapper = mount(ProfitIntelligenceCard, { props: { period: 'week', expanded: true } })
     await flushPromises()
-
-    // Expand the card
-    await wrapper.find('[data-testid="ic-header"]').trigger('click')
-    await wrapper.vm.$nextTick()
 
     // Verify the margin line is rendered with correct values (23% ← 20% (+3 نقطة))
     const marginLine = wrapper.find('.profit-margin-line')
@@ -145,13 +156,9 @@ describe('ProfitIntelligenceCard', () => {
       load: mockLoad,
     } as any)
 
-    const wrapper = mount(ProfitIntelligenceCard, { props: { period: 'day' } })
+    const wrapper = mount(ProfitIntelligenceCard, { props: { period: 'day', expanded: true } })
     await wrapper.vm.$nextTick() // Trigger computed property update
     await flushPromises()
-
-    // Expand to see the content
-    await wrapper.find('[data-testid="ic-header"]').trigger('click')
-    await wrapper.vm.$nextTick()
 
     // Verify placeholder state is shown, not the drivers list
     expect(wrapper.find('[data-testid="ic-placeholder"]').exists()).toBe(true)
@@ -181,12 +188,8 @@ describe('ProfitIntelligenceCard', () => {
       load: mockLoad,
     } as any)
 
-    const wrapper = mount(ProfitIntelligenceCard, { props: { period: 'week' } })
+    const wrapper = mount(ProfitIntelligenceCard, { props: { period: 'week', expanded: true } })
     await flushPromises()
-
-    // Expand the card
-    await wrapper.find('[data-testid="ic-header"]').trigger('click')
-    await wrapper.vm.$nextTick()
 
     // Verify the drivers list is rendered with correct values
     const driverRows = wrapper.findAll('.profit-driver-row')
@@ -205,7 +208,7 @@ describe('ProfitIntelligenceCard', () => {
       load: mockLoad,
     } as any)
 
-    const wrapper = mount(ProfitIntelligenceCard, { props: { period: 'week' } })
+    const wrapper = mount(ProfitIntelligenceCard, { props: { period: 'week', expanded: false } })
     await flushPromises()
     expect(mockLoad).toHaveBeenCalledWith('week')
 

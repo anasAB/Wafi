@@ -3,18 +3,18 @@
      Wraps IntelligenceCard with useStaffIntelligence composable. No permission
      check here — Dashboard2Screen.vue decides whether to render at all. -->
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import IntelligenceCard from './IntelligenceCard.vue'
 import { useStaffIntelligence } from '../composables/useStaffIntelligence'
 import type { InsightPeriod } from '../composables/insightRanges'
 
-const props = defineProps<{ period: InsightPeriod }>()
+const props = defineProps<{ period: InsightPeriod; expanded: boolean }>()
+const emit = defineEmits<{ toggle: [] }>()
 const { t } = useI18n()
 const router = useRouter()
 const { data, state, load } = useStaffIntelligence()
-const expanded = ref(false)
 
 async function reload() {
   await load(props.period)
@@ -45,7 +45,7 @@ const highestDiscountLine = computed(() =>
 </script>
 
 <template>
-  <IntelligenceCard :state="state" :expanded="expanded" @toggle="expanded = !expanded" @retry="reload">
+  <IntelligenceCard :state="state" :expanded="expanded" @toggle="emit('toggle')" @retry="reload">
     <template #headline>{{ topPerformerLine }}</template>
 
     <div v-if="data">
