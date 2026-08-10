@@ -7,7 +7,7 @@ import type { InsightPeriod } from '@/features/dashboard/composables/insightRang
 import type { Insight } from '@/composables/insights/evaluateInsight'
 
 const props = defineProps<{ period: InsightPeriod }>()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const { insights, load } = useAutomaticInsights()
 
 // Read via a computed rather than the raw `insights` binding: the composable
@@ -25,16 +25,20 @@ watch(() => props.period, (p) => load(p))
 // insightRanges.ts), so today's own weekday name is the correct label.
 const comparisonLabel = computed(() => {
   if (props.period === 'day') {
-    const weekday = new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(new Date())
+    const weekday = new Intl.DateTimeFormat(locale.value, { weekday: 'long' }).format(new Date())
     return t('insights.comparisonLabel.day', { weekday })
   }
   return t(`insights.comparisonLabel.${props.period}`)
 })
 
+function formatUsd(value: number): string {
+  return value < 0 ? `-$${Math.abs(value).toFixed(2)}` : `$${value.toFixed(2)}`
+}
+
 function primaryLine(insight: Insight): string {
   const label = comparisonLabel.value
   if (insight.metric === 'revenue') {
-    if (insight.direction === 'down' && insight.currentUsd === 0) {
+    if (props.period === 'day' && insight.direction === 'down' && insight.currentUsd === 0) {
       return t('insights.revenue.noSalesToday', { previous: insight.previousUsd.toFixed(2), label })
     }
     const percent = Math.abs(insight.percentChange ?? 0).toFixed(0)
@@ -63,7 +67,7 @@ function primaryLine(insight: Insight): string {
     >
       <p class="insight-banner__primary">{{ primaryLine(insight) }}</p>
       <p class="insight-banner__secondary" dir="ltr">
-        ${{ insight.currentUsd.toFixed(2) }} · ${{ insight.previousUsd.toFixed(2) }}
+        {{ formatUsd(insight.currentUsd) }} · {{ formatUsd(insight.previousUsd) }}
       </p>
     </div>
   </div>

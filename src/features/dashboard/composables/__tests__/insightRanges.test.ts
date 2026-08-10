@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { getInsightRanges, getComparisonCutoffIso } from '../insightRanges'
 
 describe('getInsightRanges', () => {
@@ -50,6 +50,33 @@ describe('getInsightRanges', () => {
     const now = new Date(2026, 7, 12, 9, 0, 0)
     expect(getInsightRanges('week', now).isCurrentDayComplete).toBe(true)
     expect(getInsightRanges('month', now).isCurrentDayComplete).toBe(true)
+  })
+})
+
+describe('getInsightRanges (DST/non-UTC timezone regression)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  // This repo's Vitest global setup pins TZ=UTC (src/__tests__/setup.ts), so
+  // every other test in this file runs with local time == UTC time by
+  // construction and would not catch a regression to UTC-based date math.
+  // This test stubs a concrete non-UTC offset (Asia/Damascus, UTC+3, no DST)
+  // and picks a UTC instant that falls on a different calendar day locally
+  // than it does in UTC, so it fails if getInsightRanges is ever changed to
+  // read UTC date components instead of local ones.
+  it('uses LOCAL calendar-date boundaries, not UTC, for the day period (non-UTC timezone)', () => {
+    vi.stubEnv('TZ', 'Asia/Damascus')
+    // 2026-08-12T22:30:00.000Z is Aug 12 in UTC, but 2026-08-13T01:30 local in
+    // Asia/Damascus (UTC+3) -- a different calendar day.
+    const now = new Date('2026-08-12T22:30:00.000Z')
+    // Empirically verify TZ stubbing actually shifts Date's local-time methods
+    // in this runtime before relying on it for the real assertion below.
+    expect(now.getDate()).toBe(13)
+
+    const { current, comparison } = getInsightRanges('day', now)
+    expect(current).toEqual({ start: '2026-08-13', end: '2026-08-13' })
+    expect(comparison).toEqual({ start: '2026-08-06', end: '2026-08-06' })
   })
 })
 

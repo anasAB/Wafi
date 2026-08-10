@@ -17,6 +17,28 @@ const i18n = createI18n({
         comparisonLabel: { day: 'last {weekday}', week: 'last week', month: 'last month' },
       },
     },
+    ar: {
+      insights: {
+        revenue: {
+          up: 'المبيعات أعلى بنسبة {percent}% مقارنة بـ {label}',
+          down: 'المبيعات أقل بنسبة {percent}% مقارنة بـ {label}',
+          noSalesToday: 'لا توجد مبيعات اليوم، مقارنة بـ ${previous} في {label}',
+        },
+        profit: {
+          up: 'الربح أعلى بنسبة {percent}% مقارنة بـ {label}',
+          down: 'الربح أقل بنسبة {percent}% مقارنة بـ {label}',
+          loss_to_profit: 'تحسن الربح بمقدار ${amount} — من خسارة إلى ربح',
+          profit_to_loss: 'انخفض الربح بمقدار ${amount} — من ربح إلى خسارة',
+          loss_widened: 'زادت الخسارة بمقدار ${amount}',
+          loss_narrowed: 'تراجعت الخسارة بمقدار ${amount}',
+        },
+        comparisonLabel: {
+          day: 'يوم {weekday} الماضي',
+          week: 'الأسبوع الماضي',
+          month: 'الشهر الماضي',
+        },
+      },
+    },
   },
 })
 
@@ -60,5 +82,55 @@ describe('InsightBanner', () => {
     const { load } = useAutomaticInsights()
     await wrapper.setProps({ period: 'month' })
     expect(load).toHaveBeenCalledWith('month')
+  })
+
+  // Finding 1: the weekday name in the 'day' comparison label must follow the
+  // active i18n locale, not be hardcoded to English ('en-US'). Renders the
+  // Arabic weekday name (e.g. "الثلاثاء") when locale is 'ar'.
+  it('renders the Arabic weekday name in the day comparison label when locale is ar', () => {
+    i18n.global.locale.value = 'ar'
+    try {
+      mockInsights([
+        { metric: 'revenue', direction: 'up', currentUsd: 115, previousUsd: 100, percentChange: 15 },
+      ])
+      const wrapper = mount(InsightBanner, { props: { period: 'day' }, global: { plugins: [i18n] } })
+      const expectedWeekday = new Intl.DateTimeFormat('ar', { weekday: 'long' }).format(new Date())
+      expect(wrapper.text()).toContain(`مقارنة بـ يوم ${expectedWeekday} الماضي`)
+      expect(wrapper.text()).not.toContain('Tuesday')
+      expect(wrapper.text()).not.toContain('Monday')
+    } finally {
+      i18n.global.locale.value = 'en'
+    }
+  })
+
+  // Finding 2: 'noSalesToday' phrasing must only fire for the 'day' period.
+  // A genuinely zero-revenue week/month should fall through to the normal
+  // percent-based 'down' phrasing instead.
+  it('does not use the noSalesToday phrasing for a zero-revenue week', () => {
+    mockInsights([
+      { metric: 'revenue', direction: 'down', currentUsd: 0, previousUsd: 100, percentChange: -100 },
+    ])
+    const wrapper = mount(InsightBanner, { props: { period: 'week' }, global: { plugins: [i18n] } })
+    expect(wrapper.text()).toContain('Revenue is 100% lower than last week')
+    expect(wrapper.text()).not.toContain('No sales today')
+  })
+
+  it('does not use the noSalesToday phrasing for a zero-revenue month', () => {
+    mockInsights([
+      { metric: 'revenue', direction: 'down', currentUsd: 0, previousUsd: 100, percentChange: -100 },
+    ])
+    const wrapper = mount(InsightBanner, { props: { period: 'month' }, global: { plugins: [i18n] } })
+    expect(wrapper.text()).toContain('Revenue is 100% lower than last month')
+    expect(wrapper.text()).not.toContain('No sales today')
+  })
+
+  // Finding 3: negative USD amounts must render as -$50.00, not $-50.00.
+  it('renders a negative previousUsd with the sign before the dollar sign', () => {
+    mockInsights([
+      { metric: 'profit', direction: 'loss_to_profit', currentUsd: 30, previousUsd: -50, percentChange: null },
+    ])
+    const wrapper = mount(InsightBanner, { props: { period: 'month' }, global: { plugins: [i18n] } })
+    expect(wrapper.text()).toContain('-$50.00')
+    expect(wrapper.text()).not.toContain('$-50.00')
   })
 })

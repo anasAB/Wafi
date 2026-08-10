@@ -55,6 +55,30 @@ describe('useAutomaticInsights', () => {
     ])
   })
 
+  // Complements the mid-day test above: when `now` is exactly local
+  // midnight, isCurrentDayComplete is true (see insightRanges.ts), so the
+  // 'day' period should take the full-comparison path (useDashboardMetrics
+  // for both current and comparison) and produce both a revenue and a
+  // profit insight, same as week/month.
+  it('day, complete (exact local midnight): loads full comparison metrics and generates both a revenue and a profit insight', async () => {
+    vi.mocked(getRevenueUsdUpToTimestamp).mockClear()
+    const current = mockMetrics(85, 40)
+    const comparison = mockMetrics(100, 50)
+    vi.mocked(useDashboardMetrics)
+      .mockReturnValueOnce(current as any)
+      .mockReturnValueOnce(comparison as any)
+
+    const midnight = new Date(2026, 7, 12, 0, 0, 0, 0)
+    const { insights, load } = useAutomaticInsights()
+    await load('day', midnight)
+
+    expect(getRevenueUsdUpToTimestamp).not.toHaveBeenCalled()
+    expect(insights.value).toEqual([
+      { metric: 'revenue', direction: 'down', currentUsd: 85, previousUsd: 100, percentChange: -15 },
+      { metric: 'profit', direction: 'down', currentUsd: 40, previousUsd: 50, percentChange: -20 },
+    ])
+  })
+
   it('skips both metrics when the comparison period predates shop creation', async () => {
     vi.mocked(getShopCreatedAt).mockResolvedValue('2026-08-20T00:00:00.000Z') // shop created AFTER the comparison window
     const current = mockMetrics(450, 200)
