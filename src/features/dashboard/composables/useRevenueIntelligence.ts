@@ -10,7 +10,7 @@ export interface ComparisonMetric {
 }
 
 export interface ComparisonDriver {
-  key: string
+  key: 'transactionCount' | 'returnCount' | 'avgBasket'
   current: number
   previous: number
   changePct: number | null
@@ -31,7 +31,7 @@ function direction(current: number, previous: number): 'up' | 'down' | 'flat' {
   return current > previous ? 'up' : 'down'
 }
 
-function buildDriver(key: string, current: number, previous: number): ComparisonDriver {
+function buildDriver(key: 'transactionCount' | 'returnCount' | 'avgBasket', current: number, previous: number): ComparisonDriver {
   return { key, current, previous, changePct: pctChange(current, previous) }
 }
 

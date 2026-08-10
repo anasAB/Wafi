@@ -4,6 +4,7 @@ vi.mock('@/store/device.store', () => ({ useDeviceStore: () => ({ shopId: 'shop1
 
 import { db } from '@/data/powersync/db'
 import { useRevenueIntelligence } from '@/features/dashboard/composables/useRevenueIntelligence'
+import * as insightRangesModule from '@/features/dashboard/composables/insightRanges'
 
 function mockRow(current: { total?: number; count?: number }, previous: { total?: number; count?: number }) {
   let call = 0
@@ -61,5 +62,23 @@ describe('useRevenueIntelligence', () => {
     await load('week')
     expect(data.value?.metric.changePct).toBeNull()
     expect(data.value?.metric.direction).toBe('up')
+  })
+
+  it('gates drivers null for incomplete day (isCurrentDayComplete: false), but metric still populated', async () => {
+    mockRow({ total: 700, count: 35 }, { total: 800, count: 40 })
+    // Mock getInsightRanges to return isCurrentDayComplete: false for 'day' period
+    vi.spyOn(insightRangesModule, 'getInsightRanges').mockReturnValue({
+      current: { start: '2026-08-10', end: '2026-08-10' },
+      comparison: { start: '2026-08-03', end: '2026-08-03' },
+      isCurrentDayComplete: false,
+    })
+    const { data, load } = useRevenueIntelligence()
+    await load('day')
+    // Metric headline must be visible even on incomplete day
+    expect(data.value?.metric.currentUsd).toBe(700)
+    expect(data.value?.metric.previousUsd).toBe(800)
+    expect(data.value?.metric.direction).toBe('down')
+    // But drivers must be null to avoid misleading comparison of partial vs full day
+    expect(data.value?.drivers).toBeNull()
   })
 })
