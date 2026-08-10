@@ -7,6 +7,8 @@ export interface InactiveCustomerRow {
   customerName: string
   lastPurchaseAt: string
   daysSincePurchase: number
+  phone: string | null
+  mobile: string | null
 }
 
 export interface CustomerIntelligenceData {
@@ -32,8 +34,8 @@ export function useCustomerIntelligence() {
       // explicit domain rule). Customers with zero qualifying sales ever
       // are excluded by the JOIN itself (no matching sales row = not
       // present in the GROUP BY result at all).
-      const rows = await db.getAll<{ customerId: string; customerName: string; lastPurchaseAt: string }>(
-        `SELECT s.customer_id AS customerId, c.name AS customerName, MAX(s.created_at) AS lastPurchaseAt
+      const rows = await db.getAll<{ customerId: string; customerName: string; lastPurchaseAt: string; phone: string | null; mobile: string | null }>(
+        `SELECT s.customer_id AS customerId, c.name AS customerName, MAX(s.created_at) AS lastPurchaseAt, c.phone, c.mobile
          FROM sales s
          JOIN customers c ON c.id = s.customer_id
          WHERE s.shop_id = ? AND s.customer_id IS NOT NULL
@@ -50,6 +52,8 @@ export function useCustomerIntelligence() {
         customerName: r.customerName,
         lastPurchaseAt: r.lastPurchaseAt,
         daysSincePurchase: Math.floor((now - new Date(r.lastPurchaseAt).getTime()) / (24 * 3_600_000)),
+        phone: r.phone,
+        mobile: r.mobile,
       }))
 
       data.value = { inactiveCount: inactiveCustomers.length, inactiveCustomers }
