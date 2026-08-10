@@ -39,4 +39,16 @@ describe('handleShiftLateCloseEvent', () => {
     await handleShiftLateCloseEvent(event)
     expect(db.execute).not.toHaveBeenCalled()
   })
+
+  it('fires for a past-midnight close (close_time 21:00, closed at 00:30 next day)', async () => {
+    vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({ close_time: '21:00', is_24_7: 0 } as any) // shop hours lookup
+      .mockResolvedValueOnce(undefined) // dedup lookup
+    // Same-day anchor would compute this as ~20.5 hours EARLY (00:30 vs 21:00 the
+    // same calendar day) and never fire -- the past-midnight re-anchor must kick in
+    // and recognize this as ~3.5 hours (210 min) LATE instead.
+    const event = { ...baseEvent, occurredAt: '2026-01-02T00:30:00.000Z' }
+    await handleShiftLateCloseEvent(event)
+    expect(db.execute).toHaveBeenCalledWith(expect.stringContaining('insert into notifications'), expect.arrayContaining(['WARNING']))
+  })
 })

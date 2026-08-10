@@ -1,8 +1,11 @@
 // Overnight-aware business-hours check (WAFI-145 design spec, "Business hours &
-// overnight semantics"). Timestamps are compared using UTC hours/minutes -- this
-// codebase stores occurredAt as ISO UTC and shops.open_time/close_time as naive
-// 'HH:MM' with no timezone; both are treated as the same wall-clock frame, matching
-// how every other time-of-day comparison in this app already works.
+// overnight semantics"). shops.open_time/close_time are entered by the owner via a
+// plain <input type="time">, which is unambiguously LOCAL wall-clock time (a Syria
+// shop owner typing "09:00" means 9am Damascus time, not UTC). Timestamps are
+// therefore compared using the JS Date object's LOCAL hours/minutes (getHours/
+// getMinutes), matching how every other time-of-day comparison in this app already
+// works (periodUtils.ts, usePeriodToggle.ts, useDailyDigest.ts all use device-local
+// getHours()/getFullYear()/getMonth()/getDate(), never UTC).
 
 export interface ShopHours {
   open_time: string | null   // 'HH:MM'
@@ -20,7 +23,7 @@ export function isWithinBusinessHours(shop: ShopHours, isoTimestamp: string): bo
   if (!shop.open_time || !shop.close_time) return true // checks disabled for this shop
 
   const d = new Date(isoTimestamp)
-  const t = d.getUTCHours() * 60 + d.getUTCMinutes()
+  const t = d.getHours() * 60 + d.getMinutes()
   const open  = minutesSinceMidnight(shop.open_time)
   const close = minutesSinceMidnight(shop.close_time)
 

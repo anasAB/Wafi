@@ -1,3 +1,11 @@
+// Fix the test-runner's local timezone to UTC. WAFI-145's business-hours checks
+// (businessHours.ts, shiftLateClose.rule.ts) compare against LOCAL time
+// (getHours()/getMinutes()/setHours()), matching the codebase's actual local-time
+// convention -- but that makes test expectations depend on the machine's timezone
+// unless it's pinned. Must be set before any Date object is constructed anywhere
+// in the test run, hence first line of this file, before other imports.
+process.env.TZ = 'UTC'
+
 import 'fake-indexeddb/auto'
 import { vi } from 'vitest'
 import { config } from '@vue/test-utils'

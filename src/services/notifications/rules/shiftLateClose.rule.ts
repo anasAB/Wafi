@@ -23,8 +23,21 @@ export async function handleShiftLateCloseEvent(event: DurableEvent<ShiftClosedP
   const closedAt = new Date(event.occurredAt)
   const [closeH, closeM] = shop.close_time.split(':').map(Number)
   const expectedClose = new Date(closedAt)
-  expectedClose.setUTCHours(closeH, closeM, 0, 0)
-  const minutesLate = (closedAt.getTime() - expectedClose.getTime()) / 60_000
+  // Local time, not UTC -- close_time is entered via a plain <input type="time">,
+  // which is unambiguously local wall-clock time (see businessHours.ts).
+  expectedClose.setHours(closeH, closeM, 0, 0)
+  let minutesLate = (closedAt.getTime() - expectedClose.getTime()) / 60_000
+
+  // Past-midnight close: a shop closing at e.g. 00:30 against a 21:00 close_time
+  // anchored to the SAME calendar day computes as ~21 hours "early" (implausible
+  // for a legitimate close). Re-anchor expectedClose to the PREVIOUS calendar day
+  // instead -- this is the worst, most-needs-flagging late-close case, and must
+  // not be silently dropped just because the naive same-day anchor is wrong.
+  if (minutesLate < -720) {
+    const prevDayClose = new Date(expectedClose.getTime() - 24 * 60 * 60_000)
+    minutesLate = (closedAt.getTime() - prevDayClose.getTime()) / 60_000
+  }
+
   if (minutesLate <= settings.graceMinutes) return
 
   // Check-then-insert, same reasoning as notificationSubscriber.ts's handleDiscountEvent.

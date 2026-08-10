@@ -37,4 +37,14 @@ describe('isWithinBusinessHours', () => {
     const shop = { open_time: '08:00', close_time: '02:00', is_24_7: 0 }
     expect(isWithinBusinessHours(shop, '2026-01-01T05:00:00.000Z')).toBe(false)
   })
+
+  it('normal day: t === close_time is OUTSIDE hours (exclusive boundary)', () => {
+    const shop = { open_time: '09:00', close_time: '21:00', is_24_7: 0 }
+    expect(isWithinBusinessHours(shop, '2026-01-01T21:00:00.000Z')).toBe(false)
+  })
+
+  it('normal day: t === open_time is WITHIN hours (inclusive boundary)', () => {
+    const shop = { open_time: '09:00', close_time: '21:00', is_24_7: 0 }
+    expect(isWithinBusinessHours(shop, '2026-01-01T09:00:00.000Z')).toBe(true)
+  })
 })
