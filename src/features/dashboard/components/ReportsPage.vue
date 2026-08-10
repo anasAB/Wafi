@@ -22,6 +22,7 @@ import ProfitCumulativeChart from './ProfitCumulativeChart.vue'
 import ReportDrilldownSheet from './ReportDrilldownSheet.vue'
 import ExpenseDonutChart from './ExpenseDonutChart.vue'
 import TopExpensesList from './TopExpensesList.vue'
+import InsightBanner from './InsightBanner.vue'
 
 const { t } = useI18n()
 const { can } = useCan()
@@ -255,6 +256,11 @@ onMounted(() => { reload(); deadStock.load() })
         {{ t(`anomalies.${a.code}.title`) }} — {{ t(`anomalies.${a.code}.message`) }}
       </p>
     </div>
+
+    <!-- WAFI-144: automatic insights — only defined for week/month; quarter and
+         custom ranges have no unambiguous "equivalent prior cycle" (see design
+         spec) and intentionally render nothing here. -->
+    <InsightBanner v-if="period === 'week' || period === 'month'" :period="period as 'week' | 'month'" />
 
     <div class="reports-tabs" role="tablist" aria-label="report tabs">
       <button
