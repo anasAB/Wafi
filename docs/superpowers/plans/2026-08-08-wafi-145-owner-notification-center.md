@@ -2447,3 +2447,17 @@ Run: `npm run dev`. Ring a discounted sale, close a shift with an induced varian
 git add -A
 git commit -m "fix(WAFI-145): fixups from full-suite verification"
 ```
+
+## Deploy notes
+
+Before this feature works end-to-end on synced (non-single-device) deployments:
+
+- Migrations 080, 081, and 082 must be applied (082 adds the UUID `id` primary
+  key `notification_settings` needs to sync at all -- see final-review fix C1/C2).
+- A PowerSync sync-bucket/rule must be configured for the new
+  `notification_settings` table in the PowerSync dashboard (sync rules live
+  outside this repo, in the hosted dashboard -- there is no code-side fix).
+  WAFI-143's implementation plan called this out explicitly for the
+  `notifications` table; this is the equivalent note for `notification_settings`.
+  Without it, settings written on one device will not sync to other devices or
+  survive a reinstall.

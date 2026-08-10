@@ -82,12 +82,26 @@ async function loadShopHours() {
 
 async function upsertSettings(row: Row) {
   const shopId = useDeviceStore().shopId
-  await db.execute(
-    `insert into notification_settings (shop_id, type, enabled, threshold_json, updated_at)
-     values (?, ?, ?, ?, ?)
-     on conflict (shop_id, type) do update set enabled = excluded.enabled, threshold_json = excluded.threshold_json, updated_at = excluded.updated_at`,
-    [shopId, row.type, row.enabled ? 1 : 0, JSON.stringify(row.settings), new Date().toISOString()],
+  const now = new Date().toISOString()
+  // Read-then-insert-or-update, NOT an upsert/ON CONFLICT -- same reason as
+  // dashboardRevenueProjection.ts and dailyEventCountsProjection.ts: PowerSync
+  // client tables are SQLite views over CRUD-queue triggers, and SQLite
+  // rejects ON CONFLICT against a view.
+  const existing = await db.getOptional<{ id: string }>(
+    `select id from notification_settings where shop_id = ? and type = ?`,
+    [shopId, row.type],
   )
+  if (existing) {
+    await db.execute(
+      `update notification_settings set enabled = ?, threshold_json = ?, updated_at = ? where id = ?`,
+      [row.enabled ? 1 : 0, JSON.stringify(row.settings), now, existing.id],
+    )
+  } else {
+    await db.execute(
+      `insert into notification_settings (id, shop_id, type, enabled, threshold_json, updated_at) values (?, ?, ?, ?, ?, ?)`,
+      [crypto.randomUUID(), shopId, row.type, row.enabled ? 1 : 0, JSON.stringify(row.settings), now],
+    )
+  }
 }
 
 async function toggleEnabled(row: Row) {
@@ -98,7 +112,12 @@ async function toggleEnabled(row: Row) {
 async function updateThreshold(row: Row, value: string) {
   if (!row.thresholdField) return
   const num = Number(value)
-  if (Number.isNaN(num)) return
+  // Reject NaN AND negative values here -- not just via the input's min="0",
+  // which can be bypassed by anything other than the literal HTML control
+  // (e.g. programmatic dispatch). A negative varianceUsdCap/discountPercentCap
+  // etc. would make every shift close / discount fire, defeating the whole
+  // point of a threshold.
+  if (Number.isNaN(num) || num < 0) return
   ;(row.settings as Record<string, unknown>)[row.thresholdField] = num
   await upsertSettings(row)
 }
@@ -198,6 +217,7 @@ onMounted(async () => {
         <div v-if="row.thresholdField" class="type-row-threshold">
           <input
             type="number"
+            min="0"
             class="field-input field-input--small"
             :value="(row.settings as any)[row.thresholdField]"
             :data-testid="`threshold-input-${row.type}`"

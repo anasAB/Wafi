@@ -76,16 +76,45 @@ describe('NotificationSettingsScreen (WAFI-145 Task 18)', () => {
     )
   })
 
-  it('toggles a type on/off and persists it via notification_settings upsert', async () => {
+  it('toggles a type on/off and persists it via a fresh insert (no existing row)', async () => {
     const wrapper = mountIt()
     await flushPromises()
+    getOptional.mockClear()
     execute.mockClear()
+    // No existing notification_settings row for this shop/type -> insert path.
+    getOptional.mockResolvedValueOnce(undefined)
     await wrapper.find('[data-testid="enable-toggle-drawer.variance"]').setValue(false)
     await flushPromises()
+
+    const [selectSql, selectParams] = getOptional.mock.calls[0]
+    expect(selectSql.toLowerCase()).toContain('select id from notification_settings')
+    expect(selectParams).toEqual(['shop-1', 'drawer.variance'])
+
     expect(execute).toHaveBeenCalledWith(
       expect.stringContaining('insert into notification_settings'),
-      ['shop-1', 'drawer.variance', 0, JSON.stringify({ type: 'drawer.variance', varianceUsdCap: 15 }), expect.any(String)],
+      [expect.any(String), 'shop-1', 'drawer.variance', 0, JSON.stringify({ type: 'drawer.variance', varianceUsdCap: 15 }), expect.any(String)],
     )
+  })
+
+  it('updates an existing notification_settings row via UPDATE, never ON CONFLICT', async () => {
+    const wrapper = mountIt()
+    await flushPromises()
+    getOptional.mockClear()
+    execute.mockClear()
+    // Existing row found -> update path.
+    getOptional.mockResolvedValueOnce({ id: 'row-1' })
+    await wrapper.find('[data-testid="enable-toggle-drawer.variance"]').setValue(false)
+    await flushPromises()
+
+    expect(execute).toHaveBeenCalledWith(
+      expect.stringContaining('update notification_settings'),
+      [0, JSON.stringify({ type: 'drawer.variance', varianceUsdCap: 15 }), expect.any(String), 'row-1'],
+    )
+    // PowerSync client tables are SQLite views over CRUD-queue triggers -- SQLite
+    // rejects ON CONFLICT against a view, so this upsert MUST be read-then-write.
+    for (const [sql] of execute.mock.calls) {
+      expect(sql.toLowerCase()).not.toContain('on conflict')
+    }
   })
 
   it('renders four enable-only rows with no threshold input', async () => {
