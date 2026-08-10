@@ -10,6 +10,7 @@ import ExpenseForm from '@/features/expenses/components/ExpenseForm.vue'
 import ProfitSheet from '@/features/dashboard/components/ProfitSheet.vue'
 import CashDrawerSheet from '@/features/dashboard/components/CashDrawerSheet.vue'
 import AnomalyBanner from '@/features/dashboard/components/AnomalyBanner.vue'
+import InsightBanner from '@/features/dashboard/components/InsightBanner.vue'
 import ExchangeRateWidget from '@/features/exchange-rate/ExchangeRateWidget.vue'
 import ExchangeRateEditor from '@/features/exchange-rate/ExchangeRateEditor.vue'
 import ConnectionPill from '@/components/ui/ConnectionPill.vue'
@@ -397,6 +398,9 @@ const ACTIVITY_HEADING: Record<string, string> = { today: 'اليوم', week: '�
 
       <!-- WAFI-015: anomaly banner is the first thing an owner sees on Home. -->
       <AnomalyBanner />
+
+      <!-- WAFI-144: automatic insights (revenue/profit vs. same weekday last week). -->
+      <InsightBanner period="day" />
 
       <!-- Exchange rate must be a prominent first action on Home (Task 2 / Epic 1.5). -->
       <div class="hp-rate-row">
