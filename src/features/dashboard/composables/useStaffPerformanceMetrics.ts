@@ -20,6 +20,12 @@ export interface StaffPerformanceRow {
   salesCount: number
   // null (not 0/NaN) when salesCount is 0 — "no data," not "sold for free."
   avgTicketUsd: number | null
+  // discountUsd: sale-level discount only (SUM(sale_discount_amount_usd)),
+  // same column/precedent useAnomalyDetection.ts already uses for the
+  // shop-wide discount total — NOT line-level discounts.
+  discountUsd: number
+  // null (not 0) when revenueUsd is 0 — same "no data" convention as avgTicketUsd.
+  discountRate: number | null
 }
 
 export function useStaffPerformanceMetrics() {
@@ -27,7 +33,7 @@ export function useStaffPerformanceMetrics() {
   const rows = ref<StaffPerformanceRow[]>([])
 
   async function load(start: string, end: string) {
-    const [salesRows, cogsRows, returnRevenueRows, returnCogsRows] = await Promise.all([
+    const [salesRows, cogsRows, returnRevenueRows, returnCogsRows, discountRows] = await Promise.all([
       // Revenue + sales count per staff member who confirmed the sale
       // (sales.staff_id). Sales with no attributed operator (null staff_id)
       // are excluded — there's no employee to attribute them to.
@@ -84,11 +90,22 @@ export function useStaffPerformanceMetrics() {
          GROUP BY cs.staff_id`,
         [device.shopId, start, end]
       ),
+      // Sale-level discount total per staff member, same column/precedent as
+      // useDashboardMetrics.ts (WAFI-146 Task 1) — SUM(sale_discount_amount_usd).
+      db.getAll<{ staffId: string; discountUsd: number }>(
+        `SELECT s.staff_id AS staffId, COALESCE(SUM(sale_discount_amount_usd), 0) AS discountUsd
+         FROM sales s
+         WHERE s.shop_id = ? AND s.staff_id IS NOT NULL
+           AND DATE(s.created_at, 'localtime') BETWEEN ? AND ?
+         GROUP BY s.staff_id`,
+        [device.shopId, start, end]
+      ),
     ])
 
     const cogsMap          = new Map(cogsRows.map(r => [r.staffId, r.cogs]))
     const returnRevenueMap = new Map(returnRevenueRows.map(r => [r.staffId, r.total]))
     const returnCogsMap    = new Map(returnCogsRows.map(r => [r.staffId, r.cogs]))
+    const discountMap      = new Map(discountRows.map(r => [r.staffId, r.discountUsd]))
 
     const built = salesRows.map((s): StaffPerformanceRow => {
       const returnRevenue = returnRevenueMap.get(s.staffId) ?? 0
@@ -99,6 +116,7 @@ export function useStaffPerformanceMetrics() {
       // Avg ticket reflects gross sale size (unaffected by a later return that
       // may be attributed to a different staff member's shift).
       const avgTicketUsd  = s.salesCount > 0 ? s.grossUsd / s.salesCount : null
+      const discountUsd   = discountMap.get(s.staffId) ?? 0
 
       return {
         staffId: s.staffId,
@@ -109,6 +127,8 @@ export function useStaffPerformanceMetrics() {
         marginPct: null, // filled in below once the shop-period total is known
         salesCount: s.salesCount,
         avgTicketUsd,
+        discountUsd,
+        discountRate: revenueUsd > 0 ? (discountUsd / revenueUsd) * 100 : null,
       }
     })
 
