@@ -201,6 +201,41 @@ export default {
       month: 'last month',
     },
   },
+  // WAFI-146: Dashboard 2.0 — cards with metrics, trends, and insights
+  dashboard2: {
+    periodLabel: { today: 'Today', week: 'Week', month: 'Month' },
+    revenue: {
+      headline: { up: 'Revenue ↑{percent}%', down: 'Revenue ↓{percent}%', flat: 'Revenue unchanged' },
+      transactionCount: 'Invoice count',
+      returnCount: 'Return count',
+      avgBasket: 'Average invoice',
+      viewTransactions: 'View invoices',
+    },
+    profit: {
+      headline: { up: 'Profit ↑{percent}%', down: 'Profit ↓{percent}%', flat: 'Profit unchanged' },
+      margin: 'Margin {current}% ← {previous}% ({sign}{pp} pp)',
+      revenue: 'Revenue',
+      cogs: 'Cost of goods',
+      discounts: 'Discounts',
+    },
+    inventory: {
+      headline: '{amount}$ frozen in slow-moving stock',
+      supporting: '{count} product not sold in 60 days',
+      viewDeadStock: 'View slow-moving stock',
+    },
+    staff: {
+      topPerformer: 'Top performer: {name} — {revenue}$',
+      highestDiscountRate: 'Highest discount rate: {name} — {rate}% (shop average {shopAverage}%)',
+      viewPerformance: 'View {name}\'s performance',
+    },
+    customer: {
+      headline: '{count} inactive customer(s) for 60+ days',
+      lastPurchase: 'Last purchase: {days} days ago',
+      sendReminder: 'Send reminder',
+      viewDetail: 'View customer details',
+    },
+    placeholder: 'Details available after the period completes',
+  },
   // WAFI-015: Anomaly banner on home screen — alert banner and expand UI.
   home: {
     anomalyBannerTitle: '{count} thing(s) need your attention',

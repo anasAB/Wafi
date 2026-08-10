@@ -206,6 +206,41 @@ export default {
       month: 'الشهر الماضي',
     },
   },
+  // WAFI-146: Dashboard 2.0 — cards with metrics, trends, and insights
+  dashboard2: {
+    periodLabel: { today: 'اليوم', week: 'الأسبوع', month: 'الشهر' },
+    revenue: {
+      headline: { up: 'الإيرادات ↑{percent}%', down: 'الإيرادات ↓{percent}%', flat: 'الإيرادات بدون تغيير' },
+      transactionCount: 'عدد الفواتير',
+      returnCount: 'عدد المرتجعات',
+      avgBasket: 'متوسط الفاتورة',
+      viewTransactions: 'عرض الفواتير',
+    },
+    profit: {
+      headline: { up: 'الربح ↑{percent}%', down: 'الربح ↓{percent}%', flat: 'الربح بدون تغيير' },
+      margin: 'الهامش {current}% ← {previous}% ({sign}{pp} نقطة)',
+      revenue: 'الإيرادات',
+      cogs: 'تكلفة البضاعة',
+      discounts: 'الخصومات',
+    },
+    inventory: {
+      headline: '{amount}$ مجمّدة في مخزون راكد',
+      supporting: '{count} منتج لم يُبَع منذ 60 يوماً',
+      viewDeadStock: 'عرض المخزون الراكد',
+    },
+    staff: {
+      topPerformer: 'الأفضل أداءً: {name} — {revenue}$',
+      highestDiscountRate: 'أعلى نسبة خصم: {name} — {rate}% (متوسط المحل {shopAverage}%)',
+      viewPerformance: 'عرض أداء {name}',
+    },
+    customer: {
+      headline: '{count} زبون غير نشط منذ 60+ يوماً',
+      lastPurchase: 'آخر شراء: منذ {days} يوماً',
+      sendReminder: 'إرسال تذكير',
+      viewDetail: 'عرض تفاصيل الزبون',
+    },
+    placeholder: 'التفاصيل متاحة بعد اكتمال فترة اليوم',
+  },
   // WAFI-015: Anomaly banner on home screen — alert banner and expand UI.
   home: {
     anomalyBannerTitle: '{count} أمور تحتاج انتباهك',
