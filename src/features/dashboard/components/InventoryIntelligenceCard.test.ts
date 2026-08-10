@@ -59,9 +59,10 @@ describe('InventoryIntelligenceCard', () => {
     expect(headline.text()).toContain('500')
     expect(headline.text()).toContain('$')
 
-    // Verify the supporting text contains the product count
-    expect(wrapper.text()).toContain('1')
-    expect(wrapper.text()).toContain('منتج')
+    // Verify the supporting text contains the product count (scoped to .inv-supporting)
+    const supporting = wrapper.find('.inv-supporting')
+    expect(supporting.text()).toContain('1')
+    expect(supporting.text()).toContain('منتج')
   })
 
   it('renders top-offenders list in the exact order provided by composable', async () => {
