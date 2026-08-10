@@ -3,7 +3,7 @@ import { getNotificationSettings } from '@/services/notifications/notificationSe
 import type { DurableEvent } from '@/services/events/runDurableSubscriber'
 import type { ShiftClosedPayload } from '@/services/events/domainEvent.types'
 
-interface ShopHoursRow { close_time: string | null; is_24_7: number | null }
+interface ShopHoursRow { open_time: string | null; close_time: string | null; is_24_7: number | null }
 
 /** Registered (Task 15) as an independent `runDurableSubscriber` on `shift.closed`,
  *  alongside `handleDrawerVarianceEvent` -- two separate subscriptions on the same
@@ -14,7 +14,7 @@ export async function handleShiftLateCloseEvent(event: DurableEvent<ShiftClosedP
   if (!settings.enabled) return
 
   const shop = await db.getOptional<ShopHoursRow>(
-    `select close_time, is_24_7 from shops where id = ?`,
+    `select open_time, close_time, is_24_7 from shops where id = ?`,
     [event.shopId],
   )
   // No operating hours configured (or 24/7) -- nothing to be "late" against.
@@ -33,9 +33,23 @@ export async function handleShiftLateCloseEvent(event: DurableEvent<ShiftClosedP
   // for a legitimate close). Re-anchor expectedClose to the PREVIOUS calendar day
   // instead -- this is the worst, most-needs-flagging late-close case, and must
   // not be silently dropped just because the naive same-day anchor is wrong.
-  if (minutesLate < -720) {
-    const prevDayClose = new Date(expectedClose.getTime() - 24 * 60 * 60_000)
-    minutesLate = (closedAt.getTime() - prevDayClose.getTime()) / 60_000
+  //
+  // Guard: only re-anchor when occurredAt's local clock time is genuinely still
+  // "closed" territory -- i.e. before the shop's open_time. Without this guard, a
+  // legitimate early-morning shift handoff (e.g. close_time=21:00, morning cashier
+  // closes at 09:00) would falsely compute as ~12h "late" from the previous day's
+  // close, when it's just a normal early close unrelated to the shop's closing
+  // time. If open_time isn't configured, we can't distinguish the two cases, so
+  // the past-midnight re-anchor does not apply (consistent with "no operating
+  // hours configured" elsewhere in this rule).
+  if (minutesLate < -720 && shop.open_time) {
+    const [openH, openM] = shop.open_time.split(':').map(Number)
+    const closedAtMinutes = closedAt.getHours() * 60 + closedAt.getMinutes()
+    const openMinutes = openH * 60 + openM
+    if (closedAtMinutes < openMinutes) {
+      const prevDayClose = new Date(expectedClose.getTime() - 24 * 60 * 60_000)
+      minutesLate = (closedAt.getTime() - prevDayClose.getTime()) / 60_000
+    }
   }
 
   if (minutesLate <= settings.graceMinutes) return

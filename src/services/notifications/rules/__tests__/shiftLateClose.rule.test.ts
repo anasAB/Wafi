@@ -40,15 +40,37 @@ describe('handleShiftLateCloseEvent', () => {
     expect(db.execute).not.toHaveBeenCalled()
   })
 
-  it('fires for a past-midnight close (close_time 21:00, closed at 00:30 next day)', async () => {
+  it('fires for a past-midnight close (close_time 21:00, closed at 00:30 next day, before open_time 09:00)', async () => {
     vi.mocked(db.getOptional)
-      .mockResolvedValueOnce({ close_time: '21:00', is_24_7: 0 } as any) // shop hours lookup
+      .mockResolvedValueOnce({ close_time: '21:00', open_time: '09:00', is_24_7: 0 } as any) // shop hours lookup
       .mockResolvedValueOnce(undefined) // dedup lookup
     // Same-day anchor would compute this as ~20.5 hours EARLY (00:30 vs 21:00 the
     // same calendar day) and never fire -- the past-midnight re-anchor must kick in
-    // and recognize this as ~3.5 hours (210 min) LATE instead.
+    // and recognize this as ~3.5 hours (210 min) LATE instead. 00:30 is before the
+    // shop's 09:00 open_time, so this is genuinely still "closed" territory.
     const event = { ...baseEvent, occurredAt: '2026-01-02T00:30:00.000Z' }
     await handleShiftLateCloseEvent(event)
     expect(db.execute).toHaveBeenCalledWith(expect.stringContaining('insert into notifications'), expect.arrayContaining(['WARNING']))
+  })
+
+  it('does not fire for a legit early-morning shift handoff close at/after open_time (close_time 21:00, open_time 09:00, closed at 09:30)', async () => {
+    vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({ close_time: '21:00', open_time: '09:00', is_24_7: 0 } as any) // shop hours lookup
+    // Without the open_time guard, this would falsely re-anchor to the previous
+    // day's 21:00 close and compute ~12.5h "late". With the guard, 09:30 is AFTER
+    // open_time (09:00), so this is a normal early close -- no re-anchor, no fire.
+    const event = { ...baseEvent, occurredAt: '2026-01-02T09:30:00.000Z' }
+    await handleShiftLateCloseEvent(event)
+    expect(db.execute).not.toHaveBeenCalled()
+  })
+
+  it('does not apply the past-midnight re-anchor when open_time is not configured', async () => {
+    vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({ close_time: '21:00', open_time: null, is_24_7: 0 } as any) // shop hours lookup
+    // No open_time means we can't distinguish "still closed" from "normal early
+    // close" -- the heuristic must not apply, so this early close does not fire.
+    const event = { ...baseEvent, occurredAt: '2026-01-02T00:30:00.000Z' }
+    await handleShiftLateCloseEvent(event)
+    expect(db.execute).not.toHaveBeenCalled()
   })
 })
