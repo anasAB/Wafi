@@ -62,15 +62,16 @@ async function acknowledge(n: NotificationRow) {
 }
 
 function open(n: NotificationRow) {
+  // Clicking ANY notification marks it read -- whether or not it resolves to a
+  // route -- not just the no-resolvable-route fallback case.
+  if (!n.read_at) {
+    void db.execute(`UPDATE notifications SET read_at = ? WHERE id = ?`, [new Date().toISOString(), n.id])
+  }
   if (n.entity_type && n.entity_id) {
     const route = resolveNotificationRoute(n.entity_type, n.entity_id)
     if (route) {
       router.push(route)
-      return
     }
-  }
-  if (!n.read_at) {
-    void db.execute(`UPDATE notifications SET read_at = ? WHERE id = ?`, [new Date().toISOString(), n.id])
   }
 }
 

@@ -63,6 +63,10 @@ export function usePinLockout() {
     write(state)
 
     if (locked) {
+      // Bespoke publish (mirrors useDeviceRegistration.ts's own justification): this
+      // is a client-local-only PIN lockout with no DB write to wrap -- state lives in
+      // localStorage, not a synced table -- so there is no local-write to pair with
+      // an audit entry via executeBusinessOperation.
       void publishEvent<PinLockedOutPayload>({
         type: StaffEventType.PinLockedOut,
         entityId: crypto.randomUUID(),
