@@ -4,7 +4,7 @@
 -- Run via: npx supabase test db
 
 BEGIN;
-SELECT plan(6);
+SELECT plan(8);
 
 -- Two shops, mirroring wafi140_events_rls.test.sql's harness: an auth.users row
 -- per owner, then a shops row whose owner_user_id maps that user to
@@ -84,6 +84,30 @@ SELECT throws_ok(
   'direct INSERT into daily_event_counts is rejected -- apply_daily_event_count is the only mutation path'
 );
 
+-- 6. A nonexistent event_id must silently no-op, not jam the sync queue with an
+-- unbounded-retry error. Covers both the wrapper's own v_shop_id IS NULL branch
+-- and (transitively) _apply_daily_event_count's IF NOT FOUND branch.
+SELECT lives_ok(
+  $$SELECT apply_daily_event_count('ffffffff-ffff-ffff-ffff-ffffffffffff')$$,
+  'apply_daily_event_count silently no-ops on a nonexistent event_id instead of raising'
+);
+SELECT is(
+  (SELECT count(*)::integer FROM public.daily_event_counts WHERE source_event_id = 'ffffffff-ffff-ffff-ffff-ffffffffffff'),
+  0,
+  'a nonexistent event_id does not mutate daily_event_counts'
+);
+
+RESET ROLE;
+
+-- 7. _apply_daily_event_count itself must not be callable by authenticated --
+-- EXECUTE on PUBLIC must be explicitly revoked, not merely "not granted".
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT public._apply_daily_event_count('a1000000-0000-0000-0000-000000000001')$$,
+  '42501',
+  NULL,
+  'authenticated cannot call _apply_daily_event_count directly -- EXECUTE is revoked from PUBLIC'
+);
 RESET ROLE;
 
 SELECT * FROM finish();

@@ -46,8 +46,16 @@ export async function runOp(
   // source_event_id (see dailyEventCountsProjection.ts), which is all the server
   // call needs; the local absolute `count` value in opData is never uploaded.
   if (table === 'daily_event_counts' && (type === UpdateType.PUT || type === UpdateType.PATCH)) {
+    // A missing source_event_id (e.g. a locally-created row queued by a previous
+    // app version, before this migration existed) has nothing to apply -- calling
+    // the RPC with p_event_id: undefined would have supabase-js omit the param
+    // from the request body, producing an opaque PGRST202 schema-cache error that
+    // gets quarantined instead of a clear no-op. Treat it as a no-op directly:
+    // there is nothing to apply, and Plan 2's reconciliation rebuild is the
+    // recovery path for any local mutation that predates this migration.
+    if (!opData?.source_event_id) return null
     return (
-      await supabase.rpc('apply_daily_event_count', { p_event_id: opData?.source_event_id })
+      await supabase.rpc('apply_daily_event_count', { p_event_id: opData.source_event_id })
     ).error
   }
 

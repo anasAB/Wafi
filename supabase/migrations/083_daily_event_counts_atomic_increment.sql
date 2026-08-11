@@ -51,7 +51,18 @@ DECLARE
 BEGIN
   SELECT * INTO v_event FROM public.events WHERE id = p_event_id;
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'event % not found in authoritative log', p_event_id USING ERRCODE = 'P0002';
+    -- Do NOT raise here. A nonexistent event is not necessarily a bug on this
+    -- call's part -- the event may have been legitimately rejected upstream by
+    -- the rate limiter (076_events_rate_limit.sql) or otherwise quarantined, in
+    -- which case a dependent daily_event_counts op will forever reference an
+    -- event that will never exist. P0002 is not in ops.ts::isPermanentError's
+    -- permanent classes, so raising here would make connector.ts treat this as
+    -- transient and re-queue the WHOLE upload batch (sales, payments, shift
+    -- closes included) behind it forever. This projection is explicitly
+    -- best-effort; silently dropping it is the correct failure mode, and
+    -- Plan 2's reconciliation rebuild is the stated recovery path for anything
+    -- this drops.
+    RETURN;
   END IF;
 
   IF v_event.type <> 'sale.completed' THEN
@@ -64,7 +75,7 @@ BEGIN
   -- dailyEventCountsProjection.ts) so this fix doesn't change day attribution --
   -- only correctness of the increment itself. Swap to event_projection_day when
   -- Plan 2's migration lands.
-  v_day := v_event.occurred_at::date;
+  v_day := (v_event.occurred_at AT TIME ZONE 'UTC')::date;
 
   BEGIN
     INSERT INTO public.projection_processed_events (projection_name, event_id)
@@ -79,6 +90,13 @@ BEGIN
   DO UPDATE SET count = public.daily_event_counts.count + 1;
 END;
 $$;
+
+-- Postgres grants EXECUTE on every newly created function to PUBLIC by default;
+-- explicitly revoke it here so the "no grant to anon/authenticated" comment
+-- above actually holds -- without this, the implicit PUBLIC grant means any
+-- authenticated/anon role could call this function directly, bypassing the
+-- authorization + advisory-lock wrapper below.
+REVOKE ALL ON FUNCTION public._apply_daily_event_count(uuid) FROM public;
 
 -- Client-facing wrapper: the only entry point clients may call. Authorizes the
 -- caller against the EVENT's actual shop (never a client-claimed shop_id), then
@@ -95,7 +113,13 @@ DECLARE
 BEGIN
   SELECT shop_id INTO v_shop_id FROM public.events WHERE id = p_event_id;
   IF v_shop_id IS NULL THEN
-    RAISE EXCEPTION 'apply_daily_event_count: event % not found', p_event_id USING ERRCODE = 'P0002';
+    -- Silently no-op, matching _apply_daily_event_count's own behavior for a
+    -- nonexistent event (see comment there). This wrapper's job is authorizing
+    -- the caller against the event's shop -- there is nothing to authorize (or
+    -- protect by raising) against an event that does not exist, and raising
+    -- here would surface the same unbounded sync-queue-jam risk (P0002 is not
+    -- classified as permanent by ops.ts::isPermanentError).
+    RETURN;
   END IF;
   IF v_shop_id IS DISTINCT FROM (SELECT public.auth_shop_id()) THEN
     RAISE EXCEPTION 'apply_daily_event_count: caller is not authorized for this event''s shop' USING ERRCODE = 'P0001';
@@ -107,10 +131,25 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.apply_daily_event_count(uuid) TO anon, authenticated;
--- _apply_daily_event_count intentionally has NO grant to anon/authenticated.
+-- _apply_daily_event_count intentionally has EXECUTE explicitly revoked from
+-- PUBLIC above -- not merely "not granted" -- so no role can call it directly.
 
 -- Direct client writes are revoked, not just routed around in application code --
 -- this is what makes apply_daily_event_count the ONLY mutation path, not merely
 -- the recommended one. (SELECT stays granted; UPDATE/INSERT removed. DELETE was
--- never granted -- see 074_events_bus_core.sql.)
+-- never granted -- see 074_events_bus_core.sql. service_role intentionally keeps
+-- its INSERT/UPDATE grant -- it is a server-only role, never reachable by client
+-- code, so it is not part of the client mutation-path lockdown this migration
+-- enforces.)
 REVOKE INSERT, UPDATE ON TABLE public.daily_event_counts FROM anon, authenticated;
+
+-- Migration 074 created these RLS policies (shop-scoped INSERT/UPDATE for
+-- authenticated/anon) back when direct writes were still the mutation path.
+-- The table-grant REVOKE above already makes them unreachable, but a dead
+-- policy is a landmine: if some future migration re-grants INSERT/UPDATE on
+-- this table (066_fill_missing_table_grants.sql shows this exact pattern
+-- happening elsewhere in this repo), these stale policies would silently
+-- reopen direct writes with no test catching it. Drop them outright so there
+-- is nothing left to reopen.
+DROP POLICY IF EXISTS daily_event_counts_insert_all ON public.daily_event_counts;
+DROP POLICY IF EXISTS daily_event_counts_update_all ON public.daily_event_counts;

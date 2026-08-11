@@ -97,6 +97,21 @@ describe('runOp — daily_event_counts idempotent apply (WAFI-151)', () => {
     expect(update).not.toHaveBeenCalled()
   })
 
+  it('returns null and never calls rpc when source_event_id is missing (pre-migration local row)', async () => {
+    await runOp(UpdateType.PUT, 'daily_event_counts', 'row3', {
+      shop_id: 'shop1', event_type: 'sale.completed', day: '2026-08-11', count: 1,
+    })
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it('returns null and never calls rpc on PATCH when source_event_id is missing', async () => {
+    const err = await runOp(UpdateType.PATCH, 'daily_event_counts', 'row4', {
+      shop_id: 'shop1', event_type: 'sale.completed', day: '2026-08-11', count: 1,
+    })
+    expect(err).toBeNull()
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
   it('ignores the local absolute count value in opData -- only source_event_id is forwarded', async () => {
     // A device with a stale local view (e.g. count: 47 after a long offline stretch)
     // must not upload that absolute value -- the server derives everything from the
