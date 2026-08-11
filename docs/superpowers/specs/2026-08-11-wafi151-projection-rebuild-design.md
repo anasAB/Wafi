@@ -9,46 +9,100 @@
 
 Implementation-planning research surfaced that the spec's original premise about the two target projections was wrong in a way that isn't just wording — it's a real, pre-existing production bug:
 
-- **`daily_event_counts`** (`supabase/migrations/074_events_bus_core.sql`) has a Postgres `UNIQUE(shop_id, event_type, day)` constraint, but is populated *entirely client-side* — `src/services/events/dailyEventCountsProjection.ts` runs per-device, generates a random row `id` (`crypto.randomUUID()`), and PowerSync's generic upload path (`src/data/powersync/ops.ts`) uploads via `supabase.from('daily_event_counts').upsert({id, ...})` — **upsert by row `id`, not by the logical `(shop_id, event_type, day)` key**. Two devices for the same shop computing the same day's count independently produce two separate rows server-side, not a merged count. There is no server-side subscriber, trigger, function, or edge function that computes this table from `events` — the Postgres table is purely an upload target, and an unreliable one under multiple devices.
+- **`daily_event_counts`** (`supabase/migrations/074_events_bus_core.sql`) has a Postgres `UNIQUE(shop_id, event_type, day)` constraint, but is populated *entirely client-side* — `src/services/events/dailyEventCountsProjection.ts` runs per-device, generates a random row `id` (`crypto.randomUUID()`), and PowerSync's generic upload path (`src/data/powersync/ops.ts`) uploads via `supabase.from('daily_event_counts').upsert({id, ...})` — **upsert by row `id`, not by the logical `(shop_id, event_type, day)` key.** There is no server-side subscriber, trigger, function, or edge function that computes this table from `events` — the Postgres table is purely an upload target.
+  - **Actual observed failure mode (corrected — verified against `src/data/powersync/dead-letter.ts`):** an initial description of this bug assumed two devices would each produce a *duplicate row*. That's wrong — Supabase's `.upsert()` without an explicit `onConflict` targets the primary key (`id`) by default; a second device's insert, sharing no `id` with the first but violating the *different* `UNIQUE(shop_id, event_type, day)` constraint, raises a `23505 unique_violation` from Postgres rather than silently inserting. `ops.ts::isPermanentError` classifies `23xxx` as permanent, so `connector.ts` routes it to `quarantineOp` — the write lands in `sync_dead_letter`, requiring manual owner-triggered retry. Worse: **retrying doesn't help**, because the retried op still carries the same conflicting `(shop_id, event_type, day)` against whichever device's row already exists — it comes back `still-blocked` every time (`dead-letter.ts::retryDeadLetterOp`). The real, current bug is: **a second (or later) device's increment for an already-existing day/type permanently fails and sits invisibly in dead-letter, silently under-counting revenue, with no working manual recovery path** — not duplicate rows.
+  - **Independently of the upload-key issue, a second, more severe bug exists: even a single device's increments are only locally idempotent.** `processProjectionAtMostOnce`'s ledger (`local_event_processed_ledger`) is per-device SQLite — it stops *that device* from double-processing an event it already saw, but does nothing to stop **two different devices** from each correctly, independently processing the *same* synced event and each issuing their own increment call. Since events sync to every device for a shop, two POS terminals reacting to the same `sale.completed` would (once the upload-key bug above is fixed enough for both writes to land) double-count that one event. A per-device local ledger cannot fix this by construction — only a **server-side** ledger keyed by event ID can.
 - **`local_today_revenue_projection`** is declared `{localOnly: true}` in `src/data/powersync/schema.ts` — it has no Postgres table in any migration and never syncs anywhere. It's explicitly commented in `dashboardRevenueProjection.ts` as disposable/best-effort.
 
-**Consequence:** the original spec's "Server-Side Implementation (Postgres — primary mechanism)" section, and the client coverage check that compared against `daily_event_counts` as an authoritative value, were both designed against a projection that isn't actually authoritative today. **WAFI-151 is expanded to first make `daily_event_counts` genuinely authoritative** (fixing the upload-key bug, described below), and only then prove the rebuild contract against it. This is a real scope increase, not a documentation fix — the ticket is no longer sized at 1 sprint; treat the sprint estimate as provisional pending re-scoping with engineering.
+**Consequence:** the original spec's "Server-Side Implementation (Postgres — primary mechanism)" section, and the client coverage check that compared against `daily_event_counts` as an authoritative value, were both designed against a projection that isn't actually authoritative today, and against an incorrect description of *why*. **WAFI-151 is expanded to first make `daily_event_counts` genuinely server-enforced and idempotent per event** (fixing both bugs above, described below), and only then prove the rebuild contract against it. This is a real scope increase, not a documentation fix — the ticket is no longer sized at 1 sprint; treat the sprint estimate as provisional pending re-scoping with engineering.
 
 ## Purpose
 
 Establish a single, version-controlled recovery contract: **any derived projection must be reconstructible from the authoritative event log.** This ticket proves that contract against the two projections that exist today:
 
-- `daily_event_counts` (Postgres, becomes genuinely server-authoritative as part of this ticket — see Prerequisite Fix below; currently client-uploaded and unreliable under multiple devices)
+- `daily_event_counts` (Postgres, becomes server-enforced and idempotent-per-event as part of this ticket — see Prerequisite Fix below; currently client-uploaded, prone to permanently-failed writes under multiple devices, and not protected against cross-device double-counting even once writes succeed). This is deliberately **not** described as fully "server-authoritative" in the CQRS sense — its incremental maintenance is still client-triggered (a device processes an event, then calls the server function), not server-derived from `events` independent of any client. What this ticket delivers is: the *mutation itself* is atomic, idempotent per event, and rejects unauthorized/ineligible events — which is what "authoritative" needs to mean for the rebuild contract to be provable, even though the projection can still lag if no client happens to trigger it. The rebuild mechanism (Plan 2) is the corrective path for that lag.
 - `local_today_revenue_projection` (SQLite/PowerSync, client-only, no server counterpart — genuinely local, which simplifies its rebuild story: there is nothing cross-device to reconcile)
 
 WAFI-153's future read models (`dashboard_metrics`, `profit_cache`, `inventory_summary`, etc.) adopt this same contract rather than requiring a new recovery design. WAFI-151 does **not** build those new read model tables — that is WAFI-153's job.
 
-## Prerequisite Fix: `daily_event_counts` Upload Correctness
+## Prerequisite Fix: `daily_event_counts` Server-Side Idempotent Apply
 
-This must land before the rebuild mechanism is meaningful — rebuilding a projection that can't be correctly maintained incrementally just reintroduces the same bug on every subsequent event.
+This must land before the rebuild mechanism is meaningful — rebuilding a projection that can't be correctly maintained incrementally just reintroduces the same bugs on every subsequent event.
 
-**Root cause:** PowerSync's generic CRUD upload path (`src/data/powersync/ops.ts`) treats every table the same way — upsert-by-primary-key. That's correct for tables where the client's local row `id` *is* the durable identity. It's wrong for `daily_event_counts`, where the durable identity is the logical key `(shop_id, event_type, day)`, and every device independently mints its own random `id` for what should be the same logical row.
+**Two distinct root causes, both must be fixed:**
+1. PowerSync's generic CRUD upload path (`src/data/powersync/ops.ts`) upserts by primary key `id`, but `daily_event_counts`'s durable identity is the logical key `(shop_id, event_type, day)` — every device mints its own random `id` for what should be the same logical row, causing a `23505` conflict that gets permanently quarantined (see corrected bug narrative above), not merged.
+2. Even once writes land correctly, **idempotency must be per event, not per logical key.** Two devices independently and correctly processing the *same* synced event must not each apply their own increment — that requires knowing "has *this event* already been applied to *this projection*," which only a **server-side** ledger can answer, since the two devices don't share anything else.
 
-**Fix:** replace the generic upload path for `daily_event_counts` specifically with a dedicated, atomic server-side increment, invoked instead of the generic upsert:
+**Fix — an internal apply function, keyed by event ID, wrapped by an authorization/locking layer:**
 
-- Add a Postgres function (new migration, e.g. `083_daily_event_counts_increment.sql` or folded into the `sequence`/`event_projection_day` migration if sequencing allows):
+- **Server-side processed-event ledger** (new table, migration): logical identity `(projection_name, event_id)`, mirroring the identity already established for local ledgers earlier in this spec — just moved server-side for this projection, because this projection's correctness is a cross-device property.
   ```sql
-  CREATE OR REPLACE FUNCTION increment_daily_event_count(
-    p_shop_id uuid, p_event_type text, p_day date, p_delta integer
-  ) RETURNS void AS $$
-    INSERT INTO daily_event_counts (id, shop_id, event_type, day, count)
-    VALUES (gen_random_uuid(), p_shop_id, p_event_type, p_day, p_delta)
-    ON CONFLICT (shop_id, event_type, day)
-    DO UPDATE SET count = daily_event_counts.count + p_delta;
-  $$ LANGUAGE sql SECURITY DEFINER;
+  CREATE TABLE IF NOT EXISTS public.projection_processed_events (
+    projection_name text NOT NULL,
+    event_id        uuid NOT NULL REFERENCES public.events(id),
+    processed_at    timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (projection_name, event_id)
+  );
   ```
-  `ON CONFLICT` targets the existing `UNIQUE(shop_id, event_type, day)` constraint, so this is atomic and safe under concurrent calls from multiple devices — Postgres serializes conflicting upserts at the row level.
-- `src/data/powersync/connector.ts` / `ops.ts` needs a special case for `daily_event_counts` PUT operations: instead of `supabase.from('daily_event_counts').upsert(...)`, call `supabase.rpc('increment_daily_event_count', {...})` with `p_delta = 1` (or `-1` if a future event type represents a decrement — not needed for the event types in scope today).
-- **This becomes the real `applyEvent` for `daily_event_counts` on the incremental path**: `dailyEventCountsProjection.ts`'s local read-then-write logic against the local SQLite view is replaced by a call that ultimately performs the atomic server-side increment. The client-side row read/write pattern in that file today is what let the bug happen — the fix removes local read-modify-write for this table's count value entirely, deferring the actual increment to the server call.
-- **Rebuild must use the same increment operation**, not a separate SQL replay path — for a scoped rebuild, this means: delete the target scope's rows, then call `increment_daily_event_count` once per relevant event (or an equivalent bulk form that's provably equivalent), inside the rebuild's transaction. This keeps "incremental == replay" true for the actual mutation operation, not just conceptually.
-- **This does not require inventing a full server-side event-driven subscriber system.** The trigger for the increment remains client-initiated (a device processes an event locally, then calls the RPC) — what changes is that the *mutation itself* is now atomic and keyed correctly, so it's safe regardless of how many devices trigger it. This is a much smaller fix than building genuine server-side event consumption, and is sufficient to make the projection authoritative.
+  The primary key itself is what makes "apply at most once per event" enforceable — a second attempt to insert the same `(projection_name, event_id)` fails, and the increment only proceeds if that insert succeeded.
+- **Internal apply function** (not directly callable by clients — no client-facing grant): takes an `event_id`, looks up the event row itself rather than trusting client-supplied dimensions, and derives `shop_id`, `event_type`, and the projection day (`event_projection_day`, once that column exists — see Canonical Replay Ordering) from the authoritative event. It rejects events that don't exist, aren't eligible for this projection (event type not in the projection's declared subset — currently just `sale.completed`), or are missing required columns. It inserts into the ledger first; the increment happens only if that insert succeeded (i.e., this event hadn't already been applied to this projection by any device).
+  ```sql
+  CREATE OR REPLACE FUNCTION public._apply_daily_event_count(p_event_id uuid)
+  RETURNS void LANGUAGE plpgsql AS $$
+  DECLARE
+    v_event public.events;
+  BEGIN
+    SELECT * INTO v_event FROM public.events WHERE id = p_event_id;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'event % not found in authoritative log', p_event_id USING ERRCODE = 'P0002';
+    END IF;
+    IF v_event.type <> 'sale.completed' THEN
+      RETURN; -- not eligible for this projection; not an error, just a no-op
+    END IF;
 
-**Everything below this point (Core Architectural Invariant onward) assumes this fix is in place** — "the incremental path" for `daily_event_counts` means "a client-triggered call to `increment_daily_event_count`," not the old local-upsert-by-random-id path.
+    BEGIN
+      INSERT INTO public.projection_processed_events (projection_name, event_id)
+      VALUES ('daily_event_counts', p_event_id);
+    EXCEPTION WHEN unique_violation THEN
+      RETURN; -- already applied by this or another device -- exactly-once, no-op on repeat
+    END;
+
+    INSERT INTO public.daily_event_counts (id, shop_id, event_type, day, count)
+    VALUES (gen_random_uuid(), v_event.shop_id, v_event.type, v_event.event_projection_day, 1)
+    ON CONFLICT (shop_id, event_type, day)
+    DO UPDATE SET count = public.daily_event_counts.count + 1;
+  END;
+  $$;
+  ```
+  (References `v_event.event_projection_day`, which does not exist until the Canonical Replay Ordering migration lands — see Migration Sequencing note below.)
+- **Client-facing wrapper function** (this is what clients actually call, and what gets `GRANT EXECUTE`): authenticates the caller's shop against the event's actual shop (never trusts a client-claimed shop), acquires the same shop+projection advisory lock the rebuild path uses (so an incremental apply can never land mid-rebuild), then calls the internal apply function.
+  ```sql
+  CREATE OR REPLACE FUNCTION public.apply_daily_event_count(p_event_id uuid)
+  RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+  DECLARE
+    v_shop_id uuid;
+  BEGIN
+    SELECT shop_id INTO v_shop_id FROM public.events WHERE id = p_event_id;
+    IF v_shop_id IS NULL OR v_shop_id IS DISTINCT FROM (SELECT public.auth_shop_id()) THEN
+      RAISE EXCEPTION 'apply_daily_event_count: caller is not authorized for this event''s shop' USING ERRCODE = 'P0001';
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtext('daily_event_counts' || v_shop_id::text));
+    PERFORM public._apply_daily_event_count(p_event_id);
+  END;
+  $$;
+  GRANT EXECUTE ON FUNCTION public.apply_daily_event_count(uuid) TO anon, authenticated;
+  -- Internal function is never granted to anon/authenticated -- only reachable via the wrapper
+  -- above, or directly by the rebuild function (Plan 2), which already holds the same lock.
+  ```
+- **`src/data/powersync/ops.ts` special-case**: `daily_event_counts` PUT/PATCH calls `supabase.rpc('apply_daily_event_count', { p_event_id: opData?.source_event_id })` — the local mutation must carry the originating event's ID (add a `source_event_id` column to the local write, mirroring the existing pattern already used for `audit_log`/`notifications` dedup in this same file) so the server call can look up the real event rather than trusting client-supplied dimensions at all.
+- **`dailyEventCountsProjection.ts`'s local read-then-write logic is removed entirely for the count value** — the local write becomes a lightweight marker carrying `source_event_id` (for `ops.ts` to forward) rather than a locally-computed absolute count; the actual increment is deferred to the server call.
+- **Direct client writes are revoked, not just routed around**: `REVOKE INSERT, UPDATE ON TABLE public.daily_event_counts FROM anon, authenticated;` — the table's own RLS/grants no longer permit any path except through `apply_daily_event_count` (or the rebuild function, which is `SECURITY DEFINER` and unaffected by this revoke). This closes the gap where a future code change could accidentally reintroduce a raw write path.
+- **Rebuild (Plan 2) must call the same internal apply function**, inside its own single transaction, not loop over client-facing RPC calls — a loop of independent `supabase.rpc()` calls each commits separately and cannot provide the rebuild's required all-or-nothing rollback guarantee. Concretely, the scoped rebuild itself should be a single Postgres function (invoked once via one RPC call) that internally: acquires the shop+projection lock, deletes the target scope's projection rows *and* its `projection_processed_events` ledger entries (so replayed events aren't skipped as "already applied"), replays by calling `_apply_daily_event_count` per relevant event, validates, and returns — succeeding or failing as one atomic unit. This detail is carried forward into Plan 2.
+- **Historical reconciliation is part of this rollout, not deferred**: existing `daily_event_counts` data was populated by the buggy client-upload path and cannot be trusted. The first production use of the rebuild mechanism (once Plan 2 ships) must be a full reconciliation rebuild of existing data from the authoritative event log — WAFI-151 does not ship treating current production values as correct.
+
+**Migration sequencing note:** the internal apply function references `events.event_projection_day`, which is introduced later in this spec (Canonical Replay Ordering) as part of Plan 2's migration. Plan 1 and Plan 2's migrations must land in the right order, or Plan 1's function needs a temporary fallback (e.g. deriving day from `occurred_at` directly until `event_projection_day` exists) — this ordering constraint is called out explicitly in each plan rather than assumed.
+
+**Everything below this point (Core Architectural Invariant onward) assumes this fix is in place** — "the incremental path" for `daily_event_counts` means "a client-triggered call to `apply_daily_event_count`, idempotent per event ID," not the old local-upsert-by-random-id path.
 
 ## Core Architectural Invariant
 
@@ -86,7 +140,8 @@ The full guarantee is: **incremental processing and replay consume the same auth
 The correct mechanism:
 
 - **Processed-event identity is `(projection_name, event_id)`**, not event ID alone — the same event can feed multiple projections (e.g. a `sale.completed` event affects both `daily_event_counts` and, eventually, other WAFI-153 read models), and each projection's "have I applied this?" state must be tracked independently. If the existing `local_subscriber_processed_events` ledger's schema differs, this is the logical identity it must preserve, not a literal column prescription. A successful application records that exact `(projection_name, event_id)` pair; ledger entries are never shared across projections.
-- The existing processed-event ledger (keyed by this `(projection_name, event_id)` identity, not by sequence) is the sole source of truth for "has this event been applied to this projection scope?" Incremental processing checks the ledger by that identity before applying, not a sequence threshold. Re-delivery of an already-applied event is a no-op, exactly as the existing durable-subscriber machinery already guarantees.
+- The processed-event ledger (keyed by this `(projection_name, event_id)` identity, not by sequence) is the sole source of truth for "has this event been applied to this projection scope?" Incremental processing checks the ledger by that identity before applying, not a sequence threshold. Re-delivery of an already-applied event is a no-op, exactly as the existing durable-subscriber machinery already guarantees.
+- **The ledger's locality must match the projection's authority.** A client-local projection (`local_today_revenue_projection`) can safely use a local per-device ledger (`local_event_processed_ledger`) — nothing outside that device needs to agree on what it's already applied. A projection with any cross-device correctness requirement (`daily_event_counts`, since multiple devices for one shop see the same events) **must** use a server-side ledger (`projection_processed_events`, see Prerequisite Fix) — a local ledger cannot prevent two different devices from each independently, correctly applying the same event, because the two devices don't share it. Using a local-only ledger for a server-authoritative projection is not a smaller version of the correct design; it does not solve the problem at all.
 - `sequence` is used only to *order* replay/application deterministically where multiple events are visible at once — never to *decide whether to skip* an event. A lower-sequence event that becomes visible after a higher-sequence event has already been applied is still applied, exactly once, keyed by its own event ID.
 - Rebuild records, in the same ledger, exactly the event IDs it applied — no more, no less. Rebuild does not advance any broader high-water mark; it only marks the specific events it replayed as processed for that scope.
 - The lock described under Concurrency (below) serializes *projection mutation* for a scope. It does **not** prevent new events from being inserted into `events` during a rebuild — that's fine, because correctness no longer depends on the rebuild seeing every event that will ever exist. Any event not seen by the rebuild simply isn't marked processed, and subsequent incremental processing (checking the ledger by ID) applies it normally, once, whenever it becomes visible.
@@ -134,7 +189,7 @@ Given that, "relevant events" for a scoped rebuild of projection P for shop S an
 
 **Execution (batched, per-scope transactions):**
 1. Resolve the concrete scope(s) to rebuild — for a single shop+range, one scope; for `--all`, this expands to one scope per shop (see below).
-2. For each scope, in its own transaction: `BEGIN` → delete rows in that scope → replay relevant events `ORDER BY sequence ASC` through the shared `applyEvent` handler → validate lightweight invariants (projection-specific — see below) → `COMMIT` on success, `ROLLBACK` on any replay/validation failure, leaving that scope's previous state fully intact.
+2. **Each scope's rebuild is one Postgres function, invoked once, not a client-side loop of per-event RPC calls.** A Node/TS loop issuing one `supabase.rpc()` call per event would have each call commit independently through PostgREST, which cannot provide the all-or-nothing rollback this design requires. Instead, the CLI calls a single rebuild function per scope (e.g. `rebuild_daily_event_counts_scope(shop_id, from, to)`) that internally, in one transaction: acquires the shop+projection lock → deletes projection rows in that scope → deletes `projection_processed_events` ledger entries for that scope (so replayed events aren't rejected as already-applied) → replays relevant events `ORDER BY sequence ASC`, calling the internal per-event apply logic for each → validates lightweight invariants (projection-specific — see below) → `COMMIT` on success, `ROLLBACK` on any replay/validation failure, leaving that scope's previous state (projection rows *and* ledger entries) fully intact. The CLI's job is argument parsing, scope resolution, and reporting results — the actual transactional work happens server-side, in one call.
 3. Progress and per-scope success/failure are logged; a failure in one scope does not abort scopes already committed, and the CLI reports which scopes succeeded/failed for retry.
 
 Postgres transaction isolation means readers observe either the old projection or the new one for a given scope — never a partially rebuilt state.
@@ -165,7 +220,7 @@ The invariant is: **a projection scope cannot be rebuilt concurrently with an in
 
 **Architectural invariant (not an assumption):** `daily_event_counts` is defined as the server-authoritative count of the exact event subset required by `local_today_revenue_projection`, keyed by `(shop_id, day)`. This must hold by construction — the projection that populates `daily_event_counts` and the projection logic for `local_today_revenue_projection` must be counting the same event subset — otherwise the coverage check below is meaningless.
 
-- The client coverage check compares its local count of that exact event subset against this authoritative count: `local COUNT(*) == daily_event_counts(shop_id, day)`. Plain `COUNT(*)` is sufficient here — `events.id` is the local SQLite primary key, so duplicate local rows for the same event cannot exist by construction; `COUNT(DISTINCT id)` would add no additional guarantee.
+- The client coverage check compares its local count of that exact event subset against this authoritative count: `local COUNT(*) WHERE type = 'sale.completed' == daily_event_counts(shop_id, event_type='sale.completed', day)`. **`daily_event_counts`'s real key is `(shop_id, event_type, day)`, not just `(shop_id, day)`** — today this doesn't need a sum across multiple event types, because `local_today_revenue_projection` depends on exactly one event type (`sale.completed`); if a future version depends on more than one, the check generalizes to comparing against the sum of the relevant `daily_event_counts` rows for that day, one per contributing event type. Plain `COUNT(*)` is sufficient here — `events.id` is the local SQLite primary key, so duplicate local rows for the same event cannot exist by construction; `COUNT(DISTINCT id)` would add no additional guarantee.
 - **This is honestly a cardinality check against the last-synced authoritative count, not a mathematical proof of set equality.** It relies on `daily_event_counts` itself being current (see dependency note below) and does not detect a missing-plus-extra-event pair that happens to cancel out exactly. A stronger guarantee — e.g. a synced checksum/hash of the event set, or a `last_event_sequence` watermark on `daily_event_counts` — is a reasonable future improvement (see Follow-ups) but is not built in this ticket. The CLI output reports the rebuild as "coverage check passed against the synced count as of last sync," not as "coverage proven," to avoid overstating the guarantee.
 - **A missing `daily_event_counts` row for the requested day is treated as coverage-unavailable, not as an authoritative zero.** If the row simply hasn't synced yet, treating its absence as "zero events" would let a rebuild silently and incorrectly "pass" against local event count zero. Coverage passes only when a `daily_event_counts` row is present and matches — never inferred from absence. (Materializing explicit zero-count rows for empty-but-synced days is a possible future refinement if this proves too strict in practice; not built in this ticket.)
 - **Local events without a server-assigned `sequence` (not-yet-synced, locally-authored events) in the requested scope are treated as a coverage failure**, not silently included or silently excluded — the rebuild aborts rather than replaying a set that mixes sequenced and unsequenced events.
@@ -194,7 +249,12 @@ Engineer-invoked CLI/dev-tooling only, for both server and client rebuilds. No a
 
 ## Acceptance Criteria
 
-0. **Prerequisite:** two devices for the same shop independently processing the same `sale.completed` event's projection for the same `(shop_id, event_type, day)` produce a **single** correctly-incremented `daily_event_counts` row server-side, not duplicate rows — verified with a concurrent-upload test simulating two devices calling `increment_daily_event_count` for the same logical key. This must pass before any of the criteria below are meaningful, since they all assume `daily_event_counts` is genuinely authoritative.
+0. **Prerequisite (revised — event-ID based, not just logical-key based):**
+   - Given one authoritative event ID, concurrent or repeated calls to `apply_daily_event_count` for that event result in **exactly one** projection increment and exactly one `projection_processed_events` entry — regardless of how many devices attempt it, or how many times a retry occurs.
+   - Given two distinct event IDs for the same `(shop_id, event_type, day)`, the count increments **twice** (once per event) — this is the case the original AC #0 described, and remains correct, but is only half the requirement.
+   - A device cannot call `apply_daily_event_count` for an event belonging to another shop — the call fails without mutating `daily_event_counts` or the ledger.
+   - Direct client `INSERT`/`UPDATE` against `daily_event_counts` (bypassing the apply function) is rejected by Postgres grants, not merely avoided by application code.
+   - All four bullets must pass before any of the criteria below are meaningful, since they all assume `daily_event_counts` is genuinely idempotent-per-event and access-controlled.
 1. `daily_event_counts` for a given shop + date range can be deleted and deterministically rebuilt to the same state via the CLI.
 2. `local_today_revenue_projection` rebuilds successfully when the coverage check passes, and safely refuses (no changes, clear message) when it does not — including when in-scope local events are missing a server-assigned `sequence`, and when the authoritative `daily_event_counts` row for the requested day is absent (treated as unavailable, not zero).
 3. Rebuild and normal incremental processing produce identical results for the same event set (proves no drift between the two code paths), including after both have run against the same events in either order.
