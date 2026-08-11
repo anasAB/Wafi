@@ -123,6 +123,29 @@ on rounding. **This is a change from today's schema**, where `sales.total_usd` e
 real/float — `profit_cache` does not inherit that representation; it's a deliberate improvement
 scoped to the new table, not a retrofit of existing sales tables (out of scope here).
 
+**Unit of every payload field feeding this table — verified against the actual code, not
+assumed from field naming.** `src/data/powersync/schema.ts` declares `sales.total_usd`,
+`unit_price_usd`, `unit_cost_usd`, `line_total_usd`, `sale_discount_amount_usd` — every
+USD/SYP-suffixed column in the schema — as `column.real`, and `sales.service.ts` writes
+`input.totalUsd` straight from cart totals into `total_usd` with no cents conversion anywhere
+in that path. **`SaleCompletedPayload.totalUsd` and every other `*Usd`/`*Syp` field on every
+existing event payload is fractional dollars (e.g. `19.99`), not cents.** This applies equally
+to the new fields this ticket adds (`cogsUsd`, `discountUsd`, `cogsReversalUsd`,
+`expense.recorded`'s existing `amountUsd`) — they're computed from the same real/float source
+columns, so they inherit the same unit.
+
+**Acceptance criterion:** before implementation, confirm and document the unit of every
+financial payload field feeding `profit_cache` against its actual producer code and at least
+one real fixture value — not inferred from the field name. **`_apply_profit_cache` must never
+cast a dollar-denominated payload field directly to `bigint`** — every dollar value is
+converted with `ROUND(value * 100)::bigint` at the point of extraction (shown in the apply
+function below), and the historical backfill script (see Payload changes) applies the same
+`* 100` conversion when reading `sales`/`sale_line_items`/`returns`/`expenses` directly. The
+read side (`useProfitCache()`) converts back — `cents / 100.0` — before exposing any USD/SYP
+figure to a caller, so every consumer still receives ordinary dollar values exactly as
+`useDashboardMetrics()` provides today; the cents representation is an internal storage/
+arithmetic detail of `profit_cache` alone; it never appears past `useProfitCache()`'s boundary.
+
 **Read-time derived fields (not stored, computed from the raw sums above):**
 
 ```
@@ -194,14 +217,19 @@ applies the decrement to that day's row, not the return's. This is a targeted fi
 handler, not a general cross-day attribution framework — the generic problem WAFI-151 deferred
 remains deferred for any future projection that needs it.
 
-**Failure mode this introduces, and why it's acceptable:** if the original `sale.completed`
-event hasn't been applied yet when the return event is processed (e.g. sync order, or the sale
-predates this projection's coverage start — see below), the lookup finds no row and the
-decrement is silently skipped rather than erroring. This under-counts the divergence rather than
-crashing or double-decrementing — the same "safe direction" property the first draft's simpler
-approach had, now narrowed to one specific, well-understood edge case (out-of-order sync of a
-same-shop sale/return pair) instead of applying to every fully-returned costless sale
-unconditionally.
+**Ordering hazard, found and fixed, not merely accepted:** an earlier draft applied the
+decrement via a bare `UPDATE ... WHERE day = v_sale_day`. If the return event is processed
+before its own `sale.completed` event — a real possibility, since the event bus makes no
+ordering guarantee between a sale and a later return on it — that `UPDATE` matches zero rows
+(no `profit_cache` row exists for that day yet) and silently loses the decrement forever, since
+the ledger has already marked the return as applied and it is never retried. `sale.completed`'s
+later `+1` would then land uncontested, leaving `costless_sale_count` off by one permanently.
+The fix is an `INSERT ... ON CONFLICT DO UPDATE` (upsert) seeding `-1` if no row exists yet,
+exactly like every other branch in this function — so the decrement is never lost regardless of
+which event is applied first: sale-first nets `+1` then `-1` = `0`; return-first nets `-1` then
+`+1` = `0`. The only remaining no-op case is `v_sale_day IS NULL` — the original `sale.completed`
+event doesn't exist in the log at all, a data-integrity question upstream of this projection,
+not an ordering question this design needs to solve.
 
 **`expense.recorded` semantics — reconciled against the actual event/table, not assumed:**
 `ExpenseRecordedPayload` (`domainEvent.types.ts`) has exactly one currency field, `amountUsd`
@@ -224,12 +252,16 @@ event elsewhere in `domainEvent.types.ts`) mutates that same underlying data out
 types identified here. If one is found, it's added to the mapping table before implementation,
 not discovered as a production gap after cutover.
 
-All numeric projection updates are additive and order-independent once each event's immutable
-financial snapshot and `event_projection_day` are established — the same class of guarantee
-`daily_event_counts` relies on, so WAFI-151's sequence/ordering machinery applies without new
-handler-level reasoning about ordering. (Precision note: this describes the arithmetic, not the
-event semantics — `sale.returned`'s restock-aware COGS-reversal computation and the
-`costless_sale_count` caveat above are genuine business logic, not "just a sum.")
+All *independent* financial aggregate updates (revenue, COGS, expenses, refunds, discounts,
+invoice/return counts) are additive and order-independent once each event's immutable financial
+snapshot and `event_projection_day` are established — the same class of guarantee
+`daily_event_counts` relies on, so WAFI-151's sequence/ordering machinery applies to them without
+new handler-level reasoning. **This is not a blanket claim covering every column.**
+`costless_sale_count`'s state-transition adjustment (the fully-returned-costless decrement,
+above) is genuine cross-event business logic, not a plain sum — it is handled explicitly by its
+own upsert-based logic specifically *because* plain additivity doesn't hold for it, and that
+handler was designed and tested to be order-independent on its own terms (see the ordering-hazard
+fix above), not by inheriting the general commutative-sum guarantee.
 
 **Payload changes required (payload_version bump on `sale.completed` and `sale.returned`):**
 
@@ -247,13 +279,19 @@ event semantics — `sale.returned`'s restock-aware COGS-reversal computation an
 Every `sale.completed`/`sale.returned` event recorded before this payload_version bump ships
 lacks `cogsUsd`/`discountUsd`/`hasCostlessLine`/`cogsReversalUsd` by construction — there is no
 way to recover them from the event payload alone (Option B from review, not Option A: existing
-events are *not* already versioned with sufficient information). `_apply_profit_cache` treats
-any event whose `payload_version` predates this rollout as **not eligible for this projection**
-— skip (no-op, ledger-recorded as processed so it isn't retried forever), not a loud failure,
-because "this event predates profit tracking" is an expected, permanent condition for every
-historical event, not a transient error to surface to an operator. (This differs from WAFI-151's
-loud-failure rule, which is for an *unrecognized future* version arriving unexpectedly — an old,
-known-and-expected version is a different case and gets a different response.)
+events are *not* already versioned with sufficient information).
+
+**`_apply_profit_cache` implements a concrete three-way version gate, not a binary
+current/skip check** (see the function body below): `payload_version = 1` (the shape that
+exists today, before this ticket) is a **known historical version** — treated as a permanent,
+expected no-op, ledger-recorded so it's never retried, never an error; `payload_version = 2`
+(introduced by this ticket) is the **current supported version** — processed normally;
+`payload_version > 2` is **unrecognized future schema** — loud failure (`RAISE EXCEPTION`),
+matching WAFI-151's rule for an unexpected future version arriving before this function is
+updated to understand it. Collapsing "known-old" and "unrecognized-future" into one "not
+current" bucket would be wrong — the first is an expected, permanent condition for every
+historical event; the second is exactly the drift-detection WAFI-151's loud-failure rule exists
+to catch, and silently no-op'ing it would hide that drift instead of surfacing it.
 
 **Consequence: `profit_cache` has a coverage start date** — the day this payload_version ships.
 **Backfilling pre-coverage history is mandatory before cutover, not optional** — the stated
@@ -302,6 +340,26 @@ BEGIN
     RAISE EXCEPTION 'event % not found in authoritative log', p_event_id USING ERRCODE = 'P0002';
   END IF;
 
+  -- payload_version gate: three-way, not a binary current/skip check (see design note below
+  -- this function). 1 is the pre-COGS-fields version this ticket's migration ships against;
+  -- 2 is the version this ticket introduces. Any version below 1 doesn't exist; any version
+  -- above 2 is unrecognized future schema this function was never built for.
+  IF v_event.payload_version IS NULL OR v_event.payload_version < 1 THEN
+    RAISE EXCEPTION 'event % has invalid payload_version %', p_event_id, v_event.payload_version
+      USING ERRCODE = 'P0003';
+  ELSIF v_event.payload_version = 1 THEN
+    -- Known historical shape: predates cogsUsd/discountUsd/etc. Not an error -- this is the
+    -- coverage-start-date boundary itself. Still recorded in the ledger so it's never retried.
+    INSERT INTO public.projection_processed_events (projection_name, event_id)
+    VALUES ('profit_cache', p_event_id)
+    ON CONFLICT DO NOTHING;
+    RETURN;
+  ELSIF v_event.payload_version > 2 THEN
+    RAISE EXCEPTION 'event % has payload_version % newer than this function supports',
+      p_event_id, v_event.payload_version USING ERRCODE = 'P0004';
+  END IF;
+  -- Only payload_version = 2 falls through past this point.
+
   BEGIN
     INSERT INTO public.projection_processed_events (projection_name, event_id)
     VALUES ('profit_cache', p_event_id);
@@ -310,11 +368,17 @@ BEGIN
   END;
 
   IF v_event.type = 'sale.completed' THEN
+    -- ROUND(dollars * 100)::bigint -- every *Usd/*Syp payload field is fractional dollars
+    -- (verified against sales.service.ts/schema.ts, see note above), never pre-converted to
+    -- cents by the producer. Casting the raw JSONB text directly to bigint would silently
+    -- truncate cents (19.99 -> 19) -- this conversion is not optional decoration.
     INSERT INTO public.profit_cache (shop_id, day, revenue_usd, revenue_syp, cogs_usd,
       discount_usd, invoice_count, costless_sale_count, source_event_id)
     VALUES (v_event.shop_id, v_event.event_projection_day,
-      (v_event.payload->>'totalUsd')::bigint, (v_event.payload->>'totalSyp')::bigint,
-      (v_event.payload->>'cogsUsd')::bigint, (v_event.payload->>'discountUsd')::bigint,
+      ROUND((v_event.payload->>'totalUsd')::numeric * 100)::bigint,
+      ROUND((v_event.payload->>'totalSyp')::numeric * 100)::bigint,
+      ROUND((v_event.payload->>'cogsUsd')::numeric * 100)::bigint,
+      ROUND((v_event.payload->>'discountUsd')::numeric * 100)::bigint,
       1, CASE WHEN (v_event.payload->>'hasCostlessLine')::boolean THEN 1 ELSE 0 END,
       p_event_id)
     ON CONFLICT (shop_id, day) DO UPDATE SET
@@ -337,7 +401,8 @@ BEGIN
     INSERT INTO public.profit_cache (shop_id, day, refunds_usd, cogs_reversal_usd, return_count,
       source_event_id)
     VALUES (v_event.shop_id, v_event.event_projection_day,
-      (v_event.payload->>'refundAmountUsd')::bigint, (v_event.payload->>'cogsReversalUsd')::bigint, 1,
+      ROUND((v_event.payload->>'refundAmountUsd')::numeric * 100)::bigint,
+      ROUND((v_event.payload->>'cogsReversalUsd')::numeric * 100)::bigint, 1,
       p_event_id)
     ON CONFLICT (shop_id, day) DO UPDATE SET
       refunds_usd = profit_cache.refunds_usd + EXCLUDED.refunds_usd,
@@ -354,15 +419,29 @@ BEGIN
           WHERE type = 'sale.completed' AND payload->>'saleId' = v_event.payload->>'saleId'
           LIMIT 1;
         IF v_sale_day IS NOT NULL THEN
-          UPDATE public.profit_cache SET costless_sale_count = costless_sale_count - 1, updated_at = now()
-            WHERE shop_id = v_event.shop_id AND day = v_sale_day;
-        END IF; -- original sale's row not found/not yet applied: nothing to decrement (see below)
+          -- UPSERT, not a bare UPDATE -- if sale.completed hasn't been applied yet (events can
+          -- arrive out of order; PowerSync/the event bus make no ordering guarantee between a
+          -- sale and its later return), profit_cache has no row for v_sale_day yet. A plain
+          -- UPDATE would match zero rows and silently lose the decrement forever -- the ledger
+          -- already marks this return event as processed, so it is never retried. The INSERT
+          -- branch seeds costless_sale_count at -1 for that day; sale.completed's own INSERT
+          -- (whenever it arrives, in either order) adds its +1 on top via the same ON CONFLICT
+          -- path, netting to 0 regardless of which event is applied first.
+          INSERT INTO public.profit_cache (shop_id, day, costless_sale_count, source_event_id)
+          VALUES (v_event.shop_id, v_sale_day, -1, p_event_id)
+          ON CONFLICT (shop_id, day) DO UPDATE SET
+            costless_sale_count = profit_cache.costless_sale_count - 1,
+            updated_at = now();
+        END IF; -- v_sale_day IS NULL: original sale.completed event doesn't exist in the log at
+                -- all (data integrity issue upstream, not an ordering issue) -- nothing to key
+                -- the decrement to; this is the one case that remains a silent no-op.
       END;
     END IF;
 
   ELSIF v_event.type = 'expense.recorded' THEN
     INSERT INTO public.profit_cache (shop_id, day, expenses_usd, source_event_id)
-    VALUES (v_event.shop_id, v_event.event_projection_day, (v_event.payload->>'amountUsd')::bigint,
+    VALUES (v_event.shop_id, v_event.event_projection_day,
+      ROUND((v_event.payload->>'amountUsd')::numeric * 100)::bigint,
       p_event_id)
     ON CONFLICT (shop_id, day) DO UPDATE SET
       expenses_usd = profit_cache.expenses_usd + EXCLUDED.expenses_usd,
@@ -443,7 +522,15 @@ day's data is ever found wrong, its fix is re-running (a corrected) backfill for
   category — losing a local marker write is recoverable via rebuild, matching the decision
   rule). On each event, does a read-then-insert-or-update against the local `(shop_id, day)`
   row exactly like `dashboardRevenueProjection.ts`'s existing pattern, but **only writes
-  `source_event_id = event.id`** — no local computation of the metric columns. **This is the
+  `source_event_id = event.id`** — no local computation of the metric columns. **Explicit
+  invariant: the local marker write may mutate `source_event_id` only. It must never
+  increment, decrement, or otherwise derive any financial/count column
+  (`revenue_usd`, `cogs_usd`, `costless_sale_count`, etc.) — those are mutated exclusively by
+  `apply_profit_cache()`, server-side. This holds even incidentally: a local
+  read-then-insert-or-update must not carry forward or recompute a metric value as part of
+  writing the marker, since doing so would be exactly the local-optimistic-state-diverging-
+  from-server-state bug WAFI-151 fixed for `daily_event_counts`, reintroduced for
+  `profit_cache` by a different route.** **This is the
   same "one table, two meanings" mechanism WAFI-151 established for `daily_event_counts`, not a
   new design**: verified directly against migration `083` (`ALTER TABLE daily_event_counts ADD
   COLUMN source_event_id...`) and `_apply_daily_event_count`'s `INSERT ... source_event_id`,
@@ -536,6 +623,20 @@ requirement:
 11. **Rebuild boundary test:** attempt `projections:rebuild -- profit_cache` with a `from` date
     preceding the shop's coverage start date; assert it fails fast with no mutation, rather than
     deleting backfilled rows it can't regenerate.
+12. **Return-before-sale ordering test (regression test for the ordering hazard found and fixed
+    above):** apply a `sale.returned` event (full return of a costless sale) *before* its own
+    `sale.completed` event has been applied; assert `costless_sale_count` nets to exactly `0`
+    once both are applied, regardless of order — run both orderings (return-first and
+    sale-first) and assert identical final state.
+13. **payload_version three-way gate test:** a `payload_version = 1` event is ledger-recorded
+    and produces no `profit_cache` mutation (not an error); a `payload_version = 2` event
+    processes normally; a `payload_version = 3` (or any value > 2) event raises loudly with no
+    partial mutation — all three asserted in the same test, not just the current-version case.
+14. **Cents-conversion correctness test:** feed a `sale.completed` event with `totalUsd: 19.99`
+    (a value chosen specifically because a naive `::bigint` cast would silently truncate it to
+    `19`) and assert `profit_cache.revenue_usd = 1999`, and separately that `useProfitCache()`
+    reads it back as `19.99`, not `19` or `1999`. This is the direct regression test for the
+    unit-verification acceptance criterion above.
 
 ## Out of scope
 
@@ -559,6 +660,9 @@ requirement:
 | `profit_usd` stored as a column and drifting from its inputs | Not stored — always computed at read time by netting revenue/COGS first, then combining (worked-example test in this spec catches the gross-vs-net error class directly) |
 | Six call sites migrated inconsistently, some left on old composable | Explicit call-site list in this spec; `useDashboardMetrics.ts` deletion is step 7 of the mandatory rollout sequence, gated on backfill (steps 3-4) actually completing, never assumed automatic on cutover |
 | Historical events lack the new payload fields, silently producing wrong or missing profit_cache rows for old periods | Mandatory pre-cutover backfill (not optional) closes the gap once, directly from source tables; `_apply_profit_cache` no-ops (not loud-fails) on pre-rollout `payload_version` for any event somehow still reaching it after backfill |
-| Cross-day costless-count decrement corrupts the wrong day's row, or double-decrements | Decrement is applied to the original sale's `event_projection_day` (looked up by `saleId`), never the return's own day; skipped (not errored) if the original sale's row isn't found, since `isFullReturn` can be true for at most one return per sale |
+| Cross-day costless-count decrement corrupts the wrong day's row, or double-decrements | Decrement is applied to the original sale's `event_projection_day` (looked up by `saleId`), never the return's own day; `isFullReturn` can be true for at most one return per sale |
+| Return event processed before its own sale.completed event (no ordering guarantee between them) permanently loses the costless decrement | Decrement uses an upsert (`INSERT ... ON CONFLICT DO UPDATE`), not a bare `UPDATE` — nets to 0 regardless of which event applies first; verified by an explicit both-orderings test |
+| An old event without the new payload fields reaches the apply function and crashes on a missing JSON key, or a genuinely-unrecognized future version is silently no-op'd and its drift hidden | Explicit three-way `payload_version` gate: known-old (1) = permanent no-op, current (2) = process, unrecognized-future (>2) = loud failure — never collapsed into a single "not current" bucket |
+| Dollar-denominated payload fields (`totalUsd: 19.99`) cast directly to `bigint` silently truncate cents | Verified against `schema.ts`/`sales.service.ts` that every `*Usd`/`*Syp` field is fractional dollars, never pre-converted; every extraction uses `ROUND(value * 100)::bigint`, and the read side converts back before exposing dollars to callers |
 | Rebuild silently deletes backfilled historical rows it can't regenerate from events | `rebuild_profit_cache_scope` rejects any `from` date before the shop's coverage start date, verified by an explicit test |
 | Local marker mechanism assumed to need a new queue table, diverging from WAFI-151's actual shape | Verified against migration `083` directly: `daily_event_counts` already carries `source_event_id` on the same row as the aggregate; `profit_cache` copies that exact column and mechanism |
