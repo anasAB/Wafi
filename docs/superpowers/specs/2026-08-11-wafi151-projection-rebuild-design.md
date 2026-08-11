@@ -1,0 +1,126 @@
+# WAFI-151 — Projection Rebuild & Event Recovery — Design Spec
+
+**Status:** Approved for implementation planning
+**Date:** 2026-08-11
+**Ticket:** WAFI-151 (Macro-Phase 3, P1, 1 sprint)
+**Related:** WAFI-140/143/150 (event bus, already built), WAFI-153 (Read Models/CQRS — future, not built yet)
+
+## Purpose
+
+Establish a single, version-controlled recovery contract: **any derived projection must be reconstructible from the authoritative event log.** This ticket proves that contract against the two projections that exist today:
+
+- `daily_event_counts` (Postgres, server-side, migration 074)
+- `local_today_revenue_projection` (SQLite/PowerSync, client-side)
+
+WAFI-153's future read models (`dashboard_metrics`, `profit_cache`, `inventory_summary`, etc.) adopt this same contract rather than requiring a new recovery design. WAFI-151 does **not** build those new read model tables — that is WAFI-153's job.
+
+## Core Architectural Invariant
+
+Both incremental (normal) processing and rebuild use the same version-controlled `applyEvent(event, projectionState)` handler per projection type. Rebuild is simply running `applyEvent` over the complete ordered event set, starting from an empty projection state, instead of once per incoming event.
+
+```
+                 AUTHORITATIVE EVENT LOG
+                         │
+                         ▼
+              applyEvent(event, state)
+                    /           \
+                   /             \
+          Incremental            Replay
+             │                     │
+             ▼                     ▼
+       Existing projection    Empty projection
+                                   │
+                                   ▼
+                              Reconstructed
+                                   │
+                         ┌─────────┴─────────┐
+                         ▼                   ▼
+                    PostgreSQL            SQLite
+                    projection           projection
+```
+
+The full guarantee is: **incremental processing and replay consume the same authoritative events, through the same handler, in the same canonical ordering.** All three conditions are required together — no single one is sufficient on its own — for "incremental == replay" to hold. Additional supporting requirements: idempotency/duplicate handling where applicable, and projection handlers whose semantics are valid under the canonical ordering (see below).
+
+## Canonical Replay Ordering
+
+`events.id` is a `uuid` with no monotonic sequence. `occurred_at` is a business/domain timestamp that can collide or skew for offline-authored events and must not be used as a replay-ordering key.
+
+**Decision:** Add `events.sequence` (server-assigned, e.g. `BIGINT GENERATED ALWAYS AS IDENTITY`), unique and totally ordered. Replay uses `ORDER BY sequence ASC`.
+
+- `sequence` gives a stable, deterministic total order for replay. It is **not** claimed to represent literal database commit order or true causal order — under concurrent transactions, sequence allocation order and commit order can differ. What matters is that it is unique, stable, and total — not gaplessness or causal fidelity.
+- `occurred_at` remains the business timestamp for display/reporting and is never used for replay ordering.
+- Migration `083` backfills `sequence` for existing rows using a documented, deterministic ordering (e.g. `created_at`, then `id` as tiebreak). This establishes a canonical replay order for historical events; it does **not** claim to reconstruct true historical causal order.
+- Projection handlers must be correct under this ordering. Commutative aggregation (e.g. summing revenue) is safe regardless of order. Any projection whose correctness depends on event order (e.g. a state machine like `sale.completed` → `sale.refunded`) must not rely on `occurred_at` for that ordering — WAFI-151 only guarantees `sequence`-based determinism, and any such projection's handler must be written to be correct under `sequence` order specifically.
+
+## Server-Side Implementation (Postgres — primary mechanism)
+
+**Trigger:** `scripts/projections/rebuild.ts`, invoked via:
+
+```
+npm run projections:rebuild -- <projection> --shop <shop_id> --from <date> --to <date>
+npm run projections:rebuild -- <projection> --all
+```
+
+- Scoped rebuild (shop + date range) is the default and expected operational mode ("shop X's numbers look wrong, fix just that").
+- `--all` is explicit and required for full-history, all-shop rebuilds (used for projection algorithm changes / migrations). Making this explicit is deliberate: accidentally running a global rebuild should be harder than running a scoped one.
+- The CLI calls the same canonical replay/projection logic used elsewhere — never a one-off hand-written SQL script duplicating projection logic.
+
+**Execution (single transaction):**
+1. `BEGIN`
+2. Delete rows in the target scope
+3. Replay relevant events `ORDER BY sequence ASC` through the shared `applyEvent` handler
+4. Validate lightweight invariants (no negative/invalid counts, no duplicate projection keys, all rows within requested shop/date scope, basic aggregate sanity)
+5. `COMMIT` on success; any replay or validation failure → `ROLLBACK`, leaving the previous projection state fully intact
+
+Postgres transaction isolation means readers observe either the old projection or the new one — never a partially rebuilt state.
+
+**Concurrency:** Rebuild and incremental subscriber writes for the same projection scope participate in the **same locking protocol.** It is not sufficient for rebuild alone to take a lock — the existing subscriber write path for that projection/scope must acquire the identical lock (row lock or advisory lock keyed by shop+day+projection), or a concurrent incremental write can silently race with an in-progress rebuild and produce an inconsistent result.
+
+**Explicitly not built in this ticket:** staging-table + atomic-swap rebuilds. Deferred until projection size/rebuild duration make in-place transactional rebuild impractical.
+
+## Client-Side Implementation (SQLite/PowerSync)
+
+**Sync-stream change:** Add `events` and `daily_event_counts` to the PowerSync sync stream in `powersync.yaml`. Both are already present in the Postgres publication and the PowerSync client schema (`src/data/powersync/schema.ts`) — only the sync-rule query is missing today.
+
+**Security acceptance criterion (not just plumbing):** the sync rule for both tables must be shop-scoped, matching the pattern used by every other table in the `shop_data` stream. Adding these tables to sync must not expose events belonging to other shops and must not weaken any existing server-side authorization (RLS or otherwise).
+
+**Coverage check (required before any client rebuild):** an offline-first client may not have the complete event history for a requested scope due to sync timing. A rebuild must not silently produce an incomplete projection and report success.
+
+- Compare the locally synced count of the exact authoritative event subset that `local_today_revenue_projection` consumes, for `(shop_id, day)`, against the corresponding `daily_event_counts` value for that same key — assuming `daily_event_counts` is itself the authoritative count of that same event subset.
+- **Match** → coverage proven, rebuild proceeds via the shared `applyEvent` handler.
+- **Mismatch or unavailable** → rebuild aborts, no projection changes are made, and the operator is told sync is incomplete and to retry after resyncing.
+- No indefinite waiting inside the rebuild command. No best-effort/partial reconstruction mode — a command called "rebuild" must not claim success without provable data completeness. (A separate approximate/preview reconstruction mode is explicitly out of scope.)
+
+`local_today_revenue_projection`'s existing informal "best-effort, rebuild-from-source-if-wrong" behavior for *normal* incremental operation is unchanged by this ticket — the stricter coverage requirement applies specifically to the explicit rebuild command.
+
+## Trigger Surface
+
+Engineer-invoked CLI/dev-tooling only, for both server and client rebuilds. No admin UI, no customer-facing control, and no automatic corruption detection or self-healing in this ticket. This keeps WAFI-151 scoped to proving the rebuild primitive is correct; an admin UI or automatic drift detection can be built on top of it later once the primitive is trusted.
+
+## Out of Scope
+
+- New WAFI-153 read model tables (`dashboard_metrics`, `profit_cache`, `inventory_summary`, `customer_summary`, `staff_summary`)
+- Staging-table + atomic-swap rebuild strategy
+- Automatic corruption/drift detection
+- Admin UI or any customer-facing rebuild trigger
+- Best-effort/partial client-side rebuild mode
+
+## Acceptance Criteria
+
+1. `daily_event_counts` for a given shop + date range can be deleted and deterministically rebuilt to the same state via the CLI.
+2. `local_today_revenue_projection` rebuilds successfully when local event coverage is provably complete, and safely refuses (no changes, clear message) when it is not.
+3. Rebuild and normal incremental processing produce identical results for the same event set (proves no drift between the two code paths).
+4. Concurrent incremental writes to a shop+day being rebuilt cannot corrupt the result — verified under the shared locking protocol.
+5. A failed rebuild (replay or validation failure) leaves the target projection completely unchanged — verified via forced-failure test asserting rollback.
+6. PowerSync sync rules for `events` and `daily_event_counts` are shop-scoped — a device cannot sync another shop's events (security test).
+7. Migration `083` adds `events.sequence` and deterministically backfills existing rows; replay uses `ORDER BY sequence ASC` exclusively, never `occurred_at`.
+
+## Risk Notes
+
+| Risk | Mitigation |
+|---|---|
+| Read model corruption without recovery path | This ticket exists to close that gap (per plan risk register, WAFI-151 is P1 not P2) |
+| Rebuild and incremental logic drift apart over time | Shared `applyEvent` handler is the single source of truth for both paths |
+| Client rebuilds on incomplete local data silently report wrong numbers | Coverage check required before rebuild; no partial-success mode |
+| Adding `events`/`daily_event_counts` to sync stream weakens shop isolation | Shop-scoped sync rule is a stated acceptance criterion, tested explicitly |
+| Rebuild races with concurrent incremental writes | Shared locking protocol between rebuild and subscriber write paths |
