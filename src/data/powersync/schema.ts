@@ -379,14 +379,16 @@ const local_subscriber_processed_events = new Table({
 }, { localOnly: true })
 
 const events = new Table({
-  type:            column.text,
-  entity_id:       column.text,
-  payload:         column.text,   // JSON.stringify'd — same convention as audit_log's `meta`
-  payload_version: column.integer,
-  staff_id:        column.text,
-  shop_id:         column.text,
-  occurred_at:     column.text,
-  created_at:      column.text,
+  type:                column.text,
+  entity_id:           column.text,
+  payload:             column.text,   // JSON.stringify'd — same convention as audit_log's `meta`
+  payload_version:     column.integer,
+  staff_id:            column.text,
+  shop_id:             column.text,
+  occurred_at:         column.text,
+  created_at:          column.text,
+  sequence:            column.integer,   // BIGINT server-side; PowerSync's column DSL has no bigint, integer round-trips fine for realistic event volumes
+  event_projection_day: column.text,     // YYYY-MM-DD
 })
 
 const daily_event_counts = new Table({

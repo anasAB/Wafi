@@ -73,3 +73,11 @@ streams:
       - SELECT * FROM public.staff_ledger               WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
       - SELECT * FROM public.staff_settlements          WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
       - SELECT * FROM public.denomination_configs       WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+
+      # WAFI-151: needed for client-side rebuild of local_today_revenue_projection.
+      # Bounded to the last 14 days -- local_today_revenue_projection's rebuild
+      # only ever needs recent events (its coverage check and replay both key
+      # off "today"), so the design spec requires this sync scope be limited
+      # to that window rather than syncing the shop's full historical event log.
+      - SELECT * FROM public.events              WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id()) AND occurred_at > now() - interval '14 days'
+      - SELECT * FROM public.daily_event_counts   WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())

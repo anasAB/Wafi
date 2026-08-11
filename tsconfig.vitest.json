@@ -8,5 +8,5 @@
     "types": ["vite/client", "node", "vitest/globals"],
     "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["src/**/__tests__/**/*.ts", "src/**/*.test.ts", "src/**/*.spec.ts", "src/**/*.d.ts"]
+  "include": ["src/**/__tests__/**/*.ts", "src/**/*.test.ts", "src/**/*.spec.ts", "src/**/*.d.ts", "scripts/**/*.ts"]
 }
