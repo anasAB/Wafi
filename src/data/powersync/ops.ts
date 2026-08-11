@@ -38,6 +38,19 @@ export async function runOp(
     return (await supabase.from(table).upsert({ id, ...opData }, { onConflict: 'source_event_id', ignoreDuplicates: true })).error
   }
 
+  // WAFI-151: daily_event_counts must be idempotent per authoritative event, not
+  // merely per logical key -- the server derives shop/type/day from the event
+  // itself and enforces exactly-once application via a server-side ledger,
+  // rather than trusting whatever this device's local row currently says. Every
+  // local mutation to this table carries the originating event's id as
+  // source_event_id (see dailyEventCountsProjection.ts), which is all the server
+  // call needs; the local absolute `count` value in opData is never uploaded.
+  if (table === 'daily_event_counts' && (type === UpdateType.PUT || type === UpdateType.PATCH)) {
+    return (
+      await supabase.rpc('apply_daily_event_count', { p_event_id: opData?.source_event_id })
+    ).error
+  }
+
   switch (type) {
     case UpdateType.PUT:
       return (await supabase.from(table).upsert({ id, ...opData })).error

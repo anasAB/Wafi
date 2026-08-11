@@ -8,8 +8,11 @@ const upsert = vi.fn(() => ({ error: null }))
 const update = vi.fn(() => ({ eq: () => ({ error: null }) }))
 const del    = vi.fn(() => ({ eq: () => ({ error: null }) }))
 const from   = vi.fn(() => ({ upsert, update, delete: del }))
+const rpc    = vi.fn(() => ({ error: null }))
 
-vi.mock('@/data/supabase/client', () => ({ supabase: { from: (t: string) => from(t) } }))
+vi.mock('@/data/supabase/client', () => ({
+  supabase: { from: (t: string) => from(t), rpc: (fn: string, args: unknown) => rpc(fn, args) },
+}))
 
 import { runOp, isPermanentError } from '../ops'
 
@@ -72,6 +75,36 @@ describe('runOp — notifications source_event_id dedup', () => {
   it('falls through to a normal per-id UPDATE for notifications on PATCH (marking read_at)', async () => {
     await runOp(UpdateType.PATCH, 'notifications', 'row1', { read_at: '2026-08-06T00:00:00.000Z' })
     expect(update).toHaveBeenCalledWith({ read_at: '2026-08-06T00:00:00.000Z' })
+  })
+})
+
+describe('runOp — daily_event_counts idempotent apply (WAFI-151)', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('calls apply_daily_event_count with the source event id on PUT, never upserts the row directly', async () => {
+    await runOp(UpdateType.PUT, 'daily_event_counts', 'row1', {
+      shop_id: 'shop1', event_type: 'sale.completed', day: '2026-08-11', count: 1, source_event_id: 'evt1',
+    })
+    expect(rpc).toHaveBeenCalledWith('apply_daily_event_count', { p_event_id: 'evt1' })
+    expect(upsert).not.toHaveBeenCalled()
+  })
+
+  it('calls apply_daily_event_count on PATCH too, never a plain UPDATE', async () => {
+    await runOp(UpdateType.PATCH, 'daily_event_counts', 'row1', {
+      shop_id: 'shop1', event_type: 'sale.completed', day: '2026-08-11', count: 2, source_event_id: 'evt2',
+    })
+    expect(rpc).toHaveBeenCalledWith('apply_daily_event_count', { p_event_id: 'evt2' })
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it('ignores the local absolute count value in opData -- only source_event_id is forwarded', async () => {
+    // A device with a stale local view (e.g. count: 47 after a long offline stretch)
+    // must not upload that absolute value -- the server derives everything from the
+    // event itself, keyed only by source_event_id.
+    await runOp(UpdateType.PUT, 'daily_event_counts', 'row2', {
+      shop_id: 'shop1', event_type: 'sale.completed', day: '2026-08-11', count: 47, source_event_id: 'evt3',
+    })
+    expect(rpc).toHaveBeenCalledWith('apply_daily_event_count', { p_event_id: 'evt3' })
   })
 })
 
