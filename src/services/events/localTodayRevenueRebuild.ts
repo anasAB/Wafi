@@ -7,12 +7,6 @@ type RebuildResult =
 
 /**
  * WAFI-151 Plan 2: coverage-checked rebuild of local_today_revenue_projection.
- * "Today" is the shop's current event_projection_day (shop-local), not the
- * device's calendar day -- both are read from the same synced `events` rows
- * this function already needs, so there is no separate device-clock lookup.
- * A device timezone differing from the shop's would otherwise create an
- * inconsistency between what the client considers "today" and how events
- * are actually day-bucketed everywhere else in this design.
  *
  * Coverage check (design spec, Client-Side Implementation): compares the
  * local count of the exact event subset this projection depends on
@@ -108,17 +102,17 @@ export async function rebuildLocalTodayRevenueProjection(shopId: string): Promis
   return { status: 'success', revenueUsd, revenueSyp }
 }
 
-async function getShopLocalToday(shopId: string): Promise<string> {
-  // event_projection_day on the most recent synced event for this shop is
-  // already computed shop-local server-side -- reusing it here means this
-  // function never needs its own timezone logic or a second source of truth
-  // for "what day is it for this shop right now."
-  const latest = await db.getOptional<{ event_projection_day: string }>(
-    `SELECT event_projection_day FROM events WHERE shop_id = ? ORDER BY sequence DESC LIMIT 1`,
-    [shopId],
-  )
-  if (latest) return latest.event_projection_day
-  // No events synced yet for this shop at all -- fall back to the device's
-  // own UTC date; there is nothing else to derive "today" from.
+// WAFI-151 Plan 2 final review: "today" is computed as the device's UTC date,
+// matching dashboardRevenueProjection.ts and HomePage.vue's existing convention --
+// NOT derived from event_projection_day, despite that being the more principled
+// choice in general. This is deliberate and temporary: shops.timezone (migration
+// 084) defaults to 'UTC' and nothing in this codebase currently sets it to
+// anything else, so device-UTC and shop-local are identical today. If
+// shops.timezone ever becomes client-configurable, this function, the
+// incremental subscriber in dashboardRevenueProjection.ts, and HomePage.vue's
+// date-reading logic all need to move to shop-local day together -- moving only
+// one of them (as an earlier draft of this function did) creates a worse bug:
+// the rebuild would write to a date key the rest of the system doesn't read.
+async function getShopLocalToday(_shopId: string): Promise<string> {
   return new Date().toISOString().slice(0, 10)
 }

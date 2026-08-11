@@ -1,3 +1,5 @@
+import { pathToFileURL } from 'node:url'
+
 export interface ScopedRebuildArgs {
   projection: 'daily_event_counts'
   mode: 'scoped'
@@ -131,8 +133,12 @@ async function main() {
   process.exit(anyFailed ? 1 : 0)
 }
 
-// Run main if this file is executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Run main if this file is executed directly. Compared via pathToFileURL
+// (not a raw `file://${process.argv[1]}` template) because on Windows
+// process.argv[1] is a drive-letter path (C:\...) while import.meta.url is a
+// proper file:// URL (file:///C:/...) -- the naive template never matches on
+// win32, so main() silently never runs.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((err) => {
     console.error('Fatal error:', err)
     process.exit(1)

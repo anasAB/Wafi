@@ -136,6 +136,7 @@ RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
+SET lock_timeout = '5s'
 AS $$
 DECLARE
   v_shop_id uuid;
@@ -148,7 +149,12 @@ BEGIN
     RAISE EXCEPTION 'apply_daily_event_count: caller is not authorized for this event''s shop' USING ERRCODE = 'P0001';
   END IF;
 
-  SET LOCAL lock_timeout = '5s';
+  -- lock_timeout is set at the function level (above) rather than via SET
+  -- LOCAL here, so it applies only for this function's duration and Postgres
+  -- restores the prior value on return -- SET LOCAL would otherwise leak the
+  -- 5s timeout into the rest of the caller's transaction (a PowerSync upload
+  -- batch), turning an unrelated slow write later in that same batch into a
+  -- spurious failure.
   PERFORM pg_advisory_xact_lock(hashtext('daily_event_counts' || v_shop_id::text));
   PERFORM public._apply_daily_event_count(p_event_id);
 END;

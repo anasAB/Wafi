@@ -12,6 +12,7 @@ CREATE OR REPLACE FUNCTION public.rebuild_daily_event_counts_scope(
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
+SET lock_timeout = '5s'
 AS $$
 DECLARE
   v_rows_deleted integer;
@@ -22,8 +23,9 @@ BEGIN
   -- apply_daily_event_count) incremental apply already takes -- a rebuild
   -- and an incremental write for this shop's daily_event_counts can never
   -- interleave, and neither this function nor the incremental path blocks
-  -- indefinitely if the other is holding it.
-  SET LOCAL lock_timeout = '5s';
+  -- indefinitely if the other is holding it. lock_timeout is set at the
+  -- function level (above), not via SET LOCAL here, so it doesn't leak into
+  -- the caller's surrounding transaction.
   PERFORM pg_advisory_xact_lock(hashtext('daily_event_counts' || p_shop_id::text));
 
   DELETE FROM public.daily_event_counts
