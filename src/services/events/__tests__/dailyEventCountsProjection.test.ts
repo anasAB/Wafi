@@ -57,6 +57,7 @@ describe('startDailyEventCountsProjection', () => {
     expect(params).toContain('shop-1')
     expect(params).toContain('sale.completed')
     expect(params).toContain('2026-07-31') // day, derived from occurred_at
+    expect(params).toContain('e1') // source_event_id -- WAFI-151
 
     stop()
   })
@@ -84,7 +85,7 @@ describe('startDailyEventCountsProjection', () => {
     expect(ledgerSql.toLowerCase()).toContain('insert into local_event_processed_ledger')
     const [sql, params] = vi.mocked(db.execute).mock.calls[1]
     expect(sql.toLowerCase()).toContain('update daily_event_counts')
-    expect(params).toEqual([5, 'row-1'])
+    expect(params).toEqual([5, 'e1', 'row-1']) // count, source_event_id, id -- WAFI-151
 
     stop()
   })

@@ -29,13 +29,13 @@ export function startDailyEventCountsProjection(shopId: string): { stop: () => v
         )
         if (existing) {
           await db.execute(
-            `UPDATE daily_event_counts SET count = ? WHERE id = ?`,
-            [existing.count + 1, existing.id],
+            `UPDATE daily_event_counts SET count = ?, source_event_id = ? WHERE id = ?`,
+            [existing.count + 1, row.id, existing.id],
           )
         } else {
           await db.execute(
-            `INSERT INTO daily_event_counts (id, shop_id, event_type, day, count) VALUES (?, ?, ?, ?, 1)`,
-            [crypto.randomUUID(), shopId, SalesEventType.Completed, day],
+            `INSERT INTO daily_event_counts (id, shop_id, event_type, day, count, source_event_id) VALUES (?, ?, ?, ?, 1, ?)`,
+            [crypto.randomUUID(), shopId, SalesEventType.Completed, day, row.id],
           )
         }
       })

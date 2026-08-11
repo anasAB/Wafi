@@ -390,10 +390,11 @@ const events = new Table({
 })
 
 const daily_event_counts = new Table({
-  shop_id:    column.text,
-  event_type: column.text,
-  day:        column.text,
-  count:      column.integer,
+  shop_id:          column.text,
+  event_type:       column.text,
+  day:              column.text,
+  count:            column.integer,
+  source_event_id:  column.text,
 })
 
 const audit_log = new Table({
