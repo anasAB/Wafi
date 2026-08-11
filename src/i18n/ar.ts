@@ -211,14 +211,14 @@ export default {
   dashboard2: {
     periodLabel: { today: 'اليوم', week: 'الأسبوع', month: 'الشهر' },
     revenue: {
-      headline: { up: 'الإيرادات ↑{percent}%', down: 'الإيرادات ↓{percent}%', flat: 'الإيرادات بدون تغيير' },
+      headline: { up: 'الإيرادات ↑{percent}%', down: 'الإيرادات ↓{percent}%', flat: 'الإيرادات بدون تغيير', new: 'أول نشاط مسجّل هذه الفترة' },
       transactionCount: 'عدد الفواتير',
       returnCount: 'عدد المرتجعات',
       avgBasket: 'متوسط الفاتورة',
       viewTransactions: 'عرض الفواتير',
     },
     profit: {
-      headline: { up: 'الربح ↑{percent}%', down: 'الربح ↓{percent}%', flat: 'الربح بدون تغيير' },
+      headline: { up: 'الربح ↑{percent}%', down: 'الربح ↓{percent}%', flat: 'الربح بدون تغيير', new: 'أول ربح مسجّل هذه الفترة' },
       margin: 'الهامش {current}% ← {previous}% ({sign}{pp} نقطة)',
       revenue: 'الإيرادات',
       cogs: 'تكلفة البضاعة',
@@ -241,6 +241,12 @@ export default {
       viewDetail: 'عرض تفاصيل الزبون',
     },
     placeholder: 'التفاصيل متاحة بعد اكتمال فترة اليوم',
+    quickActions: {
+      newSale: 'بيع جديد',
+      logExpense: 'تسجيل مصروف',
+      recordPayment: 'تسجيل دفعة',
+      openShift: 'فتح دوام',
+    },
   },
   // WAFI-015: Anomaly banner on home screen — alert banner and expand UI.
   home: {

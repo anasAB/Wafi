@@ -200,7 +200,7 @@ describe('ProfitIntelligenceCard', () => {
     expect(driverRows[2].text()).toContain('200')
   })
 
-  it('reloads when period prop changes', async () => {
+  it('reloads when period prop changes (initial load is now the parent\'s job, not onMounted)', async () => {
     const mockLoad = vi.fn()
     vi.mocked(useProfitIntelligence).mockReturnValue({
       data: ref(null),
@@ -210,11 +210,52 @@ describe('ProfitIntelligenceCard', () => {
 
     const wrapper = mount(ProfitIntelligenceCard, { props: { period: 'week', expanded: false } })
     await flushPromises()
-    expect(mockLoad).toHaveBeenCalledWith('week')
+    expect(mockLoad).not.toHaveBeenCalled()
 
-    mockLoad.mockClear()
     await wrapper.setProps({ period: 'month' })
     await flushPromises()
     expect(mockLoad).toHaveBeenCalledWith('month')
+  })
+
+  it('does not self-load on mount; parent (Dashboard2Screen) must call reload() explicitly', async () => {
+    const mockLoad = vi.fn()
+    vi.mocked(useProfitIntelligence).mockReturnValue({
+      data: ref(null),
+      state: ref('loading'),
+      load: mockLoad,
+    } as any)
+
+    mount(ProfitIntelligenceCard, { props: { period: 'week', expanded: false } })
+    await flushPromises()
+    expect(mockLoad).not.toHaveBeenCalled()
+  })
+
+  it('shows the "new activity" headline instead of a bogus 0% when changePct is null', async () => {
+    const mockLoad = vi.fn()
+    vi.mocked(useProfitIntelligence).mockReturnValue({
+      data: ref({
+        metric: {
+          currentUsd: 200,
+          previousUsd: 0,
+          changePct: null,
+          direction: 'up',
+        },
+        marginCurrentPct: null,
+        marginPreviousPct: null,
+        drivers: [
+          { key: 'revenue', current: 500, previous: 0, changePct: null },
+        ],
+      }),
+      state: ref('ready'),
+      load: mockLoad,
+    } as any)
+
+    const wrapper = mount(ProfitIntelligenceCard, { props: { period: 'week', expanded: false } })
+    await flushPromises()
+
+    const headline = wrapper.find('[data-testid="ic-header"] .ic-headline')
+    expect(headline.text()).toContain('أول ربح مسجّل')
+    expect(headline.text()).not.toContain('0%')
+    expect(headline.text()).not.toContain('↑')
   })
 })

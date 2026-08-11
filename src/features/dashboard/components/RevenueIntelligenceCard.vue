@@ -1,6 +1,6 @@
 <!-- src/features/dashboard/components/RevenueIntelligenceCard.vue -->
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import IntelligenceCard from './IntelligenceCard.vue'
@@ -16,7 +16,6 @@ const { data, state, load } = useRevenueIntelligence()
 async function reload() { await load(props.period) }
 defineExpose({ reload })
 
-onMounted(reload)
 watch(() => props.period, reload)
 
 const cardState = computed(() => {
@@ -27,7 +26,8 @@ const cardState = computed(() => {
 const headline = computed(() => {
   if (!data.value) return ''
   const { direction, changePct } = data.value.metric
-  const percent = changePct !== null ? Math.abs(changePct).toFixed(0) : '0'
+  if (changePct === null) return t('dashboard2.revenue.headline.new')
+  const percent = Math.abs(changePct).toFixed(0)
   return t(`dashboard2.revenue.headline.${direction}`, { percent })
 })
 

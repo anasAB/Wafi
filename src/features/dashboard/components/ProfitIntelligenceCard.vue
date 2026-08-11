@@ -1,6 +1,6 @@
 <!-- src/features/dashboard/components/ProfitIntelligenceCard.vue -->
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import IntelligenceCard from './IntelligenceCard.vue'
 import { useProfitIntelligence } from '../composables/useProfitIntelligence'
@@ -14,7 +14,6 @@ const { data, state, load } = useProfitIntelligence()
 async function reload() { await load(props.period) }
 defineExpose({ reload })
 
-onMounted(reload)
 watch(() => props.period, reload)
 
 const cardState = computed(() => {
@@ -25,7 +24,8 @@ const cardState = computed(() => {
 const headline = computed(() => {
   if (!data.value) return ''
   const { direction, changePct } = data.value.metric
-  const percent = changePct !== null ? Math.abs(changePct).toFixed(0) : '0'
+  if (changePct === null) return t('dashboard2.profit.headline.new')
+  const percent = Math.abs(changePct).toFixed(0)
   return t(`dashboard2.profit.headline.${direction}`, { percent })
 })
 

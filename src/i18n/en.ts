@@ -4,7 +4,7 @@ export default {
   nav: {
     menu:       'Menu',
     dashboard:  'Dashboard',
-    dashboard2: 'Dashboard 2',
+    dashboard2: 'Insights',
     home:       'Home',
     pos:        'Point of Sale',
     posShort:   'POS',
@@ -206,14 +206,14 @@ export default {
   dashboard2: {
     periodLabel: { today: 'Today', week: 'Week', month: 'Month' },
     revenue: {
-      headline: { up: 'Revenue ↑{percent}%', down: 'Revenue ↓{percent}%', flat: 'Revenue unchanged' },
+      headline: { up: 'Revenue ↑{percent}%', down: 'Revenue ↓{percent}%', flat: 'Revenue unchanged', new: 'First activity recorded this period' },
       transactionCount: 'Invoice count',
       returnCount: 'Return count',
       avgBasket: 'Average invoice',
       viewTransactions: 'View invoices',
     },
     profit: {
-      headline: { up: 'Profit ↑{percent}%', down: 'Profit ↓{percent}%', flat: 'Profit unchanged' },
+      headline: { up: 'Profit ↑{percent}%', down: 'Profit ↓{percent}%', flat: 'Profit unchanged', new: 'First profit recorded this period' },
       margin: 'Margin {current}% ← {previous}% ({sign}{pp} pp)',
       revenue: 'Revenue',
       cogs: 'Cost of goods',
@@ -236,6 +236,12 @@ export default {
       viewDetail: 'View customer details',
     },
     placeholder: 'Details available after the period completes',
+    quickActions: {
+      newSale: 'New sale',
+      logExpense: 'Log expense',
+      recordPayment: 'Record payment',
+      openShift: 'Open shift',
+    },
   },
   // WAFI-015: Anomaly banner on home screen — alert banner and expand UI.
   home: {

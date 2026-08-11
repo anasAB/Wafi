@@ -160,7 +160,7 @@ describe('RevenueIntelligenceCard', () => {
     expect(driverRows[2].text()).toContain('25 → 24')
   })
 
-  it('reloads when period prop changes', async () => {
+  it('reloads when period prop changes (initial load is now the parent\'s job, not onMounted)', async () => {
     const mockLoad = vi.fn()
     vi.mocked(useRevenueIntelligence).mockReturnValue({
       data: ref(null),
@@ -170,11 +170,50 @@ describe('RevenueIntelligenceCard', () => {
 
     const wrapper = mount(RevenueIntelligenceCard, { props: { period: 'week', expanded: false } })
     await flushPromises()
-    expect(mockLoad).toHaveBeenCalledWith('week')
+    expect(mockLoad).not.toHaveBeenCalled()
 
-    mockLoad.mockClear()
     await wrapper.setProps({ period: 'month' })
     await flushPromises()
     expect(mockLoad).toHaveBeenCalledWith('month')
+  })
+
+  it('does not self-load on mount; parent (Dashboard2Screen) must call reload() explicitly', async () => {
+    const mockLoad = vi.fn()
+    vi.mocked(useRevenueIntelligence).mockReturnValue({
+      data: ref(null),
+      state: ref('loading'),
+      load: mockLoad,
+    } as any)
+
+    mount(RevenueIntelligenceCard, { props: { period: 'week', expanded: false } })
+    await flushPromises()
+    expect(mockLoad).not.toHaveBeenCalled()
+  })
+
+  it('shows the "new activity" headline instead of a bogus 0% when changePct is null', async () => {
+    const mockLoad = vi.fn()
+    vi.mocked(useRevenueIntelligence).mockReturnValue({
+      data: ref({
+        metric: {
+          currentUsd: 500,
+          previousUsd: 0,
+          changePct: null,
+          direction: 'up',
+        },
+        drivers: [
+          { key: 'transactionCount', current: 5, previous: 0, changePct: null },
+        ],
+      }),
+      state: ref('ready'),
+      load: mockLoad,
+    } as any)
+
+    const wrapper = mount(RevenueIntelligenceCard, { props: { period: 'week', expanded: false } })
+    await flushPromises()
+
+    const headline = wrapper.find('[data-testid="ic-header"] .ic-headline')
+    expect(headline.text()).toContain('أول نشاط مسجّل')
+    expect(headline.text()).not.toContain('0%')
+    expect(headline.text()).not.toContain('↑')
   })
 })
