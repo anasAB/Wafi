@@ -67,7 +67,7 @@ ALTER TABLE public.events ALTER COLUMN event_projection_day SET NOT NULL;
 -- already assigned explicit values above) and event_projection_day computed
 -- from the shop's current timezone at insert time.
 CREATE SEQUENCE IF NOT EXISTS public.events_sequence_seq OWNED BY public.events.sequence;
-SELECT setval('public.events_sequence_seq', (SELECT max(sequence) FROM public.events), true);
+SELECT setval('public.events_sequence_seq', coalesce((SELECT max(sequence) FROM public.events), 0), true);
 ALTER TABLE public.events ALTER COLUMN sequence SET DEFAULT nextval('public.events_sequence_seq');
 
 CREATE OR REPLACE FUNCTION public._set_event_projection_day()
