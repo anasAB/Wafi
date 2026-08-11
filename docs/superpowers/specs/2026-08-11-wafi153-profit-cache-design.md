@@ -295,7 +295,13 @@ numbers) reads to produce it → the event type(s), if any, that already publish
 fact → confirmation that no additional event type (e.g. a discount-adjustment or expense-edit
 event elsewhere in `domainEvent.types.ts`) mutates that same underlying data outside the three
 types identified here. If one is found, it's added to the mapping table before implementation,
-not discovered as a production gap after cutover.
+not discovered as a production gap after cutover. Concretely, before implementation, confirm:
+no sale void/cancel/edit event exists; no return cancel/void event exists; no expense edit/
+delete event exists; no discount-adjustment event exists; `sale_line_items.unit_cost_usd` is an
+immutable historical snapshot, not mutable in place if a product's cost price changes later; and
+the restock state used for COGS-reversal is fixed at return time, not re-derivable differently
+later. This checklist is a prerequisite to verify against the current codebase, not something
+this spec can discharge by assertion.
 
 All *independent* financial aggregate updates (revenue, COGS, expenses, refunds, discounts,
 invoice/return counts) are additive and order-independent once each event's immutable financial
@@ -392,13 +398,39 @@ WHERE s.shop_id = p_shop_id
   );
 ```
 
-This query is **safe to run repeatedly, at any time, forever** — it always reflects current
-reality (which sales have an eligible event *right now*), never a snapshot frozen at rollout
-time. This directly resolves both problems above: a lagging device's late version-1 sale stays
-backfill-eligible for as long as it lacks a version-2 event (no permanent gap, problem 1); a
-mixed-version day never double-counts, because the backfill query itself excludes exactly the
-sales an event has already covered (problem 2) — verified by construction, not by an argument
-about interleaving.
+**Indexing note (implementation detail, not a correctness requirement):** as `events` grows,
+this `NOT EXISTS` join benefits from an expression index matching the lookup shape, e.g.
+`CREATE INDEX ON events ((payload->>'saleId')) WHERE type = 'sale.completed' AND
+payload_version >= 2` (and the equivalent for `sale.returned`/`expense.recorded`'s own natural
+keys) — noted here so it isn't missed at implementation time, not specified further since it
+affects performance, not correctness, and the exact shape depends on final query plans.
+
+This eligibility query is safe to *evaluate* at any time — it always reflects current reality
+(which sales have an eligible event *right now*). **But that is a claim about the query, not
+about `_backfill_profit_cache_shop` as a standalone write operation — and those are different
+claims, found to be conflated in an earlier draft.** The eligibility query alone says nothing
+about how to *merge* its result into `profit_cache` rows that may already carry a
+version-2-event's contribution for the same shop/day. An additive upsert would double-count on
+a second run (the version-2 contribution already present, plus the eligible facts added again);
+a replacing upsert would erase the version-2 contribution. Neither is correct, and no third
+upsert strategy resolves it in general — the same day's row is not attributable to "backfill
+share" vs. "event share" separately without exactly the finer-grained provenance model already
+rejected as disproportionate for v1 (see Rebuild).
+
+**Resolution: `_backfill_profit_cache_shop` is never called standalone.** It is an internal
+helper, only ever invoked from inside `rebuild_profit_cache_scope` (below), immediately after
+that function deletes every existing row and ledger entry for the shop — i.e. it only ever runs
+against a scope that is provably empty, never one that might already contain event-derived
+contributions. There is no separate "run the backfill" operation distinct from "run a full
+rebuild" — **rollout's initial backfill (step 4 below) and every subsequent self-heal both call
+`rebuild_profit_cache_scope(shop_id)`, the same single entry point rebuild itself uses.**
+`rebuild_profit_cache_scope` *is* what's safe to run repeatedly, at any time, forever — because
+it always deletes before regenerating, by construction, never because of a merge-semantics
+argument about upserting into a possibly-nonempty scope. This directly resolves the two
+problems above without needing separate merge logic: a lagging device's late version-1 sale is
+picked up on the next rebuild's backfill phase (no permanent gap); a mixed-version day never
+double-counts, because a rebuild deletes the version-2 event's prior contribution before
+backfill runs and then re-applies it via the replay phase — exactly once, not on top of itself.
 
 **Rollout sequence:**
 
@@ -406,29 +438,30 @@ about interleaving.
 2. Each device starts producing version-2 events as it upgrades; `_apply_profit_cache` processes
    them as they arrive. Not-yet-upgraded devices keep producing version-1 events, correctly
    no-op'd — no gap opens, because nothing has been backfilled yet to conflict with them.
-3. **Acquire the same `(shop_id, 'profit_cache')` advisory lock incremental writes and rebuild
-   share** before running the backfill generator — held for its duration, so it cannot race an
-   incremental writer for the same shop.
-4. Run the **backfill generator** (the eligibility query above, materializing `profit_cache`
-   rows from `sales`/`sale_line_items`/`returns`/`expenses` for whatever is currently eligible)
-   under that lock. Rows are upserted with **`source_event_id = NULL`** (see below). Being
-   upsert-based and eligibility-driven (not date-scoped), it's simply correct to run again
-   later — every re-run is a full self-heal against current reality, not an incremental patch
-   that could compound errors.
-5. **Old-vs-new financial parity test (see Testing) is run against the backfilled data itself**
-   before proceeding — the backfill generator re-derives the same SQL logic
-   `useDashboardMetrics.ts` has today, so this step verifies the migration didn't introduce a
-   transcription error, not just that the general approach is sound.
-6. **There is no separate watermark/exit-condition step, by design.** An earlier draft required
+3. Run **`rebuild_profit_cache_scope(shop_id)`** (below) — the same single entry point used for
+   every subsequent rebuild/self-heal, not a separate "initial backfill" operation. It acquires
+   the `(shop_id, 'profit_cache')` advisory lock itself, deletes any existing rows (none exist
+   yet on first run), regenerates the eligible backfilled base, and replays every event so far —
+   version-2 events already produced by upgraded devices in step 2 are captured correctly by
+   the replay phase, not left stranded by a backfill-only operation that never touches events.
+4. **Old-vs-new financial parity test (see Testing) is run against the resulting data** before
+   proceeding — the backfill phase re-derives the same SQL logic `useDashboardMetrics.ts` has
+   today, so this step verifies the migration didn't introduce a transcription error, not just
+   that the general approach is sound.
+5. **There is no separate watermark/exit-condition step, by design.** An earlier draft required
    tracking "zero remaining version-1 events" as a hard gate before cutover. That's now
-   unnecessary: because the backfill generator is safe to re-run indefinitely and is also the
-   first phase of every rebuild (below), residual lagging-device staleness self-heals on the
-   next backfill or rebuild run rather than needing to be proven absent up front. The practical
-   go/no-go signal for cutover is the **shadow-mode observation window** (below) staying clean
-   across a real operating period — an empirical confidence check, not a mathematical proof of
-   zero remaining version-1 events.
-7. Consumers (the 6 call sites) switch to `useProfitCache()`.
-8. `useDashboardMetrics.ts` and its dedicated tests are deleted, once the shadow-mode window
+   unnecessary: because `rebuild_profit_cache_scope` is safe to re-run indefinitely (always
+   deletes before regenerating), residual lagging-device staleness self-heals on the next
+   re-run rather than needing to be proven absent up front. **Operationally, this still needs a
+   trigger, not an assumption that it happens automatically** — re-run
+   `rebuild_profit_cache_scope` on a known cadence (e.g. daily, or whatever interval matches
+   this product's low-frequency-deploy pace) until device-upgrade telemetry confirms every
+   device is current, and immediately whenever shadow-mode logging (below) surfaces a
+   discrepancy. The practical go/no-go signal for cutover is the **shadow-mode observation
+   window** (below) staying clean across a real operating period — an empirical confidence
+   check, not a mathematical proof of zero remaining version-1 events.
+6. Consumers (the 6 call sites) switch to `useProfitCache()`.
+7. `useDashboardMetrics.ts` and its dedicated tests are deleted, once the shadow-mode window
    (below) has stayed clean.
 
 **`source_event_id = NULL` for backfilled rows — stated explicitly, not left implicit.**
@@ -565,8 +598,17 @@ BEGIN
       -- branch seeds costless_sale_count at -1 for that day; sale.completed's own INSERT
       -- (whenever it arrives, in either order) adds its +1 on top via the same ON CONFLICT
       -- path, netting to 0 regardless of which event is applied first.
+      -- source_event_id is deliberately NOT updated here (unlike every other branch in this
+      -- function) -- this decrement touches a day that isn't "this event's own day," and
+      -- overwriting that day's source_event_id with the return's ID would misrepresent which
+      -- event most recently touched that row's OWN metrics (revenue/COGS/etc., untouched by
+      -- this branch). Since source_event_id is documented as observability-only (never a
+      -- rebuild-scope or idempotency signal), this is a deliberate accuracy choice, not an
+      -- oversight: the column stays a faithful "last event affecting this row's primary
+      -- metrics," rather than becoming ambiguous about which of two different concerns it
+      -- last reflects.
       INSERT INTO public.profit_cache (shop_id, day, costless_sale_count, source_event_id)
-      VALUES (v_event.shop_id, (v_event.payload->>'originalSaleProjectionDay')::date, -1, p_event_id)
+      VALUES (v_event.shop_id, (v_event.payload->>'originalSaleProjectionDay')::date, -1, NULL)
       ON CONFLICT (shop_id, day) DO UPDATE SET
         costless_sale_count = profit_cache.costless_sale_count - 1,
         updated_at = now();
@@ -600,6 +642,10 @@ END;
 $$;
 GRANT EXECUTE ON FUNCTION public.apply_profit_cache(uuid) TO anon, authenticated;
 ALTER TABLE public.profit_cache ENABLE ROW LEVEL SECURITY;
+-- FORCE (not just ENABLE) if this project's convention is that the table owner should not
+-- bypass RLS -- match whatever daily_event_counts actually does here; not introducing a new
+-- convention for this one table.
+-- ALTER TABLE public.profit_cache FORCE ROW LEVEL SECURITY;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE public.profit_cache FROM anon, authenticated;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE public.projection_processed_events FROM anon, authenticated;
 -- SELECT is granted and shop-scoped by RLS -- required for PowerSync sync-down, matching the
@@ -690,12 +736,12 @@ BEGIN
     WHERE projection_name = 'profit_cache'
       AND event_id IN (SELECT id FROM public.events WHERE shop_id = p_shop_id);
 
-  -- Phase 1: regenerate the backfilled base via the same eligibility generator used during
-  -- rollout (see Payload changes) -- inserted with source_event_id = NULL, exactly as rollout's
-  -- backfill does. This is why the backfill generator had to be a reusable, idempotent
-  -- function/script in the first place, not a one-off migration -- rebuild depends on calling
-  -- it again here.
-  PERFORM public._backfill_profit_cache_shop(p_shop_id);  -- same generator, see rollout section
+  -- Phase 1: regenerate the backfilled base via the eligibility generator (see Payload changes).
+  -- _backfill_profit_cache_shop is NEVER called outside this function -- it has no standalone
+  -- merge-safety story against a scope that might already contain event-derived rows, and none
+  -- is needed, because it only ever runs here, immediately after the DELETEs above guarantee an
+  -- empty scope. Inserted with source_event_id = NULL.
+  PERFORM public._backfill_profit_cache_shop(p_shop_id);
 
   -- Phase 2: replay every event for this shop, in sequence order, on top of that clean base.
   -- Version-1 events no-op (as always); version-2 events apply their full logic, including any
@@ -858,9 +904,25 @@ requirement:
     a second run against unchanged source data produces byte-identical rows (idempotency of the
     generator itself, required since both rollout and every rebuild depend on re-running it
     safely).
-11. **Rebuild scope test:** confirm `rebuild_profit_cache_scope` accepts no `shop_id`-only
+11. **Rebuild scope test:** confirm `rebuild_profit_cache_scope` accepts a `shop_id`-only
     argument (no `from`/`to`) and always regenerates the full backfilled base plus every event
     for the shop.
+11e. **Event-before-rebuild mixed-day test (the direct regression test for the standalone-
+    backfill merge-semantics gap):** apply a version-2 `sale.completed` event for Aug 10 first;
+    separately seed a version-1 sale for Aug 10 in source tables only (no event); run
+    `rebuild_profit_cache_scope`; assert Aug 10's `revenue_usd` equals the sum of both sales
+    exactly once each — proving the delete-then-regenerate-then-replay sequence merges correctly
+    regardless of which fact existed in `profit_cache` first, since deletion happens before
+    either phase runs.
+11f. **Repeated-rebuild idempotency test:** run `rebuild_profit_cache_scope` twice in immediate
+    succession with no source data or event changes between runs; assert the second run
+    produces byte-identical `profit_cache` rows to the first — the direct proof that "safe to
+    run repeatedly" is actually true of the full rebuild function, not merely asserted.
+11g. **Expense version/backfill test:** a version-1 expense event is ledger-recorded and
+    produces no mutation; a version-2 expense event applies normally; an expense with no
+    corresponding event at all is picked up by the backfill phase; an expense that already has
+    an eligible version-2 event is excluded from the backfill phase (not double-counted) —
+    all four asserted together against one rebuild run.
 11b. **Cross-day rebuild safety test (the direct regression test for the finding that forced
     full-scope-only rebuild):** seed a sale on day 1 and its full return on day 10, both within
     the event-covered range; run a full-scope rebuild; assert day 1's `costless_sale_count`
@@ -956,6 +1018,8 @@ reconciliation is what makes the two paths comparable over the same history in t
 | Rebuild that only deletes "event-derived" rows re-applies a cross-day event's mutation against a never-reset backfilled row a second time, corrupting it (found during review — the earlier `source_event_id IS NOT NULL` rebuild-boundary design) | Rebuild is a full rematerialization: regenerate the entire backfilled base via `_backfill_profit_cache_shop`, delete every row and ledger entry first, then replay all events on top of the clean base — never assumes a prior run's backfilled rows are still correct; verified by an explicit test (11c) |
 | `expense.recorded` left at payload_version 1 implicitly, causing every expense event (historical and current) to permanently no-op forever | `expense.recorded` is explicitly bumped to payload_version 2 alongside `sale.completed`/`sale.returned`, for version-gate uniformity, documented as a deliberate decision not an oversight |
 | A date-scoped backfill skips a lagging device's late version-1 event (falls in a date-range gap), or double-counts a mixed-version day's already-event-covered sale | Backfill redefined as a per-fact eligibility query (`NOT EXISTS` an eligible version-2+ event for that fact), not a date range — self-healing on every re-run, immune to both failure modes by construction (verified by tests 11d and the mixed-version scenario) |
+| A standalone backfill run merges (additively or by replacement) into a scope that already contains event-derived contributions for the same day, either double-counting or erasing them (found during review — the earlier draft never specified this merge behavior at all) | `_backfill_profit_cache_shop` is never called standalone — it is only invoked from inside `rebuild_profit_cache_scope`, immediately after that function deletes the entire scope, so it only ever runs against a provably empty target; there is no merge-semantics question left to answer, verified by tests 11e/11f |
+| "Backfill runs automatically forever" is assumed rather than operationally triggered, leaving a real gap open indefinitely | Rollout sequence states explicitly: re-run `rebuild_profit_cache_scope` on a known cadence until device-upgrade telemetry confirms currency, and immediately on any shadow-mode discrepancy — not an assumed background process |
 | A version=2 event reaches `_apply_profit_cache` missing a required field (producer bug), and a raw cast silently turns it into NULL, corrupting the whole day's aggregate on the next conflict-update | Explicit `IS NULL` validation on every required field per event type (including the three new `sale.returned` fields), raised loudly before any ledger/aggregate mutation |
 | Local marker mechanism assumed to need a new queue table, diverging from WAFI-151's actual shape | Verified against migration `083` directly: `daily_event_counts` already carries `source_event_id` on the same row as the aggregate; `profit_cache` copies that exact column and mechanism |
 | A nondeterministic `LIMIT 1` events-table lookup (no `ORDER BY`) for the original sale's day, dependent on that event still being synced/present | Removed entirely — `originalSaleProjectionDay` is stamped directly onto the `sale.returned` payload at write time, no lookup at apply time |
