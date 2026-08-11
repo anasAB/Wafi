@@ -62,6 +62,11 @@ handling for `day` (see "Comparison basis" below).
 - A real churn-prediction model. The Customer card reports observed
   inactivity, not a predicted likelihood of leaving — see the Customer
   card section below.
+- **Recent-notifications strip and pull-to-refresh** (originally in the
+  Layout section) — descoped during implementation; WAFI-145's
+  notification bell/center already covers recent-notification
+  visibility elsewhere in the app, and pull-to-refresh is non-essential
+  polish. Not built in this branch.
 
 ## Placement & routing
 
