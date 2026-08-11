@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS public.profit_cache (
   invoice_count         integer NOT NULL DEFAULT 0,
   return_count          integer NOT NULL DEFAULT 0,
   costless_sale_count   integer NOT NULL DEFAULT 0,
-  source_event_id       uuid REFERENCES public.events(id),
+  source_event_id       uuid REFERENCES public.events(id),  -- nullable: NULL on backfilled rows
   updated_at            timestamptz NOT NULL DEFAULT now(),
   UNIQUE (shop_id, day)
 );
@@ -107,6 +107,19 @@ ADD COLUMN source_event_id uuid REFERENCES public.events(id)`) and `_apply_daily
 marker table** — `profit_cache` follows that exact precedent rather than introducing a second
 mechanism. See Client-side implementation below for exactly how the local write and the upload
 special-case use this column.
+
+**What `source_event_id` is *not*, stated explicitly to head off a predictable future mistake:**
+it is an observability/provenance field — "which event most recently touched this aggregate
+row" — useful for debugging and for the client-side upload special-case (below) to know which
+event to forward to the apply RPC. **It is not this projection's idempotency mechanism.**
+Idempotency ("has this exact event already been applied to this projection?") is enforced
+exclusively by the `(projection_name, event_id)` primary key on `projection_processed_events` —
+that's what makes a duplicate `_apply_profit_cache(p_event_id)` call a safe no-op, not
+`source_event_id`. A future engineer reasoning "we already have `source_event_id`, do we still
+need the ledger?" would be wrong to remove it: `source_event_id` on a given day's row only ever
+holds the *most recent* applying event's ID (a day aggregates many events over its lifetime), so
+it cannot answer "has event X specifically been applied" for any event other than the last one —
+only the ledger can.
 
 **Why `revenue_syp` exists but no other column has an SYP counterpart:** `revenue_syp` is
 retained only because the dashboard displays gross SYP sales figures (dual-currency is a Sacred
@@ -303,21 +316,44 @@ paths to trust — exactly the split-brain WAFI-153 exists to eliminate. Require
 sequence:
 
 1. Deploy the new event payload version (`sale.completed`, `sale.returned` gain the new fields).
-2. New events from this point carry the required facts; `_apply_profit_cache` begins processing them.
-3. Run a **one-time historical backfill migration**: a script that computes `profit_cache`-
-   equivalent rows for every pre-coverage day by querying `sales`/`sale_line_items`/`returns`/
-   `expenses` directly — the same tables/logic `useDashboardMetrics.ts` uses today — and inserts
-   them once. This is **not** run through `_apply_profit_cache`/the event log (there is nothing
-   in old events to replay); it's a separate, one-time direct-to-table migration.
-4. **Old-vs-new financial parity test (see Testing) is run against the backfilled data itself**
+   This is the shop's coverage start date (`day 0`, referenced above).
+2. New events from this point carry the required facts; `_apply_profit_cache` begins processing
+   them, writing rows for `day >= coverage_start_day` only.
+3. **Acquire the same `(shop_id, 'profit_cache')` advisory lock incremental writes and rebuild
+   already share** (see Concurrency, inherited from WAFI-151) before starting the backfill —
+   held for the backfill's duration. This is the concrete answer to "what stops backfill and
+   incremental processing from racing into the same day": they can't, because they contend for
+   the identical lock every other writer to this projection/shop already respects. In practice
+   this is a non-issue for days *before* `coverage_start_day` specifically — no incremental
+   writer ever targets a pre-coverage day, since no event exists there to process — but the
+   backfill script still acquires the lock rather than relying on that argument alone, so the
+   invariant holds even if that assumption is ever violated by a future change.
+4. Run the **one-time historical backfill migration** under that lock: a script that computes
+   `profit_cache`-equivalent rows for every pre-coverage day (`day < coverage_start_day`) by
+   querying `sales`/`sale_line_items`/`returns`/`expenses` directly — the same tables/logic
+   `useDashboardMetrics.ts` uses today — and inserts them once, with **`source_event_id = NULL`**
+   (see below) and `day` values strictly less than `coverage_start_day`. This is **not** run
+   through `_apply_profit_cache`/the event log (there is nothing in old events to replay); it's
+   a separate, one-time direct-to-table migration, committed and the lock released once it
+   completes.
+5. **Old-vs-new financial parity test (see Testing) is run against the backfilled data itself**
    before proceeding — the backfill script re-derives the same SQL logic `useDashboardMetrics.ts`
    has today, so this step verifies the migration didn't introduce a transcription error, not
    just that the general approach is sound.
-5. Once backfill covers a shop's entire reportable history, `profit_cache` is authoritative for
+6. Once backfill covers a shop's entire reportable history, `profit_cache` is authoritative for
    every date range that shop's users can request — no boundary where "which path answers this"
    depends on the date.
-6. Consumers (the 6 call sites) switch to `useProfitCache()`.
-7. `useDashboardMetrics.ts` and its dedicated tests are deleted.
+7. Consumers (the 6 call sites) switch to `useProfitCache()`.
+8. `useDashboardMetrics.ts` and its dedicated tests are deleted.
+
+**`source_event_id = NULL` for backfilled rows — stated explicitly, not left implicit.**
+Event-derived rows always carry the ID of the most recently applying event (see the provenance
+note above). Backfilled rows have no single originating event — they're reconstructed from
+aggregate table state, not replayed from the log — so `NULL` is the only honest value, and the
+column is nullable specifically to allow it. **`source_event_id NOT NULL` must never be added
+as a constraint**: doing so would reject every legitimate backfilled row. This is analogous to
+`audit_log`'s existing nullable `source_event_id` for its own pre-event-bus legacy rows (per
+`EVENT_SUBSCRIBERS.md`'s idempotency section) — the same pattern, not a new one invented here.
 
 `useDashboardMetrics.ts` is not deleted at step 6 speculatively "once backfill runs eventually" —
 step 7 is gated on step 3/4 having actually completed for the shop(s) in question. For a
@@ -415,8 +451,14 @@ BEGIN
       DECLARE
         v_sale_day date;
       BEGIN
+        -- shop_id included even though saleId is already a globally-unique UUID -- this
+        -- function's every other query is shop-scoped, and an unscoped lookup here would be
+        -- the one silent exception to that pattern. Cheap defense-in-depth, not a correctness
+        -- fix for a bug that exists today (saleId uniqueness is a pre-existing invariant of
+        -- the sales domain model, not established by this ticket).
         SELECT event_projection_day INTO v_sale_day FROM public.events
-          WHERE type = 'sale.completed' AND payload->>'saleId' = v_event.payload->>'saleId'
+          WHERE shop_id = v_event.shop_id AND type = 'sale.completed'
+            AND payload->>'saleId' = v_event.payload->>'saleId'
           LIMIT 1;
         IF v_sale_day IS NOT NULL THEN
           -- UPSERT, not a bare UPDATE -- if sale.completed hasn't been applied yet (events can
@@ -510,6 +552,19 @@ row in `profit_cache` needs to know its own provenance; the boundary lives in th
 function's argument validation instead, keeping every row in the table uniform. If a backfilled
 day's data is ever found wrong, its fix is re-running (a corrected) backfill for that day, not
 `projections:rebuild`.
+
+**Where the coverage-start-date value itself lives — a deliberate scope decision, not an
+oversight.** A generic `projection_coverage` table (`shop_id`, `projection_name`,
+`coverage_start_day`, `backfill_completed_at`) would be the more extensible answer, but WAFI-151
+(checked directly — see its design spec) doesn't establish any projection-metadata table today;
+introducing one here would be new shared infrastructure justified by a single ticket's single
+boundary check, not by an existing need. This spec keeps the boundary as a plain per-shop date
+constant the rebuild function's argument validation checks against (implementation detail:
+hard-coded per shop at rollout time, or a single column added to an existing shop-scoped table —
+either is acceptable; a new dedicated table is not, per the above). **If a second WAFI-153 read
+model (or WAFI-151 itself) later needs the same kind of coverage-boundary tracking, that
+repetition is the trigger to extract a shared `projection_coverage` table — not this ticket,
+speculatively, for a boundary check used exactly once.**
 
 ## Client-side implementation
 
@@ -664,5 +719,8 @@ requirement:
 | Return event processed before its own sale.completed event (no ordering guarantee between them) permanently loses the costless decrement | Decrement uses an upsert (`INSERT ... ON CONFLICT DO UPDATE`), not a bare `UPDATE` — nets to 0 regardless of which event applies first; verified by an explicit both-orderings test |
 | An old event without the new payload fields reaches the apply function and crashes on a missing JSON key, or a genuinely-unrecognized future version is silently no-op'd and its drift hidden | Explicit three-way `payload_version` gate: known-old (1) = permanent no-op, current (2) = process, unrecognized-future (>2) = loud failure — never collapsed into a single "not current" bucket |
 | Dollar-denominated payload fields (`totalUsd: 19.99`) cast directly to `bigint` silently truncate cents | Verified against `schema.ts`/`sales.service.ts` that every `*Usd`/`*Syp` field is fractional dollars, never pre-converted; every extraction uses `ROUND(value * 100)::bigint`, and the read side converts back before exposing dollars to callers |
+| A future engineer removes `projection_processed_events`, assuming `source_event_id` already provides idempotency | `source_event_id` documented explicitly as provenance-only, not the dedup mechanism; idempotency is the ledger's `(projection_name, event_id)` primary key alone |
+| Backfill and an incremental writer race into the same day's row | Backfill acquires the same `(shop_id, 'profit_cache')` advisory lock incremental writes and rebuild already share, for its whole duration; moot in practice since no event exists for pre-coverage days, but enforced rather than assumed |
+| A `NOT NULL` constraint is later added to `source_event_id`, rejecting every backfilled row | Documented explicitly: `NULL` is the correct, permanent value for backfilled rows (no single originating event exists for them), analogous to `audit_log`'s existing nullable `source_event_id` |
 | Rebuild silently deletes backfilled historical rows it can't regenerate from events | `rebuild_profit_cache_scope` rejects any `from` date before the shop's coverage start date, verified by an explicit test |
 | Local marker mechanism assumed to need a new queue table, diverging from WAFI-151's actual shape | Verified against migration `083` directly: `daily_event_counts` already carries `source_event_id` on the same row as the aggregate; `profit_cache` copies that exact column and mechanism |
