@@ -9,8 +9,22 @@
 
 WAFI-153 lists five target read models: `dashboard_metrics`, `profit_cache`, `inventory_summary`,
 `customer_summary`, `staff_summary`. This spec covers **one of them end-to-end** —
-`profit_cache` — as the proof-of-pattern vertical slice. The other four are out of scope here
-and become separate follow-on specs that reuse the framework this one establishes.
+`profit_cache` — as the proof-of-pattern vertical slice. The other three (`inventory_summary`,
+`customer_summary`, `staff_summary`) are out of scope here and become separate follow-on specs
+that reuse the framework this one establishes.
+
+**`dashboard_metrics` is deliberately not carried forward as a planned fourth table.** This v1
+slice's `profit_cache` — revenue, COGS, expenses, refunds, discounts, invoice/return/costless
+counts, all at daily grain for a shop — *is* what a "dashboard metrics" read model would contain;
+the plan doc's two names describe one overlapping concept, not two distinct data needs. Building
+a separate `dashboard_metrics` table later, once `profit_cache` already exists, would be exactly
+the kind of duplicated-projection problem WAFI-033 exists to prevent, just moved one level up
+from calculation logic to table design. When WAFI-153's next slice is scoped, the first question
+should be "what does `dashboard_metrics` provide that `profit_cache` doesn't" — if the honest
+answer is "nothing," it's dropped from the plan rather than built to satisfy the original list.
+This spec doesn't delete it from `WAFI_Production_Readiness_Plan_v3.md` unilaterally — that's a
+call for whoever scopes the next slice — but it records the challenge here so it isn't
+forgotten and `dashboard_metrics` isn't built reflexively just because the plan named it.
 
 **Goal:** `useDashboardMetrics.ts`'s live ad-hoc SQL (4-table JOINs re-run on every dashboard/
 reports load, duplicated in spirit across `useRevenueIntelligence`/`useProfitIntelligence`) is
@@ -79,10 +93,29 @@ CREATE TABLE IF NOT EXISTS public.profit_cache (
   invoice_count         integer NOT NULL DEFAULT 0,
   return_count          integer NOT NULL DEFAULT 0,
   costless_sale_count   integer NOT NULL DEFAULT 0,
+  source_event_id       uuid REFERENCES public.events(id),
   updated_at            timestamptz NOT NULL DEFAULT now(),
   UNIQUE (shop_id, day)
 );
 ```
+
+**`source_event_id` — verified against WAFI-151's actual implementation, not assumed.**
+Migration `083` adds this exact column to `daily_event_counts` itself (`ALTER TABLE ...
+ADD COLUMN source_event_id uuid REFERENCES public.events(id)`) and `_apply_daily_event_count`'s
+`INSERT` stores it alongside the aggregate on every apply. **The established WAFI-151 pattern is
+"same table carries both the aggregate and the last-applied event's id," not a separate queue/
+marker table** — `profit_cache` follows that exact precedent rather than introducing a second
+mechanism. See Client-side implementation below for exactly how the local write and the upload
+special-case use this column.
+
+**Why `revenue_syp` exists but no other column has an SYP counterpart:** `revenue_syp` is
+retained only because the dashboard displays gross SYP sales figures (dual-currency is a Sacred
+Rule for this product), matching `sale.completed`'s existing `totalSyp` field. Every profit
+calculation — COGS, expenses, refunds, discounts — is USD-only, because `useDashboardMetrics.ts`'s
+existing profit math is USD-only today (COGS/expenses/refunds have no SYP fields anywhere in the
+current schema or event payloads). `profit_cache` doesn't change that; it carries the one SYP
+figure that already exists for display and nothing more. A future ticket that makes profit
+genuinely dual-currency would need its own design — not assumed or precluded here.
 
 `revenue_usd`/`cogs_usd`/etc. as `bigint` minor units, not `numeric`/`float` — matching WAFI-151's
 explicit "integer minor units, never floating point" rule so Postgres/SQLite replay can't diverge
@@ -130,22 +163,45 @@ for the minor-unit fields (SQLite has no fixed-point type; integer cents is exac
 | Refunds | `sale.returned` | `refundAmountUsd` (existing) | `+= refundAmountUsd` |
 | COGS reversal | `sale.returned` | `cogsReversalUsd` **(new)** | `+= cogsReversalUsd` |
 | Return count | `sale.returned` | — | `+= 1` |
+| Costless-sale count (decrement) | `sale.returned` | `isFullReturn`, `saleWasCostless` **(new, both boolean)** | `-= 1` on the *original sale's* day (see cross-day note below), only when both are true |
 | Expenses | `expense.recorded` | `amountUsd` (existing) | `+= amountUsd` |
 
 **`costless_sale_count` — exact semantics, stated explicitly:** counts *sales* containing ≥1
 line item with no/zero unit cost at completion time — **not** a count of costless line items.
 This matches `useDashboardMetrics.ts`'s current `costlessSalesInPeriod` in name and per-sale
-granularity, with one accepted, documented divergence: the existing live query additionally
-*excludes* a sale from this count if it was later fully returned (it compares sold vs. returned
-quantity at read time). `hasCostlessLine` is snapshotted once, at `sale.completed` time — it
-cannot know about a return that hasn't happened yet, so a fully-returned costless sale still
-counts toward `costless_sale_count` under this design, where today's live query would exclude
-it. This is a deliberate, minor simplification (the metric is a profit-estimate *caveat flag*,
-not a headline financial figure, and `profitIsEstimated = costless_sale_count > 0` degrades
-gracefully to "slightly more conservative than before," never wrong in the dangerous direction
-of under-flagging). If this divergence proves material in practice, the fix is a
-`sale.returned`-side decrement when the return is a full return of an already-costless sale —
-deferred rather than built speculatively here.
+granularity, including the case the first draft of this spec deferred: the existing live query
+excludes a sale from this count once it's fully returned. Real parity requires the
+`sale.returned` event to carry enough information to reverse that +1, not accept the drift —
+resolved via two new payload fields (`isFullReturn`, `saleWasCostless`), computed at
+return-completion write time (`returns.service.ts`, wherever the sale's cumulative
+sold-vs-returned quantity is already known for the restock/COGS-reversal logic): `isFullReturn`
+is true exactly when this return's cumulative returned quantity reaches the sale's total sold
+quantity (at most one return for a given sale ever sets this true, since a sale cannot be
+returned twice past 100%); `saleWasCostless` is a direct copy of the original sale's
+`hasCostlessLine` flag, looked up from the sale's own event or from current sale/line-item state
+at return time. The projection decrements `costless_sale_count` by 1 only when both are true.
+
+**Cross-day attribution — the subtlety that makes this harder than a plain decrement.** A sale
+and the return that fully returns it can (and often will) fall on different `event_projection_day`
+values. `costless_sale_count`'s `+1` for a given sale is recorded against *that sale's* day; a
+naive decrement on the *return's* day would corrupt two different days' rows — undercounting the
+return's day (which never had a matching `+1`) and leaving the sale's day permanently
+overcounted. WAFI-151 explicitly named this exact class of problem ("cross-day event effect
+attribution... is a WAFI-153+ concern requiring its own handler-level design") and deferred it
+generically; this spec resolves it narrowly, for this one case only: `_apply_profit_cache`
+looks up the original `sale.completed` event by `saleId` to get its `event_projection_day`, and
+applies the decrement to that day's row, not the return's. This is a targeted fix for one
+handler, not a general cross-day attribution framework — the generic problem WAFI-151 deferred
+remains deferred for any future projection that needs it.
+
+**Failure mode this introduces, and why it's acceptable:** if the original `sale.completed`
+event hasn't been applied yet when the return event is processed (e.g. sync order, or the sale
+predates this projection's coverage start — see below), the lookup finds no row and the
+decrement is silently skipped rather than erroring. This under-counts the divergence rather than
+crashing or double-decrementing — the same "safe direction" property the first draft's simpler
+approach had, now narrowed to one specific, well-understood edge case (out-of-order sync of a
+same-shop sale/return pair) instead of applying to every fully-returned costless sale
+unconditionally.
 
 **`expense.recorded` semantics — reconciled against the actual event/table, not assumed:**
 `ExpenseRecordedPayload` (`domainEvent.types.ts`) has exactly one currency field, `amountUsd`
@@ -156,6 +212,17 @@ projection's point of view and a simple `+=` is correct parity. **If an expense 
 is introduced later, `_apply_profit_cache` needs a new branch for it — this is called out here
 so it isn't silently missed when that event type is added,** not a gap in this design for
 today's event contract.
+
+**Event inventory, not an assumed-complete list.** The three event types above were identified
+by reading `useDashboardMetrics.ts`'s live queries directly, but "we found three" is not the
+same guarantee as "these are the only sources." **Acceptance criterion for implementation:**
+before writing `_apply_profit_cache`, produce an explicit table of every metric this ticket
+migrates → every table/column `useDashboardMetrics.ts` (and any other code computing the same
+numbers) reads to produce it → the event type(s), if any, that already publish an equivalent
+fact → confirmation that no additional event type (e.g. a discount-adjustment or expense-edit
+event elsewhere in `domainEvent.types.ts`) mutates that same underlying data outside the three
+types identified here. If one is found, it's added to the mapping table before implementation,
+not discovered as a production gap after cutover.
 
 All numeric projection updates are additive and order-independent once each event's immutable
 financial snapshot and `event_projection_day` are established — the same class of guarantee
@@ -188,30 +255,37 @@ historical event, not a transient error to surface to an operator. (This differs
 loud-failure rule, which is for an *unrecognized future* version arriving unexpectedly — an old,
 known-and-expected version is a different case and gets a different response.)
 
-**Consequence: `profit_cache` has a coverage start date** — the day this payload_version ships
-— and no row for a shop's history before it. This is a real, accepted limitation, not deferred
-ambiguity:
+**Consequence: `profit_cache` has a coverage start date** — the day this payload_version ships.
+**Backfilling pre-coverage history is mandatory before cutover, not optional** — the stated
+goal of this ticket ("replaced by a single... read model," "no metric is left
+half-duplicated," WAFI-033) is not achieved if `useDashboardMetrics.ts`'s live query becomes a
+permanent, silent fallback for old date ranges while `profit_cache` serves new ones. A Reports
+"This year" view spanning both would otherwise need to know, per day, which of two calculation
+paths to trust — exactly the split-brain WAFI-153 exists to eliminate. Required rollout
+sequence:
 
-- `useProfitCache()` returns zeros (not an error) for any date range entirely before a shop's
-  coverage start date. Reports/dashboard views spanning that boundary show a real, if
-  incomplete, number for the covered portion — this is the same "period contains uncovered
-  history" caveat class as `profitIsEstimated`, and should surface similarly (implementation
-  plan decides exact UI treatment; not blocking this design).
-- `useDashboardMetrics.ts` is **not** deleted the instant `useProfitCache` ships — it stays
-  available (or its query logic is preserved in a small legacy-range helper) for any report
-  request whose range predates the shop's coverage start date, until/unless a one-time backfill
-  (below) closes the gap. Full retirement of the old live-query path is therefore contingent on
-  that backfill actually running, not automatic on cutover day.
-- **One-time backfill (optional, not required for correctness):** a migration script may
-  compute equivalent `profit_cache` rows for pre-coverage days by querying `sales`/
-  `sale_line_items`/`returns`/`expenses` directly (the same tables/logic `useDashboardMetrics.ts`
-  uses today) and inserting synthesized rows once, rather than via `_apply_profit_cache`/the
-  event log. These synthesized rows are **not rebuildable** from events (there's nothing in the
-  event log to rebuild them from) — they must be tagged (e.g. a `source = 'backfill'` column, or
-  a documented day-range boundary) so a future scoped rebuild over that range doesn't silently
-  wipe them expecting events to replace them. Whether to run this backfill is an implementation-
-  time product decision (how much pre-coverage history actually needs profit reporting), not
-  decided by this spec.
+1. Deploy the new event payload version (`sale.completed`, `sale.returned` gain the new fields).
+2. New events from this point carry the required facts; `_apply_profit_cache` begins processing them.
+3. Run a **one-time historical backfill migration**: a script that computes `profit_cache`-
+   equivalent rows for every pre-coverage day by querying `sales`/`sale_line_items`/`returns`/
+   `expenses` directly — the same tables/logic `useDashboardMetrics.ts` uses today — and inserts
+   them once. This is **not** run through `_apply_profit_cache`/the event log (there is nothing
+   in old events to replay); it's a separate, one-time direct-to-table migration.
+4. **Old-vs-new financial parity test (see Testing) is run against the backfilled data itself**
+   before proceeding — the backfill script re-derives the same SQL logic `useDashboardMetrics.ts`
+   has today, so this step verifies the migration didn't introduce a transcription error, not
+   just that the general approach is sound.
+5. Once backfill covers a shop's entire reportable history, `profit_cache` is authoritative for
+   every date range that shop's users can request — no boundary where "which path answers this"
+   depends on the date.
+6. Consumers (the 6 call sites) switch to `useProfitCache()`.
+7. `useDashboardMetrics.ts` and its dedicated tests are deleted.
+
+`useDashboardMetrics.ts` is not deleted at step 6 speculatively "once backfill runs eventually" —
+step 7 is gated on step 3/4 having actually completed for the shop(s) in question. For a
+single-pilot-shop product at this stage (see project context: one brother's-shop customer, no
+multi-year history yet), the backfill is small in practice; this sequencing exists so the
+architecture is correct in principle regardless of how much history a future shop brings.
 
 ## Server-side implementation
 
@@ -237,11 +311,12 @@ BEGIN
 
   IF v_event.type = 'sale.completed' THEN
     INSERT INTO public.profit_cache (shop_id, day, revenue_usd, revenue_syp, cogs_usd,
-      discount_usd, invoice_count, costless_sale_count)
+      discount_usd, invoice_count, costless_sale_count, source_event_id)
     VALUES (v_event.shop_id, v_event.event_projection_day,
       (v_event.payload->>'totalUsd')::bigint, (v_event.payload->>'totalSyp')::bigint,
       (v_event.payload->>'cogsUsd')::bigint, (v_event.payload->>'discountUsd')::bigint,
-      1, CASE WHEN (v_event.payload->>'hasCostlessLine')::boolean THEN 1 ELSE 0 END)
+      1, CASE WHEN (v_event.payload->>'hasCostlessLine')::boolean THEN 1 ELSE 0 END,
+      p_event_id)
     ON CONFLICT (shop_id, day) DO UPDATE SET
       revenue_usd = profit_cache.revenue_usd + EXCLUDED.revenue_usd,
       revenue_syp = profit_cache.revenue_syp + EXCLUDED.revenue_syp,
@@ -249,23 +324,49 @@ BEGIN
       discount_usd = profit_cache.discount_usd + EXCLUDED.discount_usd,
       invoice_count = profit_cache.invoice_count + 1,
       costless_sale_count = profit_cache.costless_sale_count + EXCLUDED.costless_sale_count,
+      source_event_id = EXCLUDED.source_event_id,
       updated_at = now();
 
   ELSIF v_event.type = 'sale.returned' THEN
-    INSERT INTO public.profit_cache (shop_id, day, refunds_usd, cogs_reversal_usd, return_count)
+    -- Refunds/COGS-reversal/return_count are bucketed by the RETURN's own day, matching
+    -- useDashboardMetrics.ts's existing refund/return queries (both filter on the return's
+    -- created_at, not the sale's). costless_sale_count's decrement is bucketed by the
+    -- ORIGINAL SALE's day instead -- see "Return-aware costless tracking, cross-day
+    -- attribution" below -- because that's the day the +1 was recorded against, and
+    -- decrementing the wrong day's bucket would silently corrupt two different days.
+    INSERT INTO public.profit_cache (shop_id, day, refunds_usd, cogs_reversal_usd, return_count,
+      source_event_id)
     VALUES (v_event.shop_id, v_event.event_projection_day,
-      (v_event.payload->>'refundAmountUsd')::bigint, (v_event.payload->>'cogsReversalUsd')::bigint, 1)
+      (v_event.payload->>'refundAmountUsd')::bigint, (v_event.payload->>'cogsReversalUsd')::bigint, 1,
+      p_event_id)
     ON CONFLICT (shop_id, day) DO UPDATE SET
       refunds_usd = profit_cache.refunds_usd + EXCLUDED.refunds_usd,
       cogs_reversal_usd = profit_cache.cogs_reversal_usd + EXCLUDED.cogs_reversal_usd,
       return_count = profit_cache.return_count + 1,
+      source_event_id = EXCLUDED.source_event_id,
       updated_at = now();
 
+    IF (v_event.payload->>'isFullReturn')::boolean AND (v_event.payload->>'saleWasCostless')::boolean THEN
+      DECLARE
+        v_sale_day date;
+      BEGIN
+        SELECT event_projection_day INTO v_sale_day FROM public.events
+          WHERE type = 'sale.completed' AND payload->>'saleId' = v_event.payload->>'saleId'
+          LIMIT 1;
+        IF v_sale_day IS NOT NULL THEN
+          UPDATE public.profit_cache SET costless_sale_count = costless_sale_count - 1, updated_at = now()
+            WHERE shop_id = v_event.shop_id AND day = v_sale_day;
+        END IF; -- original sale's row not found/not yet applied: nothing to decrement (see below)
+      END;
+    END IF;
+
   ELSIF v_event.type = 'expense.recorded' THEN
-    INSERT INTO public.profit_cache (shop_id, day, expenses_usd)
-    VALUES (v_event.shop_id, v_event.event_projection_day, (v_event.payload->>'amountUsd')::bigint)
+    INSERT INTO public.profit_cache (shop_id, day, expenses_usd, source_event_id)
+    VALUES (v_event.shop_id, v_event.event_projection_day, (v_event.payload->>'amountUsd')::bigint,
+      p_event_id)
     ON CONFLICT (shop_id, day) DO UPDATE SET
       expenses_usd = profit_cache.expenses_usd + EXCLUDED.expenses_usd,
+      source_event_id = EXCLUDED.source_event_id,
       updated_at = now();
   END IF; -- any other event type: no-op, not an error (mirrors daily_event_counts' pattern)
 END;
@@ -319,6 +420,18 @@ in-scope events `ORDER BY sequence ASC` through `_apply_profit_cache`, exactly l
 following the established shape, wired into the same CLI (`npm run projections:rebuild --
 profit_cache --shop <id> --from <date> --to <date>`).
 
+**Rebuild boundary rule, explicit rather than left to accident:** the event-replay rebuild
+contract only covers `profit_cache` rows from a shop's coverage start date forward — rebuilding
+is defined as "replay the events that produced this state," and pre-coverage, backfilled rows
+were never produced by events. `rebuild_profit_cache_scope` **rejects** (fails fast, no
+mutation) any request whose `from` date precedes the shop's recorded coverage start date, rather
+than silently deleting backfilled rows it cannot regenerate from the event log. This is a
+one-line guard, not the tagged-row/`source` column approach an earlier draft considered — no
+row in `profit_cache` needs to know its own provenance; the boundary lives in the rebuild
+function's argument validation instead, keeping every row in the table uniform. If a backfilled
+day's data is ever found wrong, its fix is re-running (a corrected) backfill for that day, not
+`projections:rebuild`.
+
 ## Client-side implementation
 
 - **Sync:** `profit_cache` added to the PowerSync sync stream, shop-scoped (same pattern as
@@ -327,14 +440,26 @@ profit_cache --shop <id> --from <date> --to <date>`).
 - **Local subscriber** (`src/services/events/profitCacheProjection.ts`, following the file-naming
   convention in `EVENT_SUBSCRIBERS.md` — named for what it does, not the ticket): subscribes to
   `sale.completed`, `sale.returned`, `expense.recorded` via `useEventSubscription` (lightweight
-  category — losing a local marker write is recoverable via rebuild, matching the decision rule).
-  On each event, writes a local marker row carrying `source_event_id` — **no local aggregation
-  logic**, mirroring `dailyEventCountsProjection.ts` post-WAFI-151: the device does not compute
-  or upload an absolute value, it only asserts "this event needs applying."
+  category — losing a local marker write is recoverable via rebuild, matching the decision
+  rule). On each event, does a read-then-insert-or-update against the local `(shop_id, day)`
+  row exactly like `dashboardRevenueProjection.ts`'s existing pattern, but **only writes
+  `source_event_id = event.id`** — no local computation of the metric columns. **This is the
+  same "one table, two meanings" mechanism WAFI-151 established for `daily_event_counts`, not a
+  new design**: verified directly against migration `083` (`ALTER TABLE daily_event_counts ADD
+  COLUMN source_event_id...`) and `_apply_daily_event_count`'s `INSERT ... source_event_id`,
+  both operating on the *same* table that also holds the aggregate — there is no separate queue
+  table in the actual WAFI-151 implementation, so `profit_cache` doesn't invent one either.
+  **Why multiple events on the same day don't collide locally:** PowerSync's upload queue
+  records one op per local mutation, each carrying the `opData` snapshot as written *at that
+  call* — a second event's write to the same local row is still a distinct queued op with its
+  own `source_event_id`, processed serially by `ops.ts`. The local row's current on-screen value
+  may lag between events (no local optimistic increment, matching
+  `dailyEventCountsProjection.ts` post-fix exactly); the authoritative value arrives on the next
+  sync-down after the server applies it.
 - **`src/data/powersync/ops.ts`**: new special case for `profit_cache`, identical shape to the
   existing `daily_event_counts` one — PUT/PATCH with a `source_event_id` calls
-  `supabase.rpc('apply_profit_cache', { p_event_id })`; missing `source_event_id` is a no-op
-  (pre-migration row).
+  `supabase.rpc('apply_profit_cache', { p_event_id })`, never uploading the metric columns
+  themselves; missing `source_event_id` is a no-op (pre-migration row).
 - **Read side** (`src/features/dashboard/composables/useProfitCache.ts`, new): given a date
   range, `SELECT ... FROM profit_cache WHERE shop_id = ? AND day BETWEEN ? AND ?` and sums the
   handful of already-small day rows in JS — no JOINs, no `sale_line_items` scan.
@@ -386,17 +511,31 @@ requirement:
    pass against `useProfitCache` (test files updated to import the new composable, assertions
    unchanged where the metric contract is unchanged).
 9. **Old-vs-new financial parity test (the primary migration safety net, required before
-   `useDashboardMetrics.ts` is deleted):** seed a fixture with a realistic mixed event set —
-   at minimum two `sale.completed` (one with a costless line), one `sale.returned` (partial,
-   restock-aware), one `expense.recorded` — and populate the *equivalent* underlying
-   `sales`/`sale_line_items`/`returns`/`expenses` rows the old composable reads directly. Run
-   both `useDashboardMetrics()`'s live query and `useProfitCache()` (fed by applying the same
-   events through `_apply_profit_cache`) over the identical period, and assert every shared
-   metric — revenue, refunds, COGS, COGS reversal, expenses, discounts, invoice/return counts,
-   profit — matches exactly (accounting for the documented `costless_sale_count` divergence
-   above, asserted as a known, intentional difference rather than ignored). This is what proves
-   the migration doesn't silently change financial results, which is the entire premise of
-   retiring the old composable.
+   `useDashboardMetrics.ts` is deleted):** seed a fixture with a realistic mixed event set and
+   populate the *equivalent* underlying `sales`/`sale_line_items`/`returns`/`expenses` rows the
+   old composable reads directly. Run both `useDashboardMetrics()`'s live query and
+   `useProfitCache()` (fed by applying the same events through `_apply_profit_cache`) over the
+   identical period, and assert every metric — revenue, refunds, COGS, COGS reversal, expenses,
+   discounts, invoice/return/costless counts, profit — matches **exactly**, with no accepted
+   divergence (the costless-count parity gap from the first draft is resolved above, not carried
+   into this test as a documented exception). Scenarios, at minimum: same-day return; cross-day
+   return (proves the day-attribution fix, not just the arithmetic); multiple sales in one day;
+   multiple distinct products on one sale; duplicate product across two lines of one sale
+   (exercises the existing per-(sale,product)-averaged COGS-reversal logic); a costless sale
+   that is later fully returned (exercises the cross-day costless decrement end-to-end); a
+   costless sale that is only partially returned (decrement must *not* fire); an expense; a
+   discount; a zero-value sale if the domain permits one. This is what proves the migration
+   doesn't silently change financial results, which is the entire premise of retiring the old
+   composable.
+10. **Backfill verification test:** run the historical backfill script against a fixture
+    populated only in `sales`/`sale_line_items`/`returns`/`expenses` (no events at all, modeling
+    genuine pre-coverage history) and assert the resulting `profit_cache` rows match
+    `useDashboardMetrics()`'s live-query output for the same period exactly — this is the
+    step-4 verification the mandatory rollout sequence (see Payload changes) requires before
+    cutover proceeds.
+11. **Rebuild boundary test:** attempt `projections:rebuild -- profit_cache` with a `from` date
+    preceding the shop's coverage start date; assert it fails fast with no mutation, rather than
+    deleting backfilled rows it can't regenerate.
 
 ## Out of scope
 
@@ -405,10 +544,10 @@ requirement:
   `profit_cache` table uses that representation
 - `missingCostCount` migration to any projection (deliberately stays live — see Scope)
 - Admin UI or customer-facing rebuild trigger (inherits WAFI-151's CLI-only trigger surface)
-- Backfilling `profit_cache` for pre-coverage-start-date history is optional and, if done, is a
-  one-time non-event-sourced migration script (see Payload changes section) — not a rebuild from
-  the event log, which cannot produce COGS/discount facts events never recorded. Whether to run
-  it is a product decision deferred to implementation time.
+- The historical backfill (mandatory pre-cutover per the rollout sequence above) is a one-time
+  non-event-sourced migration script — not a rebuild from the event log, which cannot produce
+  COGS/discount facts events never recorded. Building a *general*, reusable backfill framework
+  for future read models is out of scope; this is a one-off script for this one migration.
 
 ## Risks
 
@@ -418,5 +557,8 @@ requirement:
 | COGS-reversal restock logic re-derived incorrectly at write time vs. today's read-time query | Ported as a direct fixture-based test (existing SQL logic → equivalent write-time computation), not re-derived from memory |
 | Three event types partially updating one row via separate `ON CONFLICT` branches race with each other for the same shop+day | Same `(shop_id, projection_name)` advisory lock as `daily_event_counts` serializes all writes to a scope, regardless of which event type triggered them |
 | `profit_usd` stored as a column and drifting from its inputs | Not stored — always computed at read time by netting revenue/COGS first, then combining (worked-example test in this spec catches the gross-vs-net error class directly) |
-| Six call sites migrated inconsistently, some left on old composable | Explicit call-site list in this spec; `useDashboardMetrics.ts` deletion is gated on both full call-site migration *and* a resolved backfill/coverage-start decision for pre-coverage history, not assumed automatic on cutover |
-| Historical events lack the new payload fields, silently producing wrong or missing profit_cache rows for old periods | `_apply_profit_cache` explicitly no-ops (not loud-fails) on pre-rollout `payload_version`; `useProfitCache()` returns zero, not a guess, for pre-coverage ranges; optional one-time backfill script is separate from and never overwritten by event-log rebuild |
+| Six call sites migrated inconsistently, some left on old composable | Explicit call-site list in this spec; `useDashboardMetrics.ts` deletion is step 7 of the mandatory rollout sequence, gated on backfill (steps 3-4) actually completing, never assumed automatic on cutover |
+| Historical events lack the new payload fields, silently producing wrong or missing profit_cache rows for old periods | Mandatory pre-cutover backfill (not optional) closes the gap once, directly from source tables; `_apply_profit_cache` no-ops (not loud-fails) on pre-rollout `payload_version` for any event somehow still reaching it after backfill |
+| Cross-day costless-count decrement corrupts the wrong day's row, or double-decrements | Decrement is applied to the original sale's `event_projection_day` (looked up by `saleId`), never the return's own day; skipped (not errored) if the original sale's row isn't found, since `isFullReturn` can be true for at most one return per sale |
+| Rebuild silently deletes backfilled historical rows it can't regenerate from events | `rebuild_profit_cache_scope` rejects any `from` date before the shop's coverage start date, verified by an explicit test |
+| Local marker mechanism assumed to need a new queue table, diverging from WAFI-151's actual shape | Verified against migration `083` directly: `daily_event_counts` already carries `source_event_id` on the same row as the aggregate; `profit_cache` copies that exact column and mechanism |
