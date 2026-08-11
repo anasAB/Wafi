@@ -131,7 +131,7 @@ describe('StaffIntelligenceCard', () => {
     expect(mockRouterPush).toHaveBeenCalledWith('/reports/staff')
   })
 
-  it('reloads when period prop changes', async () => {
+  it('reloads when period prop changes (initial load is now the parent\'s job, not onMounted)', async () => {
     const mockLoad = vi.fn()
     vi.mocked(useStaffIntelligence).mockReturnValue({
       data: ref(null),
@@ -141,15 +141,14 @@ describe('StaffIntelligenceCard', () => {
 
     const wrapper = mount(StaffIntelligenceCard, { props: { period: 'week', expanded: false } })
     await flushPromises()
-    expect(mockLoad).toHaveBeenCalledWith('week')
+    expect(mockLoad).not.toHaveBeenCalled()
 
-    mockLoad.mockClear()
     await wrapper.setProps({ period: 'month' })
     await flushPromises()
     expect(mockLoad).toHaveBeenCalledWith('month')
   })
 
-  it('loads data on mount', async () => {
+  it('does not self-load on mount; parent (Dashboard2Screen) must call reload() explicitly', async () => {
     const mockLoad = vi.fn()
     vi.mocked(useStaffIntelligence).mockReturnValue({
       data: ref(null),
@@ -157,9 +156,12 @@ describe('StaffIntelligenceCard', () => {
       load: mockLoad,
     } as any)
 
-    mount(StaffIntelligenceCard, { props: { period: 'week', expanded: false } })
+    const wrapper = mount(StaffIntelligenceCard, { props: { period: 'week', expanded: false } })
     await flushPromises()
+    expect(mockLoad).not.toHaveBeenCalled()
 
+    await wrapper.vm.reload()
+    await flushPromises()
     expect(mockLoad).toHaveBeenCalledWith('week')
   })
 })

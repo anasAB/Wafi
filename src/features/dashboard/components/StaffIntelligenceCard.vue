@@ -3,7 +3,7 @@
      Wraps IntelligenceCard with useStaffIntelligence composable. No permission
      check here — Dashboard2Screen.vue decides whether to render at all. -->
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import IntelligenceCard from './IntelligenceCard.vue'
@@ -21,7 +21,6 @@ async function reload() {
 }
 defineExpose({ reload })
 
-onMounted(reload)
 watch(() => props.period, reload)
 
 const topPerformerLine = computed(() =>

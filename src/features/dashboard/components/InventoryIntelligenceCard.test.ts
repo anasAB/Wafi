@@ -141,7 +141,7 @@ describe('InventoryIntelligenceCard', () => {
     expect(wrapper.find('.ic-loading').exists()).toBe(false)
   })
 
-  it('calls load() on mount', async () => {
+  it('does not self-load on mount; parent (Dashboard2Screen) must call reload() explicitly', async () => {
     const mockLoad = vi.fn()
     vi.mocked(useInventoryIntelligence).mockReturnValue({
       data: ref(null),
@@ -152,7 +152,7 @@ describe('InventoryIntelligenceCard', () => {
     mount(InventoryIntelligenceCard, { props: { expanded: false } })
     await flushPromises()
 
-    expect(mockLoad).toHaveBeenCalled()
+    expect(mockLoad).not.toHaveBeenCalled()
   })
 
   it('exposes reload() function for parent refresh', () => {

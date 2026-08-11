@@ -211,7 +211,7 @@ describe('CustomerIntelligenceCard', () => {
     expect(viewDetailButton.exists()).toBe(true)
   })
 
-  it('calls reload() on mount', async () => {
+  it('does not self-load on mount; parent (Dashboard2Screen) must call reload() explicitly', async () => {
     const mockLoad = vi.fn()
     vi.mocked(useCustomerIntelligence).mockReturnValue({
       data: ref(null),
@@ -226,10 +226,16 @@ describe('CustomerIntelligenceCard', () => {
       save: vi.fn(),
     } as any)
 
-    mount(CustomerIntelligenceCard, {
+    const wrapper = mount(CustomerIntelligenceCard, {
       props: { expanded: true },
       global: { plugins: [router, i18n] },
     })
+    await flushPromises()
+
+    expect(mockLoad).not.toHaveBeenCalled()
+    expect(mockLoadReceipt).not.toHaveBeenCalled()
+
+    await (wrapper.vm as any).reload()
     await flushPromises()
 
     expect(mockLoad).toHaveBeenCalled()
