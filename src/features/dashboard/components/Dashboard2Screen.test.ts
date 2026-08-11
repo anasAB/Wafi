@@ -5,6 +5,7 @@ import { ref } from 'vue'
 vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
 vi.mock('@/store/device.store', () => ({ useDeviceStore: () => ({ shopId: 'shop1', shopName: 'محل' }) }))
 vi.mock('@/composables/useCan', () => ({ useCan: () => ({ can: () => ref(true) }) }))
+vi.mock('@/features/settings', () => ({ useSettingsStore: () => ({ language: 'ar' }) }))
 
 const { mockPush, mockUseEventSubscription } = vi.hoisted(() => ({
   mockPush: vi.fn(),
@@ -231,5 +232,23 @@ describe('Dashboard2Screen', () => {
     await flushPromises()
     await wrapper.findAll('.d2-quick-actions button')[3].trigger('click')
     expect(mockPush).toHaveBeenCalledWith('/pos')
+  })
+
+  it('reloads all cards after an expense is saved, since it directly changes displayed profit', async () => {
+    const wrapper = mount(Dashboard2Screen)
+    await flushPromises()
+
+    await wrapper.findAll('.d2-quick-actions button')[1].trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.expense-form-stub').exists()).toBe(true)
+
+    const profitVm = wrapper.findComponent({ name: 'ProfitIntelligenceCard' }).vm as any
+    profitVm.reload.mockClear()
+
+    await wrapper.findComponent({ name: 'ExpenseForm' }).vm.$emit('saved')
+    await flushPromises()
+
+    expect(wrapper.find('.expense-form-stub').exists()).toBe(false)
+    expect(profitVm.reload).toHaveBeenCalled()
   })
 })

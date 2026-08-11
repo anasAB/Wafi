@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useCan } from '@/composables/useCan'
 import { useDeviceStore } from '@/store/device.store'
+import { useSettingsStore } from '@/features/settings'
 import { useEventSubscription } from '@/services/events/useEventSubscription'
 import type { DomainEventType } from '@/services/events/domainEvent.types'
 import type { InsightPeriod } from '../composables/insightRanges'
@@ -21,6 +22,7 @@ import ExpenseForm from '@/features/expenses/components/ExpenseForm.vue'
 const { t } = useI18n()
 const router = useRouter()
 const device = useDeviceStore()
+const settings = useSettingsStore()
 const { can } = useCan()
 const canViewStaffPerformance = can('can_view_staff_performance')
 
@@ -32,7 +34,10 @@ const expandedKey = ref<string | null>(null)
 const cardExpanded = ref<Record<string, boolean>>({
   revenue: false, profit: false, inventory: false, staff: false, customer: false,
 })
-const isMobile = ref(window.matchMedia('(max-width: 767px)').matches)
+const mobileMediaQuery = window.matchMedia('(max-width: 767px)')
+const isMobile = ref(mobileMediaQuery.matches)
+function onMobileMediaChange(e: MediaQueryListEvent) { isMobile.value = e.matches }
+mobileMediaQuery.addEventListener('change', onMobileMediaChange)
 
 function onToggle(key: string) {
   if (isMobile.value) {
@@ -85,6 +90,7 @@ const subs = REFRESH_ON_EVENTS.map(type =>
 onBeforeUnmount(() => {
   subs.forEach(s => s.stop())
   if (refreshTimer) clearTimeout(refreshTimer)
+  mobileMediaQuery.removeEventListener('change', onMobileMediaChange)
 })
 
 onMounted(reloadAll)
@@ -96,7 +102,7 @@ const PERIOD_LABEL_KEY: Record<InsightPeriod, 'today' | 'week' | 'month'> = {
 </script>
 
 <template>
-  <div class="d2-root" dir="rtl">
+  <div class="d2-root" :dir="settings.language === 'ar' ? 'rtl' : 'ltr'">
     <header class="d2-period-row">
       <div class="d2-period-toggle">
         <button
@@ -133,15 +139,15 @@ const PERIOD_LABEL_KEY: Record<InsightPeriod, 'today' | 'week' | 'month'> = {
     </div>
 
     <div class="d2-quick-actions">
-      <button type="button" @click="router.push('/pos')">بيع جديد</button>
-      <button type="button" @click="showExpenseForm = true">تسجيل مصروف</button>
-      <button type="button" @click="router.push('/customers/collections')">تسجيل دفعة</button>
-      <button type="button" @click="router.push('/pos')">فتح دوام</button>
+      <button type="button" @click="router.push('/pos')">{{ t('dashboard2.quickActions.newSale') }}</button>
+      <button type="button" @click="showExpenseForm = true">{{ t('dashboard2.quickActions.logExpense') }}</button>
+      <button type="button" @click="router.push('/customers/collections')">{{ t('dashboard2.quickActions.recordPayment') }}</button>
+      <button type="button" @click="router.push('/pos')">{{ t('dashboard2.quickActions.openShift') }}</button>
     </div>
 
     <ExpenseForm
       v-if="showExpenseForm"
-      @saved="showExpenseForm = false"
+      @saved="showExpenseForm = false; void reloadAll()"
       @cancel="showExpenseForm = false"
     />
   </div>
