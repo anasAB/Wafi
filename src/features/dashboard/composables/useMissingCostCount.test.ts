@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
+vi.mock('@/store/device.store')
+
 import { useMissingCostCount } from './useMissingCostCount'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
-
-vi.mock('@/data/powersync/db')
-vi.mock('@/store/device.store')
 
 describe('useMissingCostCount', () => {
   beforeEach(() => {

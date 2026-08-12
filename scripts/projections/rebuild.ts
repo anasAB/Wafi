@@ -120,9 +120,10 @@ async function main() {
   const deps: RebuildDeps = {
     rebuildScope: async (shopId, from, to) => {
       if (args.projection === 'profit_cache') {
-        const { data, error } = await supabase.rpc('rebuild_profit_cache_scope', { p_shop_id: shopId })
+        const { error } = await supabase.rpc('rebuild_profit_cache_scope', { p_shop_id: shopId })
         if (error) throw new Error(error.message)
-        return data as { rows_deleted: number; events_replayed: number }
+        // rebuild_profit_cache_scope RETURNS void -- no row/event counts to report.
+        return { rows_deleted: 0, events_replayed: 0 }
       }
       const { data, error } = await supabase.rpc('rebuild_daily_event_counts_scope', { p_shop_id: shopId, p_from: from, p_to: to })
       if (error) throw new Error(error.message)
