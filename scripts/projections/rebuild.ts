@@ -1,19 +1,21 @@
 import { pathToFileURL } from 'node:url'
 
+export type Projection = 'daily_event_counts' | 'profit_cache'
+
 export interface ScopedRebuildArgs {
-  projection: 'daily_event_counts'
+  projection: Projection
   mode: 'scoped'
   shopId: string
-  from: string
-  to: string
+  from?: string
+  to?: string
 }
 export interface AllRebuildArgs {
-  projection: 'daily_event_counts'
+  projection: Projection
   mode: 'all'
 }
 export type ParsedArgs = ScopedRebuildArgs | AllRebuildArgs
 
-const KNOWN_PROJECTIONS = ['daily_event_counts'] as const
+const KNOWN_PROJECTIONS = ['daily_event_counts', 'profit_cache'] as const
 
 export function parseArgs(argv: string[]): ParsedArgs {
   const [projection, ...rest] = argv
@@ -35,12 +37,13 @@ export function parseArgs(argv: string[]): ParsedArgs {
 
   const isAll = flags.get('all') === true
   const shopId = flags.get('shop') as string | undefined
+  const projectionName = projection as Projection
 
   if (isAll && shopId) {
     throw new Error('cannot combine --shop and --all -- pick one scope mode explicitly')
   }
   if (isAll) {
-    return { projection: 'daily_event_counts', mode: 'all' }
+    return { projection: projectionName, mode: 'all' }
   }
 
   const from = flags.get('from') as string | undefined
@@ -48,14 +51,20 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (!shopId) {
     throw new Error('--shop is required for a scoped rebuild (or pass --all for a full rebuild)')
   }
+  if (projectionName === 'profit_cache') {
+    if (from || to) {
+      throw new Error('profit_cache does not support --from/--to: rebuild is always full-shop-scope')
+    }
+    return { projection: projectionName, mode: 'scoped', shopId }
+  }
   if (!from || !to) {
     throw new Error('--from and --to are both required for a scoped rebuild')
   }
-  return { projection: 'daily_event_counts', mode: 'scoped', shopId, from, to }
+  return { projection: projectionName, mode: 'scoped', shopId, from, to }
 }
 
 export interface RebuildDeps {
-  rebuildScope: (shopId: string, from: string, to: string) => Promise<{ rows_deleted: number; events_replayed: number }>
+  rebuildScope: (shopId: string, from?: string, to?: string) => Promise<{ rows_deleted: number; events_replayed: number }>
   listShopIds: () => Promise<string[]>
 }
 
@@ -110,6 +119,11 @@ async function main() {
   const args = parseArgs(process.argv.slice(2))
   const deps: RebuildDeps = {
     rebuildScope: async (shopId, from, to) => {
+      if (args.projection === 'profit_cache') {
+        const { data, error } = await supabase.rpc('rebuild_profit_cache_scope', { p_shop_id: shopId })
+        if (error) throw new Error(error.message)
+        return data as { rows_deleted: number; events_replayed: number }
+      }
       const { data, error } = await supabase.rpc('rebuild_daily_event_counts_scope', { p_shop_id: shopId, p_from: from, p_to: to })
       if (error) throw new Error(error.message)
       return data as { rows_deleted: number; events_replayed: number }

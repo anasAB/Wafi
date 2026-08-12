@@ -26,6 +26,16 @@ describe('parseArgs', () => {
   it('rejects an unknown projection name', () => {
     expect(() => parseArgs(['unknown_projection', '--all'])).toThrow(/unknown projection/)
   })
+
+  it('parses a profit_cache scoped rebuild (--shop only, no --from/--to)', () => {
+    const args = parseArgs(['profit_cache', '--shop', 'shop-1'])
+    expect(args).toEqual({ projection: 'profit_cache', mode: 'scoped', shopId: 'shop-1' })
+  })
+
+  it('rejects --from/--to for the profit_cache projection (full-scope-only)', () => {
+    expect(() => parseArgs(['profit_cache', '--shop', 'shop-1', '--from', '2026-01-01', '--to', '2026-01-31']))
+      .toThrow(/profit_cache does not support --from\/--to/i)
+  })
 })
 
 describe('runRebuild', () => {
@@ -71,5 +81,17 @@ describe('runRebuild', () => {
       { shopId: 'shop-1', status: 'success', rowsDeleted: 1, eventsReplayed: 1 },
       { shopId: 'shop-2', status: 'failed', error: 'validation failed' },
     ])
+  })
+
+  it('profit_cache scoped mode calls rebuildScope with only the shopId (no from/to)', async () => {
+    const rebuildScope = vi.fn().mockResolvedValue({ rows_deleted: 4, events_replayed: 7 })
+    const listShopIds = vi.fn()
+    const results = await runRebuild(
+      { projection: 'profit_cache', mode: 'scoped', shopId: 'shop-1' },
+      { rebuildScope, listShopIds },
+    )
+    expect(rebuildScope).toHaveBeenCalledTimes(1)
+    expect(rebuildScope).toHaveBeenCalledWith('shop-1', undefined, undefined)
+    expect(results).toEqual([{ shopId: 'shop-1', status: 'success', rowsDeleted: 4, eventsReplayed: 7 }])
   })
 })
