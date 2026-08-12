@@ -6,39 +6,25 @@ import { db } from '@/data/powersync/db'
 import { useProfitIntelligence } from '@/features/dashboard/composables/useProfitIntelligence'
 import * as insightRangesModule from '@/features/dashboard/composables/insightRanges'
 
+// useProfitCache reads ONE row-set from `profit_cache` (SUM'd in cents) per
+// loadRange() call, unlike the old useDashboardMetrics which issued 10
+// fine-grained getOptional() queries. Route on call order: 1st loadRange call
+// is the current period, 2nd is the comparison period (matches useProfitIntelligence's
+// Promise.all([currentMetrics.loadRange, previousMetrics.loadRange]) instantiation order).
+// discount_usd mirrors src.total to preserve this test's original (somewhat
+// arbitrary) "discounts driver == revenue total" fixture behavior.
 function mockRow(current: { total?: number; cogs?: number; count?: number }, previous: { total?: number; cogs?: number; count?: number }) {
   let call = 0
-  vi.mocked(db.getOptional).mockImplementation(async () => {
+  vi.mocked(db.getAll).mockImplementation(async (sql: string) => {
+    if (!/FROM profit_cache/.test(sql)) return [] as any
     call++
-    // useDashboardMetrics issues 10 getOptional calls per loadRange() invocation.
-    // Calls 1-10: current period, 11-20: previous period.
-    const isFirstPeriod = call <= 10
-    const src = isFirstPeriod ? current : previous
-
-    // Query order in useDashboardMetrics.run(): revenue, cogs, expenses, refunds, cogs_reversal, missing, count, costless, returns, discounts
-    const queryIndex = ((call - 1) % 10)
-    if (queryIndex === 0) {
-      // Revenue
-      return { total: src.total ?? 0 } as any
-    } else if (queryIndex === 1) {
-      // COGS
-      return { cogs: src.cogs ?? 0 } as any
-    } else if (queryIndex === 2) {
-      // Expenses
-      return { total: 0 } as any
-    } else if (queryIndex === 3) {
-      // Refunds
-      return { total: 0 } as any
-    } else if (queryIndex === 4) {
-      // COGS reversal
-      return { cogs: 0 } as any
-    } else if (queryIndex === 9) {
-      // Discounts
-      return { total: src.total ?? 0 } as any
-    } else {
-      // Counts and missing (indices 5, 6, 7, 8)
-      return { count: src.count ?? 0 } as any
-    }
+    const src = call === 1 ? current : previous
+    return [{
+      revenue_usd: (src.total ?? 0) * 100, revenue_syp: 0,
+      cogs_usd: (src.cogs ?? 0) * 100, cogs_reversal_usd: 0,
+      expenses_usd: 0, refunds_usd: 0, discount_usd: (src.total ?? 0) * 100,
+      invoice_count: src.count ?? 0, return_count: 0, costless_sale_count: 0,
+    }] as any
   })
 }
 

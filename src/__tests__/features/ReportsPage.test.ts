@@ -19,34 +19,52 @@ function mountPage() {
   })
 }
 
+// useProfitCache reads ONE row-set from `profit_cache` (SUM'd in cents), unlike the
+// old useDashboardMetrics which issued several fine-grained getOptional() queries.
+// This single row stands in for the whole period's summed profit_cache rows.
+function profitCacheRow(opts: {
+  revenueUsd?: number; cogsUsd?: number; expensesUsd?: number; refundsUsd?: number
+  cogsReversalUsd?: number; discountUsd?: number; invoiceCount?: number
+  returnCount?: number; costlessSaleCount?: number
+}) {
+  return {
+    revenue_usd: Math.round((opts.revenueUsd ?? 0) * 100),
+    revenue_syp: 0,
+    cogs_usd: Math.round((opts.cogsUsd ?? 0) * 100),
+    cogs_reversal_usd: Math.round((opts.cogsReversalUsd ?? 0) * 100),
+    expenses_usd: Math.round((opts.expensesUsd ?? 0) * 100),
+    refunds_usd: Math.round((opts.refundsUsd ?? 0) * 100),
+    discount_usd: Math.round((opts.discountUsd ?? 0) * 100),
+    invoice_count: opts.invoiceCount ?? 0,
+    return_count: opts.returnCount ?? 0,
+    costless_sale_count: opts.costlessSaleCount ?? 0,
+  }
+}
+
+function mockProfitCache(getAllRow: ReturnType<typeof profitCacheRow>) {
+  vi.mocked(db.getAll).mockImplementation(async (sql: string) => {
+    if (/FROM profit_cache/.test(sql)) return [getAllRow] as any
+    return [] as any
+  })
+}
+
 describe('ReportsPage', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    vi.mocked(db.getOptional).mockResolvedValue({ total: 0, cogs: 0, count: 0 } as any)
     vi.mocked(db.getAll).mockResolvedValue([] as any)
   })
 
   it('shows the profit headline for the default period', async () => {
-    vi.mocked(db.getOptional).mockImplementation(async (sql: string) => {
-      if (/SUM\(total_usd\)/.test(sql)) return { total: 500 } as any
-      if (/as cogs/.test(sql) && /sale_line_items/.test(sql) && !/return/.test(sql)) return { cogs: 200 } as any
-      if (/FROM expenses/.test(sql))    return { total: 50 } as any
-      if (/COUNT\(\*\) as count FROM sales/.test(sql)) return { count: 7 } as any
-      return { total: 0, cogs: 0, count: 0 } as any
-    })
+    mockProfitCache(profitCacheRow({ revenueUsd: 500, cogsUsd: 200, expensesUsd: 50, invoiceCount: 7 }))
     const w = mountPage()
     await flushPromises()
     expect(w.text()).toContain('250')             // profit headline 500-200-50
   })
 
   it('shows a cash-movement exclusion note with tooltip and a link to shift history', async () => {
-    vi.mocked(db.getOptional).mockImplementation(async (sql: string) => {
-      if (/SUM\(total_usd\)/.test(sql)) return { total: 500 } as any
-      if (/as cogs/.test(sql) && /sale_line_items/.test(sql) && !/return/.test(sql)) return { cogs: 200 } as any
-      if (/FROM expenses/.test(sql))    return { total: 50 } as any
-      if (/COUNT\(\*\) as count FROM sales/.test(sql)) return { count: 7 } as any
-      return { total: 0, cogs: 0, count: 0 } as any
-    })
+    mockProfitCache(profitCacheRow({ revenueUsd: 500, cogsUsd: 200, expensesUsd: 50, invoiceCount: 7 }))
     const w = mountPage()
     await flushPromises()
 
@@ -62,7 +80,7 @@ describe('ReportsPage', () => {
   })
 
   it('shows the empty state when the period has no sales', async () => {
-    vi.mocked(db.getOptional).mockResolvedValue({ total: 0, cogs: 0, count: 0 } as any)
+    mockProfitCache(profitCacheRow({ invoiceCount: 0 }))
     const w = mountPage()
     await flushPromises()
     expect(w.text()).toContain('لا توجد مبيعات في هذه الفترة')
@@ -79,14 +97,8 @@ describe('ReportsPage', () => {
   })
 
   it('hides the trend chart and shows cold-start message when day data is < 3 days', async () => {
-    vi.mocked(db.getOptional).mockImplementation(async (sql: string) => {
-      if (/SUM\(total_usd\)/.test(sql)) return { total: 300 } as any
-      if (/as cogs/.test(sql) && /sale_line_items/.test(sql) && !/return/.test(sql)) return { cogs: 100 } as any
-      if (/FROM expenses/.test(sql)) return { total: 20 } as any
-      if (/COUNT\(\*\) as count FROM sales/.test(sql)) return { count: 5 } as any
-      return { total: 0, cogs: 0, count: 0 } as any
-    })
     vi.mocked(db.getAll).mockImplementation(async (sql: string) => {
+      if (/FROM profit_cache/.test(sql)) return [profitCacheRow({ revenueUsd: 300, cogsUsd: 100, expensesUsd: 20, invoiceCount: 5 })] as any
       if (/FROM sales/.test(sql)) {
         return [
           { day: '2026-06-01', total: 120 },
@@ -103,14 +115,8 @@ describe('ReportsPage', () => {
   })
 
   it('shows the trend chart when day data has 3 or more points', async () => {
-    vi.mocked(db.getOptional).mockImplementation(async (sql: string) => {
-      if (/SUM\(total_usd\)/.test(sql)) return { total: 300 } as any
-      if (/as cogs/.test(sql) && /sale_line_items/.test(sql) && !/return/.test(sql)) return { cogs: 100 } as any
-      if (/FROM expenses/.test(sql)) return { total: 20 } as any
-      if (/COUNT\(\*\) as count FROM sales/.test(sql)) return { count: 5 } as any
-      return { total: 0, cogs: 0, count: 0 } as any
-    })
     vi.mocked(db.getAll).mockImplementation(async (sql: string) => {
+      if (/FROM profit_cache/.test(sql)) return [profitCacheRow({ revenueUsd: 300, cogsUsd: 100, expensesUsd: 20, invoiceCount: 5 })] as any
       if (/FROM sales/.test(sql)) {
         return [
           { day: '2026-06-01', total: 120 },
@@ -128,16 +134,12 @@ describe('ReportsPage', () => {
   })
 
   it('shows anomaly banner when expense ratio crosses threshold above revenue floor', async () => {
+    // gross income (revenue+refunds) = 1000, expenses 350 => ratio 0.35 > 0.3 threshold
+    mockProfitCache(profitCacheRow({ revenueUsd: 1000, cogsUsd: 200, expensesUsd: 350, invoiceCount: 5 }))
     vi.mocked(db.getOptional).mockImplementation(async (sql: string) => {
-      if (/SUM\(total_usd\)/.test(sql)) return { total: 1000 } as any
-      if (/sale_line_items/.test(sql) && !/return/.test(sql)) return { cogs: 200 } as any
-      if (/FROM expenses/.test(sql)) return { total: 350 } as any
-      if (/refund_amount_usd/.test(sql)) return { total: 0 } as any
-      if (/return_line_items/.test(sql)) return { cogs: 0 } as any
-      if (/COUNT\(\*\) as count FROM sales/.test(sql)) return { count: 5 } as any
+      if (/sale_discount_amount_usd/.test(sql)) return { total: 0 } as any
       return { total: 0, cogs: 0, count: 0 } as any
     })
-    vi.mocked(db.getAll).mockResolvedValue([] as any)
 
     const w = mountPage()
     await flushPromises()
@@ -147,16 +149,8 @@ describe('ReportsPage', () => {
   })
 
   it('opens drilldown sheet when selecting a day point on the trend chart', async () => {
-    vi.mocked(db.getOptional).mockImplementation(async (sql: string) => {
-      if (/SUM\(total_usd\)/.test(sql)) return { total: 300 } as any
-      if (/sale_line_items/.test(sql) && !/return/.test(sql)) return { cogs: 100 } as any
-      if (/FROM expenses/.test(sql)) return { total: 20 } as any
-      if (/refund_amount_usd/.test(sql)) return { total: 0 } as any
-      if (/return_line_items/.test(sql)) return { cogs: 0 } as any
-      if (/COUNT\(\*\) as count FROM sales/.test(sql)) return { count: 5 } as any
-      return { total: 0, cogs: 0, count: 0 } as any
-    })
     vi.mocked(db.getAll).mockImplementation(async (sql: string) => {
+      if (/FROM profit_cache/.test(sql)) return [profitCacheRow({ revenueUsd: 300, cogsUsd: 100, expensesUsd: 20, invoiceCount: 5 })] as any
       if (/FROM sales/.test(sql) && /GROUP BY day/.test(sql)) {
         return [
           { day: '2026-06-01', total: 100 },
@@ -192,8 +186,9 @@ describe('ReportsPage', () => {
   })
 
   it('renders tabs and switches to expenses panel', async () => {
-    vi.mocked(db.getOptional).mockResolvedValue({ total: 0, cogs: 0, count: 0 } as any)
+    mockProfitCache(profitCacheRow({ invoiceCount: 0 }))
     vi.mocked(db.getAll).mockImplementation(async (sql: string) => {
+      if (/FROM profit_cache/.test(sql)) return [profitCacheRow({ invoiceCount: 0 })] as any
       if (/TRIM\(category\)/.test(sql)) return [{ category: 'إيجار', total: 90 }] as any
       if (/SELECT id, category, amount_usd, expense_date, notes, photo_url/.test(sql)) {
         return [{ id: 'e1', category: 'إيجار', amount_usd: 90, expense_date: '2026-06-01', notes: 'إيجار', photo_url: null }] as any
@@ -215,8 +210,8 @@ describe('ReportsPage', () => {
   })
 
   it('filters top-expenses list by selected donut category and clears filter', async () => {
-    vi.mocked(db.getOptional).mockResolvedValue({ total: 0, cogs: 0, count: 0 } as any)
     vi.mocked(db.getAll).mockImplementation(async (sql: string, params?: unknown[]) => {
+      if (/FROM profit_cache/.test(sql)) return [profitCacheRow({ invoiceCount: 0 })] as any
       if (/SELECT TRIM\(category\) AS category/.test(sql)) {
         return [
           { category: 'إيجار', total: 100 },

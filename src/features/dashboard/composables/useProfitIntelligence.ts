@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { useDashboardMetrics } from './useDashboardMetrics'
+import { useProfitCache } from './useProfitCache'
 import { getInsightRanges, type InsightPeriod } from './insightRanges'
 import type { ComparisonMetric, ComparisonDriver } from './useRevenueIntelligence'
 
@@ -36,33 +36,36 @@ export function useProfitIntelligence() {
       // Same two-instance pattern as useRevenueIntelligence — cogsUsd and
       // discountUsd are read directly off these, never a second/independent
       // COGS or discount query (per design spec Task-3 note).
-      const currentMetrics = useDashboardMetrics()
-      const previousMetrics = useDashboardMetrics()
+      const currentMetrics = useProfitCache()
+      const previousMetrics = useProfitCache()
       await Promise.all([
         currentMetrics.loadRange(current.start, current.end),
         previousMetrics.loadRange(comparison.start, comparison.end),
       ])
 
       const metric: ComparisonMetric = {
-        currentUsd: currentMetrics.profitUsd.value,
-        previousUsd: previousMetrics.profitUsd.value,
-        changePct: pctChange(currentMetrics.profitUsd.value, previousMetrics.profitUsd.value),
-        direction: direction(currentMetrics.profitUsd.value, previousMetrics.profitUsd.value),
+        currentUsd: currentMetrics.metrics.value.profitUsd,
+        previousUsd: previousMetrics.metrics.value.profitUsd,
+        changePct: pctChange(currentMetrics.metrics.value.profitUsd, previousMetrics.metrics.value.profitUsd),
+        direction: direction(currentMetrics.metrics.value.profitUsd, previousMetrics.metrics.value.profitUsd),
       }
 
-      const marginCurrentPct = currentMetrics.revenueUsd.value > 0
-        ? (currentMetrics.profitUsd.value / currentMetrics.revenueUsd.value) * 100
+      // Net-of-refunds/net-of-reversal intent (matches the old useDashboardMetrics
+      // revenueUsd/cogsUsd) -> netRevenueUsd/netCogsUsd, not PeriodProfitMetrics'
+      // gross revenueUsd/cogsUsd fields.
+      const marginCurrentPct = currentMetrics.metrics.value.netRevenueUsd > 0
+        ? (currentMetrics.metrics.value.profitUsd / currentMetrics.metrics.value.netRevenueUsd) * 100
         : null
-      const marginPreviousPct = previousMetrics.revenueUsd.value > 0
-        ? (previousMetrics.profitUsd.value / previousMetrics.revenueUsd.value) * 100
+      const marginPreviousPct = previousMetrics.metrics.value.netRevenueUsd > 0
+        ? (previousMetrics.metrics.value.profitUsd / previousMetrics.metrics.value.netRevenueUsd) * 100
         : null
 
       const showDrivers = period !== 'day' || isCurrentDayComplete
       const drivers = showDrivers
         ? [
-            buildDriver('revenue', currentMetrics.revenueUsd.value, previousMetrics.revenueUsd.value),
-            buildDriver('cogs', currentMetrics.cogsUsd.value, previousMetrics.cogsUsd.value),
-            buildDriver('discounts', currentMetrics.discountUsd.value, previousMetrics.discountUsd.value),
+            buildDriver('revenue', currentMetrics.metrics.value.netRevenueUsd, previousMetrics.metrics.value.netRevenueUsd),
+            buildDriver('cogs', currentMetrics.metrics.value.netCogsUsd, previousMetrics.metrics.value.netCogsUsd),
+            buildDriver('discounts', currentMetrics.metrics.value.discountUsd, previousMetrics.metrics.value.discountUsd),
           ]
         : null
 

@@ -7,7 +7,7 @@ import {
 import { getShopCreatedAt } from './insights/shopCreatedAt'
 import { getRevenueUsdUpToTimestamp } from './insights/revenueUpToTimestamp'
 import { evaluateRevenue, evaluateProfit, type Insight } from './insights/evaluateInsight'
-import { useDashboardMetrics } from '@/features/dashboard/composables/useDashboardMetrics'
+import { useProfitCache } from '@/features/dashboard/composables/useProfitCache'
 
 export function useAutomaticInsights() {
   const insights = ref<Insight[]>([])
@@ -22,7 +22,7 @@ export function useAutomaticInsights() {
       const shopCreatedAt = await getShopCreatedAt()
       const isMissing = shopCreatedAt !== null && new Date(comparison.start) < new Date(shopCreatedAt)
 
-      const currentMetrics = useDashboardMetrics()
+      const currentMetrics = useProfitCache()
       await currentMetrics.loadRange(current.start, current.end)
 
       const skipProfitIntraday = period === 'day' && !isCurrentDayComplete
@@ -35,20 +35,20 @@ export function useAutomaticInsights() {
         comparisonRevenueUsd = await getRevenueUsdUpToTimestamp(comparison.start, cutoffIso)
         comparisonProfitUsd = null
       } else {
-        const comparisonMetrics = useDashboardMetrics()
+        const comparisonMetrics = useProfitCache()
         await comparisonMetrics.loadRange(comparison.start, comparison.end)
-        comparisonRevenueUsd = comparisonMetrics.revenueUsd.value
-        comparisonProfitUsd = comparisonMetrics.profitUsd.value
+        comparisonRevenueUsd = comparisonMetrics.metrics.value.netRevenueUsd
+        comparisonProfitUsd = comparisonMetrics.metrics.value.profitUsd
       }
 
       const results: Insight[] = []
 
-      const revenueInsight = evaluateRevenue(currentMetrics.revenueUsd.value, comparisonRevenueUsd, isMissing)
+      const revenueInsight = evaluateRevenue(currentMetrics.metrics.value.netRevenueUsd, comparisonRevenueUsd, isMissing)
       if (revenueInsight) results.push(revenueInsight)
 
       if (comparisonProfitUsd !== null) {
         const profitInsight = evaluateProfit(
-          currentMetrics.profitUsd.value,
+          currentMetrics.metrics.value.profitUsd,
           comparisonProfitUsd,
           isMissing,
           skipProfitIntraday,

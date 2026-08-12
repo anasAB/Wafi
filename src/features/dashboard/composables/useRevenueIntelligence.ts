@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { useDashboardMetrics } from './useDashboardMetrics'
+import { useProfitCache } from './useProfitCache'
 import { getInsightRanges, type InsightPeriod } from './insightRanges'
 
 export interface ComparisonMetric {
@@ -44,18 +44,23 @@ export function useRevenueIntelligence() {
     try {
       const { current, comparison, isCurrentDayComplete } = getInsightRanges(period)
 
-      const currentMetrics = useDashboardMetrics()
-      const previousMetrics = useDashboardMetrics()
+      const currentMetrics = useProfitCache()
+      const previousMetrics = useProfitCache()
       await Promise.all([
         currentMetrics.loadRange(current.start, current.end),
         previousMetrics.loadRange(comparison.start, comparison.end),
       ])
 
+      // Net-of-refunds intent (matches the old useDashboardMetrics.revenueUsd) ->
+      // netRevenueUsd, not PeriodProfitMetrics.revenueUsd (which is gross).
+      const currentRevenueUsd = currentMetrics.metrics.value.netRevenueUsd
+      const previousRevenueUsd = previousMetrics.metrics.value.netRevenueUsd
+
       const metric: ComparisonMetric = {
-        currentUsd: currentMetrics.revenueUsd.value,
-        previousUsd: previousMetrics.revenueUsd.value,
-        changePct: pctChange(currentMetrics.revenueUsd.value, previousMetrics.revenueUsd.value),
-        direction: direction(currentMetrics.revenueUsd.value, previousMetrics.revenueUsd.value),
+        currentUsd: currentRevenueUsd,
+        previousUsd: previousRevenueUsd,
+        changePct: pctChange(currentRevenueUsd, previousRevenueUsd),
+        direction: direction(currentRevenueUsd, previousRevenueUsd),
       }
 
       // Drivers are gated on isCurrentDayComplete for 'day' — week/month are
@@ -65,12 +70,12 @@ export function useRevenueIntelligence() {
       const showDrivers = period !== 'day' || isCurrentDayComplete
       const drivers = showDrivers
         ? [
-            buildDriver('transactionCount', currentMetrics.invoiceCount.value, previousMetrics.invoiceCount.value),
-            buildDriver('returnCount', currentMetrics.returnCount.value, previousMetrics.returnCount.value),
+            buildDriver('transactionCount', currentMetrics.metrics.value.invoiceCount, previousMetrics.metrics.value.invoiceCount),
+            buildDriver('returnCount', currentMetrics.metrics.value.returnCount, previousMetrics.metrics.value.returnCount),
             buildDriver(
               'avgBasket',
-              currentMetrics.invoiceCount.value > 0 ? currentMetrics.revenueUsd.value / currentMetrics.invoiceCount.value : 0,
-              previousMetrics.invoiceCount.value > 0 ? previousMetrics.revenueUsd.value / previousMetrics.invoiceCount.value : 0,
+              currentMetrics.metrics.value.invoiceCount > 0 ? currentRevenueUsd / currentMetrics.metrics.value.invoiceCount : 0,
+              previousMetrics.metrics.value.invoiceCount > 0 ? previousRevenueUsd / previousMetrics.metrics.value.invoiceCount : 0,
             ),
           ]
         : null

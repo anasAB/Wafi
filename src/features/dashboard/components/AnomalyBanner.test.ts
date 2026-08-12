@@ -23,9 +23,9 @@ vi.mock('@/store/device.store', () => ({
   useDeviceStore: () => ({ shopId: 'shop-1' }),
 }))
 const mockMetricsLoad = vi.fn()
-vi.mock('@/features/dashboard/composables/useDashboardMetrics', () => ({
-  useDashboardMetrics: () => ({
-    revenueUsd: { value: 0 }, cogsUsd: { value: 0 }, expensesUsd: { value: 0 }, refundsUsd: { value: 0 },
+vi.mock('@/features/dashboard/composables/useProfitCache', () => ({
+  useProfitCache: () => ({
+    metrics: { value: { netRevenueUsd: 0, netCogsUsd: 0, expensesUsd: 0, refundsUsd: 0 } },
     load: mockMetricsLoad,
   }),
 }))

@@ -24,7 +24,7 @@ import { useSaleDraft }        from '@/composables/useSaleDraft'
 import { useLowStockAlerts }   from '@/features/products/composables/useLowStockAlerts'
 import { usePeriodToggle }     from '@/features/dashboard/composables/usePeriodToggle'
 import { getDateRange }        from '@/features/dashboard/composables/periodUtils'
-import { useDashboardMetrics } from '@/features/dashboard/composables/useDashboardMetrics'
+import { useProfitCache }      from '@/features/dashboard/composables/useProfitCache'
 import { useBestSellers }      from '@/features/dashboard/composables/useBestSellers'
 import { useCashDrawer }       from '@/features/dashboard/composables/useCashDrawer'
 import { useSalesChart }       from '@/features/dashboard/composables/useSalesChart'
@@ -41,7 +41,7 @@ const { hasDraft, loadDraft, restoreDraft, clearDraft } = useSaleDraft()
 const { count: lowStockCount, top3: lowStockTop3, allClear, load: loadAlerts } = useLowStockAlerts()
 const { count: installmentsDueCount, totalDueUsd: installmentsDueTotalUsd, allClear: installmentsAllClear, load: loadInstallmentsDue } = useInstallmentsDueAlert()
 const { period, setPeriod } = usePeriodToggle()
-const metrics    = useDashboardMetrics()
+const profitCache = useProfitCache()
 const sellers    = useBestSellers()
 const drawer     = useCashDrawer()
 const chart      = useSalesChart()
@@ -83,7 +83,7 @@ onMounted(async () => {
     await Promise.all([loadRate(), loadDraft(), loadAlerts(), loadInstallmentsDue()])
     if (hasDraft.value) showDraftDialog.value = true
     await Promise.all([
-      metrics.load(period.value),
+      profitCache.load(period.value),
       sellers.load(period.value),
       drawer.load(period.value),
       refreshSalesChart(),
@@ -131,7 +131,7 @@ onUnmounted(() => {
 
 watch(period, async (p) => {
   await Promise.all([
-    metrics.load(p),
+    profitCache.load(p),
     sellers.load(p),
     chart.load(p),
     drawer.load(p),
@@ -168,7 +168,7 @@ async function handleDiscardDraft() {
 async function handleExpenseSaved() {
   showExpenseForm.value = false
   toast.value = { message: 'تم حفظ المصروف', type: 'success' }
-  await Promise.all([metrics.load(period.value), drawer.load(period.value)])
+  await Promise.all([profitCache.load(period.value), drawer.load(period.value)])
 }
 
 async function handleSendDailyDigest() {
@@ -206,8 +206,8 @@ const greeting = computed(() => {
 })
 
 // Today's revenue tile is sourced live from local_today_revenue_projection
-// (WAFI-143) via db.watch below. metrics.revenueUsd itself remains used
-// elsewhere on this page (period-range views, best sellers) and is not touched.
+// (WAFI-143) via db.watch below. profitCache.metrics.netRevenueUsd itself remains
+// used elsewhere on this page (period-range views, best sellers) and is not touched.
 const liveRevenueUsd = ref(0)
 const liveRevenueSyp = ref(0)
 
@@ -233,13 +233,15 @@ onMounted(() => {
 // Reintroduce the SYP-equivalent-of-metrics computed that the live-wiring task (a8739a9)
 // dropped in favor of the live projection's own revenue_syp column. Needed again below
 // for periods other than "today", where the live projection doesn't apply.
+// Net-of-refunds intent (matches the "money coming in" tile) -> netRevenueUsd, not
+// PeriodProfitMetrics.revenueUsd (which is gross, unlike useDashboardMetrics.revenueUsd).
 const revenueSyp = computed(() =>
-  currentRate.value ? Math.round(metrics.revenueUsd.value * currentRate.value) : 0
+  currentRate.value ? Math.round(profitCache.metrics.value.netRevenueUsd * currentRate.value) : 0
 )
 
 // WAFI-143 final-review fix (C2): the revenue tile was always showing the live
 // today's-revenue projection regardless of the selected period, while every sibling
-// tile (profit, invoices, avg ticket) reads from metrics.load(period). Gate the
+// tile (profit, invoices, avg ticket) reads from profitCache.load(period). Gate the
 // displayed revenue on the active period: only "today" uses the live, sub-day-granular
 // projection; "week"/"month" fall back to the period-scoped metrics value, matching the
 // other tiles.
@@ -251,15 +253,15 @@ const displayRevenueUsd = computed(() => {
     // sales already exist and are reflected in metrics (synced from the server). Only
     // fall back when the live value is genuinely empty and metrics has real data --
     // once the projection catches up, the live value takes over again automatically.
-    if (!liveRevenueUsd.value && metrics.revenueUsd.value) return metrics.revenueUsd.value
+    if (!liveRevenueUsd.value && profitCache.metrics.value.netRevenueUsd) return profitCache.metrics.value.netRevenueUsd
     return liveRevenueUsd.value
   }
-  return metrics.revenueUsd.value
+  return profitCache.metrics.value.netRevenueUsd
 })
 
 const displayRevenueSyp = computed(() => {
   if (period.value === 'today') {
-    if (!liveRevenueUsd.value && metrics.revenueUsd.value) return revenueSyp.value
+    if (!liveRevenueUsd.value && profitCache.metrics.value.netRevenueUsd) return revenueSyp.value
     return liveRevenueSyp.value
   }
   return revenueSyp.value
@@ -269,12 +271,12 @@ const profitMarginPct = computed(() => {
   // Use the SAME revenue value actually displayed in the tile for this period, so the
   // margin ratio never disagrees with the number the owner is looking at.
   if (!displayRevenueUsd.value) return 0
-  return Math.round((metrics.profitUsd.value / displayRevenueUsd.value) * 100)
+  return Math.round((profitCache.metrics.value.profitUsd / displayRevenueUsd.value) * 100)
 })
 
 const avgPerInvoice = computed(() => {
-  if (!metrics.invoiceCount.value) return 0
-  return Math.round(metrics.revenueUsd.value / metrics.invoiceCount.value * 100) / 100
+  if (!profitCache.metrics.value.invoiceCount) return 0
+  return Math.round(profitCache.metrics.value.netRevenueUsd / profitCache.metrics.value.invoiceCount * 100) / 100
 })
 
 const recentActivity = computed(() =>
@@ -466,13 +468,13 @@ const ACTIVITY_HEADING: Record<string, string> = { today: 'اليوم', week: '�
             <!-- WAFI-054: degrade the headline to "estimated" (never blank) when a
                  sale in the period had no cost — full caveat is in the ProfitSheet. -->
             <span
-              v-if="metrics.profitIsEstimated.value"
+              v-if="profitCache.metrics.value.profitIsEstimated"
               class="kc-estimated-badge"
               data-testid="profit-estimated-badge"
             >{{ t('dashboard.profitEstimatedBadge') }}</span>
           </div>
-          <div class="kc-value" dir="ltr" :class="metrics.profitUsd.value >= 0 ? 'positive' : 'negative'">
-            ${{ metrics.profitUsd.value.toLocaleString() }}
+          <div class="kc-value" dir="ltr" :class="profitCache.metrics.value.profitUsd >= 0 ? 'positive' : 'negative'">
+            ${{ profitCache.metrics.value.profitUsd.toLocaleString() }}
           </div>
           <div class="kc-accent-bar"></div>
           <div class="kc-sub">هامش {{ profitMarginPct }}%</div>
@@ -484,7 +486,7 @@ const ACTIVITY_HEADING: Record<string, string> = { today: 'اليوم', week: '�
             </svg>
           </div>
           <div class="kc-label">الفواتير</div>
-          <div class="kc-value" dir="ltr">{{ metrics.invoiceCount.value.toLocaleString() }}</div>
+          <div class="kc-value" dir="ltr">{{ profitCache.metrics.value.invoiceCount.toLocaleString() }}</div>
           <div class="kc-accent-bar"></div>
           <div class="kc-sub" v-if="avgPerInvoice">متوسط ${{ avgPerInvoice }}</div>
         </div>
@@ -711,13 +713,13 @@ const ACTIVITY_HEADING: Record<string, string> = { today: 'اليوم', week: '�
   <ExpenseForm v-if="showExpenseForm" @saved="handleExpenseSaved" @cancel="showExpenseForm = false" />
   <ProfitSheet
     v-if="showProfitSheet"
-    :revenue-usd="metrics.revenueUsd.value"
-    :cogs-usd="metrics.cogsUsd.value"
-    :expenses-usd="metrics.expensesUsd.value"
-    :profit-usd="metrics.profitUsd.value"
+    :revenue-usd="profitCache.metrics.value.netRevenueUsd"
+    :cogs-usd="profitCache.metrics.value.netCogsUsd"
+    :expenses-usd="profitCache.metrics.value.expensesUsd"
+    :profit-usd="profitCache.metrics.value.profitUsd"
     :period="period"
-    :profit-is-estimated="metrics.profitIsEstimated.value"
-    :costless-sales-in-period="metrics.costlessSalesInPeriod.value"
+    :profit-is-estimated="profitCache.metrics.value.profitIsEstimated"
+    :costless-sales-in-period="profitCache.metrics.value.costlessSaleCount"
     @close="showProfitSheet = false"
     @fix="goToMissingCostProducts"
   />

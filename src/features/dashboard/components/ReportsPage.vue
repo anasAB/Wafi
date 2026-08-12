@@ -1,5 +1,5 @@
 <!-- Profit report (Reporting Pack). Reuses the verified profit engine
-     (useDashboardMetrics.loadRange) for the headline + breakdown and useProfitTrend
+     (useProfitCache.loadRange) for the headline + breakdown and useProfitTrend
      for the chart, so the bars sum to the headline. Owns its own period state (does
      NOT touch the shared usePeriodToggle singleton). Offline: all-local queries. -->
 <script setup lang="ts">
@@ -9,7 +9,7 @@ import { useCan } from '@/composables/useCan'
 import AppDatePicker from '@/components/ui/AppDatePicker.vue'
 import { getReportRange, bucketForRange, getPreviousReportRange } from '../composables/periodUtils'
 import type { ReportPeriod } from '../composables/periodUtils'
-import { useDashboardMetrics } from '../composables/useDashboardMetrics'
+import { useProfitCache } from '../composables/useProfitCache'
 import { useProfitTrend } from '../composables/useProfitTrend'
 import { useBucketBreakdown } from '../composables/useBucketBreakdown'
 import { useExpenseBreakdown } from '../composables/useExpenseBreakdown'
@@ -28,8 +28,8 @@ const { t } = useI18n()
 const { can } = useCan()
 // WAFI-018: structurally owner-only, never granted to a manager (permissionsForRole).
 const canViewStaffPerformance = can('can_view_staff_performance')
-const metrics = useDashboardMetrics()
-const previousMetrics = useDashboardMetrics()
+const profitCache = useProfitCache()
+const previousProfitCache = useProfitCache()
 const trend   = useProfitTrend()
 const drilldown = useBucketBreakdown()
 const expenseBreakdown = useExpenseBreakdown()
@@ -87,14 +87,14 @@ const rangeError = computed(() =>
 const isCustomIncomplete = computed(() =>
   period.value === 'custom' && (!customStart.value || !customEnd.value))
 
-const hasSales = computed(() => metrics.invoiceCount.value > 0)
-const isProfit = computed(() => metrics.profitUsd.value >= 0)
+const hasSales = computed(() => profitCache.metrics.value.invoiceCount > 0)
+const isProfit = computed(() => profitCache.metrics.value.profitUsd >= 0)
 const showTrendChart = computed(() => chartBucket.value === 'month' || trend.points.value.length >= 3)
 const popDeltaPct = computed<number | null>(() => {
   if (previousInvoiceCount.value <= 0) return null
   const prev = previousProfitUsd.value
   if (prev === null || prev === 0) return null
-  return ((metrics.profitUsd.value - prev) / Math.abs(prev)) * 100
+  return ((profitCache.metrics.value.profitUsd - prev) / Math.abs(prev)) * 100
 })
 const popDirection = computed<'up' | 'down' | null>(() => {
   if (popDeltaPct.value === null) return null
@@ -121,25 +121,28 @@ async function reload() {
   expandedCategorySubrows.value = []
 
   await Promise.all([
-    metrics.loadRange(start, end),
+    profitCache.loadRange(start, end),
     trend.load(start, end, bucket),
     expenseBreakdown.load(start, end),
     expenseBreakdown.loadEntries(start, end, selectedExpenseCategory.value ?? undefined),
     categoryBreakdown.load(start, end),
     uncostedSales.load(start, end),
     previousRange
-      ? previousMetrics.loadRange(previousRange.start, previousRange.end)
+      ? previousProfitCache.loadRange(previousRange.start, previousRange.end)
       : Promise.resolve(),
   ])
 
-  // Runs after metrics.loadRange resolves (not in parallel with it above):
+  // Runs after profitCache.loadRange resolves (not in parallel with it above):
   // the anomaly engine reads metrics' just-updated revenue/COGS/expenses/refunds
   // values, so it must not race the load that produces them (see WAFI-015 plan §2a).
+  // useAnomalyDetection expects net-of-refunds revenue and net-of-reversal COGS
+  // (its own profitUsd = revenueUsd - cogsUsd - expensesUsd), matching the old
+  // useDashboardMetrics semantics -- so net*Usd, not PeriodProfitMetrics' gross fields.
   await loadAnomalies({ start, end }, {
-    revenueUsd: metrics.revenueUsd.value,
-    cogsUsd: metrics.cogsUsd.value,
-    expensesUsd: metrics.expensesUsd.value,
-    refundsUsd: metrics.refundsUsd.value,
+    revenueUsd: profitCache.metrics.value.netRevenueUsd,
+    cogsUsd: profitCache.metrics.value.netCogsUsd,
+    expensesUsd: profitCache.metrics.value.expensesUsd,
+    refundsUsd: profitCache.metrics.value.refundsUsd,
   })
 
   if (trend.points.value.length > 0) {
@@ -152,8 +155,8 @@ async function reload() {
     return
   }
 
-  previousProfitUsd.value = previousMetrics.profitUsd.value
-  previousInvoiceCount.value = previousMetrics.invoiceCount.value
+  previousProfitUsd.value = previousProfitCache.metrics.value.profitUsd
+  previousInvoiceCount.value = previousProfitCache.metrics.value.invoiceCount
 }
 
 function selectPeriod(p: ReportPeriod) { period.value = p }
@@ -340,7 +343,7 @@ onMounted(() => { reload(); deadStock.load() })
               @click="showProfitInfo = !showProfitInfo"
             >ⓘ</button>
           </div>
-          <span class="amount" data-test="profit-headline" dir="ltr">${{ Math.abs(metrics.profitUsd.value).toFixed(2) }}</span>
+          <span class="amount" data-test="profit-headline" dir="ltr">${{ Math.abs(profitCache.metrics.value.profitUsd).toFixed(2) }}</span>
           <p
             v-if="popDeltaPct !== null"
             data-test="profit-delta"
@@ -356,7 +359,7 @@ onMounted(() => { reload(); deadStock.load() })
           </p>
         </div>
 
-        <p v-if="metrics.profitIsEstimated.value" class="caveat">{{ t('reports.estimated') }}</p>
+        <p v-if="profitCache.metrics.value.profitIsEstimated" class="caveat">{{ t('reports.estimated') }}</p>
         <p v-if="uncostedSales.count.value > 0" class="caveat" data-test="uncosted-sales-notice">
           الربح لا يشمل {{ uncostedSales.count.value }} {{ uncostedSales.count.value === 1 ? 'بيعة' : 'مبيعات' }} بدون تكلفة
         </p>
@@ -373,11 +376,11 @@ onMounted(() => { reload(); deadStock.load() })
         <p v-else data-test="trend-cold-start" class="cold-start-note">{{ t('reports.trendColdStart') }}</p>
 
         <ul class="breakdown card">
-          <li><span>{{ t('reports.gross') }}</span><span dir="ltr">${{ metrics.grossIncomeUsd.value.toFixed(2) }}</span></li>
-          <li><span>− {{ t('reports.returns') }}</span><span dir="ltr">${{ metrics.refundsUsd.value.toFixed(2) }}</span></li>
-          <li><span>− {{ t('reports.cogs') }}</span><span dir="ltr">${{ metrics.cogsUsd.value.toFixed(2) }}</span></li>
-          <li><span>− {{ t('reports.expenses') }}</span><span dir="ltr">${{ metrics.expensesUsd.value.toFixed(2) }}</span></li>
-          <li class="total"><span>= {{ t('reports.profit') }}</span><span dir="ltr">${{ metrics.profitUsd.value.toFixed(2) }}</span></li>
+          <li><span>{{ t('reports.gross') }}</span><span dir="ltr">${{ profitCache.metrics.value.revenueUsd.toFixed(2) }}</span></li>
+          <li><span>− {{ t('reports.returns') }}</span><span dir="ltr">${{ profitCache.metrics.value.refundsUsd.toFixed(2) }}</span></li>
+          <li><span>− {{ t('reports.cogs') }}</span><span dir="ltr">${{ profitCache.metrics.value.netCogsUsd.toFixed(2) }}</span></li>
+          <li><span>− {{ t('reports.expenses') }}</span><span dir="ltr">${{ profitCache.metrics.value.expensesUsd.toFixed(2) }}</span></li>
+          <li class="total"><span>= {{ t('reports.profit') }}</span><span dir="ltr">${{ profitCache.metrics.value.profitUsd.toFixed(2) }}</span></li>
         </ul>
 
         <div class="cash-movement-note-row">
