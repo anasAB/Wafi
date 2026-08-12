@@ -148,4 +148,24 @@ describe('enqueueDeferredJob', () => {
     expect(rows.length).toBe(2) // the old completed row plus the new queued one both exist
     expect(rows.filter((r) => r.status === 'queued').length).toBe(1)
   })
+
+  it('transaction queue does not poison subsequent calls after a prior failure', async () => {
+    const database = await freshDb()
+    registerJobHandler({ jobType: 'test.a', handler: async () => {}, priority: 'critical', requiresNetwork: false, maxQueuedJobs: 1 })
+    registerJobHandler({ jobType: 'test.b', handler: async () => {}, priority: 'normal', requiresNetwork: false, maxQueuedJobs: 200 })
+
+    // First, fill the test.a queue to its max and enqueue once more, which should fail
+    await enqueueDeferredJob({ jobType: 'test.a', shopId: 'shop1', payload: { n: 1 } }, database)
+    await expect(enqueueDeferredJob({ jobType: 'test.a', shopId: 'shop1', payload: { n: 2 } }, database)).rejects.toThrow()
+
+    // Now, make an independent valid enqueue on a different job type on the SAME database instance.
+    // This should succeed normally, proving the transaction queue was not poisoned by the prior failure.
+    const result = await enqueueDeferredJob({ jobType: 'test.b', shopId: 'shop1', payload: { success: true } }, database)
+    expect(result.deduped).toBe(false)
+
+    // Verify the row was actually inserted
+    const testBRows = await database.getAll<any>(`SELECT * FROM local_deferred_jobs WHERE job_type = 'test.b'`)
+    expect(testBRows.length).toBe(1)
+    expect(JSON.parse(testBRows[0].payload).success).toBe(true)
+  })
 })

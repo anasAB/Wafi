@@ -62,14 +62,14 @@ export async function enqueueDeferredJob(
       )
       const typeCount = typeCountResult.rows._array[0]?.c ?? 0
       if (typeCount > maxForType) {
-        const evicted = await evictOne(tx, `job_type = ? AND status = 'queued'`, [opts.jobType])
+        const evicted = await evictOne(tx, `job_type = ? AND status = 'queued' AND id != ?`, [opts.jobType, id])
         if (!evicted) throw new Error(`enqueueDeferredJob: per-type quota exhausted for "${opts.jobType}" with no evictable candidate`)
       }
 
       const globalCountResult = await tx.execute(`SELECT COUNT(*) AS c FROM local_deferred_jobs WHERE status = 'queued'`)
       const globalCount = globalCountResult.rows._array[0]?.c ?? 0
       if (globalCount > GLOBAL_QUEUE_CEILING) {
-        const evicted = await evictOne(tx, `status = 'queued'`, [])
+        const evicted = await evictOne(tx, `status = 'queued' AND id != ?`, [id])
         if (!evicted) throw new Error('enqueueDeferredJob: global queue ceiling exhausted with no evictable candidate')
       }
     })

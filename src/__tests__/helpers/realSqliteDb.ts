@@ -33,7 +33,7 @@ export function createRealSqliteDb(path = ':memory:') {
     getOptional: async <T>(sql: string, params: unknown[] = []): Promise<T | null> =>
       (conn.prepare(sql).get(...(params as any[])) as T) ?? null,
     writeTransaction: async <T>(fn: (tx: { execute: (sql: string, params?: unknown[]) => Promise<any> }) => Promise<T>): Promise<T> => {
-      return (txQueue = txQueue.then(async () => {
+      const runTransaction = async () => {
         conn.exec('BEGIN')
         try {
           const result = await fn({
@@ -51,7 +51,8 @@ export function createRealSqliteDb(path = ':memory:') {
           conn.exec('ROLLBACK')
           throw err
         }
-      }))
+      }
+      return (txQueue = txQueue.then(runTransaction, runTransaction))
     },
     close: () => conn.close(),
     _raw: conn,
