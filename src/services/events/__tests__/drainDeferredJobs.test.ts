@@ -143,4 +143,48 @@ describe('drainDeferredJobs', () => {
     expect(row.attempts).toBe(5)
     expect(row.next_retry_at).toBeNull()
   })
+
+  it('yields via a macrotask between jobs and stops immediately once backgrounded', async () => {
+    const database = await freshDb()
+    const executionOrder: number[] = []
+    let backgroundedAfter = 0
+    registerJobHandler({
+      jobType: 'test.a',
+      handler: async (j) => { executionOrder.push((j.payload as any).n) },
+      priority: 'normal', requiresNetwork: false, maxQueuedJobs: 200,
+    })
+    await seed(database, { payload: '{"n":1}', enqueued_at: '2026-08-12T00:00:00.000Z' })
+    await seed(database, { payload: '{"n":2}', enqueued_at: '2026-08-12T00:00:01.000Z' })
+    await seed(database, { payload: '{"n":3}', enqueued_at: '2026-08-12T00:00:02.000Z' })
+
+    let calls = 0
+    await drainDeferredJobs('shop1', {
+      isConnected: () => true,
+      isForegrounded: () => { calls += 1; return calls <= 1 }, // foregrounded for job 1's post-check only
+    }, database)
+
+    expect(executionOrder).toEqual([1]) // stopped after the first job, never reached 2 or 3
+    const remaining = await database.getAll<any>(`SELECT status FROM local_deferred_jobs WHERE status = 'queued'`)
+    expect(remaining.length).toBe(2)
+  })
+
+  it('single-flight: a second concurrent drain call reuses the first in-flight drain rather than claiming independently', async () => {
+    const database = await freshDb()
+    let resolveFirst: () => void
+    const gate = new Promise<void>((resolve) => { resolveFirst = resolve })
+    let handlerCalls = 0
+    registerJobHandler({
+      jobType: 'test.a',
+      handler: async () => { handlerCalls += 1; await gate },
+      priority: 'normal', requiresNetwork: false, maxQueuedJobs: 200,
+    })
+    await seed(database, {})
+
+    const first = drainDeferredJobs('shop1', { isConnected: () => true, isForegrounded: () => true }, database)
+    const second = drainDeferredJobs('shop1', { isConnected: () => true, isForegrounded: () => true }, database)
+    resolveFirst!()
+    await Promise.all([first, second])
+
+    expect(handlerCalls).toBe(1) // only ever claimed and ran once, not twice
+  })
 })

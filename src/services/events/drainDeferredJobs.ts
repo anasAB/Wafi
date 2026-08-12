@@ -12,6 +12,12 @@ export interface DrainOptions {
   workerId?: string
 }
 
+const inFlightDrains = new Map<string, Promise<void>>()
+
+function yieldToMacrotask(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
 function nextRetryAt(attempts: number): string {
   const baseMinutes = BACKOFF_MINUTES[Math.min(attempts, BACKOFF_MINUTES.length - 1)]
   const jitter = 0.8 + Math.random() * 0.4
@@ -56,7 +62,7 @@ async function claimNext(database: DbLike, shopId: string, connected: boolean, w
   return { ...row, attempts: row.attempts + 1 }
 }
 
-export async function drainDeferredJobs(shopId: string, opts: DrainOptions = {}, database: DbLike = appDb): Promise<void> {
+async function runDrain(shopId: string, opts: DrainOptions, database: DbLike): Promise<void> {
   const isConnected = opts.isConnected ?? (() => true)
   const isForegrounded = opts.isForegrounded ?? (() => true)
   const workerId = opts.workerId ?? crypto.randomUUID()
@@ -64,6 +70,8 @@ export async function drainDeferredJobs(shopId: string, opts: DrainOptions = {},
   await reclaimStaleLeases(database, shopId)
 
   while (true) {
+    if (!isForegrounded()) return
+
     const row = await claimNext(database, shopId, isConnected(), workerId)
     if (!row) return
 
@@ -94,6 +102,17 @@ export async function drainDeferredJobs(shopId: string, opts: DrainOptions = {},
       }
     }
 
-    if (!isForegrounded()) return
+    await yieldToMacrotask()
   }
+}
+
+export async function drainDeferredJobs(shopId: string, opts: DrainOptions = {}, database: DbLike = appDb): Promise<void> {
+  const existing = inFlightDrains.get(shopId)
+  if (existing) return existing
+
+  const promise = runDrain(shopId, opts, database).finally(() => {
+    inFlightDrains.delete(shopId)
+  })
+  inFlightDrains.set(shopId, promise)
+  return promise
 }
