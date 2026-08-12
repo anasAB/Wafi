@@ -27,7 +27,7 @@ describe('WAFI-154 spike: local_deferred_jobs unique index + structured error co
     // "never string-match" implementation constraint from the design spec is actually
     // satisfiable against this project's real SQLite layer.
     expect(caught.code).toBe('ERR_SQLITE_ERROR')
-    expect(caught.errcode).toBeDefined() // the underlying sqlite3 result code (SQLITE_CONSTRAINT family)
+    expect([19, 2067]).toContain(caught.errcode) // the underlying sqlite3 result code (SQLITE_CONSTRAINT=19 or SQLITE_CONSTRAINT_UNIQUE=2067)
     database.close()
   })
 
