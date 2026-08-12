@@ -378,6 +378,26 @@ const local_subscriber_processed_events = new Table({
   processed_at:    column.text,  // ISO string
 }, { localOnly: true })
 
+// WAFI-154 -- device-local deferred job queue. Never synced (localOnly: true);
+// see design spec's "Same SQLite database, no new storage layer" section.
+const local_deferred_jobs = new Table({
+  job_type:          column.text,
+  shop_id:           column.text,
+  payload:           column.text,     // JSON.stringify'd
+  priority:          column.text,     // 'critical' | 'normal' | 'low' -- stamped at enqueue time
+  requires_network:  column.integer,  // 0 | 1
+  dedupe_key:        column.text,     // nullable
+  status:            column.text,     // 'queued' | 'running' | 'completed' | 'dead' | 'evicted'
+  attempts:          column.integer,
+  last_error:        column.text,     // nullable, serialized string
+  next_retry_at:     column.text,     // ISO string, nullable
+  worker_id:         column.text,     // nullable
+  started_at:        column.text,     // ISO string, nullable -- lease start
+  lease_expires_at:  column.text,     // ISO string, nullable
+  enqueued_at:       column.text,     // ISO string
+  finished_at:       column.text,     // ISO string, nullable
+}, { localOnly: true })
+
 const events = new Table({
   type:                column.text,
   entity_id:           column.text,
@@ -583,6 +603,7 @@ export const AppSchema = new Schema({
   local_event_publish_retries,
   local_event_processing_retries,
   local_subscriber_processed_events,
+  local_deferred_jobs,
   audit_log,
   events,
   daily_event_counts,
