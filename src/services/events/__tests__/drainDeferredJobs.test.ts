@@ -138,8 +138,9 @@ describe('drainDeferredJobs', () => {
       await drainDeferredJobs('shop1', { isConnected: () => true, isForegrounded: () => true }, database)
     }
     expect(handler).toHaveBeenCalledTimes(5) // exactly MAX_ATTEMPTS real executions, the 5th claim still ran the handler
-    const row = await database.getOptional<any>(`SELECT status, attempts FROM local_deferred_jobs WHERE job_type = 'test.a'`)
+    const row = await database.getOptional<any>(`SELECT status, attempts, next_retry_at FROM local_deferred_jobs WHERE job_type = 'test.a'`)
     expect(row.status).toBe('dead')
     expect(row.attempts).toBe(5)
+    expect(row.next_retry_at).toBeNull()
   })
 })

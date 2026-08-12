@@ -87,7 +87,7 @@ export async function drainDeferredJobs(shopId: string, opts: DrainOptions = {},
         )
       } else {
         await database.execute(
-          `UPDATE local_deferred_jobs SET status = 'dead', last_error = ?, finished_at = ? WHERE id = ?`,
+          `UPDATE local_deferred_jobs SET status = 'dead', last_error = ?, next_retry_at = NULL, finished_at = ? WHERE id = ?`,
           [message, new Date().toISOString(), row.id],
         )
         await reportDeferredJobDead({ ...row, last_error: message }, err instanceof Error ? err : undefined)
