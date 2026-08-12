@@ -123,6 +123,34 @@ describe('runOp — daily_event_counts idempotent apply (WAFI-151)', () => {
   })
 })
 
+describe('runOp — profit_cache idempotent apply (WAFI-153)', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('calls apply_profit_cache with the source event id on PUT, never upserts the row directly', async () => {
+    await runOp(UpdateType.PUT, 'profit_cache', 'row1', {
+      shop_id: 'shop1', day: '2026-08-11', revenue_usd: 999, source_event_id: 'evt1',
+    })
+    expect(rpc).toHaveBeenCalledWith('apply_profit_cache', { p_event_id: 'evt1' })
+    expect(upsert).not.toHaveBeenCalled()
+  })
+
+  it('calls apply_profit_cache on PATCH too, never a plain UPDATE', async () => {
+    await runOp(UpdateType.PATCH, 'profit_cache', 'row1', {
+      shop_id: 'shop1', day: '2026-08-11', revenue_usd: 999, source_event_id: 'evt2',
+    })
+    expect(rpc).toHaveBeenCalledWith('apply_profit_cache', { p_event_id: 'evt2' })
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it('returns null and never calls rpc when source_event_id is missing', async () => {
+    const err = await runOp(UpdateType.PUT, 'profit_cache', 'row3', {
+      shop_id: 'shop1', day: '2026-08-11',
+    })
+    expect(err).toBeNull()
+    expect(rpc).not.toHaveBeenCalled()
+  })
+})
+
 describe('isPermanentError — quarantine classification', () => {
   const err = (code: string, message = 'x'): PostgrestError =>
     ({ code, message, details: '', hint: '', name: 'PostgrestError' } as unknown as PostgrestError)

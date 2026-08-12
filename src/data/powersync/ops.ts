@@ -59,6 +59,17 @@ export async function runOp(
     ).error
   }
 
+  // WAFI-153: profit_cache is server-authoritative for the same reason
+  // daily_event_counts is above -- the local marker write never computes an
+  // absolute metric value, only source_event_id, so the upload path calls the
+  // apply RPC instead of a generic upsert.
+  if (table === 'profit_cache' && (type === UpdateType.PUT || type === UpdateType.PATCH)) {
+    if (!opData?.source_event_id) return null
+    return (
+      await supabase.rpc('apply_profit_cache', { p_event_id: opData.source_event_id })
+    ).error
+  }
+
   switch (type) {
     case UpdateType.PUT:
       return (await supabase.from(table).upsert({ id, ...opData })).error

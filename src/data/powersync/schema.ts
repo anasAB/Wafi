@@ -399,6 +399,27 @@ const daily_event_counts = new Table({
   source_event_id:  column.text,
 })
 
+// WAFI-153 -- server-authoritative profit cache, same shape discipline as
+// daily_event_counts: local writes only ever set source_event_id, never a
+// metric value (apply_profit_cache() computes those). All money/count columns
+// are column.integer (whole cents) to exactly round-trip the server's bigint --
+// SQLite has no fixed-point type, so column.real would be lossy here.
+const profit_cache = new Table({
+  shop_id:              column.text,
+  day:                  column.text,
+  revenue_usd:          column.integer,
+  revenue_syp:          column.integer,
+  cogs_usd:             column.integer,
+  cogs_reversal_usd:    column.integer,
+  expenses_usd:         column.integer,
+  refunds_usd:          column.integer,
+  discount_usd:         column.integer,
+  invoice_count:        column.integer,
+  return_count:         column.integer,
+  costless_sale_count:  column.integer,
+  source_event_id:      column.text,
+})
+
 const audit_log = new Table({
   shop_id:          column.text,
   staff_id:         column.text,
@@ -565,6 +586,7 @@ export const AppSchema = new Schema({
   audit_log,
   events,
   daily_event_counts,
+  profit_cache,
   local_today_revenue_projection,
   notifications,
   notification_settings,
