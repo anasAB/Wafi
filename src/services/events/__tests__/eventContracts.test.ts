@@ -112,7 +112,7 @@ const FIXTURES: Record<DomainEventType, DomainEvent> = {
   'expense.recorded': {
     type: 'expense.recorded', entityId: 'e1',
     payload: { expenseId: 'e1', category: 'صيانة', amountUsd: 50, staffId: STAFF, photoUrl: undefined } satisfies ExpenseRecordedPayload,
-    payloadVersion: V, staffId: STAFF, shopId: SHOP, occurredAt: WHEN,
+    payloadVersion: 2, staffId: STAFF, shopId: SHOP, occurredAt: WHEN,
   },
   'device.registered': {
     type: 'device.registered', entityId: 'd1',

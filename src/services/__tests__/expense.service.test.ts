@@ -102,6 +102,6 @@ describe('ExpenseService.recordExpense', () => {
     expect(Object.keys(event.payload).sort()).toEqual(
       ['expenseId', 'category', 'amountUsd', 'staffId', 'photoUrl'].sort(),
     )
-    expect(event.payloadVersion).toBe(1)
+    expect(event.payloadVersion).toBe(2)
   })
 })

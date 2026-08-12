@@ -63,7 +63,7 @@ exports[`event contract: expense.recorded > matches its committed shape snapshot
     "photoUrl": undefined,
     "staffId": "s1",
   },
-  "payloadVersion": 1,
+  "payloadVersion": 2,
   "shopId": "shop1",
   "staffId": "s1",
   "type": "expense.recorded",
