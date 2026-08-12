@@ -180,21 +180,3 @@ REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE public.projection_processed_eve
 CREATE POLICY profit_cache_select_own_shop ON public.profit_cache
   FOR SELECT USING (shop_id = public.auth_shop_id());
 GRANT SELECT ON TABLE public.profit_cache TO anon, authenticated, service_role;
-
--- PowerSync replication: mirrors 074's idempotent add for daily_event_counts.
-DO $$
-DECLARE
-  pub_name text;
-BEGIN
-  FOREACH pub_name IN ARRAY ARRAY['powersync', 'powersync_publication']
-  LOOP
-    IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = pub_name) THEN
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_publication_tables
-        WHERE pubname = pub_name AND schemaname = 'public' AND tablename = 'profit_cache'
-      ) THEN
-        EXECUTE format('ALTER PUBLICATION %I ADD TABLE public.profit_cache', pub_name);
-      END IF;
-    END IF;
-  END LOOP;
-END $$;
