@@ -13,6 +13,7 @@ export interface SaleLine {
    *  can persist discount fields and log the audit trail after the sale commits. */
   discountType?:        DiscountType
   discountValue?:       number
+  discountAmountUsd?:   number
   discountPinApproved?: boolean
   unitCostUsd?:         number
   listPriceUsd?:        number

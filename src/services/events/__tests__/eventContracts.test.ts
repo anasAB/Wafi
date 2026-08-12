@@ -23,8 +23,9 @@ const FIXTURES: Record<DomainEventType, DomainEvent> = {
       saleId: 'sale1', shopId: SHOP, staffId: STAFF, totalUsd: 10, totalSyp: 150000,
       paymentSummary: { cashUsd: 10, cashSyp: 0, cardTotal: 0, creditTotal: 0, methodCount: 1 },
       itemCount: 2, discountApplied: false,
+      cogsUsd: 4, discountUsd: 0, hasCostlessLine: false,
     } satisfies SaleCompletedPayload,
-    payloadVersion: V, staffId: STAFF, shopId: SHOP, occurredAt: WHEN,
+    payloadVersion: 2, staffId: STAFF, shopId: SHOP, occurredAt: WHEN,
   },
   'sale.discounted': {
     type: 'sale.discounted', entityId: 'sale1',

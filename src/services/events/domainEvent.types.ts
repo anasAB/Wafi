@@ -134,6 +134,12 @@ export interface SaleCompletedPayload {
   }
   itemCount: number
   discountApplied: boolean
+  /** WAFI-153: sum of quantity * unitCostUsd across every line, fractional dollars. */
+  cogsUsd: number
+  /** WAFI-153: sum of every line-level discount_amount_usd plus any sale-level discount, fractional dollars. */
+  discountUsd: number
+  /** WAFI-153: true iff at least one line had no/zero unit cost at completion time. */
+  hasCostlessLine: boolean
 }
 
 export interface SaleDiscountedPayload {

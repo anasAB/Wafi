@@ -155,7 +155,10 @@ exports[`event contract: sale.completed > matches its committed shape snapshot 1
   "entityId": "sale1",
   "occurredAt": "2026-08-05T00:00:00.000Z",
   "payload": {
+    "cogsUsd": 4,
     "discountApplied": false,
+    "discountUsd": 0,
+    "hasCostlessLine": false,
     "itemCount": 2,
     "paymentSummary": {
       "cardTotal": 0,
@@ -170,7 +173,7 @@ exports[`event contract: sale.completed > matches its committed shape snapshot 1
     "totalSyp": 150000,
     "totalUsd": 10,
   },
-  "payloadVersion": 1,
+  "payloadVersion": 2,
   "shopId": "shop1",
   "staffId": "s1",
   "type": "sale.completed",
