@@ -3,19 +3,19 @@ import { createRealSqliteDb } from '@/__tests__/helpers/realSqliteDb'
 import { initLocalDeferredJobsSchema } from '@/services/events/deferredJobsSchema'
 
 describe('WAFI-154 spike: local_deferred_jobs unique index + structured error code', () => {
-  it('rejects a second queued row with the same (job_type, dedupe_key) via a structured constraint code', async () => {
+  it('rejects a second queued row with the same (job_type, dedupe_key, shop_id) via a structured constraint code', async () => {
     const database = createRealSqliteDb()
     await initLocalDeferredJobsSchema(database)
     await database.execute(
-      `INSERT INTO local_deferred_jobs (id, job_type, dedupe_key, status, attempts, enqueued_at)
-       VALUES ('row1', 'test.sleep', 'dedupe-1', 'queued', 0, '2026-08-12T00:00:00.000Z')`,
+      `INSERT INTO local_deferred_jobs (id, job_type, shop_id, dedupe_key, status, attempts, enqueued_at)
+       VALUES ('row1', 'test.sleep', 'shop1', 'dedupe-1', 'queued', 0, '2026-08-12T00:00:00.000Z')`,
     )
 
     let caught: any
     try {
       await database.execute(
-        `INSERT INTO local_deferred_jobs (id, job_type, dedupe_key, status, attempts, enqueued_at)
-         VALUES ('row2', 'test.sleep', 'dedupe-1', 'queued', 0, '2026-08-12T00:00:01.000Z')`,
+        `INSERT INTO local_deferred_jobs (id, job_type, shop_id, dedupe_key, status, attempts, enqueued_at)
+         VALUES ('row2', 'test.sleep', 'shop1', 'dedupe-1', 'queued', 0, '2026-08-12T00:00:01.000Z')`,
       )
     } catch (err) {
       caught = err
@@ -35,15 +35,48 @@ describe('WAFI-154 spike: local_deferred_jobs unique index + structured error co
     const database = createRealSqliteDb()
     await initLocalDeferredJobsSchema(database)
     await database.execute(
-      `INSERT INTO local_deferred_jobs (id, job_type, dedupe_key, status, attempts, enqueued_at, finished_at)
-       VALUES ('row1', 'test.sleep', 'dedupe-1', 'completed', 1, '2026-08-12T00:00:00.000Z', '2026-08-12T00:01:00.000Z')`,
+      `INSERT INTO local_deferred_jobs (id, job_type, shop_id, dedupe_key, status, attempts, enqueued_at, finished_at)
+       VALUES ('row1', 'test.sleep', 'shop1', 'dedupe-1', 'completed', 1, '2026-08-12T00:00:00.000Z', '2026-08-12T00:01:00.000Z')`,
     )
     await expect(
       database.execute(
-        `INSERT INTO local_deferred_jobs (id, job_type, dedupe_key, status, attempts, enqueued_at)
-         VALUES ('row2', 'test.sleep', 'dedupe-1', 'queued', 0, '2026-08-12T00:02:00.000Z')`,
+        `INSERT INTO local_deferred_jobs (id, job_type, shop_id, dedupe_key, status, attempts, enqueued_at)
+         VALUES ('row2', 'test.sleep', 'shop1', 'dedupe-1', 'queued', 0, '2026-08-12T00:02:00.000Z')`,
       ),
     ).resolves.toBeDefined()
+    database.close()
+  })
+
+  it('does NOT dedupe across shops: two different shops with the same (job_type, dedupe_key) both succeed as independent rows', async () => {
+    const database = createRealSqliteDb()
+    await initLocalDeferredJobsSchema(database)
+    await database.execute(
+      `INSERT INTO local_deferred_jobs (id, job_type, shop_id, dedupe_key, status, attempts, enqueued_at)
+       VALUES ('row1', 'test.sleep', 'shopA', 'dedupe-1', 'queued', 0, '2026-08-12T00:00:00.000Z')`,
+    )
+    // Cross-shop, same (job_type, dedupe_key): must NOT collide against shopA's row.
+    await expect(
+      database.execute(
+        `INSERT INTO local_deferred_jobs (id, job_type, shop_id, dedupe_key, status, attempts, enqueued_at)
+         VALUES ('row2', 'test.sleep', 'shopB', 'dedupe-1', 'queued', 0, '2026-08-12T00:00:01.000Z')`,
+      ),
+    ).resolves.toBeDefined()
+
+    // Genuine same-shop duplicate against shopA must still be rejected.
+    let caught: any
+    try {
+      await database.execute(
+        `INSERT INTO local_deferred_jobs (id, job_type, shop_id, dedupe_key, status, attempts, enqueued_at)
+         VALUES ('row3', 'test.sleep', 'shopA', 'dedupe-1', 'queued', 0, '2026-08-12T00:00:02.000Z')`,
+      )
+    } catch (err) {
+      caught = err
+    }
+    expect(caught).toBeDefined()
+    expect(caught.code).toBe('ERR_SQLITE_ERROR')
+
+    const rows = await database.getAll<any>(`SELECT id, shop_id FROM local_deferred_jobs WHERE dedupe_key = 'dedupe-1'`)
+    expect(rows.map((r: any) => r.shop_id).sort()).toEqual(['shopA', 'shopB'])
     database.close()
   })
 })

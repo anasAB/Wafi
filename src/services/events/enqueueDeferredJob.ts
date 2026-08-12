@@ -57,15 +57,24 @@ export async function enqueueDeferredJob(
 
       const maxForType = policy.maxQueuedJobs ?? DEFAULT_MAX_QUEUED_JOBS_PER_TYPE
       const typeCountResult = await tx.execute(
-        `SELECT COUNT(*) AS c FROM local_deferred_jobs WHERE job_type = ? AND status = 'queued'`,
-        [opts.jobType],
+        `SELECT COUNT(*) AS c FROM local_deferred_jobs WHERE job_type = ? AND status = 'queued' AND shop_id = ?`,
+        [opts.jobType, opts.shopId],
       )
       const typeCount = typeCountResult.rows._array[0]?.c ?? 0
       if (typeCount > maxForType) {
-        const evicted = await evictOne(tx, `job_type = ? AND status = 'queued' AND id != ?`, [opts.jobType, id])
+        // Per-type quota is scoped to this shop -- do not evict another shop's rows to
+        // satisfy this shop's quota (tenant-isolation fix, final review WAFI-154).
+        const evicted = await evictOne(tx, `job_type = ? AND status = 'queued' AND shop_id = ? AND id != ?`, [
+          opts.jobType, opts.shopId, id,
+        ])
         if (!evicted) throw new Error(`enqueueDeferredJob: per-type quota exhausted for "${opts.jobType}" with no evictable candidate`)
       }
 
+      // Deliberately device-global, NOT shop-scoped: this is a single on-device SQLite
+      // queue shared by every shop signed in on this device, and the ceiling protects
+      // the device's storage/memory as a whole, not any one shop's fair share. This is
+      // the plan's intended design, not an oversight -- see the per-type check above
+      // for the shop-scoped case.
       const globalCountResult = await tx.execute(`SELECT COUNT(*) AS c FROM local_deferred_jobs WHERE status = 'queued'`)
       const globalCount = globalCountResult.rows._array[0]?.c ?? 0
       if (globalCount > GLOBAL_QUEUE_CEILING) {
