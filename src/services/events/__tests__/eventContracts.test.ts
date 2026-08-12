@@ -37,8 +37,12 @@ const FIXTURES: Record<DomainEventType, DomainEvent> = {
   },
   'sale.returned': {
     type: 'sale.returned', entityId: 'r1',
-    payload: { returnId: 'r1', saleId: 'sale1', refundAmountUsd: 5, restockedItemCount: 1 } satisfies ReturnedPayload,
-    payloadVersion: V, staffId: STAFF, shopId: SHOP, occurredAt: WHEN,
+    payload: {
+      returnId: 'r1', saleId: 'sale1', refundAmountUsd: 5, restockedItemCount: 1,
+      cogsReversalUsd: 2, isFullReturn: false, saleWasCostless: false,
+      originalSaleProjectionDay: '2026-08-05',
+    } satisfies ReturnedPayload,
+    payloadVersion: 2, staffId: STAFF, shopId: SHOP, occurredAt: WHEN,
   },
   'customer.debt_changed': {
     type: 'customer.debt_changed', entityId: 'c1',

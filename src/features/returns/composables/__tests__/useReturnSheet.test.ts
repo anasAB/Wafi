@@ -282,6 +282,80 @@ describe('useReturnSheet — WAFI-140 event bus (sale.returned / customer.debt_c
   })
 })
 
+describe('useReturnSheet — WAFI-153 sale.returned payload v2', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  it('includes cogsReversalUsd, isFullReturn, saleWasCostless, originalSaleProjectionDay on sale.returned, at payload_version 2', async () => {
+    vi.mocked(db.execute).mockImplementation(async (sql: unknown) => {
+      const s = sql as string
+      if (s.includes('FROM sales s')) {
+        return {
+          rows: {
+            _array: [{
+              id: 'sale-1', display_sale_number: '1', customer_id: null, customer_name: null,
+              sale_discount_amount_usd: 0, is_credit: 0,
+            }],
+          },
+        } as any
+      }
+      if (s.includes('FROM exchange_rates')) return { rows: { _array: [{ rate: 1 }] } } as any
+      return { rows: { _array: [] } } as any
+    })
+
+    vi.mocked(db.getAll).mockImplementation(async (sql: unknown) => {
+      const s = sql as string
+      // A costless sale (unit_cost_usd = 0), 2 units, fully returned + restocked.
+      if (s.includes('AVG(unit_cost_usd)')) return [{ product_id: 'p1', unit_cost_usd: 0 }] as any
+      if (s.includes('FROM sale_line_items')) {
+        return [{ product_id: 'p1', product_name: 'قلم', quantity: 2, unit_price_usd: 10 }] as any
+      }
+      if (s.includes('FROM return_line_items')) return [] as any
+      return [] as any
+    })
+
+    vi.mocked(db.getOptional).mockImplementation(async (sql: unknown) => {
+      const s = sql as string
+      if (s.includes('COUNT(*) AS c')) return { c: 1 } as any
+      if (s.includes(`type = 'sale.completed'`)) return { event_projection_day: '2026-08-10' } as any
+      return null
+    })
+
+    const txExecute = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM sale_line_items') && sql.includes('WHERE sale_id')) {
+        return { rows: { _array: [{ product_id: 'p1', quantity: 2 }] } }
+      }
+      if (sql.includes('FROM return_line_items') && sql.includes('JOIN returns')) {
+        return { rows: { _array: [] } }
+      }
+      return { rows: { _array: [] } }
+    })
+    vi.mocked(db.writeTransaction).mockImplementation(async (fn: any) => { await fn({ execute: txExecute }) })
+
+    const sheet = useReturnSheet('sale-1')
+    await sheet.load()
+    sheet.lines.value[0].selected = true
+    sheet.lines.value[0].qtyToReturn = 2
+    sheet.refundMethod.value = 'cash_usd'
+    await sheet.confirm()
+
+    const eventInserts = vi.mocked(db.execute).mock.calls.filter(
+      ([sql]) => (sql as string).includes('insert into events'),
+    )
+    const returnedCall = eventInserts.find(([, params]) => (params as any[])[1] === 'sale.returned')
+    expect(returnedCall).toBeDefined()
+    const params = returnedCall![1] as any[]
+    expect(params[4]).toBe(2) // payload_version
+    const payload = JSON.parse(params[3])
+    expect(payload.cogsReversalUsd).toBe(0)
+    expect(payload.isFullReturn).toBe(true)
+    expect(payload.saleWasCostless).toBe(true)
+    expect(payload.originalSaleProjectionDay).toBe('2026-08-10')
+  })
+})
+
 describe('useReturnSheet — WAFI-010 installment plan integration', () => {
   beforeEach(() => {
     setActivePinia(createPinia())

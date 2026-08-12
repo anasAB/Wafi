@@ -163,10 +163,39 @@ export function useReturnSheet(saleId: string) {
     const returnId  = uuidv4()
     const now       = new Date().toISOString()
 
-    const { warning } = await executeBusinessOperation(
+    // WAFI-153: restock-aware, per-(sale,product)-averaged COGS reversal --
+    // ports useDashboardMetrics.ts's existing read-time subquery (WAFI-005
+    // dedup: a product on two lines of the same sale is averaged once, not
+    // double-counted) to write time.
+    const costRows = await db.getAll<{ product_id: string; unit_cost_usd: number }>(
+      `SELECT product_id, AVG(unit_cost_usd) AS unit_cost_usd FROM sale_line_items WHERE sale_id = ? GROUP BY product_id`,
+      [saleId],
+    )
+    const costMap = new Map(costRows.map(r => [r.product_id, r.unit_cost_usd ?? 0]))
+    const cogsReversalUsd = selectedLines
+      .filter(l => l.restock && !l.isOpenItem)
+      .reduce((sum, l) => sum + l.qtyToReturn * (costMap.get(l.productId) ?? 0), 0)
+
+    const costlessRow = await db.getOptional<{ c: number }>(
+      `SELECT COUNT(*) AS c FROM sale_line_items WHERE sale_id = ? AND (unit_cost_usd IS NULL OR unit_cost_usd = 0)`,
+      [saleId],
+    )
+    const saleWasCostless = (costlessRow?.c ?? 0) > 0
+
+    // WAFI-153: the original sale.completed event's event_projection_day,
+    // read once here (write time), never re-derived at apply time -- avoids
+    // a nondeterministic lookup inside the apply function.
+    const originalSaleEventRow = await db.getOptional<{ event_projection_day: string }>(
+      `SELECT event_projection_day FROM events WHERE type = 'sale.completed' AND json_extract(payload, '$.saleId') = ? ORDER BY sequence ASC LIMIT 1`,
+      [saleId],
+    )
+    const originalSaleProjectionDay = originalSaleEventRow?.event_projection_day
+
+    const { warning, isFullSaleReturn } = await executeBusinessOperation(
       async () => {
         let cancelledPlanId: string | null = null
         let warning: ConfirmResult['warning']
+        let isFullSaleReturn = false
 
         await db.writeTransaction(async (tx) => {
           // Data-layer guard: never refund/restock more than what is still returnable.
@@ -268,7 +297,7 @@ export function useReturnSheet(saleId: string) {
             [saleId, shopId],
           )
           const originalRowsArray = (originalRows as any).rows?._array ?? []
-          const isFullSaleReturn = originalRowsArray.length > 0 && originalRowsArray.every(
+          isFullSaleReturn = originalRowsArray.length > 0 && originalRowsArray.every(
             (row: any) => (freshReturnedMap.get(row.product_id) ?? 0) >= row.quantity,
           )
 
@@ -314,7 +343,7 @@ export function useReturnSheet(saleId: string) {
           }
         })
 
-        return { cancelledPlanId, warning }
+        return { cancelledPlanId, warning, isFullSaleReturn }
       },
       {
         // WAFI-150: the return itself is now audited automatically by the
@@ -325,14 +354,18 @@ export function useReturnSheet(saleId: string) {
             await logInstallmentPlanCancelled(cancelledPlanId, { reason: 'sale_returned', returnId })
           }
         },
-        toEvent: () => ({
+        toEvent: ({ isFullSaleReturn }) => ({
           type: ReturnsEventType.Returned,
           entityId: returnId,
           payload: {
             returnId, saleId, refundAmountUsd,
             restockedItemCount: selectedLines.filter(l => l.restock && !l.isOpenItem).length,
+            cogsReversalUsd,
+            isFullReturn: isFullSaleReturn,
+            saleWasCostless,
+            originalSaleProjectionDay: originalSaleProjectionDay ?? now.slice(0, 10),
           } satisfies ReturnedPayload,
-          payloadVersion: 1,
+          payloadVersion: 2,
           staffId: useSessionStore().activeStaff?.id ?? '',
           shopId,
           occurredAt: now,

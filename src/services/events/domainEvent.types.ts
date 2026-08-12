@@ -188,6 +188,14 @@ export interface ReturnedPayload {
   saleId: string
   refundAmountUsd: number
   restockedItemCount: number
+  /** WAFI-153: restock-aware, per-(sale,product)-averaged COGS reversal, fractional dollars. */
+  cogsReversalUsd: number
+  /** WAFI-153: true iff this return's cumulative returned qty reaches the sale's total sold qty. */
+  isFullReturn: boolean
+  /** WAFI-153: copy of the original sale's hasCostlessLine flag. */
+  saleWasCostless: boolean
+  /** WAFI-153: the original sale's event_projection_day (YYYY-MM-DD), for the cross-day costless decrement. */
+  originalSaleProjectionDay: string
 }
 
 export interface DebtChangedPayload {
