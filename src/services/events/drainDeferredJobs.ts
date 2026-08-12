@@ -1,7 +1,7 @@
 import { db as appDb } from '@/data/powersync/db'
 import { getJobTypePolicy, getRegisteredJobTypes } from '@/services/events/jobTypeRegistry'
 import { isTransientEventFailure } from '@/services/events/isTransientEventFailure'
-import { DEFERRED_JOB_LEASE_MINUTES, MAX_ATTEMPTS, BACKOFF_MINUTES } from '@/services/events/deferredJob.constants'
+import { DEFERRED_JOB_LEASE_MINUTES, MAX_ATTEMPTS, BACKOFF_MINUTES, RETENTION_DAYS } from '@/services/events/deferredJob.constants'
 import { reportDeferredJobDead } from '@/services/events/reportDeferredJobDead'
 
 type DbLike = Pick<typeof appDb, 'execute' | 'getAll' | 'getOptional' | 'writeTransaction'>
@@ -30,6 +30,15 @@ async function reclaimStaleLeases(database: DbLike, shopId: string): Promise<voi
        SET status = 'queued', worker_id = NULL, started_at = NULL, lease_expires_at = NULL
      WHERE shop_id = ? AND status = 'running' AND lease_expires_at <= ?`,
     [shopId, new Date().toISOString()],
+  )
+}
+
+async function purgeExpiredRows(database: DbLike, shopId: string): Promise<void> {
+  const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString()
+  await database.execute(
+    `DELETE FROM local_deferred_jobs
+     WHERE shop_id = ? AND status IN ('completed', 'dead', 'evicted') AND finished_at <= ?`,
+    [shopId, cutoff],
   )
 }
 
@@ -68,6 +77,7 @@ async function runDrain(shopId: string, opts: DrainOptions, database: DbLike): P
   const workerId = opts.workerId ?? crypto.randomUUID()
 
   await reclaimStaleLeases(database, shopId)
+  await purgeExpiredRows(database, shopId)
 
   while (true) {
     if (!isForegrounded()) return

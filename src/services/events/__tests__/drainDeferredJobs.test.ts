@@ -187,4 +187,23 @@ describe('drainDeferredJobs', () => {
 
     expect(handlerCalls).toBe(1) // only ever claimed and ran once, not twice
   })
+
+  it('purges completed/dead/evicted rows past the retention window at the end of a drain pass', async () => {
+    const database = await freshDb()
+    registerJobHandler({ jobType: 'test.a', handler: async () => {}, priority: 'normal', requiresNetwork: false, maxQueuedJobs: 200 })
+    const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString() // 8 days ago
+    const recent = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString() // 1 day ago
+    await seed(database, { id: 'old-completed', status: 'completed', finished_at: old })
+    await seed(database, { id: 'old-dead', status: 'dead', finished_at: old })
+    await seed(database, { id: 'old-evicted', status: 'evicted', finished_at: old })
+    await seed(database, { id: 'recent-completed', status: 'completed', finished_at: recent })
+
+    await drainDeferredJobs('shop1', { isConnected: () => true, isForegrounded: () => true }, database)
+
+    const remainingIds = (await database.getAll<any>(`SELECT id FROM local_deferred_jobs`)).map((r: any) => r.id)
+    expect(remainingIds).not.toContain('old-completed')
+    expect(remainingIds).not.toContain('old-dead')
+    expect(remainingIds).not.toContain('old-evicted')
+    expect(remainingIds).toContain('recent-completed')
+  })
 })
