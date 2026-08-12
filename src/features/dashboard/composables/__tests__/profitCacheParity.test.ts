@@ -17,13 +17,29 @@ import { useProfitCache } from '../useProfitCache'
 //
 //   1. oldExpectations  -- a faithful JS transcription of each of
 //      useDashboardMetrics.ts's 10 SQL queries, run over the fixture.
-//   2. profitCacheRows  -- the profit_cache row(s) 086_profit_cache_apply.sql
-//      (sale.completed / sale.returned / expense.recorded branches) and
-//      087_profit_cache_rebuild.sql's backfill loop would produce for the
-//      same facts, computed by hand in TS using the identical formulas.
+//   2. profitCacheRows  -- the profit_cache row(s) 086_profit_cache_apply.sql's
+//      UPSERT arithmetic (sale.completed / sale.returned / expense.recorded
+//      branches) produces, GIVEN an event payload with cogsUsd/discountUsd/
+//      hasCostlessLine/cogsReversalUsd/isFullReturn/saleWasCostless already
+//      populated on it.
+//
+// IMPORTANT SCOPE NOTE: _apply_profit_cache (086) does not itself derive
+// cogsUsd / cogsReversalUsd / hasCostlessLine / isFullReturn -- it only reads
+// those fields off the event payload (`v_event.payload::jsonb->>'...'`) and
+// applies them. The functions below that DERIVE those values from raw sale/
+// return facts (saleCogs, hasCostlessLine, avgUnitCostForProduct, isFullReturn)
+// model the DESIGN SPEC's formulas for what Tasks 3/4's write-time code
+// (sales.service.ts / useReturnSheet.ts) is supposed to compute onto the
+// payload -- they are not read from, or a citation of, 086/087's own code,
+// which never computes them. Whether Tasks 3/4's actual write-time code
+// computes these fields correctly is NOT covered by this test -- that is the
+// responsibility of those tasks' own unit tests. This test only proves that
+// useDashboardMetrics()'s live-query formulas and useProfitCache()'s
+// pre-aggregated-row formula agree on the same underlying facts, given the
+// design spec's formulas for both sides.
 //
 // Both projections are driven from the SAME fixture object, so a mismatch
-// between old and new can only come from the two formulas actually
+// between old and new can only come from the two READ-side formulas actually
 // disagreeing -- not from independently-invented numbers that happen to
 // match. See task-13-report.md for the per-scenario formula citations.
 // ---------------------------------------------------------------------------
@@ -177,7 +193,7 @@ function mockOldDb(fixture: Fixture, start: string, end: string) {
     if (/FROM sales s\s+WHERE s\.shop_id/.test(s)) return { count: exp.costlessSalesInPeriod } as any
     if (/COUNT\(\*\) as count FROM returns r/.test(s)) return { count: exp.returnCount } as any
     if (/COUNT\(\*\) as count FROM sales WHERE/.test(s)) return { count: exp.invoiceCount } as any
-    return { total: 0, count: 0 } as any
+    throw new Error('unmatched SQL in mockOldDb router: ' + s)
   })
 }
 
@@ -203,8 +219,13 @@ function cogsReversalOf(fixture: Fixture, start: string, end: string): number {
 }
 
 // ---------------------------------------------------------------------------
-// 2. New composable (profit_cache) rows -- hand-derived per 086/087's
-//    formulas, from the SAME fixture.
+// 2. New composable (profit_cache) rows -- hand-derived from the SAME
+//    fixture. The UPSERT/day-bucketing/cross-day-decrement structure below is
+//    086/087's actual code (cited per-branch). The per-fact VALUES fed into
+//    that structure -- saleCogs, hasCostlessLine, avgUnitCostForProduct,
+//    isFullReturn -- are this test's model of the DESIGN SPEC's formulas for
+//    what Tasks 3/4 are supposed to compute onto the event payload at write
+//    time; 086 itself never derives them (see scope note at top of file).
 // ---------------------------------------------------------------------------
 interface ProfitCacheRow {
   day: string
@@ -228,8 +249,11 @@ function computeProfitCacheRows(fixture: Fixture): ProfitCacheRow[] {
     return byDay.get(day)!
   }
 
-  // sale.completed branch (086 lines 91-108): applied on the sale's own
-  // projection day.
+  // sale.completed branch: 086's actual UPSERT (lines 91-108) applies
+  // revenue/cogs/discount/invoice_count/costless_sale_count on the sale's own
+  // projection day, reading them off the payload. saleCogs/hasCostlessLine
+  // here stand in for what Tasks 3/4 are supposed to have already computed
+  // onto that payload (design-spec formulas, not 086's own derivation).
   for (const sale of fixture.sales) {
     const r = row(sale.day)
     r.revenue_usd += centsOf(sale.totalUsd)
@@ -241,9 +265,13 @@ function computeProfitCacheRows(fixture: Fixture): ProfitCacheRow[] {
     r.costless_sale_count += hasCostlessLine(sale) ? 1 : 0
   }
 
-  // sale.returned branch (086 lines 111-138): refunds/cogs_reversal/return_count
-  // on the RETURN's own day; the costless decrement lands on the ORIGINAL
-  // SALE's day (originalSaleProjectionDay), which may differ (cross-day return).
+  // sale.returned branch: 086's actual UPSERT (lines 111-138) applies
+  // refunds/cogs_reversal/return_count on the RETURN's own day, and (real
+  // 086 code, lines 124-138) decrements costless_sale_count on the ORIGINAL
+  // SALE's day when the payload's isFullReturn AND saleWasCostless are both
+  // true -- that cross-day-decrement branching is 086's own logic. The
+  // isFullReturn/saleWasCostless VALUES themselves are, again, this test's
+  // design-spec model of what Tasks 3/4 write onto the payload.
   for (const ret of fixture.returns) {
     const sale = fixture.sales.find((s) => s.id === ret.saleId)
     if (!sale) continue
