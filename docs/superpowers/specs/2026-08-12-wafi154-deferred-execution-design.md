@@ -68,10 +68,21 @@ Event Bus
              (bounded retention)  → back to queued  (bounded retention)
 ```
 
-`defineDeferredSubscriber()` has the same call shape as `runDurableSubscriber()` (same
+`defineDeferredSubscriber()` has a similar call shape to `runDurableSubscriber()` (same
 `subscriberName`/`eventType`/`shopId` parameters), but instead of invoking a handler, it writes
 one row to `local_deferred_jobs` and returns. The row itself is what "the event was durably
 deferred" means — see Durability Invariant below.
+
+**Precise dependency on WAFI-150, stated explicitly:** WAFI-154 reuses the *generalized*
+retry-classification, backoff-policy, and failure-semantics primitives that WAFI-150 established
+(`isTransientEventFailure`, the shared `[1, 5, 30, 120]`-minute backoff schedule) — it does **not**
+reuse `runDurableSubscriber`'s inline execution path itself, and a deferred subscriber is not a
+specialization of a durable one. The similarity in call shape above is a convenience for anyone
+reading both side by side, not an inheritance relationship. This keeps the three-tier picture
+accurate: Immediate and Durable both execute inline (the only difference is retry-on-failure);
+Deferred never executes inline at all — it persists and returns, full stop — while still drawing
+on the same underlying retry primitives Durable already established, rather than inventing a
+fourth backoff schedule.
 
 **Two distinct registration surfaces, one source of truth per concern** — a producer (the
 deferred subscriber) never decides operational policy for a job type; a job type's definition
@@ -79,8 +90,10 @@ never decides which event produces it:
 
 - **Producer decides** (`defineDeferredSubscriber`): which event triggers this, what `jobType`
   string to enqueue, the payload shape, and an optional `dedupeKey`.
-- **Job type definition decides** (`registerJobHandler`): the handler function, `priority`,
-  `requiresNetwork`, `maxQueuedJobs` (per-type quota), and `evictable`.
+- **Job type definition decides** (`registerJobHandler`): the handler function, `priority`, and
+  `requiresNetwork`/`maxQueuedJobs` (per-type quota). Whether a job type is evictable is not a
+  separate flag here — see Capacity & Eviction below: it is derived structurally from `priority`,
+  so the two properties can never disagree.
 
 This split avoids the same `priority`/`requiresNetwork` value being duplicated (and able to
 drift) across every deferred subscriber that happens to enqueue the same job type — a job type's
@@ -178,18 +191,25 @@ queued ──(capacity eviction, job is evictable)──> evicted
   fencing tokens, which is disproportionate for a single-device local PWA queue. **Handlers must
   therefore be idempotent** — the same requirement `runDurableSubscriber` already places on its
   handlers, extended to cover concurrent-with-itself execution, not just sequential re-delivery.
-- **`dead` is a distinct terminal state from a retryable `queued`.** A row with
-  `attempts >= MAX_ATTEMPTS` moves to `dead` and is never re-selected by the worker's claim query
-  (which only ever selects `status = 'queued'`) — this is the direct fix for "exhausted retries
-  silently becoming eligible again on the next foreground/reconnect," which a same-status
+- **`dead` is a distinct terminal state from a retryable `queued`.** **Initial v1
+  `MAX_ATTEMPTS: 5`** — a starting operational constant in code, not an architectural
+  requirement, matching how the capacity defaults above are framed. A row that has *exhausted*
+  its attempt budget moves to `dead` and is never re-selected by the worker's claim query (which
+  only ever selects `status = 'queued'`) — this is the direct fix for "exhausted retries silently
+  becoming eligible again on the next foreground/reconnect," which a same-status
   `failed`-with-a-flag design would risk if any query forgot to check the flag.
   **`attempts` increments at claim time, not only on handler failure** — a worker claiming a row
   (`queued` → `running`) increments `attempts` immediately, so a crash-and-reclaim cycle spends
   one attempt even if the handler never got a chance to throw. Without this, `MAX_ATTEMPTS` would
   under-count real execution attempts and a job stuck in a claim/crash loop could retry
   indefinitely. Concretely: `queued (attempts=0)` → claim → `running (attempts=1)` → crash →
-  reclaim → `queued (attempts=1)` → claim → `running (attempts=2)`, and so on until
-  `attempts >= MAX_ATTEMPTS` routes the row to `dead` instead of back to `queued`.
+  reclaim → `queued (attempts=1)` → claim → `running (attempts=2)`, and so on.
+  **Exact boundary rule, since attempts is now incremented at claim rather than at failure:** the
+  worker may claim and execute any `queued` row whose claim brings `attempts` up to
+  `MAX_ATTEMPTS` — reaching the limit on a claim is not itself a reason to skip execution. Only
+  *after* that attempt's handler call fails does the row transition to `dead`, rather than back
+  to `queued`. So with `MAX_ATTEMPTS = 5`, a row genuinely gets 5 real executions (or
+  claim-then-crash cycles), not 4 — the fifth claim still runs the handler.
   `isTransientEventFailure` classification still governs backoff scheduling exactly as it does
   today: a transient failure gets `next_retry_at` (shared `[1, 5, 30, 120]`-minute schedule,
   reusing the existing constant rather than a fourth copy of it); a classified-permanent failure
@@ -261,8 +281,8 @@ export function defineDeferredSubscriber<T>(opts: {
       // Durability invariant: this INSERT is awaited before this handler returns,
       // which is what useEventSubscription's dispatch loop treats as "processed."
       // enqueueDeferredJob looks up opts.jobType's registered policy (priority,
-      // requiresNetwork, maxQueuedJobs, evictable) and stamps it onto the row --
-      // the producer never supplies or duplicates that policy itself.
+      // requiresNetwork, maxQueuedJobs) and stamps it onto the row -- the producer
+      // never supplies or duplicates that policy itself.
       await enqueueDeferredJob({
         jobType: opts.jobType,
         shopId: opts.shopId,
@@ -282,9 +302,11 @@ export function registerJobHandler(opts: {
   priority: 'critical' | 'normal' | 'low'
   requiresNetwork: boolean
   maxQueuedJobs: number
-  evictable: boolean  // false only for 'critical'-equivalent job types; see Capacity & Eviction
 }): void {
-  jobTypeRegistry.set(opts.jobType, opts)
+  // Evictability is derived structurally from priority, never a separate field --
+  // see Capacity & Eviction. This makes `priority: 'critical', evictable: true` (or
+  // the reverse contradiction) an impossible state rather than a bug to catch in review.
+  jobTypeRegistry.set(opts.jobType, { ...opts, evictable: opts.priority !== 'critical' })
 }
 ```
 
@@ -299,11 +321,18 @@ init, before any subscribers start.
 A job type may supply a `dedupeKey` function. If the computed key collides with an existing
 `queued` or `running` row of the same `job_type` (enforced by the partial unique index above,
 not a `SELECT`-then-`INSERT` check — closes the race where two events fire close together and
-both observe "not found" before either inserts), the new enqueue is a no-op. Once that row
-reaches `completed`/`dead`/`evicted`, the same key is eligible to be enqueued again — the
-uniqueness constraint's `WHERE status IN ('queued', 'running')` clause scopes it to active work
-only, so `daily-summary:2026-08-12` can run once today and legitimately run again if some future
-job type reuses the same key on a later day or after an explicit reset.
+both observe "not found" before either inserts), the new enqueue is a **successful no-op**, not
+a failure: `enqueueDeferredJob` catches exactly the unique-constraint-violation error for
+`(job_type, dedupe_key)` and resolves normally rather than rethrowing, because "this work is
+already represented by an active queued job" is the intended outcome, not an error condition.
+**Any other `INSERT` failure** (disk I/O, a genuinely corrupt row, etc.) **is not caught this
+way and propagates**, per the Durability Invariant below — the distinction matters precisely
+because both are technically "the INSERT didn't create a new row," but only one of them means
+the work is safely represented. Once a row reaches `completed`/`dead`/`evicted`, the same key is
+eligible to be enqueued again — the uniqueness constraint's `WHERE status IN ('queued',
+'running')` clause scopes it to active work only, so `daily-summary:2026-08-12` can run once
+today and legitimately run again if some future job type reuses the same key on a later day or
+after an explicit reset.
 
 ## Capacity & Eviction
 
@@ -315,13 +344,17 @@ job type reuses the same key on a later day or after an explicit reset.
   the device class, independent of how per-type quotas are distributed. **Initial v1 default:
   1,000 queued rows total**, likewise a configurable starting point, not a fixed architectural
   number.
+- **Evictability is derived structurally from priority, never a separate flag:**
+  `evictable = priority !== 'critical'`. There is exactly one source of truth for "can this job
+  type's queued work be sacrificed under pressure" — priority itself — so a `critical` job type
+  marked evictable, or a `normal`/`low` job type marked non-evictable, is not a state the schema
+  or registry can represent, rather than a misconfiguration to catch in code review.
 - **Eviction candidate selection**, when either cap is hit by a new enqueue: among `queued` rows
-  where the job type is registered `evictable: true` (see below), pick lowest-priority first,
-  then oldest (`enqueued_at`) within that priority — same ordering concept as execution, applied
-  in reverse.
-- **A job type registered `evictable: false` (the `critical`-equivalent case) is never silently
-  evicted.** If capacity is exhausted and no evictable candidate exists, the new enqueue **fails
-  loudly** — the deferred subscriber's `enqueueDeferredJob` call throws.
+  whose job type's priority is not `critical`, pick lowest-priority first, then oldest
+  (`enqueued_at`) within that priority — same ordering concept as execution, applied in reverse.
+- **A `critical` job type is never silently evicted**, by construction. If capacity is exhausted
+  and no non-`critical` candidate exists, the new enqueue **fails loudly** — the deferred
+  subscriber's `enqueueDeferredJob` call throws.
   **Invariant, elevated beyond just this eviction section:** a deferred job that cannot be
   durably persisted is treated as an event-processing failure, full stop — never as a silently
   dropped or silently degraded deferred write. Per the Durability Invariant above, the deferred
@@ -383,10 +416,9 @@ registerJobHandler({
   handler: async (job) => {
     await generateAndStoreReceiptPdf(job.payload as ReceiptPdfJobPayload)
   },
-  priority: 'normal',
+  priority: 'normal',       // implies evictable -- 'normal'/'low' are always evictable, 'critical' never is
   requiresNetwork: false,
   maxQueuedJobs: 200,
-  evictable: true,
 })
 
 // Producer: only knows which event triggers it and what payload/dedupe key to send.
@@ -469,9 +501,12 @@ exercise real Postgres — these are lifecycle proofs, not unit tests of isolate
 15. **Critical jobs are never silently evicted** — fill the queue entirely with `critical` jobs
     up to capacity; assert the next enqueue attempt throws rather than evicting anything, and no
     row's status silently changes to `evicted`.
-16. **Dedup is atomic under a race** — fire two enqueue calls with the same `dedupeKey`
-    concurrently (`Promise.all`); assert exactly one `queued` row exists afterward, not zero and
-    not two.
+16. **Dedup is atomic under a race, and the losing call resolves successfully, not with an
+    error** — fire two enqueue calls with the same `dedupeKey` concurrently (`Promise.all`);
+    assert exactly one `queued` row exists afterward (not zero, not two), **and** assert both
+    `Promise.all` calls resolve without throwing — the second (constraint-violating) call must
+    be observed by its caller as a successful no-op, per the Dedup/Coalescing section, not as an
+    enqueue failure that would incorrectly propagate to the event-processing failure path.
 17. **Dedup key reusable after completion** — enqueue, drain to `completed`, enqueue again with
     the identical `dedupeKey`; assert the second enqueue succeeds and produces a new row.
 18. **Completed jobs don't cause permanent queue growth** — enqueue and complete a job with
