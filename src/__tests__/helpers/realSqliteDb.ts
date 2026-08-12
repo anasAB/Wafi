@@ -9,6 +9,8 @@ import { DatabaseSync } from 'node:sqlite'
  *  "offline job survives restart" test). */
 export function createRealSqliteDb(path = ':memory:') {
   const conn = new DatabaseSync(path)
+  let txQueue: Promise<any> = Promise.resolve()
+
   conn.exec(`
     CREATE TABLE IF NOT EXISTS local_deferred_jobs (
       id TEXT PRIMARY KEY, job_type TEXT, shop_id TEXT, payload TEXT, priority TEXT,
@@ -31,23 +33,25 @@ export function createRealSqliteDb(path = ':memory:') {
     getOptional: async <T>(sql: string, params: unknown[] = []): Promise<T | null> =>
       (conn.prepare(sql).get(...(params as any[])) as T) ?? null,
     writeTransaction: async <T>(fn: (tx: { execute: (sql: string, params?: unknown[]) => Promise<any> }) => Promise<T>): Promise<T> => {
-      conn.exec('BEGIN')
-      try {
-        const result = await fn({
-          execute: async (sql: string, params: unknown[] = []) => {
-            const stmt = conn.prepare(sql)
-            const isSelect = /^\s*select/i.test(sql)
-            if (isSelect) return { rows: { _array: stmt.all(...(params as any[])) } }
-            stmt.run(...(params as any[]))
-            return { rows: { _array: [] } }
-          },
-        })
-        conn.exec('COMMIT')
-        return result
-      } catch (err) {
-        conn.exec('ROLLBACK')
-        throw err
-      }
+      return (txQueue = txQueue.then(async () => {
+        conn.exec('BEGIN')
+        try {
+          const result = await fn({
+            execute: async (sql: string, params: unknown[] = []) => {
+              const stmt = conn.prepare(sql)
+              const isSelect = /^\s*select/i.test(sql)
+              if (isSelect) return { rows: { _array: stmt.all(...(params as any[])) } }
+              stmt.run(...(params as any[]))
+              return { rows: { _array: [] } }
+            },
+          })
+          conn.exec('COMMIT')
+          return result
+        } catch (err) {
+          conn.exec('ROLLBACK')
+          throw err
+        }
+      }))
     },
     close: () => conn.close(),
     _raw: conn,
