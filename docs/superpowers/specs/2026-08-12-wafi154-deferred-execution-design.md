@@ -73,11 +73,21 @@ Event Bus
 one row to `local_deferred_jobs` and returns. The row itself is what "the event was durably
 deferred" means — see Durability Invariant below.
 
-A **separate** `registerJobHandler(jobType, handler)` registry maps a `job_type` string to the
-function the worker calls when it dequeues a row of that type — this indirection exists because
-the worker (started once at app init, per shop) needs to resolve a handler for a job type without
-knowing which deferred subscriber originally enqueued it, exactly mirroring how
-`retryPendingEventProcessing`'s `handlers: Map<string, ...>` parameter already works today.
+**Two distinct registration surfaces, one source of truth per concern** — a producer (the
+deferred subscriber) never decides operational policy for a job type; a job type's definition
+never decides which event produces it:
+
+- **Producer decides** (`defineDeferredSubscriber`): which event triggers this, what `jobType`
+  string to enqueue, the payload shape, and an optional `dedupeKey`.
+- **Job type definition decides** (`registerJobHandler`): the handler function, `priority`,
+  `requiresNetwork`, `maxQueuedJobs` (per-type quota), and `evictable`.
+
+This split avoids the same `priority`/`requiresNetwork` value being duplicated (and able to
+drift) across every deferred subscriber that happens to enqueue the same job type — a job type's
+operational policy is defined exactly once, regardless of how many event types eventually feed
+it. The worker resolves both the handler and its policy from `registerJobHandler`'s registry when
+it dequeues a row, keyed on `job_type` — mirroring how `retryPendingEventProcessing`'s
+`handlers: Map<string, ...>` parameter already resolves a handler by name today.
 
 ### Same SQLite database, no new storage layer
 
@@ -88,6 +98,12 @@ matches every existing local-only table's convention (`{ localOnly: true }` in
 `src/data/powersync/schema.ts`) and means job persistence gets the same crash-durability
 guarantees (SQLite WAL) the rest of the app already relies on, for free.
 
+**`local_deferred_jobs` is device-local and is never synchronized to Supabase or to another
+device.** `{ localOnly: true }` is what enforces this architecturally — PowerSync never includes
+this table in its sync protocol in either direction. This matters enough to state directly here,
+not only under Cross-Device Coordination below: a deferred job's existence, status, and payload
+are facts about one device's local work queue, never shop-wide state.
+
 ## Schema
 
 ```ts
@@ -97,8 +113,10 @@ const local_deferred_jobs = new Table({
   job_type:          column.text,     // e.g. 'test.sleep' (v1's only real registrant)
   shop_id:           column.text,
   payload:           column.text,     // JSON.stringify'd, same convention as events.payload
-  priority:          column.text,     // 'critical' | 'normal' | 'low'
-  requires_network:  column.integer,  // 0 | 1 (SQLite has no boolean)
+  priority:          column.text,     // 'critical' | 'normal' | 'low' -- stamped from the job
+                                       // type's registerJobHandler policy at enqueue time, not
+                                       // supplied by the producer (see Call-Site Convention)
+  requires_network:  column.integer,  // 0 | 1 (SQLite has no boolean) -- same stamping rule
   dedupe_key:        column.text,     // nullable — see Dedup section
   status:            column.text,     // 'queued' | 'running' | 'completed' | 'dead' | 'evicted'
   attempts:          column.integer,
@@ -143,19 +161,35 @@ queued ──(capacity eviction, job is evictable)──> evicted
 ```
 
 - **`running` is a lease, not a terminal fact.** `worker_id` + `started_at` + `lease_expires_at`
-  (fixed lease duration, e.g. 5 minutes — generous relative to any realistic handler, since a
-  stuck handler should time out via its own logic, not the lease) are set when a worker claims a
-  row. On every drain pass, before claiming new work, the worker first reclaims any `running` row
-  whose `lease_expires_at` has passed: `status = 'queued', worker_id = NULL, started_at = NULL,
-  lease_expires_at = NULL`. This is the direct fix for the "app crashes mid-handler, job stuck in
-  `running` forever" failure mode — same shape as WAFI-151's advisory-lock-scoped recovery, applied
-  here as a row-level lease instead of a Postgres advisory lock (this queue is purely
-  client-local, so there's no cross-device contention to guard against — only cross-restart).
+  (fixed lease duration, e.g. 5 minutes — generous relative to any realistic handler) are set when
+  a worker claims a row. On every drain pass, before claiming new work, the worker first reclaims
+  any `running` row whose `lease_expires_at` has passed: `status = 'queued', worker_id = NULL,
+  started_at = NULL, lease_expires_at = NULL`. This is the direct fix for the "app crashes
+  mid-handler, job stuck in `running` forever" failure mode — same shape as WAFI-151's
+  advisory-lock-scoped recovery, applied here as a row-level lease instead of a Postgres advisory
+  lock (this queue is purely client-local, so there's no cross-device contention to guard against
+  — only cross-restart).
+  **Explicit invariant: the lease is a crash-recovery mechanism, not a hard execution timeout.**
+  It does not — and cannot, from client-side JavaScript — forcibly halt a still-running handler.
+  If a lease expires while the original handler is genuinely still executing (e.g. the app was
+  never actually killed, just slow), a later drain pass may reclaim and re-run the same job
+  concurrently with the still-live original execution. This is a deliberately accepted v1
+  trade-off, not an oversight: closing it properly would require distributed-lock-style
+  fencing tokens, which is disproportionate for a single-device local PWA queue. **Handlers must
+  therefore be idempotent** — the same requirement `runDurableSubscriber` already places on its
+  handlers, extended to cover concurrent-with-itself execution, not just sequential re-delivery.
 - **`dead` is a distinct terminal state from a retryable `queued`.** A row with
   `attempts >= MAX_ATTEMPTS` moves to `dead` and is never re-selected by the worker's claim query
   (which only ever selects `status = 'queued'`) — this is the direct fix for "exhausted retries
   silently becoming eligible again on the next foreground/reconnect," which a same-status
   `failed`-with-a-flag design would risk if any query forgot to check the flag.
+  **`attempts` increments at claim time, not only on handler failure** — a worker claiming a row
+  (`queued` → `running`) increments `attempts` immediately, so a crash-and-reclaim cycle spends
+  one attempt even if the handler never got a chance to throw. Without this, `MAX_ATTEMPTS` would
+  under-count real execution attempts and a job stuck in a claim/crash loop could retry
+  indefinitely. Concretely: `queued (attempts=0)` → claim → `running (attempts=1)` → crash →
+  reclaim → `queued (attempts=1)` → claim → `running (attempts=2)`, and so on until
+  `attempts >= MAX_ATTEMPTS` routes the row to `dead` instead of back to `queued`.
   `isTransientEventFailure` classification still governs backoff scheduling exactly as it does
   today: a transient failure gets `next_retry_at` (shared `[1, 5, 30, 120]`-minute schedule,
   reusing the existing constant rather than a fourth copy of it); a classified-permanent failure
@@ -180,10 +214,12 @@ ORDER BY
 LIMIT ?  -- batch size, see Concurrency below
 ```
 
-**Rule:** higher-priority eligible jobs always run before lower-priority ones; FIFO within the
-same `(job_type, priority)` is the tiebreak, not global FIFO. A `low` job enqueued five minutes
-before a `critical` job never blocks it — priority governs both what runs first and what gets
-evicted first, one consistent ordering concept rather than two.
+**Rule:** higher-priority eligible jobs always run before lower-priority ones; FIFO **within the
+same priority, across all job types** is the tiebreak — the `ORDER BY priority, enqueued_at`
+query makes no reference to `job_type`, so three unrelated `normal`-priority jobs (a PDF, a
+report, a digest) process strictly in enqueue order relative to each other, not grouped by type.
+A `low` job enqueued five minutes before a `critical` job never blocks it — priority governs both
+what runs first and what gets evicted first, one consistent ordering concept rather than two.
 
 ## Concurrency
 
@@ -208,13 +244,14 @@ persistence of the *intent* to run it is awaited.
 
 ```ts
 // Sketch — src/services/events/deferredSubscriber.ts
+//
+// Producer-side: knows only WHAT to enqueue and WHEN (which event triggers it),
+// never HOW the job type is operationally handled — that's registerJobHandler's job.
 export function defineDeferredSubscriber<T>(opts: {
   subscriberName: string
   eventType: DomainEventType
   shopId: string
   jobType: string
-  priority: 'critical' | 'normal' | 'low'
-  requiresNetwork: boolean
   toJobPayload: (event: DomainEvent<T>) => unknown
   dedupeKey?: (event: DomainEvent<T>) => string | undefined
 }): { stop: () => void } {
@@ -223,19 +260,39 @@ export function defineDeferredSubscriber<T>(opts: {
     async (row) => {
       // Durability invariant: this INSERT is awaited before this handler returns,
       // which is what useEventSubscription's dispatch loop treats as "processed."
+      // enqueueDeferredJob looks up opts.jobType's registered policy (priority,
+      // requiresNetwork, maxQueuedJobs, evictable) and stamps it onto the row --
+      // the producer never supplies or duplicates that policy itself.
       await enqueueDeferredJob({
         jobType: opts.jobType,
         shopId: opts.shopId,
         payload: opts.toJobPayload(rowToDomainEvent(row)),
-        priority: opts.priority,
-        requiresNetwork: opts.requiresNetwork,
         dedupeKey: opts.dedupeKey?.(rowToDomainEvent(row)),
       })
     },
     { shopId: opts.shopId },
   )
 }
+
+// Job-type-side: owns every operational policy decision for this job type, exactly
+// once, regardless of how many deferred subscribers eventually enqueue it.
+export function registerJobHandler(opts: {
+  jobType: string
+  handler: (job: DeferredJob) => Promise<void>
+  priority: 'critical' | 'normal' | 'low'
+  requiresNetwork: boolean
+  maxQueuedJobs: number
+  evictable: boolean  // false only for 'critical'-equivalent job types; see Capacity & Eviction
+}): void {
+  jobTypeRegistry.set(opts.jobType, opts)
+}
 ```
+
+Registration order matters: `registerJobHandler` calls must run before the corresponding
+`defineDeferredSubscriber` can successfully enqueue (mirrors the existing constraint that
+`retryPendingEventProcessing`'s `handlers` map must already contain an entry before a retry for
+that subscriber can be replayed) — enforced in practice by registering all job types once at app
+init, before any subscribers start.
 
 ## Dedup / Coalescing
 
@@ -250,19 +307,32 @@ job type reuses the same key on a later day or after an explicit reset.
 
 ## Capacity & Eviction
 
-- **Per-`job_type` quota** (e.g. 200 queued rows) — a runaway producer of one job type cannot
-  starve the queue for every other job type.
-- **Global hard ceiling** (e.g. 1000 queued rows total, across all types) — a safety ceiling
-  given the device class, independent of how quotas are distributed across types.
+- **Per-`job_type` quota**, set via `registerJobHandler`'s `maxQueuedJobs` — a runaway producer of
+  one job type cannot starve the queue for every other job type. **Initial v1 default: 200**,
+  a starting constant in code, not an architectural requirement — subject to adjustment per job
+  type once real production telemetry exists.
+- **Global hard ceiling**, a single constant shared across all job types — a safety ceiling given
+  the device class, independent of how per-type quotas are distributed. **Initial v1 default:
+  1,000 queued rows total**, likewise a configurable starting point, not a fixed architectural
+  number.
 - **Eviction candidate selection**, when either cap is hit by a new enqueue: among `queued` rows
-  that are marked evictable (see below), pick lowest-priority first, then oldest
-  (`enqueued_at`) within that priority — same ordering concept as execution, applied in reverse.
-- **`critical` jobs are never silently evicted.** If capacity is exhausted and no evictable
-  candidate exists (e.g. the queue is entirely `critical` jobs), the new enqueue **fails loudly**
-  — the deferred subscriber's `enqueueDeferredJob` call throws, which (per the durability
-  invariant) means the *event processing itself* fails and falls back to the existing
-  publish/processing retry path rather than silently dropping the deferred work. This is a
-  deliberately rare, alarm-worthy condition, not a normal operating mode.
+  where the job type is registered `evictable: true` (see below), pick lowest-priority first,
+  then oldest (`enqueued_at`) within that priority — same ordering concept as execution, applied
+  in reverse.
+- **A job type registered `evictable: false` (the `critical`-equivalent case) is never silently
+  evicted.** If capacity is exhausted and no evictable candidate exists, the new enqueue **fails
+  loudly** — the deferred subscriber's `enqueueDeferredJob` call throws.
+  **Invariant, elevated beyond just this eviction section:** a deferred job that cannot be
+  durably persisted is treated as an event-processing failure, full stop — never as a silently
+  dropped or silently degraded deferred write. Per the Durability Invariant above, the deferred
+  subscriber's `INSERT` either succeeds (event processing succeeds) or fails (event processing
+  fails and falls back to the existing publish/processing retry path). A capacity-exhausted
+  non-evictable job type is simply one concrete way that `INSERT` can fail — the invariant itself
+  is general, not eviction-specific. This is a deliberately rare, alarm-worthy condition in
+  practice, not a normal operating mode; a real operational consequence worth naming explicitly
+  is that a persistent capacity problem on a non-evictable job type will keep failing that
+  event's processing repeatedly across retries until the queue drains — the correct trade-off
+  (never silently losing critical work) but a real one, not a free one.
 - **An eviction is a state transition, not a delete.** The row moves to `status = 'evicted'`
   with `finished_at` set — observable via the same retention-bounded table, not silently
   discarded. A future operator/dashboard can query "how many jobs got evicted this week" as a
@@ -306,17 +376,25 @@ regardless of which trigger fired it; "eligible" already encodes the connectivit
 ```ts
 // Example only — not built in this ticket. Documented here so the first real
 // consumer (most likely PDF receipts) has a copy-pasteable starting point.
-registerJobHandler('receipt.pdf.generate', async (job) => {
-  await generateAndStoreReceiptPdf(job.payload as ReceiptPdfJobPayload)
+
+// Job-type definition: owns the operational policy, once, at app init.
+registerJobHandler({
+  jobType: 'receipt.pdf.generate',
+  handler: async (job) => {
+    await generateAndStoreReceiptPdf(job.payload as ReceiptPdfJobPayload)
+  },
+  priority: 'normal',
+  requiresNetwork: false,
+  maxQueuedJobs: 200,
+  evictable: true,
 })
 
+// Producer: only knows which event triggers it and what payload/dedupe key to send.
 defineDeferredSubscriber({
   subscriberName: 'receiptPdfSubscriber',
   eventType: SalesEventType.Completed,
   shopId,
   jobType: 'receipt.pdf.generate',
-  priority: 'normal',
-  requiresNetwork: false,
   toJobPayload: (event) => ({ saleId: event.payload.saleId }),
   dedupeKey: (event) => `receipt-pdf:${event.payload.saleId}`,
 })
@@ -338,8 +416,9 @@ defineDeferredSubscriber({
 
 | Risk | Mitigation |
 |---|---|
-| A handler is non-idempotent and a lease-reclaim re-runs a partially-completed job | Documented requirement, same as `runDurableSubscriber`'s existing handler contract — not a new burden, an existing one extended to this tier |
-| Lease duration too short for a legitimately slow handler, causing a live job to be reclaimed and run twice concurrently | Lease duration set generously (minutes, not seconds) relative to any handler this tier is designed for (PDF/report generation, not long-running streams); a handler that genuinely needs longer must renew its own lease in a later iteration — out of scope for v1's synthetic test job |
+| A handler is non-idempotent and a lease-reclaim re-runs a partially-completed (or, per the lease invariant, still-executing) job | Documented, explicit requirement — the lease is stated as a crash-recovery mechanism, not a hard execution timeout; handlers must be idempotent under both sequential re-delivery and concurrent-with-itself execution. Same category of requirement `runDurableSubscriber` already places on its handlers, extended one step further |
+| Lease duration too short for a legitimately slow handler, causing a live job to be reclaimed and run twice concurrently | Lease duration set generously (minutes, not seconds) relative to any handler this tier is designed for (PDF/report generation, not long-running streams); a handler that genuinely needs longer must renew its own lease in a later iteration — out of scope for v1's synthetic test job. This risk is not eliminated (see the lease invariant above), only made rare |
+| A claim/crash loop burns through `MAX_ATTEMPTS` without the handler ever completing a full execution | Accepted trade-off of counting `attempts` at claim time rather than only on handler failure — the alternative (not counting reclaim cycles) would let a job that crashes the app on every attempt retry forever; a small number of wasted attempts against a rare crash loop is preferable |
 | Dedup key collision across unrelated job types | Uniqueness is `(job_type, dedupe_key)`, not `dedupe_key` alone — two different job types can safely reuse the same literal key string |
 | Retention purge deletes a row a diagnostic dashboard was about to read | 7-day window is generous for manual debugging; no feature in this codebase currently depends on longer-lived job history — documented as a deliberate, revisitable choice, not an oversight |
 | Eviction silently drops business-relevant work | `critical` priority is structurally never evicted (enqueue fails loudly instead); `normal`/`low` job types must be chosen deliberately by whoever defines them, with this consequence documented at the call site |
@@ -376,8 +455,10 @@ exercise real Postgres — these are lifecycle proofs, not unit tests of isolate
    `started_at`) before claiming any new work.
 10. **Priority ordering** — enqueue a `low` job before a `critical` job (same `job_type`); assert
     the drain processes the `critical` job first.
-11. **FIFO within same priority** — enqueue two `normal` jobs of the same type in sequence;
-    assert they process in enqueue order.
+11. **FIFO within same priority, across different job types** — enqueue three `normal`-priority
+    jobs of three *different* job types in sequence (e.g. one `test.a`, one `test.b`, one
+    `test.a` again); assert they process in strict enqueue order regardless of type, proving
+    ordering is not accidentally grouped by `job_type`.
 12. **Per-type quota enforced** — enqueue `N+1` jobs of one type against a quota of `N`; assert
     the oldest evictable row of that type is evicted, not a row of an unrelated type.
 13. **Global cap enforced independently of per-type quotas** — enqueue jobs spread across
@@ -402,6 +483,14 @@ exercise real Postgres — these are lifecycle proofs, not unit tests of isolate
     registered handler alongside a normal job of a registered type; assert the registered job
     still completes and the unregistered one remains `queued` (not crashed, not silently
     dropped).
+21. **Enqueue failure propagates to event processing, never silently swallowed** — force
+    `enqueueDeferredJob`'s `INSERT` to fail (e.g. a non-evictable job type at capacity, per test
+    15's setup); assert the deferred subscriber's wrapped handler rejects, and that this
+    rejection is observed by `useEventSubscription`'s dispatch loop as a genuine processing
+    failure (i.e. it reaches the same failure path a durable subscriber's handler throw would)
+    rather than being caught and discarded anywhere in between. This is the direct proof of the
+    Durability Invariant's core promise: if the work cannot be durably deferred, the event is
+    never falsely reported as successfully processed.
 
 ## Out of Scope
 
