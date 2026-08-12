@@ -38,4 +38,21 @@ describe('reportDeferredJobDead', () => {
     const call = captureException.mock.calls[0]
     expect(JSON.stringify(call)).not.toContain('secret')
   })
+
+  it('does not throw even if captureException throws', async () => {
+    captureException.mockImplementation(() => {
+      throw new Error('Sentry SDK network error')
+    })
+    const err = new Error('job failed')
+    // Should resolve without throwing, despite Sentry SDK error
+    await expect(reportDeferredJobDead(row, err)).resolves.toBeUndefined()
+  })
+
+  it('does not throw even if captureMessage throws', async () => {
+    captureMessage.mockImplementation(() => {
+      throw new Error('Sentry SDK config error')
+    })
+    // Should resolve without throwing, despite Sentry SDK error
+    await expect(reportDeferredJobDead(row)).resolves.toBeUndefined()
+  })
 })
