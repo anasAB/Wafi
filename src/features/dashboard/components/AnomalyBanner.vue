@@ -6,7 +6,7 @@ import { useAnomalyDetection } from '@/composables/useAnomalyDetection'
 import { isDismissed, dismiss } from '@/composables/useAnomalyDismissal'
 import { useCan } from '@/composables/useCan'
 import { useDeviceStore } from '@/store/device.store'
-import { useDashboardMetrics } from '@/features/dashboard/composables/useDashboardMetrics'
+import { useProfitCache } from '@/features/dashboard/composables/useProfitCache'
 import { getDateRange } from '@/features/dashboard/composables/periodUtils'
 
 const { t } = useI18n()
@@ -22,25 +22,28 @@ const { anomalies, error, load } = useAnomalyDetection()
 // `{ value }` object (as used by this component's own unit tests' mocks).
 const canView = computed(() => canViewReports.value)
 const hasError = computed(() => error.value)
-// This component owns its own dashboard-metrics instance rather than
+// This component owns its own profit-cache instance rather than
 // receiving one via props — Home's own metrics instance is a separate,
 // independently-loaded object. Loading here guarantees the anomaly engine
 // reads the SAME revenue/COGS/expenses/refunds math as every other
-// consumer of useDashboardMetrics (see plan §2a) — it does not reduce
+// consumer of useProfitCache (see plan §2a) — it does not reduce
 // query count versus Home's own cards, but it eliminates the divergent-COGS
 // bug the Task 2 review found.
-const dashboardMetrics = useDashboardMetrics()
+const profitCache = useProfitCache()
 const expanded = ref(false)
 const periodKey = 'today' // Home always evaluates anomalies against today's period.
 
 onMounted(async () => {
   if (!canViewReports.value) return
-  await dashboardMetrics.load('today')
+  await profitCache.load('today')
+  // useAnomalyDetection expects net-of-refunds revenue and net-of-reversal COGS
+  // (its own profitUsd = revenueUsd - cogsUsd - expensesUsd) -- matches the old
+  // useDashboardMetrics semantics, so net*Usd, not PeriodProfitMetrics' gross fields.
   await load(getDateRange('today'), {
-    revenueUsd: dashboardMetrics.revenueUsd.value,
-    cogsUsd: dashboardMetrics.cogsUsd.value,
-    expensesUsd: dashboardMetrics.expensesUsd.value,
-    refundsUsd: dashboardMetrics.refundsUsd.value,
+    revenueUsd: profitCache.metrics.value.netRevenueUsd,
+    cogsUsd: profitCache.metrics.value.netCogsUsd,
+    expensesUsd: profitCache.metrics.value.expensesUsd,
+    refundsUsd: profitCache.metrics.value.refundsUsd,
   })
 })
 

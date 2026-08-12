@@ -23,8 +23,9 @@ const FIXTURES: Record<DomainEventType, DomainEvent> = {
       saleId: 'sale1', shopId: SHOP, staffId: STAFF, totalUsd: 10, totalSyp: 150000,
       paymentSummary: { cashUsd: 10, cashSyp: 0, cardTotal: 0, creditTotal: 0, methodCount: 1 },
       itemCount: 2, discountApplied: false,
+      cogsUsd: 4, discountUsd: 0, hasCostlessLine: false,
     } satisfies SaleCompletedPayload,
-    payloadVersion: V, staffId: STAFF, shopId: SHOP, occurredAt: WHEN,
+    payloadVersion: 2, staffId: STAFF, shopId: SHOP, occurredAt: WHEN,
   },
   'sale.discounted': {
     type: 'sale.discounted', entityId: 'sale1',
@@ -36,8 +37,12 @@ const FIXTURES: Record<DomainEventType, DomainEvent> = {
   },
   'sale.returned': {
     type: 'sale.returned', entityId: 'r1',
-    payload: { returnId: 'r1', saleId: 'sale1', refundAmountUsd: 5, restockedItemCount: 1 } satisfies ReturnedPayload,
-    payloadVersion: V, staffId: STAFF, shopId: SHOP, occurredAt: WHEN,
+    payload: {
+      returnId: 'r1', saleId: 'sale1', refundAmountUsd: 5, restockedItemCount: 1,
+      cogsReversalUsd: 2, isFullReturn: false, saleWasCostless: false,
+      originalSaleProjectionDay: '2026-08-05',
+    } satisfies ReturnedPayload,
+    payloadVersion: 2, staffId: STAFF, shopId: SHOP, occurredAt: WHEN,
   },
   'customer.debt_changed': {
     type: 'customer.debt_changed', entityId: 'c1',
@@ -107,7 +112,7 @@ const FIXTURES: Record<DomainEventType, DomainEvent> = {
   'expense.recorded': {
     type: 'expense.recorded', entityId: 'e1',
     payload: { expenseId: 'e1', category: 'صيانة', amountUsd: 50, staffId: STAFF, photoUrl: undefined } satisfies ExpenseRecordedPayload,
-    payloadVersion: V, staffId: STAFF, shopId: SHOP, occurredAt: WHEN,
+    payloadVersion: 2, staffId: STAFF, shopId: SHOP, occurredAt: WHEN,
   },
   'device.registered': {
     type: 'device.registered', entityId: 'd1',

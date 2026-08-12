@@ -245,9 +245,31 @@ describe('SalesService.completeSale', () => {
     const event = vi.mocked(publishEvent).mock.calls[0][0]
     expect(event.type).toBe('sale.completed')
     expect(Object.keys(event.payload).sort()).toEqual(
-      ['saleId', 'shopId', 'staffId', 'totalUsd', 'totalSyp', 'paymentSummary', 'itemCount', 'discountApplied'].sort(),
+      ['saleId', 'shopId', 'staffId', 'totalUsd', 'totalSyp', 'paymentSummary', 'itemCount', 'discountApplied',
+        'cogsUsd', 'discountUsd', 'hasCostlessLine'].sort(),
     )
-    expect(event.payloadVersion).toBe(1)
+    expect(event.payloadVersion).toBe(2)
+  })
+
+  it('includes cogsUsd, discountUsd, hasCostlessLine on the sale.completed payload', async () => {
+    setupTx({ cost_price_usd: 0, current_stock: 10 })
+    const { publishEvent } = await import('@/services/events/publishEvent')
+    const input = {
+      ...baseInput,
+      lines: [
+        { productId: 'p1', nameAr: 'منتج', quantity: 1, unitPriceUsd: 10, unitCostUsd: 5, lineTotalUsd: 9,
+          discountType: 'flat' as const, discountValue: 1, discountAmountUsd: 1, availableStock: 99 },
+        { productId: 'p2', nameAr: 'منتج2', quantity: 1, unitPriceUsd: 8, unitCostUsd: 0, lineTotalUsd: 8, availableStock: 99 },
+      ],
+    }
+
+    await completeSale(input, fakeAudit)
+
+    const event = vi.mocked(publishEvent).mock.calls.find(([e]) => e.type === 'sale.completed')![0]
+    expect(event.payloadVersion).toBe(2)
+    expect(event.payload.cogsUsd).toBe(5)
+    expect(event.payload.discountUsd).toBe(1)
+    expect(event.payload.hasCostlessLine).toBe(true)
   })
 
   it('publishes customer.debt_changed with reason=credit_sale for a credit sale with a customer', async () => {

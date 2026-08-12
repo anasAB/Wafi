@@ -24,6 +24,7 @@ import { startEventTableCleanupSweeper } from '@/services/events/cleanupLocalEve
 import { startAuditSubscribers, handleAuditableEvent } from '@/services/events/auditSubscriber'
 import { startProcessingRetrySweeper } from '@/services/events/eventProcessingRetryQueue'
 import { startDashboardRevenueProjection } from '@/services/events/dashboardRevenueProjection'
+import { startProfitCacheProjection } from '@/services/events/profitCacheProjection'
 import { startNotificationSubscribers, handleDiscountEvent } from '@/services/events/notificationSubscriber'
 import { checkDeviceSyncStaleness } from '@/services/notifications/syncStalenessCheck'
 import type { DomainEvent } from '@/services/events/domainEvent.types'
@@ -144,6 +145,7 @@ onMounted(async () => {
   startEventTableCleanupSweeper()
 
   startDashboardRevenueProjection(useDeviceStore().shopId)
+  startProfitCacheProjection(useDeviceStore().shopId)
   startNotificationSubscribers(useDeviceStore().shopId)
 
   // WAFI-145 Task 14: Sync Failure / stale-device check. State-derived, not event

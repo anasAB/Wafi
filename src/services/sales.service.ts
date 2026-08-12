@@ -136,6 +136,7 @@ export async function completeSale(
       lineTotalUsd:        l.lineTotalUsd,
       discountType:        l.discountType,
       discountValue:       l.discountValue,
+      discountAmountUsd:   l.discountAmountUsd,
       discountPinApproved: l.discountPinApproved,
       unitCostUsd:         l.unitCostUsd,
       listPriceUsd:        l.listPriceUsd,
@@ -371,8 +372,14 @@ export async function completeSale(
         },
         itemCount: completed.lines.length,
         discountApplied: completed.lines.some(l => l.discountType) || !!completed.saleDiscount,
+        // WAFI-153: computed once at write time, replacing useDashboardMetrics.ts's
+        // per-load JOIN against sale_line_items.unit_cost_usd.
+        cogsUsd: completed.lines.reduce((sum, l) => sum + l.quantity * (l.unitCostUsd ?? 0), 0),
+        discountUsd: completed.lines.reduce((sum, l) => sum + (l.discountAmountUsd ?? 0), 0)
+          + (completed.saleDiscount?.amountUsd ?? 0),
+        hasCostlessLine: completed.lines.some(l => !l.unitCostUsd),
       } satisfies SaleCompletedPayload,
-      payloadVersion: 1,
+      payloadVersion: 2,
       staffId: input.staffId ?? '',
       shopId: input.shopId,
       occurredAt: now,

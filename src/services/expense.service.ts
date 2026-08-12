@@ -109,7 +109,7 @@ export async function recordExpense(
         expenseId: expense.id, category: expense.category, amountUsd: expense.amountUsd,
         staffId, photoUrl: expense.photoUrl,
       } satisfies ExpenseRecordedPayload,
-      payloadVersion: 1,
+      payloadVersion: 2,
       staffId,
       shopId,
       occurredAt: now,
