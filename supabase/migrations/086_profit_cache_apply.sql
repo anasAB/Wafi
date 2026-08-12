@@ -63,20 +63,20 @@ BEGIN
   -- profit_cache.cogs_usd + EXCLUDED.cogs_usd (NULL) would corrupt the ENTIRE
   -- existing row's cogs_usd to NULL on the next conflict-update.
   IF v_event.type = 'sale.completed' AND (
-       v_event.payload->>'cogsUsd' IS NULL OR v_event.payload->>'discountUsd' IS NULL
-       OR v_event.payload->>'hasCostlessLine' IS NULL OR v_event.payload->>'totalUsd' IS NULL
-       OR v_event.payload->>'totalSyp' IS NULL
+       v_event.payload::jsonb->>'cogsUsd' IS NULL OR v_event.payload::jsonb->>'discountUsd' IS NULL
+       OR v_event.payload::jsonb->>'hasCostlessLine' IS NULL OR v_event.payload::jsonb->>'totalUsd' IS NULL
+       OR v_event.payload::jsonb->>'totalSyp' IS NULL
      ) THEN
     RAISE EXCEPTION 'event % (sale.completed, payload_version 2) missing a required field', p_event_id
       USING ERRCODE = 'P0005';
   ELSIF v_event.type = 'sale.returned' AND (
-       v_event.payload->>'refundAmountUsd' IS NULL OR v_event.payload->>'cogsReversalUsd' IS NULL
-       OR v_event.payload->>'isFullReturn' IS NULL OR v_event.payload->>'saleWasCostless' IS NULL
-       OR v_event.payload->>'originalSaleProjectionDay' IS NULL
+       v_event.payload::jsonb->>'refundAmountUsd' IS NULL OR v_event.payload::jsonb->>'cogsReversalUsd' IS NULL
+       OR v_event.payload::jsonb->>'isFullReturn' IS NULL OR v_event.payload::jsonb->>'saleWasCostless' IS NULL
+       OR v_event.payload::jsonb->>'originalSaleProjectionDay' IS NULL
      ) THEN
     RAISE EXCEPTION 'event % (sale.returned, payload_version 2) missing a required field', p_event_id
       USING ERRCODE = 'P0005';
-  ELSIF v_event.type = 'expense.recorded' AND v_event.payload->>'amountUsd' IS NULL THEN
+  ELSIF v_event.type = 'expense.recorded' AND v_event.payload::jsonb->>'amountUsd' IS NULL THEN
     RAISE EXCEPTION 'event % (expense.recorded) missing amountUsd', p_event_id USING ERRCODE = 'P0005';
   END IF;
 
@@ -91,11 +91,11 @@ BEGIN
     INSERT INTO public.profit_cache (shop_id, day, revenue_usd, revenue_syp, cogs_usd,
       discount_usd, invoice_count, costless_sale_count, source_event_id)
     VALUES (v_event.shop_id, v_event.event_projection_day,
-      ROUND((v_event.payload->>'totalUsd')::numeric * 100)::bigint,
-      ROUND((v_event.payload->>'totalSyp')::numeric * 100)::bigint,
-      ROUND((v_event.payload->>'cogsUsd')::numeric * 100)::bigint,
-      ROUND((v_event.payload->>'discountUsd')::numeric * 100)::bigint,
-      1, CASE WHEN (v_event.payload->>'hasCostlessLine')::boolean THEN 1 ELSE 0 END,
+      ROUND((v_event.payload::jsonb->>'totalUsd')::numeric * 100)::bigint,
+      ROUND((v_event.payload::jsonb->>'totalSyp')::numeric * 100)::bigint,
+      ROUND((v_event.payload::jsonb->>'cogsUsd')::numeric * 100)::bigint,
+      ROUND((v_event.payload::jsonb->>'discountUsd')::numeric * 100)::bigint,
+      1, CASE WHEN (v_event.payload::jsonb->>'hasCostlessLine')::boolean THEN 1 ELSE 0 END,
       p_event_id)
     ON CONFLICT (shop_id, day) DO UPDATE SET
       revenue_usd = profit_cache.revenue_usd + EXCLUDED.revenue_usd,
@@ -111,8 +111,8 @@ BEGIN
     INSERT INTO public.profit_cache (shop_id, day, refunds_usd, cogs_reversal_usd, return_count,
       source_event_id)
     VALUES (v_event.shop_id, v_event.event_projection_day,
-      ROUND((v_event.payload->>'refundAmountUsd')::numeric * 100)::bigint,
-      ROUND((v_event.payload->>'cogsReversalUsd')::numeric * 100)::bigint, 1,
+      ROUND((v_event.payload::jsonb->>'refundAmountUsd')::numeric * 100)::bigint,
+      ROUND((v_event.payload::jsonb->>'cogsReversalUsd')::numeric * 100)::bigint, 1,
       p_event_id)
     ON CONFLICT (shop_id, day) DO UPDATE SET
       refunds_usd = profit_cache.refunds_usd + EXCLUDED.refunds_usd,
@@ -121,7 +121,7 @@ BEGIN
       source_event_id = EXCLUDED.source_event_id,
       updated_at = now();
 
-    IF (v_event.payload->>'isFullReturn')::boolean AND (v_event.payload->>'saleWasCostless')::boolean THEN
+    IF (v_event.payload::jsonb->>'isFullReturn')::boolean AND (v_event.payload::jsonb->>'saleWasCostless')::boolean THEN
       -- originalSaleProjectionDay comes straight from the payload -- no lookup,
       -- no ORDER-BY-less LIMIT 1, no dependency on the original event still
       -- being synced. UPSERT (not a bare UPDATE): if sale.completed hasn't
@@ -131,7 +131,7 @@ BEGIN
       -- source_event_id is deliberately NOT touched here -- this branch
       -- mutates a day that isn't "this event's own day."
       INSERT INTO public.profit_cache (shop_id, day, costless_sale_count, source_event_id)
-      VALUES (v_event.shop_id, (v_event.payload->>'originalSaleProjectionDay')::date, -1, NULL)
+      VALUES (v_event.shop_id, (v_event.payload::jsonb->>'originalSaleProjectionDay')::date, -1, NULL)
       ON CONFLICT (shop_id, day) DO UPDATE SET
         costless_sale_count = profit_cache.costless_sale_count - 1,
         updated_at = now();
@@ -140,7 +140,7 @@ BEGIN
   ELSIF v_event.type = 'expense.recorded' THEN
     INSERT INTO public.profit_cache (shop_id, day, expenses_usd, source_event_id)
     VALUES (v_event.shop_id, v_event.event_projection_day,
-      ROUND((v_event.payload->>'amountUsd')::numeric * 100)::bigint,
+      ROUND((v_event.payload::jsonb->>'amountUsd')::numeric * 100)::bigint,
       p_event_id)
     ON CONFLICT (shop_id, day) DO UPDATE SET
       expenses_usd = profit_cache.expenses_usd + EXCLUDED.expenses_usd,

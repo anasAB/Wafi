@@ -40,7 +40,7 @@ BEGIN
     WHERE s.shop_id = p_shop_id
       AND NOT EXISTS (
         SELECT 1 FROM public.events e
-        WHERE e.type = 'sale.completed' AND e.payload->>'saleId' = s.id::text
+        WHERE e.type = 'sale.completed' AND e.payload::jsonb->>'saleId' = s.id::text
           AND e.payload_version >= 2
       )
   LOOP
@@ -89,7 +89,7 @@ BEGIN
     WHERE r.shop_id = p_shop_id
       AND NOT EXISTS (
         SELECT 1 FROM public.events e
-        WHERE e.type = 'sale.returned' AND e.payload->>'returnId' = r.id::text
+        WHERE e.type = 'sale.returned' AND e.payload::jsonb->>'returnId' = r.id::text
           AND e.payload_version >= 2
       )
   LOOP
@@ -119,7 +119,7 @@ BEGIN
     WHERE e.shop_id = p_shop_id
       AND NOT EXISTS (
         SELECT 1 FROM public.events ev
-        WHERE ev.type = 'expense.recorded' AND ev.payload->>'expenseId' = e.id::text
+        WHERE ev.type = 'expense.recorded' AND ev.payload::jsonb->>'expenseId' = e.id::text
           AND ev.payload_version >= 2
       )
   LOOP
