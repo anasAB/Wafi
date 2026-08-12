@@ -26,6 +26,7 @@ import { startProcessingRetrySweeper } from '@/services/events/eventProcessingRe
 import { startDashboardRevenueProjection } from '@/services/events/dashboardRevenueProjection'
 import { startProfitCacheProjection } from '@/services/events/profitCacheProjection'
 import { startNotificationSubscribers, handleDiscountEvent } from '@/services/events/notificationSubscriber'
+import { startDeferredJobWorker } from '@/services/events/deferredJobWorker'
 import { checkDeviceSyncStaleness } from '@/services/notifications/syncStalenessCheck'
 import type { DomainEvent } from '@/services/events/domainEvent.types'
 
@@ -178,6 +179,11 @@ onMounted(async () => {
     // type-cast reasoning as 'audit' above.
     ['notifications', handleDiscountEvent as (event: DomainEvent) => Promise<void>],
   ]))
+
+  // WAFI-154: deferred execution tier worker -- no real job types registered yet
+  // (this ticket ships infrastructure only, see design spec's Out of Scope), but the
+  // trigger wiring itself is real so the first future job type has nothing left to wire.
+  startDeferredJobWorker(useDeviceStore().shopId)
 
   appReady.value = true
 })
