@@ -8,8 +8,13 @@ export const db = {
       return: vi.fn().mockResolvedValue({ value: undefined, done: true }),
     }),
   }),
+  // Delegates tx.execute to db.execute by default, so calls made inside a
+  // writeTransaction still show up on the db.execute mock for assertions --
+  // callers that need transaction-local behavior different from db.execute
+  // override this per-test with mockImplementationOnce (see sales.service.test.ts,
+  // inventory.service.test.ts).
   writeTransaction: vi.fn().mockImplementation(async (fn: (tx: any) => Promise<void>) => {
-    await fn({ execute: vi.fn().mockResolvedValue({ rows: { _array: [] } }) })
+    return await fn({ execute: (...args: unknown[]) => (db.execute as any)(...args) })
   }),
   getUploadQueueStats: vi.fn().mockResolvedValue({ count: 0, size: 0 }),
   getAll: vi.fn().mockResolvedValue([]),
