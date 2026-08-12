@@ -197,8 +197,9 @@ queued ──(capacity eviction, job is evictable)──> evicted
 ```
 
 - **`running` is a lease, not a terminal fact.** `worker_id` + `started_at` + `lease_expires_at`
-  (fixed lease duration, e.g. 5 minutes — generous relative to any realistic handler) are set when
-  a worker claims a row. On every drain pass, before claiming new work, the worker first reclaims
+  (**`DEFERRED_JOB_LEASE_MINUTES = 5`**, an actual v1 constant — not illustrative — generous
+  relative to any realistic handler this tier targets) are set when a worker claims a row. On
+  every drain pass, before claiming new work, the worker first reclaims
   any `running` row whose `lease_expires_at` has passed: `status = 'queued', worker_id = NULL,
   started_at = NULL, lease_expires_at = NULL`. This is the direct fix for the "app crashes
   mid-handler, job stuck in `running` forever" failure mode — same shape as WAFI-151's
@@ -244,10 +245,15 @@ queued ──(capacity eviction, job is evictable)──> evicted
   to `queued`. So with `MAX_ATTEMPTS = 5`, a row genuinely gets 5 real executions (or
   claim-then-crash cycles), not 4 — the fifth claim still runs the handler.
   `isTransientEventFailure` classification still governs backoff scheduling exactly as it does
-  today: a transient failure gets `next_retry_at` (shared `[1, 5, 30, 120]`-minute schedule,
-  reusing the existing constant rather than a fourth copy of it); a classified-permanent failure
-  moves straight to `dead` on its first failure without spending retry attempts on a certain
-  outcome (mirrors `isTransientEventFailure`'s existing role in
+  today: a transient failure returns the row to `queued` with `next_retry_at` set (shared
+  `[1, 5, 30, 120]`-minute schedule, reusing the existing constant rather than a fourth copy of
+  it), to be claimed and attempted again later. **A classified-permanent failure moves straight
+  to `dead` after the current execution attempt, with no retry ever scheduled for it** — the
+  current attempt has already been counted at claim time (per the claim-time-increment rule
+  above), so a permanently-failing job reaches `dead` with `attempts = 1`, not `attempts = 0`;
+  the earlier phrase "without spending retry attempts" describes skipping the *retry schedule*
+  a transient failure would otherwise get, not skipping the attempt count itself, which is never
+  skipped for any claimed row (mirrors `isTransientEventFailure`'s existing role in
   `eventProcessingRetryQueue.ts`).
 - **`completed`/`evicted` are retained, then purged** — see Retention below, not kept forever.
 
@@ -259,6 +265,7 @@ Worker selection query, per drain pass:
 SELECT * FROM local_deferred_jobs
 WHERE shop_id = ?
   AND status = 'queued'
+  AND job_type IN (<registered job types>)  -- see Edge Cases: unregistered types never selected
   AND (next_retry_at IS NULL OR next_retry_at <= ?)
   AND (requires_network = 0 OR ? = 1)  -- ?1 = "are we currently connected"
 ORDER BY
@@ -411,11 +418,19 @@ channel**, already-PII-scrubbed and already-shop-scoped, for "something needs a 
 attention" — `src/sentry.ts`/`initSentry`. A `dead` transition is exactly that kind of signal,
 not a new category of domain fact that needs its own event type, retention policy, and RLS story
 on the Postgres side. Concretely: the worker itself (not the handler) calls a single
-`reportDeferredJobDead(row)` helper at the moment it writes `status = 'dead'`, which calls
-`Sentry.captureMessage` (or `captureException` if `last_error` carries a real `Error`) with
-structured context — `job_type`, `shop_id`, `attempts`, `last_error` — and explicitly **never**
-the job's `payload` (consistent with WAFI-023's existing PII-scrubbing posture; a job payload may
-contain a customer-identifying reference the Sentry pipeline shouldn't see even scrubbed).
+**`reportDeferredJobDead(row, error?)`** helper at the exact moment it writes `status = 'dead'`.
+The row's own `last_error` column is `column.text` — a serialized string, never a live `Error`
+object — so the two parameters are deliberately distinct: `row` carries the persisted state
+(`job_type`, `shop_id`, `attempts`, the serialized `last_error` string), while the *optional*
+`error` parameter carries the original `Error` object itself, when the worker still has it in
+hand at the moment of the transition (i.e. the handler's own `catch` just threw it, in the same
+call stack that writes `status = 'dead'`) — this is what lets `reportDeferredJobDead` choose
+`Sentry.captureException(error)` for a real stack trace when available, falling back to
+`Sentry.captureMessage(row.last_error)` when the transition is instead driven by something like
+a stale-lease reclaim exhausting attempts with no live `Error` in hand. Either call passes the
+same structured context — `job_type`, `shop_id`, `attempts` — and explicitly **never** the job's
+`payload` (consistent with WAFI-023's existing PII-scrubbing posture; a job payload may contain a
+customer-identifying reference the Sentry pipeline shouldn't see even scrubbed).
 
 **Explicit non-claim, stated so nobody later assumes otherwise: Sentry reporting is best-effort
 operational observability, not a durability guarantee, and it is not part of the deferred
@@ -555,6 +570,14 @@ is needed, and both insert — silently exceeding the quota by one. Wrapping the
 insert-then-capacity-check sequence in one transaction closes that race the same way the dedup
 partial-unique-index closes the dedup race — by construction rather than by convention.
 
+**Deliberate policy, stated explicitly since a future implementer could reasonably assume the
+opposite: for an evictable job type, exceeding its own per-type quota sacrifices the *oldest*
+queued work of that type in favor of the *newest*, rather than rejecting the newest.** This is
+the same "newest wins" policy applied at the global ceiling — quota enforcement is not "reject
+once full," it is "keep the queue's most recent N items of a type, always." A `critical` job
+type never faces this choice at all (nothing of its own type is ever evictable), which is the
+one case where quota exhaustion does mean outright rejection (rollback), not eviction.
+
 **Per-type eviction is evaluated first, independently of the global check** — a job type at its
 own quota is trimmed regardless of how far below the global ceiling the queue as a whole sits.
 The global check runs after, against whatever the queue looks like post-step-2. Because
@@ -592,9 +615,19 @@ is exactly the kind of thing worth a short diagnostic window before disappearing
   this tier does not promise continuous background execution.
 
 Both triggers call the same single `drainDeferredJobs(shopId)` entry point — there is one drain
-implementation, not two, parameterized by nothing (it always attempts every eligible row
+implementation, not two, parameterized by nothing else (it always attempts every eligible row
 regardless of which trigger fired it; "eligible" already encodes the connectivity check via
 `requires_network`).
+
+**`shop_id` scoping invariant, stated explicitly:** `drainDeferredJobs(shopId)` filters every
+claim by `shop_id = ?` and must never claim a row belonging to a different shop — this exactly
+mirrors the existing convention already used by every subscriber in this codebase
+(`dailyEventCountsProjection`, `notificationSubscriber`, `runDurableSubscriber`, all of which
+take `shopId` and scope their queries by it). This spec does not assume, and does not need to
+assume, that a device's local database ever holds only one shop's data — `local_deferred_jobs`
+carries a real `shop_id` column and is scoped by it exactly as every other local table already
+is, regardless of whatever the broader application's actual single-shop-vs-multi-shop-per-device
+posture turns out to be.
 
 ## Call-Site Convention (for the next feature that uses this)
 
@@ -632,7 +665,7 @@ defineDeferredSubscriber({
 | Two events fire close together with the same `dedupeKey` | SQLite's partial unique index rejects the second `INSERT` atomically — no race window, no duplicate queued job. |
 | Queue is completely full of `critical` jobs and a new `critical` job arrives | Enqueue fails loudly; the triggering event's processing fails and is retried via the existing event-processing retry path (not silently dropped). This is intentionally treated as an alarm condition. |
 | A `requires_network: true` job sits queued for days because the device stays offline | Remains `queued`, never evicted purely for age (only capacity pressure triggers eviction) — reconnect eventually drains it. Its own per-type quota still applies if the type produces jobs faster than they can be network-drained. |
-| A job type's handler is not registered (e.g. app version rolled back after a job type was removed) | `drainDeferredJobs` skips rows whose `job_type` has no registered handler, leaving them `queued` rather than crashing the drain loop for every other job type — mirrors `retryPendingEventProcessing`'s existing `if (!handler) continue`. |
+| A job type's handler is not registered (e.g. app version rolled back after a job type was removed) | The worker's claim query filters `job_type IN (<registered types>)` **at the SQL level** — an unregistered row is never selected by the claim query in the first place, rather than being selected and then skipped in application code. This structurally rules out the starvation risk of the same unregistered row being re-selected on every iteration of the same drain pass (a `SELECT`-then-skip-in-a-loop approach would need its own in-memory "already skipped this pass" tracking to avoid that; filtering at the query eliminates the need for it entirely). The row remains `queued`, untouched, until a future app version registers a handler for its type or an operator manually intervenes. |
 | `dedupeKey` collides with a `dead` row from a previous run | Allowed — uniqueness only applies to `queued`/`running`. A permanently-failed daily summary from yesterday must not block today's summary from ever being queued. |
 | Worker drain takes a long time (large backlog after a week offline) | Sequential processing yields to the event loop between jobs and re-checks foreground state after each one; the drain stops mid-backlog the moment the app is backgrounded rather than continuing to run behind the OS's back, resuming from where it left off (rows simply remain `queued`) on the next trigger. |
 | Foreground and reconnect triggers fire close together | `drainDeferredJobs`'s single-flight guard means the second trigger reuses the already-in-flight drain rather than starting a second loop that would race the first for the same rows. |
@@ -643,7 +676,7 @@ defineDeferredSubscriber({
 | Risk | Mitigation |
 |---|---|
 | A handler is non-idempotent and a lease-reclaim re-runs a partially-completed (or, per the lease invariant, still-executing) job | Documented, explicit requirement — the lease is stated as a crash-recovery mechanism, not a hard execution timeout; handlers must be idempotent under both sequential re-delivery and concurrent-with-itself execution. Same category of requirement `runDurableSubscriber` already places on its handlers, extended one step further |
-| Lease duration too short for a legitimately slow handler, causing a live job to be reclaimed and run twice concurrently | Lease duration set generously (minutes, not seconds) relative to any handler this tier is designed for (PDF/report generation, not long-running streams); a handler that genuinely needs longer must renew its own lease in a later iteration — out of scope for v1's synthetic test job. This risk is not eliminated (see the lease invariant above), only made rare |
+| Lease duration too short for a legitimately slow handler, causing a live job to be reclaimed and run twice concurrently | `DEFERRED_JOB_LEASE_MINUTES = 5` is generous relative to any handler this tier is designed for (PDF/report generation, not long-running streams); a handler that genuinely needs longer must renew its own lease in a later iteration — out of scope for v1's synthetic test job. This risk is not eliminated (see the lease invariant above), only made rare |
 | A claim/crash loop burns through `MAX_ATTEMPTS` without the handler ever completing a full execution | Accepted trade-off of counting `attempts` at claim time rather than only on handler failure — the alternative (not counting reclaim cycles) would let a job that crashes the app on every attempt retry forever; a small number of wasted attempts against a rare crash loop is preferable |
 | Dedup key collision across unrelated job types | Uniqueness is `(job_type, dedupe_key)`, not `dedupe_key` alone — two different job types can safely reuse the same literal key string |
 | Retention purge deletes a row a diagnostic dashboard was about to read | 7-day window is generous for manual debugging; no feature in this codebase currently depends on longer-lived job history — documented as a deliberate, revisitable choice, not an oversight |
@@ -668,8 +701,11 @@ exercise real Postgres — these are lifecycle proofs, not unit tests of isolate
 2. **Event flow does not execute the handler** — enqueue a `test.*` job with a handler that
    throws if called; assert the deferred subscriber's own call succeeds and the throwing handler
    is never invoked until an explicit `drainDeferredJobs` call.
-3. **Offline job survives restart** — enqueue, simulate an app restart (fresh `db` handle against
-   the same underlying file/connection), assert the row is still `queued` with all fields intact.
+3. **Offline job survives restart** — enqueue, then **close/reinitialize the actual database
+   connection** against the same on-disk SQLite database (not merely obtain a second in-process
+   handle that could accidentally still share connection-level or in-memory state with the
+   first) to genuinely exercise the persistence boundary being tested, then assert the row is
+   still `queued` with all fields intact after reopening.
 4. **Foreground drains offline-capable jobs** — a `requires_network: false` job queued while
    offline is picked up and completed by a foreground-triggered drain with no connectivity.
 5. **Network-required job waits offline** — a `requires_network: true` job queued while offline
@@ -720,10 +756,13 @@ exercise real Postgres — these are lifecycle proofs, not unit tests of isolate
     step removes it.
 19. **Evicted and dead rows are also purged, not just completed** — same as test 18, extended to
     `evicted`/`dead` statuses.
-20. **Unregistered job type doesn't block the drain loop** — enqueue a job of a type with no
-    registered handler alongside a normal job of a registered type; assert the registered job
-    still completes and the unregistered one remains `queued` (not crashed, not silently
-    dropped).
+20. **Unregistered job type doesn't block the drain loop, and is never even selected** — enqueue
+    a job of a type with no registered handler alongside a normal job of a registered type;
+    assert the registered job still completes and the unregistered one remains `queued` (not
+    crashed, not silently dropped); additionally, assert the claim query itself never returns the
+    unregistered row (e.g. via a spy/count on how many times it's fetched across repeated drain
+    passes) — proving the non-selection is enforced at the query's `job_type IN (...)` filter, not
+    by an application-level skip that could re-select the same row every pass.
 21. **Enqueue failure propagates to event processing, never silently swallowed** — force
     `enqueueDeferredJob`'s `INSERT` to fail (e.g. a non-evictable job type at capacity, per test
     15's setup); assert the deferred subscriber's wrapped handler rejects, and that this
