@@ -207,15 +207,23 @@ queued ──(capacity eviction, job is evictable)──> evicted
   — only cross-restart).
   **Explicit invariant: the lease is a crash-recovery mechanism, not a hard execution timeout.**
   It does not — and cannot, from client-side JavaScript — forcibly halt a still-running handler.
-  If a lease expires while the original handler is genuinely still executing (e.g. the app was
-  never actually killed, just slow), a later drain pass may reclaim and re-run the same job while
-  the original async handler call is still unresolved — resulting in overlapping async
-  executions on the same JavaScript thread (async interleaving, not multi-threaded concurrency;
-  see the Concurrency section's terminology note). This is a deliberately accepted v1
-  trade-off, not an oversight: closing it properly would require distributed-lock-style
+  **Realistic scope of this risk:** within a single running worker instance, this scenario
+  cannot occur under normal operation — the single-flight drain (see Concurrency) is `await`-ing
+  the current job's handler and cannot itself start a second claim pass concurrently with the
+  first. The actual failure mode is cross-instance: **a stale lease may cause the same job to be
+  executed again by a later worker instance** (a fresh app launch after a crash, or — architecture
+  permitting — a second browser tab/app instance sharing the same local database) **while the
+  original execution is still alive**, specifically when that original execution didn't actually
+  crash but merely outlived its own lease (e.g. a slow handler, or the app process suspended and
+  resumed by the OS without the JS runtime itself restarting). This is possible only because lease
+  expiry cannot forcibly cancel JavaScript execution — there is no cross-instance signal that
+  tells the first instance "your lease is gone, stop." The result, when it happens, is overlapping
+  async executions of the same job on what may be two separate JS runtimes (not multi-threaded
+  concurrency within one; see the Concurrency section's terminology note). This is a deliberately
+  accepted v1 trade-off, not an oversight: closing it properly would require distributed-lock-style
   fencing tokens, which is disproportionate for a single-device local PWA queue. **Handlers must
   therefore be idempotent** — the same requirement `runDurableSubscriber` already places on its
-  handlers, extended to cover concurrent-with-itself execution, not just sequential re-delivery.
+  handlers, extended to cover this cross-instance overlap case, not just sequential re-delivery.
 - **`dead` is a distinct terminal state from a retryable `queued`.** **Initial v1
   `MAX_ATTEMPTS: 5`** — a starting operational constant in code, not an architectural
   requirement, matching how the capacity defaults above are framed. A row that has *exhausted*
@@ -283,16 +291,19 @@ their continuations, which is exactly why the handler-idempotency requirement ex
 document deliberately avoids the word "concurrent" for this case so a future engineer doesn't
 reach for Web Workers or a thread pool to "fix" something that isn't a threading problem.
 
-**The drain loop must yield to the browser/JS event loop between job executions.** A drain
-processing a large backlog (e.g. after a week offline) must not monopolize the main thread —
-without a yield point, a `visibilitychange` (app backgrounded) event cannot be dispatched until
-the synchronous portion of the loop finishes, meaning the app would keep draining in the
-background well past the point the OS/browser expects it to be idle. Concretely: after each job
-finishes (success, failure, or lease-driven skip), the drain loop yields control back to the
-event loop (the exact primitive — a `setTimeout(0)`, a microtask, or equivalent — is an
-implementation detail, not an architectural requirement) and then re-checks whether the app is
-still foregrounded before claiming the next row; if not, the drain loop stops where it is,
-leaving remaining eligible rows `queued` for the next trigger.
+**The drain loop must yield through a browser task boundary between job executions — a macrotask,
+not merely a microtask.** A drain processing a large backlog (e.g. after a week offline) must
+not monopolize the main thread. This requirement is specific, not just "yield somehow":
+`await Promise.resolve()` or any other microtask-only yield is **not sufficient** — the
+microtask queue is fully drained before the browser gets an opportunity to dispatch
+`visibilitychange` or any other lifecycle event, so a loop that only yields via microtasks
+between jobs would run through the entire backlog uninterrupted even while backgrounded, exactly
+the failure mode this requirement exists to prevent. Concretely: after each job finishes
+(success, failure, or lease-driven skip), the drain loop yields via a genuine
+task/macrotask boundary — `await new Promise(resolve => setTimeout(resolve, 0))` or an
+equivalent macrotask-scheduling primitive — and only then re-checks whether the app is still
+foregrounded before claiming the next row; if not, the drain loop stops where it is, leaving
+remaining eligible rows `queued` for the next trigger.
 
 **Single-flight guard on `drainDeferredJobs`.** The two triggers (foreground, reconnect) can fire
 close together — a reconnect event arriving while a foreground-triggered drain is still running
@@ -395,23 +406,40 @@ knowledge, and pushing it into every handler is exactly the kind of leaky abstra
 exists to avoid).
 
 **What this ticket does instead: reuse the existing Sentry integration (WAFI-023), not build a
-new synced-event mechanism.** This codebase already has a durable, already-PII-scrubbed,
-already-shop-scoped channel for "something needs a human's attention" —
-`src/sentry.ts`/`initSentry`. A `dead` transition is exactly that kind of signal, not a new
-category of domain fact that needs its own event type, retention policy, and RLS story on the
-Postgres side. Concretely: the worker itself (not the handler) calls a single
+new synced-event mechanism.** This codebase already has an **existing operational telemetry
+channel**, already-PII-scrubbed and already-shop-scoped, for "something needs a human's
+attention" — `src/sentry.ts`/`initSentry`. A `dead` transition is exactly that kind of signal,
+not a new category of domain fact that needs its own event type, retention policy, and RLS story
+on the Postgres side. Concretely: the worker itself (not the handler) calls a single
 `reportDeferredJobDead(row)` helper at the moment it writes `status = 'dead'`, which calls
 `Sentry.captureMessage` (or `captureException` if `last_error` carries a real `Error`) with
 structured context — `job_type`, `shop_id`, `attempts`, `last_error` — and explicitly **never**
 the job's `payload` (consistent with WAFI-023's existing PII-scrubbing posture; a job payload may
 contain a customer-identifying reference the Sentry pipeline shouldn't see even scrubbed).
 
+**Explicit non-claim, stated so nobody later assumes otherwise: Sentry reporting is best-effort
+operational observability, not a durability guarantee, and it is not part of the deferred
+queue's durability story.** The queue's durability guarantee begins and ends at the SQLite state
+transition (the `INSERT`/`UPDATE` committing) — that is what the Durability Invariant section is
+about, and Sentry adds nothing to it. Concretely, none of the following are guaranteed: that a
+`dead` transition's Sentry call actually reaches Sentry's servers (the device could go offline,
+crash, or have the SDK fail immediately after the DB commit); that it arrives exactly once (a
+crash between the DB commit and the Sentry call means it never fires at all; a retried report on
+some future reconciliation path, if one is ever built, could fire it twice — no such
+reconciliation exists in v1, so in practice this ticket ships "at most once, best-effort," not
+"at least once" or "exactly once"). The correct framing is: **the worker invokes the telemetry
+reporter once per observed `dead` transition; delivery to Sentry beyond that call is entirely
+best-effort.** This is an accepted, explicit gap, not an oversight — building real guaranteed
+delivery for a monitoring signal (as opposed to the business data itself, which has no such gap)
+would be disproportionate engineering for this ticket's purpose.
+
 This keeps the invariant precise and revisable:
 
 > A deferred job's queue state is device-local and never synchronized. Terminal failure
-> (`dead`) of a job type must still produce an observable signal through the application's
-> existing durable telemetry mechanism (Sentry), owned by the worker itself — never by
-> individual job handlers, and never by syncing the queue.
+> (`dead`) of a job type must still produce a best-effort observable signal through the
+> application's existing operational telemetry channel (Sentry), owned by the worker itself —
+> never by individual job handlers, and never by syncing the queue. This signal is not part of,
+> and does not extend, the queue's own durability guarantee.
 
 **Scope note:** if `VITE_SENTRY_DSN` is unset (per `initSentry`'s existing no-op-outside-DSN
 behavior), this degrades to the same "no monitoring configured" state every other error in the
@@ -487,26 +515,45 @@ after an explicit reset.
 
 **Exact `enqueueDeferredJob` algorithm, and why it must be one transaction:**
 
+**Invariant, stated up front because it drives the ordering below: a duplicate enqueue must
+never cause an eviction.** The dedupe check therefore cannot run as a separate `SELECT` before
+capacity handling — a `SELECT`-then-decide approach re-introduces exactly the kind of race the
+partial unique index was built to close: two concurrent enqueue calls for the same `dedupeKey`
+could each see "no existing row" via `SELECT`, each proceed into eviction because the queue is at
+capacity, and only then discover at `INSERT` time that one of them was a duplicate all along —
+by which point an unrelated legitimate job has already been evicted for nothing. The fix is
+ordering: **attempt the real `INSERT` first**, and let the dedupe partial unique index itself be
+the duplicate-detection mechanism, before any capacity/eviction logic runs at all.
+
 ```
 enqueue(job):
-  1. dedupe collision on (job_type, dedupe_key)?  -- see Dedup section
-       yes → resolve successfully, no-op, stop here
-  2. count of queued rows for this job_type >= maxQueuedJobs?
-       yes → evict oldest evictable row of THIS job_type (fails loudly if none evictable)
-  3. total queued row count (all types) >= global ceiling?
-       yes → evict oldest lowest-priority evictable row GLOBALLY (fails loudly if none evictable)
-  4. INSERT the new row
+  BEGIN TRANSACTION
+  1. INSERT the new row (status='queued', dedupe_key set if provided)
+       unique-constraint violation on (job_type, dedupe_key) →
+         ROLLBACK; resolve successfully (no-op) — see Dedup/Coalescing. Stop here;
+         steps 2-3 are never reached for a duplicate.
+       any other INSERT error →
+         ROLLBACK; propagate as an enqueue failure.
+  2. count of queued rows for this job_type > maxQueuedJobs (including the row just inserted)?
+       yes → evict the oldest evictable row of THIS job_type, excluding the row just inserted
+             no evictable candidate exists → ROLLBACK the entire transaction (undoing the
+             insert too); propagate as an enqueue failure
+  3. total queued row count, all types (including the row just inserted) > global ceiling?
+       yes → evict the oldest lowest-priority evictable row GLOBALLY, excluding the row just
+             inserted
+             no evictable candidate exists → ROLLBACK the entire transaction (undoing the
+             insert too); propagate as an enqueue failure
+  COMMIT
 ```
 
-Steps 2-4 (capacity check, any eviction, and the final `INSERT`) **must execute inside a single
-SQLite transaction.** The worker's sequential drain loop is not the only caller that touches this
-table — `enqueueDeferredJob` can be invoked by multiple deferred subscribers reacting to
-different events arriving close together, and nothing about the event bus serializes those
-calls. Without a single transaction, two concurrent enqueue calls could each read
-`count(type) = 199` against a quota of 200, both decide no eviction is needed, and both insert —
-silently exceeding the quota by one. Wrapping the read-decide-evict-insert sequence in one
-transaction closes that race the same way the dedup partial-unique-index closes the dedup race,
-by construction rather than by convention.
+The whole sequence **must execute inside a single SQLite transaction.** The worker's sequential
+drain loop is not the only caller that touches this table — `enqueueDeferredJob` can be invoked
+by multiple deferred subscribers reacting to different events arriving close together, and
+nothing about the event bus serializes those calls. Without a single transaction, two concurrent
+enqueue calls could each read `count(type) = 199` against a quota of 200, both decide no eviction
+is needed, and both insert — silently exceeding the quota by one. Wrapping the entire
+insert-then-capacity-check sequence in one transaction closes that race the same way the dedup
+partial-unique-index closes the dedup race — by construction rather than by convention.
 
 **Per-type eviction is evaluated first, independently of the global check** — a job type at its
 own quota is trimmed regardless of how far below the global ceiling the queue as a whole sits.
@@ -654,12 +701,18 @@ exercise real Postgres — these are lifecycle proofs, not unit tests of isolate
 15. **Critical jobs are never silently evicted** — fill the queue entirely with `critical` jobs
     up to capacity; assert the next enqueue attempt throws rather than evicting anything, and no
     row's status silently changes to `evicted`.
-16. **Dedup is atomic under a race, and the losing call resolves successfully, not with an
-    error** — fire two enqueue calls with the same `dedupeKey` concurrently (`Promise.all`);
-    assert exactly one `queued` row exists afterward (not zero, not two), **and** assert both
-    `Promise.all` calls resolve without throwing — the second (constraint-violating) call must
-    be observed by its caller as a successful no-op, per the Dedup/Coalescing section, not as an
-    enqueue failure that would incorrectly propagate to the event-processing failure path.
+16. **Dedup is atomic under a race, the losing call resolves successfully, and no eviction
+    happens as a side effect of the loss** — set up the queue at exactly its per-type capacity
+    (one legitimate unrelated row occupying the last slot), then fire two enqueue calls with the
+    same `dedupeKey` for that same job type concurrently (`Promise.all`); assert: exactly one new
+    `queued` row exists for that `dedupeKey` afterward (not zero, not two); both `Promise.all`
+    calls resolve without throwing — the second (constraint-violating) call must be observed by
+    its caller as a successful no-op, per the Dedup/Coalescing section, not as an enqueue failure
+    that would incorrectly propagate to the event-processing failure path; **and** the unrelated
+    pre-existing row is still present, `queued`, never evicted — proving the losing duplicate
+    enqueue was rejected at the `INSERT`-constraint step, before capacity/eviction logic ever ran,
+    per the enqueue algorithm's ordering invariant ("a duplicate enqueue must never cause an
+    eviction").
 17. **Dedup key reusable after completion** — enqueue, drain to `completed`, enqueue again with
     the identical `dedupeKey`; assert the second enqueue succeeds and produces a new row.
 18. **Completed jobs don't cause permanent queue growth** — enqueue and complete a job with
@@ -691,9 +744,11 @@ exercise real Postgres — these are lifecycle proofs, not unit tests of isolate
     query) and the second call resolves once the first drain's promise resolves, rather than
     independently claiming rows.
 24. **Terminal `dead` failure reports through the existing telemetry mechanism** — force a job to
-    exhaust `MAX_ATTEMPTS` and transition to `dead`; assert `reportDeferredJobDead` (or the
-    Sentry call it wraps) is invoked exactly once with `job_type`/`shop_id`/`attempts`/
-    `last_error`, and assert the job's `payload` is never included in that call's arguments.
+    exhaust `MAX_ATTEMPTS` and transition to `dead`; assert `reportDeferredJobDead` (the worker's
+    own call site, not Sentry's actual network delivery — that part is explicitly best-effort and
+    out of this test's control) is invoked exactly once per observed `dead` transition, with
+    `job_type`/`shop_id`/`attempts`/`last_error`, and assert the job's `payload` is never included
+    in that call's arguments.
 
 ## Out of Scope
 
