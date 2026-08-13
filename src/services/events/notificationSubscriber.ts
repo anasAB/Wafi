@@ -81,6 +81,15 @@ export async function handleDiscountEvent(event: DurableEvent<unknown>): Promise
   )
 }
 
+// Mirrors AUDITED_EVENT_TYPES's role in auditSubscriber.ts: the event types this
+// subscriber group actually registers for, exported as inspectable data (WAFI-157)
+// rather than left buried inside the `subs` array below, so a consumer-completeness
+// check can read it as the source of truth instead of hand-duplicating this list.
+export const NOTIFIED_EVENT_TYPES: DomainEventType[] = [
+  'shift.closed', 'customer.debt_changed', 'expense.recorded', 'sale.returned',
+  'staff.pin_locked_out', 'device.registered', 'settlement.paid', 'sale.discounted',
+]
+
 export function startNotificationSubscribers(shopId: string): { stop: () => void } {
   // One runDurableSubscriber per (source event, rule) pair -- independently
   // retryable even when two rules share a source event (drawer variance + late

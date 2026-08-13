@@ -8,6 +8,43 @@
 
 **Tech Stack:** Postgres/Supabase migrations (SQL, PL/pgSQL), pgTAP (`npx supabase test db`), Vue 3 Composition API, PowerSync (`src/data/powersync/schema.ts`, `ops.ts`), Vitest.
 
+## Status (recorded retroactively, 2026-08-13)
+
+The checkboxes below (`- [ ]`) were never updated as tasks completed and should not be read as
+"nothing here is done" — they're simply stale bookkeeping, not a live signal. Verified status per
+task, using ✅ done / 🟡 partially done / ❌ intentionally dropped / ⏭️ deferred to a separate
+ticket — not converting every box to `[x]` mechanically, since sub-step-level completion wasn't
+individually re-verified for every task:
+
+- **Tasks 1-2** (migrations 086/087, `_apply_profit_cache`/`apply_profit_cache`, rebuild
+  functions): ✅ — confirmed present and pgTAP-covered (`supabase/tests/wafi153_profit_cache_apply.test.sql`,
+  `wafi153_profit_cache_rebuild.test.sql`).
+- **Tasks 3-4** (write-time `cogsUsd`/`cogsReversalUsd`/etc. computed onto event payloads in
+  `sales.service.ts`/`useReturnSheet.ts`): ✅ — confirmed via `WAFI-153` tags in both files.
+- **Tasks 5-8** (client subscriber `profitCacheProjection.ts`, `ops.ts` RPC routing, schema.ts
+  entry, `useProfitCache()` composable): ✅ — all confirmed present.
+- **Task 9** (`missingCostCount` extraction to `useMissingCostCount.ts`): ✅ built as specified,
+  but ❌ **retired rather than kept** — see the design spec's "Post-implementation status"
+  section. It never acquired a production consumer; both UI roles it used to serve were already
+  superseded by other tickets (`profitIsEstimated`/`costlessSaleCount` from `profit_cache`, and
+  WAFI-013's `impreciseCostCount`). Deleted 2026-08-13, along with `useDashboardMetrics.ts`.
+- **Task 10** (migrate the 6 call sites): ✅ — all six (`HomePage.vue`, `ReportsPage.vue`,
+  `AnomalyBanner.vue`, `useAutomaticInsights.ts`, `useRevenueIntelligence.ts`,
+  `useProfitIntelligence.ts`) confirmed on `useProfitCache()` only, zero live imports of
+  `useDashboardMetrics()` remaining anywhere in production code.
+- **Task 13** (`profitCacheParity.test.ts`): ✅ built and passed, then deleted 2026-08-13 once its
+  subject (`useDashboardMetrics.ts`) was retired — see design spec for why this substituted for
+  live shadow-mode rather than supplementing it.
+- **Tasks 11-12, 14** and any other sub-steps not called out above: not individually re-verified
+  in this pass — do not assume done or not-done from this summary; check the actual code.
+- **Shadow mode / retirement of `useDashboardMetrics.ts`** (line 21 below, and the design spec's
+  "Shadow mode & rollback" section): the plan as written describes live shadow-mode logging
+  behind a feature flag as the gate before deletion. **That was never built.** What actually
+  happened: once all 6 call sites were migrated (Task 10) and the parity test (Task 13) passed,
+  there was no remaining production traffic on `useDashboardMetrics()` to shadow against, so it
+  and `useMissingCostCount.ts` were deleted directly instead of carrying dead code through an
+  observation window with nothing left to observe. See the design spec for the full rationale.
+
 ## Global Constraints
 
 - Migration numbering: latest existing migration is `085_daily_event_counts_rebuild.sql`. This plan's migrations are `086_profit_cache_apply.sql` and `087_profit_cache_rebuild.sql`. If another migration claims either number first, renumber before applying.
@@ -18,7 +55,14 @@
 - `rebuild_profit_cache_scope(p_shop_id uuid)` takes no `from`/`to` arguments — full-shop-scope only, because the costless-count cross-day decrement can reach outside any requested sub-range. `_backfill_profit_cache_shop` is never called standalone; it is only ever invoked from inside `rebuild_profit_cache_scope`, immediately after that function deletes every row + ledger entry for the shop.
 - Local subscriber writes (`src/services/events/profitCacheProjection.ts`) may mutate `source_event_id` only — never increment/decrement/derive any financial or count column locally, even incidentally via a read-then-carry-forward. All metric mutation happens exclusively in `apply_profit_cache` server-side.
 - Never commit with `--no-verify` or skip hooks. Follow the exact style of migrations 083/085 and `dailyEventCountsProjection.ts`/`ops.ts`'s existing `daily_event_counts` special case.
-- `useDashboardMetrics.ts` is not deleted by this plan — it is deleted only after the shadow-mode window (out of scope here, a rollout-operations step). This plan's last task migrates the 6 call sites to consume `useProfitCache()` for every metric it exposes today except `missingCostCount`, and adds a `useProfitCache`-based replacement — `useDashboardMetrics.ts` itself is left in place, but its dedicated tests are updated to reflect that call sites no longer import it (per-task detail below).
+- `useDashboardMetrics.ts` was NOT deleted by this plan as originally written — the plan's Task
+  10 migrates the 6 call sites to consume `useProfitCache()` (plus `useMissingCostCount()` for
+  the one metric excluded from it) and leaves `useDashboardMetrics.ts` itself in place, gated
+  on a shadow-mode window before deletion. **That gate was superseded, not honored** — see the
+  "Status" section above and the design spec's "Post-implementation status": once Task 10
+  landed with zero remaining production callers, `useDashboardMetrics.ts` and
+  `useMissingCostCount.ts` were deleted directly (2026-08-13), without the shadow-mode window
+  this constraint describes.
 
 ---
 
@@ -1400,7 +1444,7 @@ git add src/pages/HomePage.vue src/features/dashboard/components/ReportsPage.vue
 git commit -m "feat(WAFI-153): migrate the 6 dashboard/reports call sites to useProfitCache + useMissingCostCount"
 ```
 
-Note: `useDashboardMetrics.ts` itself is **not deleted** by this task — per the design spec's staged rollout, it stays in place (unused by app code after this task, but still present) until the shadow-mode observation window (Task 12 builds the parity test that gates this; actually retiring the file is an operational step outside this plan's scope, since it depends on production data observation, not just tests passing).
+Note: `useDashboardMetrics.ts` itself was **not deleted by this task** as originally planned — per the design spec's staged rollout, it was meant to stay in place until a shadow-mode observation window gated its retirement. **That gate was superseded**: once this task landed with zero remaining production callers, the shadow-mode window was skipped and `useDashboardMetrics.ts` (plus `useMissingCostCount.ts`) were deleted directly on 2026-08-13 — see the design spec's "Post-implementation status" section and this plan's top-level "Status" section for the rationale.
 
 ---
 
@@ -1875,6 +1919,6 @@ git commit -m "feat(WAFI-153): wire profit_cache into the projections:rebuild CL
 ## Explicitly out of scope for this plan (per the design spec)
 
 - Retrofitting `sales`/`expenses`/etc. tables from float to integer minor units.
-- Building the operational rollout sequence itself (running `rebuild_profit_cache_scope` on a cadence, shadow-mode flag wiring, deleting `useDashboardMetrics.ts`) — these are production-data-dependent operational steps, not implementation tasks; this plan builds every mechanism the rollout sequence needs, but does not execute the rollout.
+- Building the operational rollout sequence itself (running `rebuild_profit_cache_scope` on a cadence, shadow-mode flag wiring) — these remain out of scope and were never built. **Exception**: deleting `useDashboardMetrics.ts` was listed here as an out-of-scope operational step gated on shadow mode, but was in fact done directly, without shadow mode, on 2026-08-13 — see the "Status" section near the top of this document.
 - The `events` table publication/sync-rule exact file (Task 7 requires locating and confirming this at implementation time — it was not pinned down during research).
 - Admin UI or customer-facing rebuild trigger.

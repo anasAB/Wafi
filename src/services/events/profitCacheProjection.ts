@@ -15,6 +15,12 @@ import { processProjectionAtMostOnce, SubscriberId } from '@/services/events/pro
  * apply_profit_cache() server-side (see ops.ts's special case for how the
  * upload of this write is routed there).
  */
+// WAFI-157: exported so the consumer-completeness check can read this subscriber's
+// fixed subscription list as data instead of duplicating it.
+export const PROFIT_CACHE_PROJECTION_EVENT_TYPES = [
+  SalesEventType.Completed, ReturnsEventType.Returned, ExpenseEventType.Recorded,
+]
+
 export function startProfitCacheProjection(shopId: string): { stop: () => void } {
   const stops: Array<() => void> = []
 

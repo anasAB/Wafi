@@ -982,12 +982,53 @@ This is explicitly staged *after* the mandatory backfill/reconciliation sequence
 replacement for it — shadow mode catches bugs in the formula/implementation; backfill/
 reconciliation is what makes the two paths comparable over the same history in the first place.
 
+## Post-implementation status (recorded retroactively, 2026-08-13)
+
+This section documents what actually happened at cutover, superseding the "Shadow mode &
+rollback" section above where the two disagree — that section described the planned staging
+sequence; this one records what the code shows was actually done.
+
+**Shadow mode (as described above) was never built** — no feature flag, no dual-run logging,
+no discrepancy tracking exists anywhere in application code. What happened instead: all six
+named call sites (`HomePage.vue`, `ReportsPage.vue`, `AnomalyBanner.vue`,
+`useAutomaticInsights.ts`, `useRevenueIntelligence.ts`, `useProfitIntelligence.ts`) were
+migrated directly to `useProfitCache()`, with `profitCacheParity.test.ts` (Task 13 of the
+implementation plan) serving as the pre-cutover verification instead of a live shadow window —
+a unit-test-level comparison proving `useDashboardMetrics()`'s and `useProfitCache()`'s READ-side
+formulas agree given the same fixture facts, run once across 10 scenarios rather than observed
+live over a rollout period. This is a weaker guarantee than the originally planned live shadow
+comparison (it doesn't catch a real-world formula/producer bug against production data, only a
+formula disagreement given hand-modeled facts), accepted here because production had zero
+remaining traffic on the old path to shadow against once all six sites had already cut over.
+
+**Retirement:** with all six call sites confirmed migrated and zero other production importers
+of `useDashboardMetrics()` found by repo-wide grep, `useDashboardMetrics.ts` and its dedicated
+test files, plus the now-obsolete `profitCacheParity.test.ts`, were deleted directly rather than
+carrying the dead file through an observation window that had no live traffic left to observe.
+
+**`missingCostCount` — explicitly retired, not migrated.** Per "Out of scope" below, this metric
+was deliberately excluded from `profit_cache` (it describes current product state — count of
+active products with no/zero cost price — not an event-derived per-day historical fact). It WAS
+extracted into its own `useMissingCostCount.ts` composable per the implementation plan's Task 9,
+but that composable never acquired a production consumer: neither `HomePage.vue` nor any other
+of the six migrated call sites was ever wired to it. Investigation confirmed why this was safe to
+leave dead and then delete: both user-facing roles `missingCostCount` used to serve on
+`HomePage.vue` were independently superseded by other tickets before this cleanup —
+the profit-estimate caveat now reads `profitCache.metrics.value.profitIsEstimated` /
+`costlessSaleCount` (a related but distinct metric: sales missing a cost snapshot, not
+currently-under-costed products), and the "go fix your product costs" entry point is now served
+by `ProductsPage.vue`'s own independent `impreciseCostCount` (WAFI-013's `isCostImprecise()`,
+a superset covering missing OR stale cost). No `.vue` file anywhere binds to `missingCostCount`
+from any composable today. `useMissingCostCount.ts` and its test were deleted alongside
+`useDashboardMetrics.ts`.
+
 ## Out of scope
 
 - `dashboard_metrics`, `inventory_summary`, `customer_summary`, `staff_summary` (separate specs)
 - Retrofitting `sales`/`expenses`/etc. tables from float to integer minor units — only the new
   `profit_cache` table uses that representation
-- `missingCostCount` migration to any projection (deliberately stays live — see Scope)
+- `missingCostCount` migration to any projection (deliberately stays live — see Scope; see
+  "Post-implementation status" above for how this metric was ultimately retired, not migrated)
 - Admin UI or customer-facing rebuild trigger (inherits WAFI-151's CLI-only trigger surface)
 - The historical backfill generator (`_backfill_profit_cache_shop`, mandatory pre-cutover, also
   reused by rebuild) is a non-event-sourced, eligibility-based query against source tables — not

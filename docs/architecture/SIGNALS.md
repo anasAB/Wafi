@@ -59,6 +59,34 @@ codebase has tested the multi-version-support path in practice.
 | `product.created` | `useProducts.ts:157` `save()` create branch | auditSubscriber (durable) — real row (verbatim payload) | |
 | `device.registered` | `useDeviceRegistration.ts:39` `registerDevice()` — bespoke direct `publishEvent()` | auditSubscriber (durable) — real row (verbatim payload) | RPC + local insert, not a local-write/audit pair, hence bespoke |
 
+## Contract Testing (WAFI-157)
+
+Every event type above (plus the two dormant ones below) has exactly one canonical
+fixture in `src/services/events/__tests__/eventContractFixtures.ts` — the single
+representative payload every contract test uses, so a producer field rename is caught
+consistently rather than only in whichever test happened to hand-roll a matching payload.
+`src/services/events/__tests__/eventContracts.subscribers.test.ts` enforces two
+invariants against that shared fixture set:
+
+1. **Every `DomainEventType` has ≥1 registered consumer or is explicitly dormant.** The
+   check reads `AUDITED_EVENT_TYPES` (`auditSubscriber.ts`), `NOTIFIED_EVENT_TYPES`
+   (`notificationSubscriber.ts`), and the three lightweight projections' own exported
+   event-type lists (`dashboardRevenueProjection.ts`, `profitCacheProjection.ts`,
+   `dailyEventCountsProjection.ts`) directly from those production modules — no second,
+   hand-maintained registry — union them, and require every fixture's event type to
+   appear there or in `eventContractFixtures.ts`'s `DORMANT_EVENTS` (currently
+   `shift.opened`/`shift.closed`, matching this doc's "Known Gaps" section below). An
+   event with zero consumers and no dormant listing fails CI immediately, rather than
+   being discovered later as a silently-broken projection.
+2. **Every registered subscriber consumes the canonical fixture correctly.** Structural
+   checks (Level 1) assert each subscriber's own minimal result contract — a well-shaped
+   audit row / notification / projection SQL write, or an explicitly-expected `null` —
+   without throwing. Targeted semantic checks (Level 2) assert specific business values
+   survive unchanged (e.g. `sale.completed`'s `totalUsd`/`cogsUsd` reach the audit row
+   verbatim; a below-cost `sale.discounted` maps to `CRITICAL`). This is deliberately not
+   a full output snapshot — subscriber internals are free to change as long as these
+   named invariants hold.
+
 ## Known Gaps
 
 - **Dormant events:** `shift.opened` and `shift.closed` are produced on every shift

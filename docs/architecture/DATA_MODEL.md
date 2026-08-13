@@ -102,9 +102,37 @@ comparison; convert only for display.
 
 ## 6. Read models / caching
 
-There are currently **no materialized read models or report caches** — every dashboard/
-report metric is computed from transactional tables at query time. This is intentional at
-current data volumes (see the v3 roadmap's WAFI-153, "Read Models / CQRS Optimization",
-Macro-Phase 3 — not started, tracked for when per-shop data volume actually needs it, not
-before). If you're about to add a cache table, check whether WAFI-153 already covers the
-need first.
+Stale as of 2026-08-13 — this section previously said no read models exist and WAFI-153 was
+"not started." Neither is true. Real status, per shop-scoped `(shop_id, day)` event-derived
+table, maintained by a Postgres apply function keyed off `events` (never queried ad-hoc, never
+mutated directly by clients):
+
+| Table | Populated by | Read side | Status |
+|---|---|---|---|
+| `profit_cache` | `apply_profit_cache()` (migration `086`) from `sale.completed`/`sale.returned`/`expense.recorded` | `useProfitCache()` — the authoritative source for revenue/COGS/profit/discount/refund/return metrics on the Dashboard/Reports pages | ✅ Built, adopted everywhere (see below) |
+| `daily_event_counts` | `apply_daily_event_count()` (WAFI-151, migrations `083`/`085`) from `sale.completed` | `dailyEventCountsProjection.ts` (also the authoritative-count basis `local_today_revenue_projection`'s rebuild path cross-checks against) | ✅ Built |
+| `dashboard_metrics`, `inventory_summary`, `customer_summary` | — | — | ❌ Not built — `dashboard_metrics` is explicitly **dropped by design** (duplicate of `profit_cache`, see the WAFI-153 design spec's "Out of scope"); `inventory_summary`/`customer_summary` remain unevaluated roadmap candidates, not committed work |
+| `staff_summary` | — | `useStaffPerformanceMetrics.ts` still does live per-request SQL aggregation over `sales`/`sale_line_items` | ⏭️ Not built — the strongest evidence-backed candidate for the next WAFI-153 slice, since this composable's cost is already concretely identified, not theoretical |
+
+**`useDashboardMetrics.ts` (the old live-aggregation composable this replaced) and its
+`missingCostCount` extraction `useMissingCostCount.ts` were both deleted 2026-08-13** — see
+the WAFI-153 design spec's "Post-implementation status" section for the full migration/
+retirement history, including why `missingCostCount` was retired rather than migrated.
+
+**Two revenue sources for "today", intentionally, not redundantly:**
+`local_today_revenue_projection` (client-local-only table, no server counterpart) is written
+synchronously the instant `sale.completed` is processed on-device (`dashboardRevenueProjection.ts`)
+— zero round trip, but single-device and best-effort (design spec: "never treated as a source of
+truth for anything financial"). `profit_cache`'s numbers, by contrast, only become authoritative
+after upload → server-side `apply_profit_cache()` → sync-down, so every device converges on the
+same value, at the cost of latency the local table doesn't have. `HomePage.vue` encodes this
+tradeoff explicitly: for `period === 'today'` it prefers the instant local value and falls back
+to `profitCache`'s value only when the local one is still zero (a fresh-device stopgap, not the
+primary path). Do not try to unify these into one table — the whole point is that one is
+same-device-instant/advisory and the other is cross-device-authoritative/eventually-consistent,
+and the dashboard needs both properties simultaneously for different scenarios.
+
+If you're about to add a new read-model table, check whether one of the four unbuilt candidates
+above already covers the need, and read the WAFI-153 design spec's "CQRS-Lite" pattern
+(`_apply_*`/`apply_*` pair, `(shop_id, day)` grain, `projection_processed_events` idempotency
+ledger, rebuild-via-CLI) before inventing a different shape.

@@ -13,6 +13,10 @@ import { processProjectionAtMostOnce, SubscriberId } from '@/services/events/pro
  * being folded into daily_event_counts, so at-least-once delivery no longer means
  * at-least-once counting.
  */
+// WAFI-157: exported so the consumer-completeness check can read this subscriber's
+// fixed subscription list as data instead of duplicating it.
+export const DAILY_EVENT_COUNTS_EVENT_TYPES = [SalesEventType.Completed]
+
 export function startDailyEventCountsProjection(shopId: string): { stop: () => void } {
   return useEventSubscription<SaleCompletedPayload>(
     SalesEventType.Completed,

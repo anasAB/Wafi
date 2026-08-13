@@ -149,7 +149,7 @@ export function mapEventToAuditEntry(event: DomainEvent): AuditLogInsert | null 
   }
 }
 
-const AUDITED_EVENT_TYPES: DomainEventType[] = [
+export const AUDITED_EVENT_TYPES: DomainEventType[] = [
   'product.cost_updated', 'product.price_changed', 'product.created', 'device.registered',
   'stock.taken', 'stock.received', 'cash.movement_recorded', 'sale.completed', 'sale.returned',
   'customer.debt_changed', 'installment.due_paid', 'inventory.adjusted',

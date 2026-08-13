@@ -11,6 +11,10 @@ import { processProjectionAtMostOnce, SubscriberId } from '@/services/events/pro
  * If it's ever visibly wrong, the fix is "rebuild from source" (re-run this subscriber
  * against sales directly), not "audit for a missing event."
  */
+// WAFI-157: exported so the consumer-completeness check can read this subscriber's
+// fixed subscription list as data instead of duplicating it.
+export const DASHBOARD_PROJECTION_EVENT_TYPES = [SalesEventType.Completed]
+
 export function startDashboardRevenueProjection(shopId: string): { stop: () => void } {
   return useEventSubscription<SaleCompletedPayload>(
     SalesEventType.Completed,
