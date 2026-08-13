@@ -31,6 +31,7 @@ export function useRolloutAdmin() {
   const query = ref('')
   const capped = ref(false)
   const pending = ref<Record<string, boolean>>({})
+  const message = ref<{ text: string; isError: boolean } | null>(null)
 
   // `loading` tracks "is anything currently fetching", independent of which
   // request's data actually gets applied. A plain boolean set true/false
@@ -80,31 +81,52 @@ export function useRolloutAdmin() {
     const shop = shops.value.find(s => s.shopId === shopId)
     if (!shop) return
     const newValue = !valueFor(shop, flagKey)
+    const shopName = shop.shopName
     pending.value = { ...pending.value, [key]: newValue }
 
-    const { error } = await supabase.rpc('set_rollout_flag', {
-      p_shop_id: shopId, p_flag_key: flagKey, p_enabled: newValue,
-    })
+    try {
+      const { error } = await supabase.rpc('set_rollout_flag', {
+        p_shop_id: shopId, p_flag_key: flagKey, p_enabled: newValue,
+      })
 
-    if (!error) {
-      // Commit into local server-state BEFORE clearing pending below --
-      // this ordering is the actual invariant: `valueFor()` must never see a
-      // window (even a hypothetical future one, if an await were ever
-      // inserted between these two steps) where `pending` has already been
-      // cleared but `shop.flags` hasn't been committed yet, which would
-      // cause the cell to flash back to the stale pre-mutation value.
-      shop.flags = { ...shop.flags, [flagKey]: newValue }
-      // Any list response already in flight predates this mutation and must
-      // not be allowed to overwrite it -- bump the shared request counter so
-      // refresh()'s staleness check discards that in-flight response.
-      latestRequestId++
+      if (!error) {
+        // Re-resolve the shop by id at commit time rather than reusing the
+        // reference captured above -- a concurrent refresh() may have
+        // already replaced `shops.value` with a fresh array of new row
+        // objects while this RPC was in flight, which would leave the
+        // captured `shop` object orphaned and its mutation unrendered.
+        const currentShop = shops.value.find(s => s.shopId === shopId)
+        if (currentShop) {
+          currentShop.flags = { ...currentShop.flags, [flagKey]: newValue }
+        }
+        // Any list response already in flight predates this mutation and must
+        // not be allowed to overwrite it -- bump the shared request counter so
+        // refresh()'s staleness check discards that in-flight response.
+        latestRequestId++
+        message.value = {
+          text: newValue
+            ? `تم تفعيل ${flagKey} لمتجر ${shopName}`
+            : `تم إيقاف ${flagKey} لمتجر ${shopName}`,
+          isError: false,
+        }
+      } else {
+        // On error: shop.flags is never touched, so valueFor() naturally
+        // reverts to the last known server value once pending is cleared.
+        message.value = {
+          text: `تعذر تحديث ${flagKey} لمتجر ${shopName}. حاول مرة أخرى.`,
+          isError: true,
+        }
+      }
+    } catch {
+      message.value = {
+        text: `تعذر تحديث ${flagKey} لمتجر ${shopName}. حاول مرة أخرى.`,
+        isError: true,
+      }
+    } finally {
+      const { [key]: _discarded, ...rest } = pending.value
+      pending.value = rest
     }
-    // On error: shop.flags is never touched, so valueFor() naturally reverts
-    // to the last known server value once pending is cleared below.
-
-    const { [key]: _discarded, ...rest } = pending.value
-    pending.value = rest
   }
 
-  return { shops, query, loading, capped, refresh, isPending, valueFor, toggle }
+  return { shops, query, loading, capped, message, refresh, isPending, valueFor, toggle }
 }

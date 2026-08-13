@@ -15,12 +15,12 @@ import { ROLLOUT_FLAG_KEYS } from '@/features/flags/flagRegistry'
 const router = useRouter()
 const admin = useRolloutAdmin()
 
-onMounted(() => { void admin.refresh() })
+onMounted(() => { admin.refresh().catch(() => {}) })
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
 watch(admin.query, () => {
   clearTimeout(debounceTimer)
-  debounceTimer = setTimeout(() => { void admin.refresh() }, 300)
+  debounceTimer = setTimeout(() => { admin.refresh().catch(() => {}) }, 300)
 })
 </script>
 
@@ -32,6 +32,15 @@ watch(admin.query, () => {
       <p class="caption">
         هذه الأعلام تتحكم بميزات قيد التطوير أو التجربة. أي تغيير يشمل المتجر
         بالكامل ويؤثر على جميع أجهزته بعد أول مزامنة تالية للجهاز.
+      </p>
+
+      <p
+        v-if="admin.message.value"
+        class="feedback"
+        :class="{ error: admin.message.value.isError }"
+        data-test="rollout-message"
+      >
+        {{ admin.message.value.text }}
       </p>
 
       <input
@@ -66,7 +75,7 @@ watch(admin.query, () => {
                   :class="{ on: admin.valueFor(shop, key), pending: admin.isPending(shop.shopId, key) }"
                   :disabled="admin.isPending(shop.shopId, key)"
                   :data-test="`toggle-${shop.shopId}-${key}`"
-                  @click="admin.toggle(shop.shopId, key)"
+                  @click="admin.toggle(shop.shopId, key).catch(() => {})"
                 >
                   {{ admin.valueFor(shop, key) ? 'ON' : 'OFF' }}
                 </button>
@@ -94,6 +103,21 @@ watch(admin.query, () => {
 .page-main { flex: 1; padding: 1rem 1rem 6rem; max-width: 56rem; margin: 0 auto; width: 100%; display: flex; flex-direction: column; gap: 14px; }
 
 .caption { margin: 0; font-size: 0.8rem; color: #93A3B8; line-height: 1.6; }
+
+.feedback {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 0.5rem;
+  font-size: 0.82rem;
+  background: rgba(26, 86, 219, 0.15);
+  color: #E8EDF5;
+  border: 1px solid rgba(26, 86, 219, 0.4);
+}
+.feedback.error {
+  background: rgba(219, 26, 26, 0.15);
+  border-color: rgba(219, 26, 26, 0.4);
+  color: #F5C6C6;
+}
 
 .search-input {
   width: 100%;

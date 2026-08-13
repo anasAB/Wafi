@@ -90,6 +90,17 @@ BEGIN
   -- calls: first ensure `rollout` exists as an object (creating it from
   -- '{}' if v_base has none), then set the nested key on a base that is
   -- now guaranteed to already contain it.
+  -- Guard against a corrupted, non-object `rollout` value the same way the
+  -- `features` root is guarded above (line 69) -- a scalar/array left behind
+  -- by manual corruption would otherwise be passed straight into the outer
+  -- jsonb_set as the "existing" value, and jsonb_set silently no-ops when an
+  -- intermediate path segment isn't an object. NULL (the normal "rollout
+  -- doesn't exist yet" case) is left alone; coalesce below still handles it.
+  IF jsonb_typeof(v_base -> 'rollout') IS NOT NULL
+     AND jsonb_typeof(v_base -> 'rollout') IS DISTINCT FROM 'object' THEN
+    v_base := jsonb_set(v_base, ARRAY['rollout'], '{}'::jsonb, true);
+  END IF;
+
   UPDATE shops
      SET features = jsonb_set(
            jsonb_set(v_base, ARRAY['rollout'], coalesce(v_base -> 'rollout', '{}'::jsonb), true),

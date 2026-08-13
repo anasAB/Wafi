@@ -134,6 +134,57 @@ describe('useRolloutAdmin: toggle mutation', () => {
     expect(admin.valueFor(admin.shops.value[0], 'dashboard_v2')).toBe(true)
   })
 
+  it('commits the mutation onto the live shop object even if a concurrent refresh() replaces shops.value while the RPC is in flight', async () => {
+    rpcMock.mockResolvedValueOnce({ data: [row({ shop_id: 's1', dashboard_v2: false })], error: null })
+    const admin = useRolloutAdmin()
+    await admin.refresh()
+
+    let resolveSet: (v: unknown) => void = () => {}
+    rpcMock.mockReturnValueOnce(new Promise(r => { resolveSet = r }))
+    const toggling = admin.toggle('s1', 'dashboard_v2') // RPC in flight, not resolved yet
+
+    // A concurrent refresh() resolves BEFORE the toggle's RPC, replacing
+    // shops.value with fresh row objects (new identities, pre-mutation value).
+    rpcMock.mockResolvedValueOnce({ data: [row({ shop_id: 's1', dashboard_v2: false })], error: null })
+    await admin.refresh()
+
+    // Now the toggle's RPC finally resolves successfully.
+    resolveSet({ data: null, error: null })
+    await toggling
+
+    // The mutation must be visible on the CURRENT (post-refresh) shops.value,
+    // not lost on the orphaned pre-refresh object.
+    expect(admin.valueFor(admin.shops.value[0], 'dashboard_v2')).toBe(true)
+  })
+
+  it('sets a success message on toggle success and an error message on toggle failure', async () => {
+    rpcMock.mockResolvedValueOnce({ data: [row({ shop_id: 's1', shop_name: 'Al Noor Pharmacy', dashboard_v2: false })], error: null })
+    const admin = useRolloutAdmin()
+    await admin.refresh()
+
+    rpcMock.mockResolvedValueOnce({ data: null, error: null })
+    await admin.toggle('s1', 'dashboard_v2')
+    expect(admin.message.value?.isError).toBe(false)
+    expect(admin.message.value?.text).toContain('Al Noor Pharmacy')
+
+    rpcMock.mockResolvedValueOnce({ data: null, error: new Error('boom') })
+    await admin.toggle('s1', 'dashboard_v2')
+    expect(admin.message.value?.isError).toBe(true)
+    expect(admin.message.value?.text).toContain('Al Noor Pharmacy')
+  })
+
+  it('clears the pending lock even when the RPC promise rejects outright', async () => {
+    rpcMock.mockResolvedValueOnce({ data: [row({ shop_id: 's1', dashboard_v2: false })], error: null })
+    const admin = useRolloutAdmin()
+    await admin.refresh()
+
+    rpcMock.mockRejectedValueOnce(new Error('network down'))
+    await admin.toggle('s1', 'dashboard_v2')
+
+    expect(admin.isPending('s1', 'dashboard_v2')).toBe(false)
+    expect(admin.message.value?.isError).toBe(true)
+  })
+
   it('does not strand loading=true when a mutation-caused counter bump invalidates an in-flight refresh', async () => {
     rpcMock.mockResolvedValueOnce({ data: [row({ shop_id: 's1', dashboard_v2: false })], error: null })
     const admin = useRolloutAdmin()

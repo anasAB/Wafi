@@ -79,6 +79,18 @@ describe('usePlatformAdminStore', () => {
     expect(maybeSingleMock).toHaveBeenCalledTimes(2)
   })
 
+  it('leaves a failed check retryable when the query resolves with {data:null, error} instead of rejecting', async () => {
+    getSessionMock.mockResolvedValue(session('user-1'))
+    maybeSingleMock
+      .mockResolvedValueOnce({ data: null, error: new Error('PGRST error') })
+      .mockResolvedValueOnce({ data: { user_id: 'user-1' }, error: null })
+
+    const store = usePlatformAdminStore()
+    expect(await store.ensureChecked()).toBe(false)
+    expect(await store.ensureChecked()).toBe(true)
+    expect(maybeSingleMock).toHaveBeenCalledTimes(2)
+  })
+
   it('deduplicates concurrent calls for the same user into one query', async () => {
     getSessionMock.mockResolvedValue(session('user-1'))
     let resolveQuery: (v: unknown) => void = () => {}

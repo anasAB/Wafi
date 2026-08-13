@@ -181,10 +181,10 @@ UPDATE public.shops
    SET features = '{"staff_pack": false}'::jsonb
  WHERE owner_user_id = 'd3333333-3333-3333-3333-333333333333';
 RESET ROLE;
-SELECT isnt(
+SELECT is(
   (SELECT features FROM public.shops WHERE owner_user_id = 'd3333333-3333-3333-3333-333333333333'),
-  '{"staff_pack": false}'::jsonb,
-  '8a: a direct client UPDATE to features is reverted by protect_shop_server_only_columns'
+  '{"rollout": {"dashboard_v2": false}, "staff_pack": true, "customer_pack": true, "reporting_pack": true, "electronics_pro": true}'::jsonb,
+  '8a: a direct client UPDATE to features is reverted by protect_shop_server_only_columns (exact prior value from test 4, not just "not the attempted value" -- distinguishes a reverted trigger from an RLS-blocked no-op update)'
 );
 
 -- 8b: the trusted RPC's own write (2a/2b/3a above) is NOT reverted -- named
@@ -237,6 +237,13 @@ SELECT is(
 RESET ROLE;
 
 -- 6d: malformed rollout value resolves to false, not an error.
+-- request.jwt.claims is still set from the preceding block (RESET ROLE only
+-- resets the role, not this transaction-local GUC) -- protect_shop_server_
+-- only_columns fires on ANY non-empty request.jwt.claims regardless of role
+-- and would silently revert this direct-as-superuser write. Clear it first,
+-- mirroring how set_rollout_flag bypasses the same trigger for its own
+-- legitimate internal writes.
+SELECT set_config('request.jwt.claims', '', true);
 UPDATE public.shops
    SET features = jsonb_set(features, '{rollout,insights}', '"true"'::jsonb)
  WHERE owner_user_id = 'd2222222-2222-2222-2222-222222222222';

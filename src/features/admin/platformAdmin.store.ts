@@ -34,11 +34,16 @@ export const usePlatformAdminStore = defineStore('platformAdmin', () => {
 
     const promise: Promise<boolean> = (async () => {
       try {
-        const { data: row } = await supabase
+        const { data: row, error } = await supabase
           .from('platform_admins')
           .select('user_id')
           .eq('user_id', userId)
           .maybeSingle()
+        if (error) {
+          // PostgREST/network errors resolve with {data: null, error} rather
+          // than rejecting the promise -- must not be cached as "not admin."
+          return false
+        }
         const result = Boolean(row)
         // Only commit if no newer request for a DIFFERENT user has
         // superseded this one -- prevents a slow, now-stale query for a
