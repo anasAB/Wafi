@@ -173,7 +173,40 @@ Required pgTAP test (see Section 6): a shop with `features IS NULL`, after
 `set_rollout_flag(shop_id, 'dashboard_v2', true)`, must resolve
 `staff_pack`/`customer_pack`/`reporting_pack`/`electronics_pro` as `true`
 (matching pre-write `resolveFlag(null, ...)` behavior) in addition to
-`rollout.dashboard_v2 = true`.
+`rollout.dashboard_v2 = true`. The same materialization happens for a
+`p_enabled = false` write too — any rollout write to a `NULL`-features
+shop materializes the pack defaults, not only an enabling write. This is
+intentional, not an accidental side effect: the alternative (materializing
+only on `true` writes) would make the materialization behavior depend on
+which value happened to be written first, which is a worse, harder-to-reason
+-about invariant than "any rollout write on this shop row establishes its
+explicit pack state once."
+
+**Hidden invariant — this materialization literal is coupled to WAFI-131's
+current resolver, and that coupling will silently rot if unmanaged:** the
+SQL literal above is a server-side snapshot of what `resolveFlag(null,
+key)` returns *today*. If WAFI-131 ever changes its `NULL`-blob default, or
+a pack key is added/removed/renamed, this literal must be updated in the
+same change — nothing enforces that pairing automatically, the same way
+nothing automatically keeps `ROLLOUT_FLAG_KEYS` and `set_rollout_flag`'s
+flag allowlist in sync (Section 2). A future follow-up should consider
+removing the `NULL` sentinel entirely — having `021_provision_shop_on_signup.sql`
+write explicit default `features` at shop-creation time — which would let
+this literal (and the `CASE WHEN features IS NULL` branch entirely) be
+deleted rather than perpetually kept in sync by hand.
+
+**Latent entitlement-model question, explicitly not this ticket's to
+decide:** this spec reveals that *every* newly signed-up shop today gets
+`features = NULL`, which `resolveFlag` treats as every paid pack enabled —
+i.e., new shops currently default to full access to every pack,
+indefinitely, until someone manually sets `features` otherwise. WAFI-155
+preserves this behavior exactly (that's the whole point of the
+materialization fix above) and takes no position on whether it's the right
+product/entitlement policy going forward. Whether new shops should default
+to all-packs-on forever, whether provisioning should write explicit
+(possibly Core-only) default entitlements, and whether the `NULL` sentinel
+should be deprecated are all questions for a separate entitlement/
+provisioning ticket, not WAFI-155.
 
 **Direct-client-write risk (checked, not currently broken, but fragile —
 worth explicit regression coverage).** Migration `075` added a client
@@ -228,6 +261,26 @@ is validated, any shop data is queried, or any mutation occurs. This
 prevents an unauthorized caller from using either RPC as an oracle for
 "does this flag/shop exist?"
 
+**Verification item, confirmed during design review (not left open):**
+does `protect_shop_server_only_columns` (migration 075) revert `features`
+changes made *by `set_rollout_flag` itself*, since `SECURITY DEFINER`
+bypasses RLS but not triggers, and the trigger's condition
+(`request.jwt.claims` non-empty) is true for any authenticated-client
+request — including one that calls this RPC? Traced through: yes, without
+a fix, the trigger would silently revert the RPC's own write, making
+`set_rollout_flag` a no-op that reports success. The `PERFORM
+set_config('request.jwt.claims', '', true)` line in the RPC body below is
+the fix, scoped to that one function and only reached after authorization
+already passed. **The positive rollout-write pgTAP test (Section 6, test
+#3) must run under a simulated authenticated JWT context** (`set_config`
+faking `request.jwt.claims`, the same technique
+`verify_wafi122_role_enforcement.sql` already uses) **and must re-read
+`shops.features` after the call to confirm the value actually persisted**
+— not just that the RPC returned without raising. A test run as an
+unrestricted `postgres`/superuser role would never exercise this trigger
+at all and would pass even if the fix were missing, silently hiding
+exactly the bug this note exists to catch.
+
 ### `set_rollout_flag`
 
 ```sql
@@ -262,19 +315,40 @@ BEGIN
     RAISE EXCEPTION 'unknown rollout flag: %', p_flag_key USING ERRCODE = 'P0003';
   END IF;
 
-  -- A NULL features blob means resolveFlag() (flagRegistry.ts) currently
-  -- grants this shop every pack (its grandfathered/new-shop default -- see
-  -- the "Critical NULL-grandfathering interaction" note above). Writing a
-  -- rollout key into a bare '{}' would silently drop every pack to "off"
-  -- the instant this function first touches that shop. Materialize the
-  -- same all-on state resolveFlag(null, ...) already grants, before
-  -- applying the rollout path -- not migration 041's one-time backfill
-  -- literal, which used different values for a different, already-known
-  -- set of shops at a different point in time.
+  -- A NULL (or otherwise non-object) features blob means resolveFlag()
+  -- (flagRegistry.ts) currently grants this shop every pack (its
+  -- grandfathered/new-shop default -- see the "Critical NULL-grandfathering
+  -- interaction" note above). Writing a rollout key into a bare '{}' would
+  -- silently drop every pack to "off" the instant this function first
+  -- touches that shop. Materialize the same all-on state resolveFlag(null,
+  -- ...) already grants, before applying the rollout path -- not migration
+  -- 041's one-time backfill literal, which used different values for a
+  -- different, already-known set of shops at a different point in time.
+  -- jsonb_typeof(...) IS DISTINCT FROM 'object' also defends against a
+  -- non-object features value reaching this path (e.g. a scalar or array
+  -- from manual DB editing or future corruption) -- jsonb_set on a
+  -- non-object root does not safely create a nested path, so treat any
+  -- non-object value the same as NULL rather than let it error or corrupt
+  -- the row. This is a defensive fallback, not a supported data contract:
+  -- a malformed features value getting this far indicates state outside
+  -- what any writer in this codebase should ever produce.
+  --
+  -- The protect_shop_server_only_columns trigger (075) reverts `features`
+  -- on ANY request carrying a JWT, with no exception carved out for a
+  -- trusted SECURITY DEFINER RPC's own write -- SECURITY DEFINER changes
+  -- privilege-checking identity, not this custom request.jwt.claims GUC,
+  -- which stays set for the whole request regardless of which function
+  -- runs inside it. Authorization has already been verified above; this is
+  -- a narrowly scoped, single-statement override of the trigger's blanket
+  -- client-write guard, transaction-local (is_local=true) so it cannot
+  -- leak into any other request. Do not copy this pattern to any other
+  -- write path without the same preceding authorization guarantee.
+  PERFORM set_config('request.jwt.claims', '', true);
+
   UPDATE shops
      SET features = jsonb_set(
            CASE
-             WHEN features IS NULL THEN
+             WHEN features IS NULL OR jsonb_typeof(features) IS DISTINCT FROM 'object' THEN
                '{"staff_pack": true, "customer_pack": true, "reporting_pack": true, "electronics_pro": true}'::jsonb
              ELSE features
            END,
@@ -360,9 +434,13 @@ s.name` ties are otherwise implementation-defined and could shuffle
 between calls). `ILIKE` on a `LIMIT 100` result needs no index at this shop
 count; documented here as a future optimization trigger, not a v1 concern:
 *if the shop population grows enough that the `%query%` scan becomes
-material, replace with an indexed search strategy.* The UI surfaces the
-100-row cap explicitly (Section 5) so an admin doesn't mistake a
-101st-match shop for one that doesn't exist.
+material, replace with an indexed search strategy.* `%` and `_` in the
+search text are treated as `ILIKE` wildcards, not escaped — acceptable for
+an internal admin tool where predictable-but-not-literal search is fine;
+documented here rather than silently surprising someone who searches for a
+shop with an underscore in its name. The UI surfaces the 100-row cap
+explicitly (Section 5, exact copy specified there) so an admin doesn't
+mistake a 101st-match shop for one that doesn't exist.
 
 Server-side search (not "return all shops, filter client-side") is a
 deliberate choice: this RPC is already a platform-scoped privileged
@@ -468,6 +546,13 @@ let   pendingPromise: Promise<boolean> | null = null
 6. On network/query error: clear `pendingPromise` **without** setting
    `checkedForUserId` — the check remains retryable on the next call rather
    than being permanently and incorrectly cached as "not admin."
+7. **No current authenticated user** (e.g. called during app boot before
+   session restoration completes): return `isAdmin = false` immediately
+   without querying, and do **not** set `checkedForUserId` — there is no
+   real user id to cache against, so this must not be treated as a
+   completed check. The next `ensureChecked()` call, once a real user is
+   available, performs the actual check rather than trusting a stale
+   "no-user" result.
 
 Reset (`checkedForUserId = null`, `isAdmin = false`) on the existing
 Supabase auth-state-change sign-out listener, and implicitly invalidated on
@@ -497,14 +582,24 @@ authorization" principle):**
 - Router guard on `/admin/rollouts`: `usePlatformAdminStore().ensureChecked()`
   then `isAdmin`; on `false`, redirect away as if the route doesn't exist
   (not a "you're not allowed" page — don't advertise the route to
-  non-admins).
+  non-admins). If `ensureChecked()` itself fails (network/query error), the
+  guard treats that the same as `isAdmin = false` and redirects away —
+  acceptable for an internal admin screen, and not a dead end: because the
+  store does not cache a failed check as complete (Section 4, point 6),
+  navigating to `/admin/rollouts` again later retries the check rather than
+  being permanently locked out by one transient failure.
 - `AppSidebar.vue`: "Feature Rollouts" nav item renders only when
   `isAdmin` is true — same pattern as existing `FlagKey`-gated nav items.
 
 **Layout:** a single searchable table, one row per shop, one column per
 `ROLLOUT_FLAG_KEYS` entry (columns are generated from the registry, so
 adding a 4th flag adds a 4th column automatically — no UI code change
-needed), each cell a toggle:
+needed *on the frontend*; the paired SQL/type-regeneration work from
+Section 2 is still required, this only removes the separate frontend
+step), each cell a toggle. When a search returns exactly 100 rows (the
+RPC's cap), the screen shows: *"Showing first 100 matches. Refine your
+search to find a specific shop."* — so an admin doesn't mistake a
+101st-match shop for one that doesn't exist.
 
 ```
 Engineering rollout controls
@@ -522,12 +617,22 @@ Damascus Electronics      ○ OFF         ○ OFF       ○ OFF
 
 - Loads via `list_shops_for_rollout_admin(query)`; debounced search input
   re-queries server-side (per Section 2's server-side-search decision).
-- **Stale-response guard:** each search request carries a monotonically
-  increasing sequence number (`const requestId = ++latestRequestId`); when
-  a response arrives, it's only applied to the visible table if its
-  `requestId` still matches `latestRequestId`. Without this, a fast second
-  keystroke's response arriving before the first keystroke's response would
-  otherwise let the *first* (now-stale) response overwrite the table last.
+- **Stale-response guard, including across a mutation (not just across
+  searches):** each `list_shops_for_rollout_admin` request carries a
+  monotonically increasing sequence number (`const requestId =
+  ++latestRequestId`); a response is only applied to the visible table if
+  its `requestId` still matches `latestRequestId`. This alone handles two
+  fast keystrokes racing each other, but it does **not** by itself handle
+  a *list* request that was already in flight when a *mutation* completes:
+  a search fired just before a toggle click could still return its
+  (pre-mutation) result after the mutation has already committed a new
+  value locally, and a naive "latest list wins" rule would let that stale
+  read silently undo the just-committed mutation. Fix: `latestRequestId` is
+  also incremented on every successful mutation commit, so any list
+  response whose `requestId` predates the mutation is automatically
+  treated as stale and discarded — the same single mechanism covers both
+  cases, rather than needing a second, parallel guard specifically for
+  mutations.
 - **Toggle interaction:** single-click, symmetric for ON and OFF, no
   confirmation modal either direction. Rationale: this screen is also the
   incident-rollback kill switch, and confirmation friction directly
@@ -537,22 +642,38 @@ Damascus Electronics      ○ OFF         ○ OFF       ○ OFF
   added confirm step.
 - **Optimistic update with explicit pending-mutation state:** the component
   holds pending mutations keyed by `(shopId, flagKey)` — e.g. a
-  `pending: Record<string, boolean>` map — separately from the table data
-  loaded from the last `list_shops_for_rollout_admin` response. On click:
-  record the optimistic value in `pending`, disable *only that cell*, and
-  fire `set_rollout_flag`. Render logic per cell is "pending value if
-  present, else server value" — so a table-wide `list_shops_for_rollout_admin`
-  refresh (e.g. from a search re-query) can safely re-render every other
-  cell from fresh server data without touching a cell still in `pending`,
-  and cannot clobber a still-in-flight optimistic value. On RPC success,
-  clear that entry from `pending` (the next server read already reflects
-  the change) and show a brief inline success message ("Dashboard V2
-  enabled for Al Noor Pharmacy" / "...disabled for..."); on failure, clear
-  the `pending` entry, revert the cell to its last known server value, and
-  show an inline error ("Couldn't update Dashboard V2 for Al Noor
-  Pharmacy. Please try again."). A cell already present in `pending` is
-  disabled, so a double-click cannot fire a second overlapping mutation for
-  the same shop/flag pair.
+  `pending: Record<string, boolean>` map — separately from the table's
+  local server-state data (the last-known values from
+  `list_shops_for_rollout_admin`, held in its own local structure, not
+  re-fetched per render). On click: record the optimistic value in
+  `pending`, disable *only that cell*, and fire `set_rollout_flag`. Render
+  logic per cell is "pending value if present, else local server-state
+  value" — so a table-wide `list_shops_for_rollout_admin` refresh (e.g.
+  from a search re-query) can safely re-render every other cell from fresh
+  server data without touching a cell still in `pending`.
+
+  **On RPC success, the pending value must be committed into the local
+  server-state row for that `(shopId, flagKey)` before `pending` is
+  cleared — not merely cleared and left to fall back to whatever the local
+  server-state value already was.** Getting this wrong is a real,
+  easy-to-miss bug: server value is `false`, admin clicks, `pending` says
+  `true` (cell renders `true`), the RPC succeeds, `pending` is cleared —
+  but if the local server-state row was never updated and no fresh list
+  request happens to have landed in the meantime, the cell falls back to
+  the stale local server-state value of `false` and the toggle appears to
+  have silently reverted, even though the server (and the RPC) both
+  correctly recorded `true`. The correct sequence is: RPC resolves
+  successfully → write the new value into the local server-state row for
+  that shop/flag → clear the `pending` entry → cell now renders the
+  correct value from server-state, with no dependency on a fresh list
+  fetch ever happening. Also show a brief inline success message
+  ("Dashboard V2 enabled for Al Noor Pharmacy" / "...disabled for...").
+  On failure: clear the `pending` entry without touching local
+  server-state (which was never changed), so the cell reverts to its
+  last-known-correct value, and show an inline error ("Couldn't update
+  Dashboard V2 for Al Noor Pharmacy. Please try again."). A cell already
+  present in `pending` is disabled, so a double-click cannot fire a second
+  overlapping mutation for the same shop/flag pair.
 - No bulk/global toggle. Each interaction targets exactly one shop × one
   flag — a deliberate guard against an accidental platform-wide change.
 
@@ -569,13 +690,36 @@ Damascus Electronics      ○ OFF         ○ OFF       ○ OFF
    (`information_schema.routine_privileges` assertion, matching WAFI-069's
    grant-narrowing test pattern) — a distinct, complementary check from #1.
 3. **`features = NULL` grandfathering test (the blocking finding from
-   design review):** platform admin calls `set_rollout_flag(shop_id,
+   design review).** Platform admin calls `set_rollout_flag(shop_id,
    'dashboard_v2', true)` against a shop with `features IS NULL`. Assert
    the resulting `features` has `rollout.dashboard_v2 = true` **and**
    `staff_pack = customer_pack = reporting_pack = electronics_pro = true`
    — i.e., resolving the same shop's pack flags through `resolveFlag`
    semantics gives the identical result before and after the write. This
    is the regression test for the NULL-materialization fix in Section 1/2.
+   **This test (and every other "platform admin calls `set_rollout_flag`
+   successfully" test in this suite) must run inside a simulated
+   authenticated-client context** — `set_config('request.jwt.claims',
+   '<json with the admin's sub>', true)`, the same technique
+   `verify_wafi122_role_enforcement.sql` already uses — **not as an
+   unrestricted `postgres`/superuser role.** Run as superuser, this test
+   would pass even if the `PERFORM set_config(...)` trigger-bypass fix in
+   Section 2 were missing entirely, because a superuser session never has
+   `request.jwt.claims` set in the first place and so never triggers
+   `protect_shop_server_only_columns`'s revert — silently hiding the exact
+   production failure mode (RPC reports success, `features` never
+   actually changes) this test exists to catch. Additionally, assert this
+   by **re-reading `shops.features` in a separate `SELECT`** after the
+   `set_rollout_flag` call returns, not merely by checking that the call
+   raised no exception — the bug this guards against is a *silent* no-op,
+   not an error.
+3b. **NULL materialization for `p_enabled = false`:** same setup as test 3,
+   but call `set_rollout_flag(shop_id, 'dashboard_v2', false)`. Assert
+   `staff_pack`/`customer_pack`/`reporting_pack`/`electronics_pro` are
+   still materialized `true` (the shop's entitlement state is unaffected
+   by which boolean was written) while `rollout.dashboard_v2 = false` —
+   documents that materialization is triggered by any rollout write to a
+   `NULL`-features shop, not specifically by an enabling one.
 4. Platform admin, existing shop with pack keys already set (non-NULL
    `features`) → setting one rollout key leaves all pack keys and any
    previously-set rollout keys unchanged (a direct assertion on the full
@@ -614,6 +758,21 @@ Damascus Electronics      ○ OFF         ○ OFF       ○ OFF
     existing trigger still protects `features` against the client
     `shops_update_owner` policy, guarding against the kind of trigger
     regression this codebase has hit twice before (migrations 053/071).
+13. **Trusted-RPC-write-is-not-reverted test, named separately from #3
+    because it's proving the opposite direction of #12:** under the same
+    simulated authenticated-JWT context as #3, after `set_rollout_flag`
+    returns, a fresh `SELECT features FROM shops WHERE id = ...` in the
+    same test confirms the rollout key change actually persisted. #12
+    proves the trigger *does* block an untrusted direct write; #13 proves
+    it does *not* also block the trusted RPC's own write via the
+    `set_config` bypass — both directions of the same trigger's behavior
+    need independent coverage, since a fix to one direction could
+    plausibly break the other.
+
+14. *(Optional, not required):* seed 101 shops, call
+    `list_shops_for_rollout_admin(NULL)`, assert exactly 100 rows return —
+    a direct confirmation of the `LIMIT 100` cap, complementing the UI's
+    cap-message test rather than replacing it.
 
 ### Vitest (client)
 
@@ -642,6 +801,28 @@ Damascus Electronics      ○ OFF         ○ OFF       ○ OFF
    response arrives) before the mutation's RPC resolves — assert the
    pending cell keeps showing its optimistic value through the refresh,
    then reflects the correct final state once the RPC resolves.
+8. **Success-without-refresh keeps the new value (the regression test for
+   the success-path bug found in design review):** local server-state has
+   `dashboard_v2 = false` for a shop; click the toggle; `set_rollout_flag`
+   resolves successfully; **no** separate `list_shops_for_rollout_admin`
+   refresh happens. Assert the cell still renders `true` — i.e., the
+   success handler commits the value into local server-state rather than
+   merely clearing `pending` and silently falling back to the stale `false`
+   that was never updated.
+9. **Stale post-mutation list response does not revert the cell:** a
+   `list_shops_for_rollout_admin` search request is already in flight
+   (returns the shop with `dashboard_v2 = false`); before it resolves, the
+   toggle is clicked and its `set_rollout_flag` mutation succeeds (local
+   state committed to `true`, per test 8); the in-flight search response
+   then arrives carrying the pre-mutation `false`. Assert the cell remains
+   `true` — proving the `latestRequestId`-bump-on-mutation-commit mechanism
+   (Section 5) actually discards the now-stale list response rather than
+   letting it clobber the just-committed value.
+10. Failed mutation after a stale search response: mutation fails (cell
+    reverts, `pending` cleared per the existing failure path); a stale
+    search response carrying an unrelated old value arrives afterward —
+    assert it does not further confuse the cell's already-correct
+    (reverted) final state.
 
 ### Explicitly out of scope (documented, not silently skipped)
 
