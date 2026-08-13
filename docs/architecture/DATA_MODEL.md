@@ -113,7 +113,32 @@ mutated directly by clients):
 | `daily_event_counts` | `apply_daily_event_count()` (WAFI-151, migrations `083`/`085`) from `sale.completed` | `dailyEventCountsProjection.ts` (also the authoritative-count basis `local_today_revenue_projection`'s rebuild path cross-checks against) | ✅ Built |
 | `dashboard_metrics` | — | — | ❌ Explicitly **dropped by design** (duplicate of `profit_cache`, see the WAFI-153 design spec's "Out of scope") |
 | `staff_summary` | — | `useStaffPerformanceMetrics.ts` still does live per-request SQL aggregation over `sales`/`sale_line_items`/`returns`/`cashier_shifts` | ❌ **Evaluated and declined, 2026-08-13.** See below — this is not "not built yet," it's a considered no. |
-| `inventory_summary`, `customer_summary` | — | — | ⏭️ Not built, not evaluated against the same bar as `staff_summary` below — don't assume either would also be declined without actually checking their call-site count/frequency/duplication first |
+| `inventory_summary` | — | `useDeadStockReport.ts`/`useInventoryIntelligence.ts`/`useLowStockAlerts.ts` still do live per-request aggregation | ❌ **Evaluated and declined, 2026-08-13.** See below. |
+| `customer_summary` | — | `useMoneyOwed.ts`/`creditDebtors.ts`/`installmentDues.ts` still do live all-time aggregation | ❌ **Evaluated and declined, 2026-08-14.** See below. |
+
+### Read-model litmus test (WAFI-153, applied going forward)
+
+Before proposing a new read model, check it against the pattern that actually justified
+`profit_cache` (not just "the roadmap names a table"). A strong candidate shows several of:
+
+1. **High-frequency access across important user flows** — hit on every session/every load, not
+   an occasional owner-initiated report.
+2. **Significant duplicated aggregation work** — the same formula independently reimplemented
+   across multiple consumers (not just two composables computing a *conceptually similar* number
+   over *different* row subsets — that's shared-calculation duplication, fixable with a plain
+   helper function, not a CQRS signal).
+3. **Expensive joins/scans or measurable query pressure** — not already mitigated by an existing
+   index/perf fix.
+4. **A stable aggregate that naturally fits an event-maintained `(shop_id, day)`-shaped row** —
+   not something that needs today's live product/current-state snapshot.
+5. **An operational payoff that justifies the projection/rebuild/recovery complexity** — a table,
+   apply function, subscriber, rebuild path, and tests are real ongoing maintenance cost for a
+   small part-time team; the query-time savings has to outweigh that, concretely, not abstractly.
+
+`profit_cache` hit several of these. `staff_summary` and `inventory_summary` (below) hit almost
+none. Don't build a read model on fewer than that — and record the evaluation either way (built
+or declined), so the next person doesn't have to re-derive the reasoning from scratch, and doesn't
+assume "not built" means "not yet gotten to."
 
 **`staff_summary` — evaluated and declined, not deferred.** The workload behind
 `useStaffPerformanceMetrics.ts` was checked against the same criteria that justified building
@@ -132,20 +157,73 @@ maintainers). **Revisit only if** access frequency, consumer count, data volume,
 computation materially increases from today's shape — not on a schedule, and not just because the
 roadmap names it.
 
-A real, separate, and much smaller issue was found in the same investigation and is **explicitly
-not** part of this decision or bundled into any future `staff_summary` work: the return-COGS-
-reversal query's inline `sale_line_items` subquery (`useStaffPerformanceMetrics.ts` lines 77-92)
-has no `shop_id` or date-range predicate of its own, so it scans the full historical table
-regardless of the requested period or shop — a pre-existing pattern inherited from
-`useDashboardMetrics.ts`'s own WAFI-005 precedent, not new to this composable. This is a
-query-scoping/indexing fix, tracked as its own separate bounded hardening task, not evidence
-that a read model is needed — conflating the two would let a slow query justify CQRS machinery
-it doesn't actually call for.
+A real, separate, and much smaller issue was found in the same investigation and was
+**deliberately not treated as evidence for this decision**: the return-COGS-reversal query's
+inline `sale_line_items` subquery (`useStaffPerformanceMetrics.ts`) had no `shop_id` predicate of
+its own, so it scanned the full historical table regardless of the requested period or shop — a
+pre-existing pattern inherited from `useDashboardMetrics.ts`'s own WAFI-005 precedent, duplicated
+across three more files (`useBucketBreakdown.ts`, `useProfitTrend.ts`, `useSalesChart.ts`). Fixed
+directly (all four, `shop_id`-scoped, 2026-08-13) as a plain query-scoping fix — not bundled into
+this decision, since a slow query is a reason to scope the query, not a reason to build CQRS
+machinery around it.
+
+**`inventory_summary` — evaluated and declined, 2026-08-13**, against the same litmus test above.
+Three composables do live per-request inventory aggregation: `useDeadStockReport.ts` (dead-stock
+detection + "frozen capital" total, `ReportsPage.vue`), `useInventoryIntelligence.ts` (thin
+wrapper over the same, `Dashboard2Screen.vue`'s inventory card), and `useLowStockAlerts.ts`
+(low-stock count, `HomePage.vue`) — 3 call sites total, gated by `can_view_reports` (owner-default,
+manager-grantable — broader reach than `staff_summary`'s owner-only gate, including the
+every-session `HomePage.vue`). But the decisive signals are still missing: no full duplication of
+one aggregate across consumers (only a *partial* overlap — `useDeadStockReport.ts` and
+`useExportData.ts` both compute a stock-value figure, `current_stock × cost_price_usd`, but over
+different row subsets — dead-stock-only vs. all-active-products — so this is shared-formula
+duplication, not read-model duplication), no unscoped/expensive join (the dead-stock query is
+already `shop_id`-scoped with a single `GROUP BY` join, carrying an explicit WAFI-108 perf-fix
+comment), and no N+1. The CQRS build cost (table, apply function, subscriber, rebuild/recovery,
+tests) isn't justified by broader reach alone when the query itself is already structurally
+reasonable. **If the stock-value duplication is worth addressing**, do it as a small shared
+calculation helper (e.g. `stockValueUsd(product)`) consumed by both `useDeadStockReport.ts` and
+`useExportData.ts` — not as a read model. **Revisit `inventory_summary` only if** inventory
+aggregation becomes materially more expensive, gains real cross-consumer duplication of one
+aggregate, or gains substantially more high-frequency consumers than today's three.
 
 **`useDashboardMetrics.ts` (the old live-aggregation composable this replaced) and its
 `missingCostCount` extraction `useMissingCostCount.ts` were both deleted 2026-08-13** — see
 the WAFI-153 design spec's "Post-implementation status" section for the full migration/
 retirement history, including why `missingCostCount` was retired rather than migrated.
+
+**`customer_summary` — evaluated and declined, 2026-08-14**, deferring to an *existing* decision
+rather than re-deciding from scratch. `useMoneyOwed.ts` (1 call site, `MoneyOwedPage.vue`,
+`can_view_reports`-gated, not on Home) combines `creditDebtors.ts` and `installmentDues.ts`, both
+of which scan **all** customers/all-time — there's no natural per-day window for an AR/debt
+aggregate the way there is for daily sales metrics, so this candidate doesn't fit the
+`profit_cache` `(shop_id, day)` shape at all even before weighing frequency. Two real signals
+were found here, stronger than either sibling candidate: the credit-balance formula (`SUM(credit
+sales) - SUM(payments) - SUM(returns...) - SUM(store-credit refunds)`) is fully reimplemented as
+separate SQL in three places (`creditDebtors.ts`, `useCustomerBalance.ts`, `useCustomers.ts`), and
+`creditDebtors.ts` runs a genuine N+1 (two extra per-customer queries in a loop for oldest-unpaid-
+sale/last-payment-date). Despite both, the decision is still decline: `docs/superpowers/specs/
+2026-07-28-wafi-017-money-owed-design.md`'s own "Performance expectations" section already
+evaluated and explicitly rejected pre-aggregation/caching for this exact feature — "no
+pre-aggregation or caching is expected to be necessary at current WAFI scale; measure before
+reaching for either if a shop's customer count grows large enough to matter," proven at "dozens to
+a few hundred customers/plans per shop." That decision stands; a duplicated formula and an
+accepted N+1 are code-quality signals, not new evidence that overturns an explicit prior
+architecture call — they're addressed below as their own follow-ups, not as WAFI-153 work, and
+not as grounds to build a read model WAFI-017 already declined.
+
+**Follow-ups surfaced by this WAFI-153 evaluation pass, deliberately NOT implemented as part of
+WAFI-153 (tracked here so they aren't lost, not forgotten as "already handled"):**
+- **Stock-value duplication**: `useDeadStockReport.ts` and `useExportData.ts` each compute
+  `current_stock × cost_price_usd` independently over different row subsets. A shared
+  `stockValueUsd(product)`-style helper would remove the drift risk without any projection
+  infrastructure.
+- **Credit-balance duplication**: `creditDebtors.ts`, `useCustomerBalance.ts`, and
+  `useCustomers.ts` each hand-write the same credit-balance SQL formula. A shared
+  helper/query-fragment would reduce drift.
+- **`creditDebtors.ts`'s N+1**: known, and explicitly accepted at current scale by the WAFI-017
+  design spec — leave alone unless customer volume or measured performance crosses that spec's
+  own stated revisit threshold.
 
 **Two revenue sources for "today", intentionally, not redundantly:**
 `local_today_revenue_projection` (client-local-only table, no server counterpart) is written
