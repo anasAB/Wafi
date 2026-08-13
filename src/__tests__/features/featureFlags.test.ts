@@ -68,3 +68,26 @@ describe('useFlagsStore', () => {
     expect(store.isEnabled('reporting_pack')).toBe(true)
   })
 })
+
+import { resolveRollout, ROLLOUT_FLAG_KEYS } from '@/features/flags/flagRegistry'
+
+describe('flagRegistry.resolveRollout (WAFI-155 semantics)', () => {
+  it('is fail-closed for every non-true rollout value', () => {
+    const cases: unknown[] = [undefined, null, false, 0, 'true', {}, []]
+    for (const rollout of cases) {
+      expect(resolveRollout({ rollout } as any, 'dashboard_v2')).toBe(false)
+    }
+  })
+
+  it('resolves true only when the value is the literal boolean true', () => {
+    expect(resolveRollout({ rollout: { dashboard_v2: true } }, 'dashboard_v2')).toBe(true)
+  })
+
+  it('resolves false when features itself is null', () => {
+    expect(resolveRollout(null, 'dashboard_v2')).toBe(false)
+  })
+
+  it('exposes exactly the three documented rollout keys', () => {
+    expect(ROLLOUT_FLAG_KEYS).toEqual(['dashboard_v2', 'pos_brain', 'insights'])
+  })
+})

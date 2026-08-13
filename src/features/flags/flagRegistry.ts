@@ -38,3 +38,26 @@ export function resolveFlag(features: Record<string, unknown> | null, key: FlagK
   const v = features[key]
   return v === true                            // missing/false/garbage → off
 }
+
+/**
+ * WAFI-155: engineering rollout flags -- "should this implementation
+ * currently run for this shop?", independent of WAFI-131's pack
+ * entitlements above ("does the shop's subscription include this?").
+ * Deliberately a separate type/resolver, never merged into FlagKey/
+ * resolveFlag: that would risk WAFI-131's null-blob "grandfathered -> all
+ * on" pack semantics leaking into rollout-flag semantics, which must
+ * always default closed for safety.
+ */
+export const ROLLOUT_FLAG_KEYS = ['dashboard_v2', 'pos_brain', 'insights'] as const
+export type RolloutFlagKey = typeof ROLLOUT_FLAG_KEYS[number]
+
+/** Fail-closed: missing/absent/malformed rollout config -> false. Only the
+ *  literal boolean `true` ever enables a rollout. */
+export function resolveRollout(
+  features: Record<string, unknown> | null,
+  key: RolloutFlagKey,
+): boolean {
+  const rollout = features?.rollout
+  if (typeof rollout !== 'object' || rollout === null) return false
+  return (rollout as Record<string, unknown>)[key] === true
+}
