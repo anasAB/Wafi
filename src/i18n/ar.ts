@@ -19,6 +19,8 @@ export default {
     settings:   'الإعدادات',
     more:       'المزيد',
     closeShift: 'إغلاق الوردية',
+    // WAFI-155: platform-admin-only entry, not part of the shop-role nav.
+    featureRollouts: 'إدارة الميزات',
   },
   settings: {
     title:           'الإعدادات',

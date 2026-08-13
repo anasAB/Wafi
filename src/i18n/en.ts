@@ -19,6 +19,8 @@ export default {
     settings:   'Settings',
     more:       'More',
     closeShift: 'Close shift',
+    // WAFI-155: platform-admin-only entry, not part of the shop-role nav.
+    featureRollouts: 'Feature Rollouts',
   },
   settings: {
     title:           'Settings',

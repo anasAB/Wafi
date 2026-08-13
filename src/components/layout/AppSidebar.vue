@@ -4,6 +4,7 @@ import { useRoute, RouterLink } from 'vue-router'
 import { useI18n }         from 'vue-i18n'
 import { useSessionStore } from '@/store/session.store'
 import { useFlagsStore } from '@/features/flags/flags.store'
+import { usePlatformAdminStore } from '@/features/admin/platformAdmin.store'
 import type { FlagKey } from '@/features/flags/flagRegistry'
 import ZReportScreen       from '@/features/shifts/components/ZReportScreen.vue'
 import OperatorSwitchAction from '@/features/staff/components/OperatorSwitchAction.vue'
@@ -47,6 +48,12 @@ const allNavItems: NavItem[] = [
 
 const flags = useFlagsStore()
 onMounted(() => { void flags.ensureLoaded() })
+
+// WAFI-155: platform-admin is orthogonal to the shop staff/role model above
+// (permission/feature), so this entry is rendered separately from navItems
+// rather than folded into allNavItems.
+const platformAdmin = usePlatformAdminStore()
+onMounted(() => { void platformAdmin.ensureChecked() })
 
 const navItems = computed(() => {
   const perms   = session.permissions
@@ -175,6 +182,22 @@ function isActive(href: string | null): boolean {
           </svg>
         </span>
         <span class="nav-text">{{ t('nav.settings') }}</span>
+      </RouterLink>
+
+      <!-- WAFI-155: platform-admin-only entry, gated on platformAdmin.isAdmin
+           alone -- a different axis than the staff permission/pack-flag
+           gating that governs every other item in this sidebar. -->
+      <RouterLink
+        v-if="platformAdmin.isAdmin"
+        to="/admin/rollouts"
+        :class="['nav-item', route.path.startsWith('/admin/rollouts') ? 'nav-item-active' : 'nav-item-idle']"
+      >
+        <span :class="['nav-icon-wrap', route.path.startsWith('/admin/rollouts') ? 'nav-icon-active' : 'nav-icon-idle']">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 3v18M3 4.5h13.5l-2.25 3.75L16.5 12H3" />
+          </svg>
+        </span>
+        <span class="nav-text">{{ t('nav.featureRollouts') }}</span>
       </RouterLink>
 
       <!-- Switch the active operator without closing the shift. -->

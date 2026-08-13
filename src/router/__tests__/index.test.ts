@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 import type { Staff } from '@/features/staff/staff.types'
 import { OWNER_PERMISSIONS } from '@/features/staff/staff.types'
 
@@ -27,11 +28,18 @@ vi.mock('@/data/supabase/client', () => ({
   supabase: {
     auth: {
       getSession: vi.fn(async () => ({ data: { session: { user: { id: 'owner-1' } } } })),
+      onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: () => {} } } })),
     },
+    from: () => ({
+      select: () => ({
+        eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }),
+      }),
+    }),
   },
 }))
 
 import router from '../index'
+import { usePlatformAdminStore } from '@/features/admin/platformAdmin.store'
 
 const owner: Staff = {
   id: 'owner-1',
@@ -99,5 +107,28 @@ describe('router meta.permission wiring for dashboard route (WAFI-146)', () => {
     const route = router.getRoutes().find(r => r.path === '/dashboard')
     expect(route).toBeDefined()
     expect(route?.meta).toEqual({ permission: 'can_view_reports', feature: 'reporting_pack' })
+  })
+})
+
+describe('router platform-admin guard for /admin/rollouts (WAFI-155)', () => {
+  beforeEach(async () => {
+    setActivePinia(createPinia())
+    state.activeStaff = owner
+    state.isShiftOpen = false
+    await router.replace('/')
+  })
+
+  it('redirects away from /admin/rollouts for a non-platform-admin', async () => {
+    const admin = usePlatformAdminStore()
+    vi.spyOn(admin, 'ensureChecked').mockResolvedValue(false)
+    await router.push('/admin/rollouts')
+    expect(router.currentRoute.value.path).not.toBe('/admin/rollouts')
+  })
+
+  it('allows a platform admin to reach /admin/rollouts', async () => {
+    const admin = usePlatformAdminStore()
+    vi.spyOn(admin, 'ensureChecked').mockResolvedValue(true)
+    await router.push('/admin/rollouts')
+    expect(router.currentRoute.value.path).toBe('/admin/rollouts')
   })
 })

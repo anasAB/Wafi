@@ -6,6 +6,7 @@ import { useFlagsStore } from '@/features/flags/flags.store'
 import type { FlagKey } from '@/features/flags/flagRegistry'
 import type { StaffPermissions } from '@/features/staff/staff.types'
 import { supabase } from '@/data/supabase/client'
+import { usePlatformAdminStore } from '@/features/admin/platformAdmin.store'
 
 const SHIFT_OPEN_REDIRECT = '/shifts/history'
 
@@ -77,6 +78,9 @@ const router = createRouter({
     // WAFI-131: upgrade teaser for pack-gated features
     { path: '/feature-locked',  component: () => import('@/features/flags/FeatureLockedScreen.vue') },
     { path: '/onboarding',      component: () => import('@/pages/OnboardingPage.vue') },
+    // WAFI-155: platform-admin-only feature-flag rollout console. Not part
+    // of the shop staff/role model -- gated in beforeEach below.
+    { path: '/admin/rollouts',  component: () => import('@/features/admin/RolloutAdminScreen.vue'), meta: { requiresPlatformAdmin: true } },
     { path: '/shifts/history',  component: () => import('@/features/shifts/components/ShiftHistoryScreen.vue') },
     { path: '/shifts/:id',      component: () => import('@/features/shifts/components/ShiftDetailScreen.vue') },
     { path: '/setup-owner',     component: () => import('@/features/shifts/components/OwnerSetupScreen.vue') },
@@ -118,6 +122,18 @@ router.beforeEach(async (to) => {
   }
   if (PUBLIC_PATHS.includes(to.path)) {
     return true
+  }
+
+  // WAFI-155: platform-admin gate, independent of the staff/permission
+  // model above -- a platform admin need not have a staff row anywhere.
+  // Redirect away as if the route doesn't exist, not to a "not allowed"
+  // page, so the route isn't advertised to non-admins. A failed check
+  // (network error) is treated the same as isAdmin=false; because the
+  // store never caches a failed check as complete, navigating here again
+  // later retries rather than permanently locking the admin out.
+  if (to.meta.requiresPlatformAdmin) {
+    const isAdmin = await usePlatformAdminStore().ensureChecked()
+    return isAdmin ? true : '/'
   }
 
   const required = to.meta.permission as keyof StaffPermissions | undefined
