@@ -4,7 +4,7 @@
 -- Run via: npx supabase test db
 
 BEGIN;
-SELECT plan(8);
+SELECT plan(9);
 
 -- Two shops, mirroring wafi140_events_rls.test.sql's harness: an auth.users row
 -- per owner, then a shops row whose owner_user_id maps that user to
@@ -43,11 +43,18 @@ SELECT is(
   1,
   'first apply creates a row with count = 1'
 );
+-- projection_processed_events deliberately has no client-facing grant at all
+-- (083's own comment: "only ever touched by SECURITY DEFINER functions ...
+-- never queried directly by anon/authenticated") -- read it as the
+-- unrestricted test role, not as 'authenticated', which would otherwise hit
+-- a genuine permission-denied error here.
+RESET ROLE;
 SELECT is(
   (SELECT count(*)::integer FROM public.projection_processed_events WHERE projection_name = 'daily_event_counts' AND event_id = 'a1000000-0000-0000-0000-000000000001'),
   1,
   'ledger records exactly one entry for this event'
 );
+SET LOCAL ROLE authenticated;
 
 -- 2. Repeated calls for the SAME event ID are a no-op (fixes bug 2: cross-device
 -- double-counting of the same event, simulated here as a repeated call).

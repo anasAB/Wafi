@@ -17,7 +17,7 @@ DELETE FROM public.shops WHERE owner_user_id = '11111111-1111-1111-1111-11111111
 INSERT INTO public.shops (id, owner_user_id, name, timezone)
   VALUES ('22222222-2222-2222-2222-222222222222', '11111111-1111-1111-1111-111111111111', 'Test Shop', 'UTC');
 
-INSERT INTO public.devices (id, shop_id, device_code)
+INSERT INTO public.devices (id, shop_id, code)
   VALUES ('33333333-3333-3333-3333-333333333333', '22222222-2222-2222-2222-222222222222', 'DEV-1');
 INSERT INTO public.products (id, shop_id, name_ar, price_usd)
   VALUES ('44444444-4444-4444-4444-444444444444', '22222222-2222-2222-2222-222222222222', 'منتج تجريبي', 0);

@@ -61,6 +61,12 @@ SELECT is(
 );
 
 -- 3. Ledger entries for day-12's event are untouched (not deleted/reconciled by the day-11 rebuild).
+-- projection_processed_events has no client-facing grant at all (083's own
+-- design: only ever touched by SECURITY DEFINER functions) -- service_role
+-- has no direct table privilege on it either, only EXECUTE on the
+-- SECURITY DEFINER rebuild function itself, so read it as the unrestricted
+-- test role rather than as service_role.
+RESET ROLE;
 SELECT ok(
   (SELECT count(*) FROM projection_processed_events pe
      JOIN events e ON e.id = pe.event_id
@@ -68,6 +74,7 @@ SELECT ok(
        AND pe.projection_name = 'daily_event_counts') = 1,
   'rebuilding one day does not affect ledger entries for an unrelated day'
 );
+SET LOCAL ROLE service_role;
 
 -- 4. Re-running the same rebuild is idempotent -- same result, not doubled.
 SELECT rebuild_daily_event_counts_scope('c0000000-0000-0000-0000-000000000001', '2026-08-11', '2026-08-11');
@@ -82,9 +89,23 @@ SELECT is(
 --    rebuild function whose validation check is forced to fail unconditionally
 --    (rather than trying to engineer a real negative count through normal
 --    inputs), and assert the real table is byte-for-byte unchanged afterward.
+-- SECURITY DEFINER, mirroring the real rebuild_daily_event_counts_scope
+-- (085) it stands in for: it directly touches daily_event_counts and
+-- projection_processed_events, neither of which grants to service_role
+-- directly (only EXECUTE on the real, DEFINER function). SECURITY DEFINER
+-- only elevates privilege when the function's OWNER differs from its
+-- caller -- the current role is still service_role from line 38 above, so
+-- creating it here would make service_role both definer AND invoker,
+-- buying no elevation at all (found the hard way: DELETE still failed
+-- with permission denied even with SECURITY DEFINER present). Reset to
+-- the unrestricted test role for the CREATE FUNCTION itself, matching how
+-- the real 085 migration's function was created (by the migration-runner
+-- role, not service_role), then switch back so the throws_ok call below
+-- still exercises this from a service_role caller.
+RESET ROLE;
 CREATE OR REPLACE FUNCTION pg_temp.rebuild_daily_event_counts_scope_force_fail(
   p_shop_id uuid, p_from date, p_to date
-) RETURNS void LANGUAGE plpgsql AS $$
+) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
   DELETE FROM public.daily_event_counts WHERE shop_id = p_shop_id AND day BETWEEN p_from AND p_to;
   DELETE FROM public.projection_processed_events pe
@@ -93,6 +114,7 @@ BEGIN
   RAISE EXCEPTION 'forced failure for rollback test';
 END;
 $$;
+SET LOCAL ROLE service_role;
 
 SELECT row_to_json(dec.*) INTO TEMP TABLE pre_rebuild_snapshot
 FROM public.daily_event_counts dec WHERE shop_id = 'c0000000-0000-0000-0000-000000000001' AND day = '2026-08-11';
@@ -102,9 +124,14 @@ SELECT throws_ok(
   'P0001', 'forced failure for rollback test',
   'a forced failure after delete-but-before-commit raises as expected'
 );
+-- pre_rebuild_snapshot has exactly one column, named after the expression
+-- that created it (`row_to_json`), already holding the captured row as a
+-- JSON object -- re-wrapping it with row_to_json(pre_rebuild_snapshot.*)
+-- nests it one level deeper than ->>'count' expects, so that always read
+-- NULL regardless of the real prior value. Read the column directly.
 SELECT is(
   (SELECT count FROM daily_event_counts WHERE shop_id = 'c0000000-0000-0000-0000-000000000001' AND day = '2026-08-11'),
-  (SELECT (row_to_json(pre_rebuild_snapshot.*)->>'count')::integer FROM pre_rebuild_snapshot),
+  (SELECT (row_to_json->>'count')::integer FROM pre_rebuild_snapshot),
   'the real daily_event_counts row is completely unchanged after the forced-failure rollback -- the DELETE inside the failed call never persisted'
 );
 
@@ -117,7 +144,14 @@ SELECT is(
 --    handle correctly regardless of how such a row came to exist.
 INSERT INTO events (id, type, entity_id, payload, payload_version, staff_id, shop_id, occurred_at, created_at)
 VALUES ('c1000000-0000-0000-0000-000000000004', 'sale.completed', 'sale-c4', '{}', 1, 'c0000000-0000-0000-0000-000000000002', 'c0000000-0000-0000-0000-000000000001', '2026-08-05T10:00:00+00:00', now());
+-- events is genuinely append-only in production (074): only SELECT/INSERT
+-- are ever granted, to any role, service_role included -- this UPDATE is
+-- pure test-fixture manipulation to construct an artificial edge case
+-- (per the comment above), not something service_role can or should do
+-- for real, so run it as the unrestricted test role.
+RESET ROLE;
 UPDATE events SET event_projection_day = '2026-08-11' WHERE id = 'c1000000-0000-0000-0000-000000000004';
+SET LOCAL ROLE service_role;
 
 SELECT rebuild_daily_event_counts_scope('c0000000-0000-0000-0000-000000000001', '2026-08-11', '2026-08-11');
 SELECT is(

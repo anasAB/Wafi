@@ -31,9 +31,14 @@ VALUES ('33333333-3333-3333-3333-333333333333', '22222222-2222-2222-2222-2222222
   '{"saleId":"s1","totalUsd":19.99,"totalSyp":0,"cogsUsd":10.00,"discountUsd":0,"hasCostlessLine":false}',
   2, now(), '11111111-1111-1111-1111-111111111111');
 
-SET LOCAL ROLE service_role;
+-- _apply_profit_cache has EXECUTE revoked from PUBLIC (086) and is only
+-- ever reachable via the public apply_profit_cache wrapper or the
+-- SECURITY DEFINER rebuild function, both of which run as their own
+-- owner regardless of caller grants -- there is no production path where
+-- service_role calls it directly, so (mirroring wafi151's convention)
+-- this internal-only setup call runs as the unrestricted test role, not
+-- service_role, which has no grant on it either.
 SELECT public._apply_profit_cache('33333333-3333-3333-3333-333333333333');
-RESET ROLE;
 
 -- Test 1: cents conversion is exact, not truncated (19.99 -> 1999, never 1900).
 SELECT is(
@@ -49,9 +54,7 @@ SELECT is(
 );
 
 -- Test 3: redelivery is a no-op (same event applied twice -> one increment, one ledger row).
-SET LOCAL ROLE service_role;
 SELECT public._apply_profit_cache('33333333-3333-3333-3333-333333333333');
-RESET ROLE;
 SELECT is(
   (SELECT revenue_usd FROM public.profit_cache WHERE shop_id = '22222222-2222-2222-2222-222222222222'),
   1999::bigint, 'redelivering the same event_id does not double-increment'
@@ -61,12 +64,10 @@ SELECT is(
 INSERT INTO public.events (id, shop_id, type, entity_id, payload, payload_version, occurred_at, staff_id)
 VALUES ('44444444-4444-4444-4444-444444444444', '22222222-2222-2222-2222-222222222222', 'sale.completed', 's2',
   '{"saleId":"s2","totalUsd":5.00,"totalSyp":0}', 1, now(), '11111111-1111-1111-1111-111111111111');
-SET LOCAL ROLE service_role;
 SELECT lives_ok(
   $$ SELECT public._apply_profit_cache('44444444-4444-4444-4444-444444444444') $$,
   'a payload_version=1 event does not raise'
 );
-RESET ROLE;
 SELECT is(
   (SELECT revenue_usd FROM public.profit_cache WHERE shop_id = '22222222-2222-2222-2222-222222222222'),
   1999::bigint, 'a payload_version=1 event produces no profit_cache mutation'
@@ -82,24 +83,20 @@ INSERT INTO public.events (id, shop_id, type, entity_id, payload, payload_versio
 VALUES ('55555555-5555-5555-5555-555555555555', '22222222-2222-2222-2222-222222222222', 'sale.completed', 's3',
   '{"saleId":"s3","totalUsd":5.00,"totalSyp":0,"cogsUsd":0,"discountUsd":0,"hasCostlessLine":false}',
   3, now(), '11111111-1111-1111-1111-111111111111');
-SET LOCAL ROLE service_role;
 SELECT throws_ok(
   $$ SELECT public._apply_profit_cache('55555555-5555-5555-5555-555555555555') $$,
   'P0004', NULL, 'a payload_version > 2 event raises loudly'
 );
-RESET ROLE;
 
 -- Test 6: a version=2 sale.completed missing a required field (cogsUsd) raises P0005, no partial mutation.
 INSERT INTO public.events (id, shop_id, type, entity_id, payload, payload_version, occurred_at, staff_id)
 VALUES ('66666666-6666-6666-6666-666666666666', '22222222-2222-2222-2222-222222222222', 'sale.completed', 's4',
   '{"saleId":"s4","totalUsd":5.00,"totalSyp":0,"discountUsd":0,"hasCostlessLine":false}',
   2, now(), '11111111-1111-1111-1111-111111111111');
-SET LOCAL ROLE service_role;
 SELECT throws_ok(
   $$ SELECT public._apply_profit_cache('66666666-6666-6666-6666-666666666666') $$,
   'P0005', NULL, 'a version=2 event missing a required field raises loudly'
 );
-RESET ROLE;
 SELECT is(
   (SELECT revenue_usd FROM public.profit_cache WHERE shop_id = '22222222-2222-2222-2222-222222222222'),
   1999::bigint, 'the missing-field event caused no partial mutation to the existing row'
@@ -111,9 +108,7 @@ VALUES ('77777777-7777-7777-7777-777777777777', '22222222-2222-2222-2222-2222222
   '{"saleId":"s5","totalUsd":8.00,"totalSyp":0,"cogsUsd":0,"discountUsd":0,"hasCostlessLine":true}',
   2, '2026-08-10T10:00:00Z', '11111111-1111-1111-1111-111111111111');
 UPDATE public.events SET event_projection_day = '2026-08-10' WHERE id = '77777777-7777-7777-7777-777777777777';
-SET LOCAL ROLE service_role;
 SELECT public._apply_profit_cache('77777777-7777-7777-7777-777777777777');
-RESET ROLE;
 SELECT is(
   (SELECT costless_sale_count FROM public.profit_cache WHERE shop_id = '22222222-2222-2222-2222-222222222222' AND day = '2026-08-10'),
   1, 'sale.completed increments costless_sale_count on its own day'
@@ -124,9 +119,7 @@ VALUES ('88888888-8888-8888-8888-888888888888', '22222222-2222-2222-2222-2222222
   '{"returnId":"r1","saleId":"s5","refundAmountUsd":8.00,"cogsReversalUsd":0,"isFullReturn":true,"saleWasCostless":true,"originalSaleProjectionDay":"2026-08-10"}',
   2, '2026-08-20T10:00:00Z', '11111111-1111-1111-1111-111111111111');
 UPDATE public.events SET event_projection_day = '2026-08-20' WHERE id = '88888888-8888-8888-8888-888888888888';
-SET LOCAL ROLE service_role;
 SELECT public._apply_profit_cache('88888888-8888-8888-8888-888888888888');
-RESET ROLE;
 SELECT is(
   (SELECT costless_sale_count FROM public.profit_cache WHERE shop_id = '22222222-2222-2222-2222-222222222222' AND day = '2026-08-10'),
   0, 'a full return of a costless sale decrements the SALE''S day (Aug 10), not the return''s day (Aug 20)'
@@ -142,9 +135,7 @@ VALUES ('99999999-9999-9999-9999-999999999999', '22222222-2222-2222-2222-2222222
   '{"returnId":"r2","saleId":"s6","refundAmountUsd":5.00,"cogsReversalUsd":0,"isFullReturn":true,"saleWasCostless":true,"originalSaleProjectionDay":"2026-09-01"}',
   2, '2026-09-05T10:00:00Z', '11111111-1111-1111-1111-111111111111');
 UPDATE public.events SET event_projection_day = '2026-09-05' WHERE id = '99999999-9999-9999-9999-999999999999';
-SET LOCAL ROLE service_role;
 SELECT public._apply_profit_cache('99999999-9999-9999-9999-999999999999');
-RESET ROLE;
 SELECT is(
   (SELECT costless_sale_count FROM public.profit_cache WHERE shop_id = '22222222-2222-2222-2222-222222222222' AND day = '2026-09-01'),
   -1, 'return-before-sale seeds -1 via upsert, never silently loses the decrement'
@@ -155,9 +146,7 @@ VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '22222222-2222-2222-2222-2222222
   '{"saleId":"s6","totalUsd":5.00,"totalSyp":0,"cogsUsd":0,"discountUsd":0,"hasCostlessLine":true}',
   2, '2026-09-01T10:00:00Z', '11111111-1111-1111-1111-111111111111');
 UPDATE public.events SET event_projection_day = '2026-09-01' WHERE id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
-SET LOCAL ROLE service_role;
 SELECT public._apply_profit_cache('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
-RESET ROLE;
 SELECT is(
   (SELECT costless_sale_count FROM public.profit_cache WHERE shop_id = '22222222-2222-2222-2222-222222222222' AND day = '2026-09-01'),
   0, 'sale.completed arriving after its own return nets to 0 (return-first ordering)'

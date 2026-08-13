@@ -86,7 +86,7 @@ SELECT is((SELECT count(*) FROM public.daily_event_counts)::int, 0, 'Shop 2 owne
 SELECT throws_ok(
   $$INSERT INTO public.events (type, entity_id, payload, staff_id, shop_id, occurred_at)
     VALUES ('sale.completed', 'x', '{}', 'e0000000-0000-0000-0000-000000000005', 'e0000000-0000-0000-0000-000000000001', now())$$,
-  '42501',
+  '42501', NULL,
   'Shop 2 owner cannot insert event as Shop 1'
 );
 RESET ROLE;
@@ -99,7 +99,7 @@ SELECT set_config('request.jwt.claims',
 SET LOCAL ROLE authenticated;
 SELECT throws_ok(
   $$UPDATE public.events SET entity_id = 'changed' WHERE type = 'sale.completed'$$,
-  '42501',
+  '42501', NULL,
   'events is append-only -- owning shop cannot UPDATE'
 );
 RESET ROLE;
@@ -136,7 +136,7 @@ END $$;
 SELECT throws_ok(
   $$INSERT INTO public.events (type, entity_id, payload, staff_id, shop_id, occurred_at)
     VALUES ('sale.completed', 'rl-501', '{}', 'e0000000-0000-0000-0000-000000000005', 'e0000000-0000-0000-0000-000000000001', now())$$,
-  'P0001',
+  'P0001', NULL,
   'the 501st insert within a minute for the same shop is rate-limited'
 );
 
@@ -176,9 +176,12 @@ RESET ROLE;
 
 -- Registry/SQL cross-check (design spec §3, closes the "ELSE true" hazard): extract the
 -- set of `type` string literals appearing in a WHEN branch of events_select_scoped's live
--- USING expression, and assert it is EXACTLY the 4-element set that
+-- USING expression, and assert it is EXACTLY the 5-element set that
 -- EVENT_SENSITIVITY (src/services/events/domainEvent.types.ts) marks non-'public'. If a
 -- future contributor adds an event to one list without the other, this assertion fails.
+-- staff.pin_locked_out added by 081_events_pin_locked_out_rls.sql -- this test's expected
+-- list was never updated to match at the time, silently leaving the cross-check unable
+-- to catch a real future drift on that 5th type until it was noticed here.
 SELECT set_eq(
   $$
   SELECT unnest(regexp_matches(
@@ -189,7 +192,7 @@ SELECT set_eq(
   WHERE pg_class.relname = 'events' AND pg_policy.polname = 'events_select_scoped'
   $$,
   $$
-  VALUES ('staff.ledger_entry_added'), ('settlement.paid'), ('expense.recorded'), ('product.cost_updated')
+  VALUES ('staff.ledger_entry_added'), ('settlement.paid'), ('expense.recorded'), ('product.cost_updated'), ('staff.pin_locked_out')
   $$,
   'events_select_scoped''s gated type set matches EVENT_SENSITIVITY''s non-public keys exactly'
 );
