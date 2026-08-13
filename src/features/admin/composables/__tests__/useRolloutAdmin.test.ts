@@ -133,4 +133,29 @@ describe('useRolloutAdmin: toggle mutation', () => {
 
     expect(admin.valueFor(admin.shops.value[0], 'dashboard_v2')).toBe(true)
   })
+
+  it('does not strand loading=true when a mutation-caused counter bump invalidates an in-flight refresh', async () => {
+    rpcMock.mockResolvedValueOnce({ data: [row({ shop_id: 's1', dashboard_v2: false })], error: null })
+    const admin = useRolloutAdmin()
+    await admin.refresh()
+
+    // A refresh starts and hasn't resolved yet.
+    let resolveRefresh: (v: unknown) => void = () => {}
+    rpcMock.mockReturnValueOnce(new Promise(r => { resolveRefresh = r }))
+    const inFlightRefresh = admin.refresh()
+    expect(admin.loading.value).toBe(true)
+
+    // An independent toggle resolves successfully, bumping latestRequestId
+    // and causing the in-flight refresh above to be treated as stale.
+    rpcMock.mockResolvedValueOnce({ data: null, error: null })
+    await admin.toggle('s1', 'dashboard_v2')
+
+    // The stale refresh's RPC now resolves. Its data is discarded (stale),
+    // but loading must still settle back to false -- it must never be
+    // stranded true just because the response was superseded.
+    resolveRefresh({ data: [row({ shop_id: 's1', dashboard_v2: false })], error: null })
+    await inFlightRefresh
+
+    expect(admin.loading.value).toBe(false)
+  })
 })
