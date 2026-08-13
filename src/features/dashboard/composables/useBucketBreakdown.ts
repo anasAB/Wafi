@@ -66,6 +66,11 @@ export function useBucketBreakdown() {
          FROM returns WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?`,
         [device.shopId, start, end],
       ),
+      // WAFI-153 (staff_summary evaluation follow-up): subquery scoped to shop_id
+      // (sale_line_items.shop_id, indexed via idx_sale_lines_shop) so this no
+      // longer scans every shop's entire sale_line_items history on every call.
+      // Not date-scoped — the original sale can predate the requested [start, end]
+      // return-date window.
       db.getOptional<{ cogs: number }>(
         `SELECT COALESCE(SUM(rli.qty_returned * COALESCE(c.unit_cost_usd, 0)), 0) as cogs
          FROM return_line_items rli
@@ -73,10 +78,11 @@ export function useBucketBreakdown() {
          LEFT JOIN (
            SELECT sale_id, product_id, AVG(unit_cost_usd) as unit_cost_usd
            FROM sale_line_items
+           WHERE shop_id = ?
            GROUP BY sale_id, product_id
          ) c ON c.sale_id = r.original_sale_id AND c.product_id = rli.product_id
          WHERE r.shop_id = ? AND rli.restock = 1 AND DATE(r.created_at, 'localtime') BETWEEN ? AND ?`,
-        [device.shopId, start, end],
+        [device.shopId, device.shopId, start, end],
       ),
       db.getAll<ExpenseRow>(
         `SELECT id, category, amount_usd, expense_date, notes, photo_url

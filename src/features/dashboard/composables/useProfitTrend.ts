@@ -64,16 +64,18 @@ export function useProfitTrend() {
          WHERE r.shop_id = ? AND DATE(r.created_at, 'localtime') BETWEEN ? AND ?${s.clause}
          GROUP BY day`, [device.shopId, start, end, ...s.params]),
       // Same per-(sale, product) cost dedup as useDashboardMetrics/useSalesChart (WAFI-005).
+      // WAFI-153 (staff_summary evaluation follow-up): subquery scoped to shop_id, not
+      // date-scoped (original sale can predate the requested return-date window).
       db.getAll<{ day: string; cogs: number }>(
         `SELECT ${sbR} as day, COALESCE(SUM(rli.qty_returned * COALESCE(c.unit_cost_usd, 0)), 0) as cogs
          FROM return_line_items rli JOIN returns r ON r.id = rli.return_id
          JOIN sales s ON s.id = r.original_sale_id
          LEFT JOIN (
            SELECT sale_id, product_id, AVG(unit_cost_usd) as unit_cost_usd
-           FROM sale_line_items GROUP BY sale_id, product_id
+           FROM sale_line_items WHERE shop_id = ? GROUP BY sale_id, product_id
          ) c ON c.sale_id = r.original_sale_id AND c.product_id = rli.product_id
          WHERE r.shop_id = ? AND rli.restock = 1 AND DATE(r.created_at, 'localtime') BETWEEN ? AND ?${s.clause}
-         GROUP BY day`, [device.shopId, start, end, ...s.params]),
+         GROUP BY day`, [device.shopId, device.shopId, start, end, ...s.params]),
       db.getAll<{ day: string; total: number }>(
         `SELECT ${eb} as day, COALESCE(SUM(amount_usd), 0) as total
          FROM expenses WHERE shop_id = ? AND expense_date BETWEEN ? AND ?

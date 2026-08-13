@@ -81,6 +81,8 @@ export function useSalesChart() {
       // Same per-(sale, product) cost dedup as useDashboardMetrics (WAFI-005): a
       // direct line-level join would double the reversal when a product was on two
       // lines of the original sale.
+      // WAFI-153 (staff_summary evaluation follow-up): subquery scoped to shop_id,
+      // not date-scoped (original sale can predate the requested return-date window).
       const cogsReversalRows = await db.getAll<{ day: string; cogs: number }>(
         `SELECT DATE(r.created_at, 'localtime') as day,
                 COALESCE(SUM(rli.qty_returned * COALESCE(c.unit_cost_usd, 0)), 0) as cogs
@@ -89,11 +91,12 @@ export function useSalesChart() {
          LEFT JOIN (
            SELECT sale_id, product_id, AVG(unit_cost_usd) as unit_cost_usd
            FROM sale_line_items
+           WHERE shop_id = ?
            GROUP BY sale_id, product_id
          ) c ON c.sale_id = r.original_sale_id AND c.product_id = rli.product_id
          WHERE r.shop_id = ? AND rli.restock = 1 AND DATE(r.created_at, 'localtime') BETWEEN ? AND ?
          GROUP BY day`,
-        [device.shopId, start, end]
+        [device.shopId, device.shopId, start, end]
       )
 
       const salesMap        = new Map(salesRows.map(r => [r.day, r.total]))

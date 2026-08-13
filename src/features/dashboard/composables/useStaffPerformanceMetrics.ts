@@ -74,6 +74,15 @@ export function useStaffPerformanceMetrics() {
       // revenue above. Same per-(sale, product) dedup as useDashboardMetrics
       // (WAFI-005) — a row-level join would double-count a product sold on
       // two lines of the same original sale.
+      //
+      // WAFI-153 (staff_summary evaluation): the inline subquery is scoped to
+      // shop_id — sale_line_items carries its own shop_id column (see
+      // 001_initial_schema.sql), indexed via idx_sale_lines_shop — so this no
+      // longer aggregates every shop's entire history on every call. It is
+      // deliberately NOT date-range-scoped: c.unit_cost_usd must resolve the
+      // ORIGINAL sale's cost, which can fall outside the requested [start, end]
+      // return-date window, so filtering by that range here would silently
+      // drop valid cost lookups for older original sales.
       db.getAll<{ staffId: string; cogs: number }>(
         `SELECT cs.staff_id AS staffId,
                 COALESCE(SUM(rli.qty_returned * COALESCE(c.unit_cost_usd, 0)), 0) AS cogs
@@ -83,12 +92,13 @@ export function useStaffPerformanceMetrics() {
          LEFT JOIN (
            SELECT sale_id, product_id, AVG(unit_cost_usd) as unit_cost_usd
            FROM sale_line_items
+           WHERE shop_id = ?
            GROUP BY sale_id, product_id
          ) c ON c.sale_id = r.original_sale_id AND c.product_id = rli.product_id
          WHERE r.shop_id = ? AND rli.restock = 1 AND cs.staff_id IS NOT NULL
            AND DATE(r.created_at, 'localtime') BETWEEN ? AND ?
          GROUP BY cs.staff_id`,
-        [device.shopId, start, end]
+        [device.shopId, device.shopId, start, end]
       ),
       // Sale-level discount total per staff member, same column/precedent as
       // useDashboardMetrics.ts (WAFI-146 Task 1) — SUM(sale_discount_amount_usd).
