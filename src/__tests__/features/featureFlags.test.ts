@@ -69,11 +69,19 @@ describe('useFlagsStore', () => {
   })
 
   it('isRolloutEnabled reads rollout state from the same loaded features as isEnabled, with no extra query', async () => {
+    vi.mocked(db.getOptional).mockResolvedValue({
+      features: JSON.stringify({ staff_pack: true, rollout: { dashboard_v2: true } }),
+    } as any)
     const store = useFlagsStore()
-    store.features = { staff_pack: true, rollout: { dashboard_v2: true } }
-    store.loaded = true
+    await store.ensureLoaded()
+    expect(db.getOptional).toHaveBeenCalledTimes(1)
+
+    // Call both isEnabled and isRolloutEnabled multiple times; verify no extra queries
+    expect(store.isEnabled('staff_pack')).toBe(true)
     expect(store.isRolloutEnabled('dashboard_v2')).toBe(true)
     expect(store.isRolloutEnabled('pos_brain')).toBe(false)
+    expect(store.isEnabled('reporting_pack')).toBe(false)
+    expect(db.getOptional).toHaveBeenCalledTimes(1) // Still only 1 call from ensureLoaded
   })
 })
 
