@@ -12,7 +12,11 @@ import { supabase } from '@/data/supabase/client'
 export const usePlatformAdminStore = defineStore('platformAdmin', () => {
   const checkedForUserId = ref<string | null>(null)
   const isAdmin = ref(false)
-  let pendingPromise: Promise<boolean> | null = null
+  // Keyed to the user it was issued for -- a bare `Promise | null` slot would
+  // let a slow, now-stale query for a previous user overwrite a more recent
+  // user's already-committed result once it finally resolves (found in
+  // review: user A's in-flight check outliving a switch to user B).
+  let pending: { userId: string; promise: Promise<boolean> } | null = null
 
   async function ensureChecked(): Promise<boolean> {
     const { data } = await supabase.auth.getSession()
@@ -26,29 +30,39 @@ export const usePlatformAdminStore = defineStore('platformAdmin', () => {
     }
 
     if (checkedForUserId.value === userId) return isAdmin.value
-    if (pendingPromise) return pendingPromise
+    if (pending && pending.userId === userId) return pending.promise
 
-    pendingPromise = (async () => {
+    const promise: Promise<boolean> = (async () => {
       try {
         const { data: row } = await supabase
           .from('platform_admins')
           .select('user_id')
           .eq('user_id', userId)
           .maybeSingle()
-        checkedForUserId.value = userId
-        isAdmin.value = Boolean(row)
-        return isAdmin.value
+        const result = Boolean(row)
+        // Only commit if no newer request for a DIFFERENT user has
+        // superseded this one -- prevents a slow, now-stale query for a
+        // previous user from overwriting a more recent user's already-
+        // committed result.
+        if (pending?.userId === userId) {
+          checkedForUserId.value = userId
+          isAdmin.value = result
+        }
+        return result
       } catch {
         // Network/query error: remains retryable on the next call rather
         // than being permanently and incorrectly cached as "not admin."
-        isAdmin.value = false
         return false
       } finally {
-        pendingPromise = null
+        // Leave `pending` alone if a different user's request has already
+        // taken over the slot -- otherwise this would clear a currently
+        // in-flight different-user request out from under it.
+        if (pending?.userId === userId) pending = null
       }
     })()
 
-    return pendingPromise
+    pending = { userId, promise }
+    return promise
   }
 
   supabase.auth.onAuthStateChange((event) => {

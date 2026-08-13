@@ -93,4 +93,26 @@ describe('usePlatformAdminStore', () => {
     expect(await p2).toBe(true)
     expect(maybeSingleMock).toHaveBeenCalledTimes(1)
   })
+
+  it('does not let a stale in-flight query for a previous user overwrite a newer user\'s result', async () => {
+    let resolveA: (v: unknown) => void = () => {}
+    getSessionMock.mockResolvedValueOnce(session('user-A'))
+    maybeSingleMock.mockReturnValueOnce(new Promise(r => { resolveA = r }))
+
+    const store = usePlatformAdminStore()
+    const pA = store.ensureChecked() // in-flight for user-A, not yet resolved
+
+    // Session switches to user-B before A's query resolves.
+    getSessionMock.mockResolvedValueOnce(session('user-B'))
+    maybeSingleMock.mockResolvedValueOnce({ data: null, error: null })
+    const bResult = await store.ensureChecked()
+    expect(bResult).toBe(false)
+    expect(store.isAdmin).toBe(false)
+
+    // Now A's stale query resolves as admin=true -- it must NOT overwrite B's result.
+    resolveA({ data: { user_id: 'user-A' }, error: null })
+    await pA
+
+    expect(store.isAdmin).toBe(false)
+  })
 })
