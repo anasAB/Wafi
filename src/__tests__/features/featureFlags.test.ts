@@ -67,6 +67,14 @@ describe('useFlagsStore', () => {
     await store.load()
     expect(store.isEnabled('reporting_pack')).toBe(true)
   })
+
+  it('isRolloutEnabled reads rollout state from the same loaded features as isEnabled, with no extra query', async () => {
+    const store = useFlagsStore()
+    store.features = { staff_pack: true, rollout: { dashboard_v2: true } }
+    store.loaded = true
+    expect(store.isRolloutEnabled('dashboard_v2')).toBe(true)
+    expect(store.isRolloutEnabled('pos_brain')).toBe(false)
+  })
 })
 
 import { resolveRollout, ROLLOUT_FLAG_KEYS } from '@/features/flags/flagRegistry'

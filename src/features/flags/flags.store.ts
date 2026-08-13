@@ -2,7 +2,7 @@ import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
-import { resolveFlag, type FlagKey } from './flagRegistry'
+import { resolveFlag, resolveRollout, type FlagKey, type RolloutFlagKey } from './flagRegistry'
 
 /**
  * WAFI-131: per-shop flags, read from the synced shops row. Loaded once per
@@ -38,5 +38,9 @@ export const useFlagsStore = defineStore('featureFlags', () => {
     return resolveFlag(features.value, key)
   }
 
-  return { features, loaded, load, ensureLoaded, isEnabled }
+  function isRolloutEnabled(key: RolloutFlagKey): boolean {
+    return resolveRollout(features.value, key)
+  }
+
+  return { features, loaded, load, ensureLoaded, isEnabled, isRolloutEnabled }
 })
