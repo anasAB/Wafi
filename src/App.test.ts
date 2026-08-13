@@ -22,6 +22,13 @@ const {
   startRetryQueueSweeperMock,
   startDailyEventCountsProjectionMock,
   startEventTableCleanupSweeperMock,
+  startDashboardRevenueProjectionMock,
+  startProfitCacheProjectionMock,
+  startNotificationSubscribersMock,
+  startAuditSubscribersMock,
+  startProcessingRetrySweeperMock,
+  startDeferredJobWorkerMock,
+  checkDeviceSyncStalenessMock,
 } = vi.hoisted(() => ({
   refreshShopIdMock: vi.fn().mockResolvedValue(undefined),
   hasAnyStaffMock: vi.fn().mockResolvedValue(true),
@@ -30,6 +37,18 @@ const {
   startRetryQueueSweeperMock: vi.fn(),
   startDailyEventCountsProjectionMock: vi.fn(),
   startEventTableCleanupSweeperMock: vi.fn(),
+  // These six were never mocked here even though App.vue's onMounted calls
+  // them for real on every mount (found while investigating this file's
+  // OOM): each registers a live PowerSync db.watch()-backed subscriber with
+  // no corresponding unmount() between this file's 4 mounts, so subscriptions
+  // accumulated unboundedly against the mocked db across the whole test file.
+  startDashboardRevenueProjectionMock: vi.fn().mockReturnValue({ stop: vi.fn() }),
+  startProfitCacheProjectionMock: vi.fn().mockReturnValue({ stop: vi.fn() }),
+  startNotificationSubscribersMock: vi.fn().mockReturnValue({ stop: vi.fn() }),
+  startAuditSubscribersMock: vi.fn().mockReturnValue({ stop: vi.fn() }),
+  startProcessingRetrySweeperMock: vi.fn(),
+  startDeferredJobWorkerMock: vi.fn().mockReturnValue({ stop: vi.fn() }),
+  checkDeviceSyncStalenessMock: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/store/device.store', () => ({
@@ -62,6 +81,36 @@ vi.mock('@/services/events/dailyEventCountsProjection', () => ({
 
 vi.mock('@/services/events/cleanupLocalEventTables', () => ({
   startEventTableCleanupSweeper: startEventTableCleanupSweeperMock,
+}))
+
+vi.mock('@/services/events/dashboardRevenueProjection', () => ({
+  startDashboardRevenueProjection: startDashboardRevenueProjectionMock,
+}))
+
+vi.mock('@/services/events/profitCacheProjection', () => ({
+  startProfitCacheProjection: startProfitCacheProjectionMock,
+}))
+
+vi.mock('@/services/events/notificationSubscriber', () => ({
+  startNotificationSubscribers: startNotificationSubscribersMock,
+  handleDiscountEvent: vi.fn(),
+}))
+
+vi.mock('@/services/events/auditSubscriber', () => ({
+  startAuditSubscribers: startAuditSubscribersMock,
+  handleAuditableEvent: vi.fn(),
+}))
+
+vi.mock('@/services/events/eventProcessingRetryQueue', () => ({
+  startProcessingRetrySweeper: startProcessingRetrySweeperMock,
+}))
+
+vi.mock('@/services/events/deferredJobWorker', () => ({
+  startDeferredJobWorker: startDeferredJobWorkerMock,
+}))
+
+vi.mock('@/services/notifications/syncStalenessCheck', () => ({
+  checkDeviceSyncStaleness: checkDeviceSyncStalenessMock,
 }))
 
 import App from '@/App.vue'

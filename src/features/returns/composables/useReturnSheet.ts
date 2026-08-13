@@ -191,7 +191,7 @@ export function useReturnSheet(saleId: string) {
     )
     const originalSaleProjectionDay = originalSaleEventRow?.event_projection_day
 
-    const { warning, isFullSaleReturn } = await executeBusinessOperation(
+    const { warning } = await executeBusinessOperation(
       async () => {
         let cancelledPlanId: string | null = null
         let warning: ConfirmResult['warning']
