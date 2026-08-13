@@ -111,8 +111,36 @@ mutated directly by clients):
 |---|---|---|---|
 | `profit_cache` | `apply_profit_cache()` (migration `086`) from `sale.completed`/`sale.returned`/`expense.recorded` | `useProfitCache()` — the authoritative source for revenue/COGS/profit/discount/refund/return metrics on the Dashboard/Reports pages | ✅ Built, adopted everywhere (see below) |
 | `daily_event_counts` | `apply_daily_event_count()` (WAFI-151, migrations `083`/`085`) from `sale.completed` | `dailyEventCountsProjection.ts` (also the authoritative-count basis `local_today_revenue_projection`'s rebuild path cross-checks against) | ✅ Built |
-| `dashboard_metrics`, `inventory_summary`, `customer_summary` | — | — | ❌ Not built — `dashboard_metrics` is explicitly **dropped by design** (duplicate of `profit_cache`, see the WAFI-153 design spec's "Out of scope"); `inventory_summary`/`customer_summary` remain unevaluated roadmap candidates, not committed work |
-| `staff_summary` | — | `useStaffPerformanceMetrics.ts` still does live per-request SQL aggregation over `sales`/`sale_line_items` | ⏭️ Not built — the strongest evidence-backed candidate for the next WAFI-153 slice, since this composable's cost is already concretely identified, not theoretical |
+| `dashboard_metrics` | — | — | ❌ Explicitly **dropped by design** (duplicate of `profit_cache`, see the WAFI-153 design spec's "Out of scope") |
+| `staff_summary` | — | `useStaffPerformanceMetrics.ts` still does live per-request SQL aggregation over `sales`/`sale_line_items`/`returns`/`cashier_shifts` | ❌ **Evaluated and declined, 2026-08-13.** See below — this is not "not built yet," it's a considered no. |
+| `inventory_summary`, `customer_summary` | — | — | ⏭️ Not built, not evaluated against the same bar as `staff_summary` below — don't assume either would also be declined without actually checking their call-site count/frequency/duplication first |
+
+**`staff_summary` — evaluated and declined, not deferred.** The workload behind
+`useStaffPerformanceMetrics.ts` was checked against the same criteria that justified building
+`profit_cache`, and does not meet them: `profit_cache`'s own design spec justified itself on
+"every dashboard/reports load" hit frequency plus logic "duplicated in spirit across
+`useRevenueIntelligence`/`useProfitIntelligence`" (multiple consumers independently
+re-implementing the same aggregation). `useStaffPerformanceMetrics.ts` has exactly two call
+sites (`StaffPerformancePage.vue` at `/reports/staff`, and `useStaffIntelligence.ts`'s Home
+card), both gated behind `can_view_staff_performance` — structurally owner-only, never
+grantable to a manager's custom permission set — so this is occasional owner-initiated access,
+not something every session or every cashier hits, and there's no duplicated aggregation logic
+across consumers to unify. The operational and implementation cost of a full CQRS stack (table +
+Postgres apply/rebuild functions + client subscriber + recovery semantics + tests) would exceed
+the query-time benefit at this product's actual scale (small shops, a handful of staff, part-time
+maintainers). **Revisit only if** access frequency, consumer count, data volume, or duplicated
+computation materially increases from today's shape — not on a schedule, and not just because the
+roadmap names it.
+
+A real, separate, and much smaller issue was found in the same investigation and is **explicitly
+not** part of this decision or bundled into any future `staff_summary` work: the return-COGS-
+reversal query's inline `sale_line_items` subquery (`useStaffPerformanceMetrics.ts` lines 77-92)
+has no `shop_id` or date-range predicate of its own, so it scans the full historical table
+regardless of the requested period or shop — a pre-existing pattern inherited from
+`useDashboardMetrics.ts`'s own WAFI-005 precedent, not new to this composable. This is a
+query-scoping/indexing fix, tracked as its own separate bounded hardening task, not evidence
+that a read model is needed — conflating the two would let a slow query justify CQRS machinery
+it doesn't actually call for.
 
 **`useDashboardMetrics.ts` (the old live-aggregation composable this replaced) and its
 `missingCostCount` extraction `useMissingCostCount.ts` were both deleted 2026-08-13** — see
