@@ -67,7 +67,16 @@ ALTER TABLE public.events ALTER COLUMN event_projection_day SET NOT NULL;
 -- already assigned explicit values above) and event_projection_day computed
 -- from the shop's current timezone at insert time.
 CREATE SEQUENCE IF NOT EXISTS public.events_sequence_seq OWNED BY public.events.sequence;
-SELECT setval('public.events_sequence_seq', coalesce((SELECT max(sequence) FROM public.events), 0), true);
+-- Bug fix: coalescing to 0 on an empty events table made setval fail
+-- (SQLSTATE 22003 -- a sequence's minimum value is 1), blocking a fresh
+-- `supabase db reset` with no seeded events. Production is unaffected by
+-- this fix -- it always has a real max(sequence), never the empty-table
+-- case -- so correcting this in place changes nothing already applied.
+SELECT setval(
+  'public.events_sequence_seq',
+  coalesce((SELECT max(sequence) FROM public.events), 1),
+  (SELECT max(sequence) FROM public.events) IS NOT NULL
+);
 ALTER TABLE public.events ALTER COLUMN sequence SET DEFAULT nextval('public.events_sequence_seq');
 
 CREATE OR REPLACE FUNCTION public._set_event_projection_day()
