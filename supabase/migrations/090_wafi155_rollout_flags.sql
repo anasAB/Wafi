@@ -103,3 +103,41 @@ $$;
 REVOKE ALL ON FUNCTION public.set_rollout_flag(uuid, text, boolean) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.set_rollout_flag(uuid, text, boolean) FROM anon;
 GRANT EXECUTE ON FUNCTION public.set_rollout_flag(uuid, text, boolean) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.list_shops_for_rollout_admin(p_query text DEFAULT NULL)
+RETURNS TABLE (
+  shop_id      uuid,
+  shop_name    text,
+  dashboard_v2 boolean,
+  pos_brain    boolean,
+  insights     boolean
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM platform_admins WHERE user_id = auth.uid()) THEN
+    RAISE EXCEPTION 'not authorized' USING ERRCODE = 'P0001';
+  END IF;
+
+  -- Fail-closed flag parsing, matching the TypeScript resolver's contract:
+  -- only the JSON literal `true` reads as enabled. `= 'true'::jsonb` on a
+  -- non-boolean value evaluates to NULL rather than throwing, so
+  -- coalesce(..., false) safely reduces every malformed case to "off".
+  RETURN QUERY
+  SELECT s.id, s.name,
+         coalesce(s.features -> 'rollout' -> 'dashboard_v2' = 'true'::jsonb, false),
+         coalesce(s.features -> 'rollout' -> 'pos_brain'    = 'true'::jsonb, false),
+         coalesce(s.features -> 'rollout' -> 'insights'     = 'true'::jsonb, false)
+    FROM shops s
+   WHERE NULLIF(trim(p_query), '') IS NULL
+      OR s.name ILIKE '%' || trim(p_query) || '%'
+   ORDER BY s.name, s.id
+   LIMIT 100;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.list_shops_for_rollout_admin(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.list_shops_for_rollout_admin(text) FROM anon;
+GRANT EXECUTE ON FUNCTION public.list_shops_for_rollout_admin(text) TO authenticated;

@@ -3,7 +3,7 @@
 -- Run via: npx supabase test db
 
 BEGIN;
-SELECT plan(19);
+SELECT plan(25);
 
 -- ========================================================================
 -- Fixtures
@@ -194,6 +194,61 @@ SELECT is(
   'true',
   '8b: set_rollout_flag''s own write from 2a/3a is still persisted, proving the trigger does not revert the trusted RPC path'
 );
+
+-- ========================================================================
+-- 1. Authorization boundary (list_shops_for_rollout_admin half)
+-- ========================================================================
+
+SELECT set_config('request.jwt.claims', '{"sub":"d2222222-2222-2222-2222-222222222222","role":"authenticated"}', true);
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$ SELECT * FROM public.list_shops_for_rollout_admin(NULL) $$,
+  'P0001', NULL, '1b: non-admin authenticated caller gets P0001 from list_shops_for_rollout_admin'
+);
+RESET ROLE;
+
+SELECT is(has_function_privilege('anon', 'public.list_shops_for_rollout_admin(text)', 'EXECUTE'), false,
+  '1d: anon has no EXECUTE on list_shops_for_rollout_admin');
+
+-- ========================================================================
+-- 6. list_shops_for_rollout_admin behavior
+-- ========================================================================
+
+SELECT set_config('request.jwt.claims', '{"sub":"d1111111-1111-1111-1111-111111111111","role":"authenticated"}', true);
+SET LOCAL ROLE authenticated;
+
+SELECT is(
+  (SELECT count(*)::int FROM public.list_shops_for_rollout_admin(NULL)),
+  (SELECT count(*)::int FROM public.list_shops_for_rollout_admin('')),
+  '6a: NULL and empty-string query return the same row count'
+);
+SELECT is(
+  (SELECT count(*)::int FROM public.list_shops_for_rollout_admin('')),
+  (SELECT count(*)::int FROM public.list_shops_for_rollout_admin('   ')),
+  '6b: empty-string and whitespace-only query return the same row count'
+);
+SELECT is(
+  (SELECT (dashboard_v2, pos_brain, insights) FROM public.list_shops_for_rollout_admin(NULL)
+     WHERE shop_id = (SELECT id FROM public.shops WHERE owner_user_id = 'd2222222-2222-2222-2222-222222222222')),
+  (true, true, false),
+  '6c: list RPC reports the correct rollout state for a shop with mixed flags'
+);
+
+RESET ROLE;
+
+-- 6d: malformed rollout value resolves to false, not an error.
+UPDATE public.shops
+   SET features = jsonb_set(features, '{rollout,insights}', '"true"'::jsonb)
+ WHERE owner_user_id = 'd2222222-2222-2222-2222-222222222222';
+SELECT set_config('request.jwt.claims', '{"sub":"d1111111-1111-1111-1111-111111111111","role":"authenticated"}', true);
+SET LOCAL ROLE authenticated;
+SELECT is(
+  (SELECT insights FROM public.list_shops_for_rollout_admin(NULL)
+     WHERE shop_id = (SELECT id FROM public.shops WHERE owner_user_id = 'd2222222-2222-2222-2222-222222222222')),
+  false,
+  '6d: a malformed (string, not boolean) rollout value resolves to false, not an error'
+);
+RESET ROLE;
 
 SELECT * FROM finish();
 ROLLBACK;
