@@ -1,7 +1,7 @@
 # WAFI-156 — Business Rules Engine (Design Spec)
 
 Date: 2026-08-14
-Status: Approved, implementation-ready — 5th review pass (final gate): execute_rule_action() EXECUTE privilege explicitly restricted to service_role (REVOKE from anon/authenticated), RPC validates event.event_type = rule.event_type and rule.action = requested action before any claim logic runs
+Status: Approved, implementation-ready — 6th review pass: execute_rule_action() corrected from an unimplementable service_role-only design to an authenticated-callable RPC that is itself the authoritative evaluation/security boundary (client-side evaluation is a non-authoritative pre-filter only), verified against WAFI's actual client-only durable-subscriber architecture (no deployed backend exists)
 Ticket: WAFI-156, Macro-Phase 3 (Enterprise Scale), P2, roadmap estimate 2 sprints
 
 ## 1. Scope
@@ -104,7 +104,7 @@ evaluate each rule independently           ← no rule blocks another
         ↓
 matched rule
         ↓
-execute_rule_action(event_id, rule_id, action)  ← single Postgres RPC, atomic claim + notification write
+execute_rule_action(event_id, rule_id)  ← authenticated-callable Postgres RPC; re-evaluates authoritatively, then atomic claim + notification write
 ```
 
 Coexistence with the native WAFI-145 rules that don't migrate:
@@ -309,7 +309,15 @@ runDurableSubscriber({
   handler: async (event) => {
     const rules = await loadEnabledRules(event.shopId, 'sale.returned')
     for (const rule of rules) {
-      await evaluateAndExecute(rule, event)   // independent per rule, see §2.3
+      // Client-side evaluation here is a pre-filter/optimization only — it
+      // decides whether to *call* the RPC at all, so an obviously-non-matching
+      // rule doesn't cost a round-trip. It has zero authority: the RPC
+      // in §2.3 re-evaluates the same condition against the authoritative
+      // event row itself and will refuse to act if this pre-filter was wrong
+      // (stale local data, a bug, or a bypass calling the RPC directly).
+      if (evaluateLocally(rule, event)) {
+        await executeRuleAction(event.eventId, rule.id)   // see §2.3
+      }
     }
   },
 })
@@ -368,90 +376,113 @@ stamp all happen inside one Postgres transaction in a single
 `SECURITY DEFINER` RPC, `execute_rule_action(event_id, rule_id,
 action)`**, never assembled client-side across separate statements.
 
-**This is a server-side execution primitive, invoked by the durable
-subscriber's own backend context — it is not a client-facing RPC and
-must not be authorized against a caller's `auth_shop_id()`.** A
-durable subscriber (per WAFI-150) runs as server/background
-execution processing an event that already carries its own
-authoritative `shop_id`; nothing about which browser/device happens to
-be the current authenticated session is relevant to whether a rule
-action for that event should execute. `execute_rule_action` derives
-its own authorization entirely from its inputs: it looks up the
-`event_id` row itself (rejecting if it doesn't exist), looks up the
-`rule_id` row itself, and — **before doing anything else, including
-the claim in step 2 below** — requires all three of:
+**Corrected architectural decision (this section previously assumed a
+backend execution context that does not exist in WAFI today, and has
+been revised):** WAFI has no deployed backend/worker service — every
+existing durable subscriber, including all nine WAFI-145 notification
+rules, runs client-side in the browser (`runDurableSubscriber` wraps
+`useEventSubscription`, which watches the PowerSync-synced local
+`events` table and calls its handler in-page; `largeReturn.rule.ts`/
+`drawerVariance.rule.ts` write `notifications` rows via plain
+`db.execute(...)` against the local SQLite DB as the signed-in
+device's own `authenticated` session). A `service_role`-only RPC
+cannot be called from this architecture at all — the `service_role`
+key is never shipped to a client, and building a real backend worker
+to hold it would be new infrastructure far beyond this ticket's scope
+(and the roadmap's 2-sprint estimate). **`execute_rule_action` is
+therefore `authenticated`-callable, matching how every other WAFI RPC
+and subscriber actually works — but it is the RPC itself, not the
+calling client, that decides whether the rule fires.** The browser
+subscriber's role shrinks to *discovery and triggering*; Postgres
+remains the sole authority on *evaluation, idempotency, and
+correctness*:
 
 ```
-event.shop_id    = rule.shop_id
-event.event_type = rule.event_type
-rule.action      = $action   (the action argument passed in)
+Client (untrusted for authority, trusted only to trigger):
+  runDurableSubscriber(event_type)
+        ↓
+  evaluateLocally(rule, event)     ← optimization/pre-filter only, zero authority
+        ↓ (candidate match)
+  execute_rule_action(event_id, rule_id)   ← authenticated RPC call
+
+Postgres (the actual trust boundary):
+  execute_rule_action(event_id, rule_id):
+        ↓
+    load event_id row (404 if missing)
+        ↓
+    load rule_id row (404 if missing)
+        ↓
+    auth_shop_id() = event.shop_id                    -- caller must belong to this shop
+        ↓
+    event.shop_id    = rule.shop_id                   -- same invariant as before
+    event.event_type = rule.event_type                -- same invariant as before
+        ↓
+    rule.enabled = true                               -- a disabled rule can never fire,
+        ↓                                                even via direct RPC call
+    evaluate rule.field/transform/operator/threshold
+    against event.payload — AUTHORITATIVELY, ignoring
+    whatever the client's evaluateLocally() concluded
+        ↓ no match → return 'not_matched', nothing written
+        ↓ match
+    claim + notification + executed_at (§2.3 below, unchanged)
 ```
 
-The RPC does not trust its caller to have assembled a correct
-`(event, rule)` pair — the normal subscriber path can't produce a
-mismatched pair today, since it loads `business_rules WHERE event_type
-= $event_type` before ever calling this RPC (§2.2), but
-`execute_rule_action` is the actual execution/authorization boundary
-and must reject a mismatch itself, not merely rely on every future
-caller assembling inputs correctly. A shop-scope mismatch, an
-event-type mismatch (e.g. a `sale.returned` event paired with the
-`drawer_variance` rule, which targets `shift.closed`), or an action
-mismatch (a rule whose `action` isn't the one requested) all raise and
-abort before the claim/notification logic runs — none of this is
-merely tested after the fact (see §5's pgTAP coverage), it's enforced
-in the RPC body as the first thing it does. It does not consult
-`auth_shop_id()` at all. This
-gives WAFI-156 two clearly separate RPCs with two different security
-models:
+The one thing removed from the signature: **`action` is no longer a
+client-supplied argument.** The RPC looks up `rule.action` itself
+(there is exactly one supported value, `'notify_owner'`, but the
+principle holds regardless) — accepting it from the caller would be
+an input that adds no legitimate authority (the caller cannot pick a
+different action than the rule's own) while adding another value the
+RPC would otherwise have to validate. Signature: `execute_rule_action(event_id
+uuid, rule_id uuid)`.
+
+**Why this is still safe against a malicious `authenticated` caller.**
+Consider a signed-in staff member calling `execute_rule_action(some_sale_returned_event_id,
+large_return_rule_id)` directly, bypassing `RulesScreen.vue` and
+`evaluateLocally()` entirely, for a return that was well under the
+`large_return` threshold. The RPC still independently re-derives
+`refundAmountUsd` from `event.payload` (the authoritative, already-committed
+event row — not anything the caller asserts), applies `large_return`'s
+`transform`/`operator`/`threshold`, and finds no match — it returns
+`'not_matched'` and writes nothing. The caller can trigger evaluation
+of any event/rule pair they're allowed to see (their own shop's), but
+they can never make a non-matching rule fire, make a disabled rule
+fire, or fabricate a `notifications` row for an event/rule pair that
+wasn't real. This is why the RPC's internal condition evaluation is
+load-bearing security, not merely business logic — see the "evaluation
+logic" step added below.
+
+This gives WAFI-156 two RPCs with a related but distinct model — both
+`authenticated`-callable, both `SECURITY DEFINER`, both self-defending
+rather than trusting the caller's own claims:
 
 ```
-Owner path (authenticated-session-scoped):
+Owner path:
   RulesScreen.vue → update_business_rule(rule_id, name, threshold, enabled)
-                     authorized via auth_shop_id() = rule's own shop_id
-                     EXECUTE granted to: authenticated (owner-role-checked inside)
+                     authorized via auth_shop_id() = rule's own shop_id,
+                     PLUS an owner-role check in the function body
+                     (any authenticated staff member could call it;
+                      only an owner-role caller's call has any effect)
 
-Execution path (event-scoped, no client identity involved):
-  durable subscriber → execute_rule_action(event_id, rule_id, action)
-                        authorized via event.shop_id = rule.shop_id (derived from inputs)
-                        EXECUTE granted to: server/background execution role only
+Execution path:
+  durable subscriber → execute_rule_action(event_id, rule_id)
+                        authorized via auth_shop_id() = event.shop_id (coarse
+                        shop-membership eligibility gate — any staff member
+                        of the shop may trigger evaluation, same as any
+                        staff member's device already runs every other
+                        durable subscriber today),
+                        PLUS full authoritative condition re-evaluation
+                        inside the function body (the actual correctness
+                        boundary — see above)
 ```
 
-Conflating these — e.g. authorizing `execute_rule_action` by the
-currently-authenticated client's `auth_shop_id()` — would be wrong
-even if it happened to work in the common case, because the caller
-executing a durable subscriber's retry may not correspond to any
-particular signed-in user/session at all, and the action's legitimacy
-must not depend on one.
-
-**`execute_rule_action`'s security boundary is not `SECURITY DEFINER`
-alone — it is the Postgres `EXECUTE` grant.** `SECURITY DEFINER` only
-controls which role's *row-level* permissions the function body runs
-with; it does not by itself restrict *who may call the function*. Since
-this RPC deliberately does not check `auth_shop_id()` — by design, per
-above, because it trusts the supplied `(event_id, rule_id, action)`
-relationship rather than caller identity — leaving it callable by
-`authenticated` would let any signed-in client invoke it directly for
-an arbitrary `(event_id, rule_id, action)` triple within their own
-shop (or, absent the check in point 2 below, even across shops),
-bypassing the entire notification/idempotency pipeline and writing
-fabricated `notifications` rows. The required grant is therefore:
-
-```sql
-REVOKE EXECUTE ON FUNCTION execute_rule_action(uuid, uuid, text) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION execute_rule_action(uuid, uuid, text) FROM anon, authenticated;
-GRANT  EXECUTE ON FUNCTION execute_rule_action(uuid, uuid, text) TO service_role;
-```
-
-i.e. only the backend/durable-subscriber execution context (running
-under `service_role`, the same role WAFI-151's `rebuild_daily_event_counts_scope`
-already restricts itself to) may ever call it — matching that
-migration's existing "no client-reachable path" precedent rather than
-introducing a new authorization shape. `update_business_rule`, by
-contrast, is deliberately `authenticated`-callable (any signed-in
-staff member of the shop can call it; it enforces the owner-only role
-check in its own body, the same pattern WAFI-018's
-`can_view_staff_performance` uses for a structurally-owner-only
-capability).
+`update_business_rule`'s owner-role check and `execute_rule_action`'s
+condition re-evaluation play the same structural role: each RPC
+performs its *own* authorization/correctness check in its body rather
+than trusting `auth_shop_id()` alone to be sufficient, because
+`auth_shop_id()` only ever proves shop membership, never proves "this
+caller is allowed to do this specific thing" or "this specific
+business condition actually holds."
 
 `rule_action_log` itself is an ordinary server-only Postgres table:
 **not** PowerSync-synced, and clients have **no direct read or write
@@ -463,13 +494,63 @@ today for the native rules); `rule_action_log` is purely the
 server-side execution ledger behind `execute_rule_action` and is
 invisible to every client.
 
-Inside `execute_rule_action`, per matched rule:
+Inside `execute_rule_action(p_event_id uuid, p_rule_id uuid)`:
 
 1. `BEGIN` (implicit, function body).
-2. Atomic conditional claim:
+2. Load `v_event := events WHERE id = p_event_id` (raise `event not
+   found` if missing) and `v_rule := business_rules WHERE id =
+   p_rule_id` (raise `rule not found` if missing).
+3. Authorization/invariant checks, in order, each raising and aborting
+   the whole function on failure — **all of this runs before the
+   claim in step 5, so a failing check never touches
+   `rule_action_log`**:
+   - `auth_shop_id() = v_event.shop_id` — the calling session must
+     belong to the event's own shop (coarse eligibility gate).
+   - `v_event.shop_id = v_rule.shop_id` — cross-shop pairing rejected.
+   - `v_event.event_type = v_rule.event_type` — mismatched pairing
+     rejected (e.g. a `sale.returned` event against the
+     `drawer_variance` rule, which targets `shift.closed`).
+   - `v_rule.enabled = true` — a disabled rule can never fire, even
+     via a direct RPC call bypassing `evaluateLocally()`.
+4. **Authoritative condition evaluation** — re-derive the rule's
+   `field` from `v_event.payload` (a `jsonb` column), apply its
+   `transform`, and compare against its `threshold` using its
+   `operator`, entirely inside the function, ignoring whatever the
+   client's `evaluateLocally()` concluded:
+   ```sql
+   v_field_value := CASE v_rule.field
+     WHEN 'refundAmountUsd' THEN (v_event.payload->>'refundAmountUsd')::numeric
+     WHEN 'variance'        THEN (v_event.payload->>'variance')::numeric
+     -- extended only when a future rule's field is added to the vocabulary
+   END;
+   v_transformed := CASE v_rule.transform
+     WHEN 'none' THEN v_field_value
+     WHEN 'abs'  THEN abs(v_field_value)
+   END;
+   v_matched := CASE v_rule.operator
+     WHEN 'gt'  THEN v_transformed >  v_rule.threshold
+     WHEN 'gte' THEN v_transformed >= v_rule.threshold
+     WHEN 'lt'  THEN v_transformed <  v_rule.threshold
+     WHEN 'lte' THEN v_transformed <= v_rule.threshold
+     WHEN 'eq'  THEN v_transformed =  v_rule.threshold
+   END;
+   IF NOT v_matched THEN
+     RETURN 'not_matched';  -- no row written to rule_action_log or notifications
+   END IF;
+   ```
+   This `CASE v_rule.field` mapping is the one place the closed
+   vocabulary (§1) must be kept in lockstep with the RPC body — adding
+   a new supported `field` to `business_rules`'s vocabulary means
+   adding a branch here, in the same migration, not a runtime-data-only
+   change; this is deliberate (§1's "expanding the vocabulary later is
+   an explicit... architectural decision, not a schema escape hatch"
+   made concrete).
+5. Atomic conditional claim (unchanged from the original design,
+   `action` column still exists on `rule_action_log`, its value now
+   read from `v_rule.action` rather than a parameter):
    ```sql
    INSERT INTO rule_action_log (event_id, rule_id, action, attempts, updated_at)
-   VALUES ($1, $2, $3, 1, now())
+   VALUES (p_event_id, p_rule_id, v_rule.action, 1, now())
    ON CONFLICT (event_id, rule_id, action) DO UPDATE
      SET attempts = rule_action_log.attempts + 1, updated_at = now()
      WHERE rule_action_log.executed_at IS NULL
@@ -484,17 +565,17 @@ Inside `execute_rule_action`, per matched rule:
    now-final state. If the first call committed with `executed_at`
    set, the `WHERE` clause excludes the row, the `UPDATE` affects zero
    rows, and `RETURNING` yields nothing.
-3. **If no row was returned in step 2, stop and return "already
+6. **If no row was returned in step 5, stop and return "already
    executed" — do not write a notification.** This is the fix for
    concurrent redelivery: at most one caller ever proceeds past this
    point for a given `(event_id, rule_id, action)`.
-4. Write the `notifications` row.
-5. `UPDATE rule_action_log SET executed_at = now() WHERE (event_id,
-   rule_id, action) = ($1, $2, $3)`.
-6. `COMMIT` (implicit, function return).
+7. Write the `notifications` row.
+8. `UPDATE rule_action_log SET executed_at = now() WHERE (event_id,
+   rule_id, action) = (p_event_id, p_rule_id, v_rule.action)`.
+9. `COMMIT` (implicit, function return), return `'executed'`.
 
-On failure at step 4 or 5, the function raises and the whole
-transaction (including the step 2 claim) rolls back — the row is left
+On failure at step 7 or 8, the function raises and the whole
+transaction (including the step 5 claim) rolls back — the row is left
 exactly as it was before this attempt (absent, on the very first
 attempt; or present with `executed_at IS NULL` and its previous
 `attempts` count, on a retry). This means `attempts` only reliably
@@ -541,13 +622,14 @@ second action later (e.g. `notify_owner` and a future
 
 **Shop isolation and FK behavior.** `events.shop_id = (SELECT shop_id
 FROM business_rules WHERE id = rule_id)` is a guaranteed invariant for
-every valid `rule_action_log` row — `execute_rule_action` only ever
-operates on a rule scoped to the calling event's own shop (checked
-inside the RPC before doing anything else, in addition to
-`loadEnabledRules` already filtering by `event.shopId` client-side), so
-a cross-shop row is not reachable through the intended write path;
-this is asserted directly by a pgTAP test rather than left as an
-implicit consequence of RLS alone (see §5). Both FKs are `ON DELETE
+every valid `rule_action_log` row — `execute_rule_action` checks
+`v_event.shop_id = v_rule.shop_id` itself (step 3 above) before doing
+anything else, in addition to `loadEnabledRules` already filtering by
+`event.shopId` client-side as an optimization — so a cross-shop row is
+not reachable through the intended write path (nor through a direct,
+bypassing RPC call, since the RPC re-checks regardless of caller
+intent); this is asserted directly by a pgTAP test rather than left as
+an implicit consequence of RLS alone (see §5). Both FKs are `ON DELETE
 RESTRICT`: deleting a `business_rules` row (not exposed to owners at
 all — see the authorization model above) or an `events` row must not
 silently destroy historical action-execution identity; a rule
@@ -681,22 +763,35 @@ and "Reports/Dashboards affected" columns are unchanged.
   asserts `rule_action_log` can never contain a row where the
   referenced event's `shop_id` differs from the referenced rule's
   `shop_id` (§2.3's invariant).
-- **`execute_rule_action` EXECUTE-privilege test (required, not
-  optional)**: as both `anon` and `authenticated` roles, attempt to
-  call `execute_rule_action(event_id, rule_id, action)` directly and
-  assert it fails on `permission denied for function`, not merely on
-  a data-validation error — confirming the `REVOKE`/`GRANT` in §2.3 is
-  actually in effect, not just documented. Only a `service_role`-context
-  call (matching how the pgTAP suite itself would invoke it to test
-  the claim/idempotency logic in the tests above) may succeed.
-- **`execute_rule_action` mismatch-rejection tests**: call the RPC
-  with (a) an `event`/`rule` pair from two different shops, (b) a
-  same-shop `event`/`rule` pair whose `event_type` doesn't match the
-  rule's `event_type` (e.g. a `sale.returned` event against the
-  `drawer_variance` rule), and (c) a `rule`/`action` mismatch —
-  asserting each is rejected before any `rule_action_log` row or
-  `notifications` row is created (per §2.3's three-part invariant
-  check).
+- **`execute_rule_action` anon-rejection test**: as the `anon` role
+  (unauthenticated), attempt to call `execute_rule_action(event_id,
+  rule_id)` and assert it fails (no `auth_shop_id()` for an
+  unauthenticated caller to satisfy) — this is the one privilege-level
+  check that still applies given the RPC is `authenticated`-callable,
+  not `anon`-callable.
+- **`execute_rule_action` mismatch-rejection tests**: as an
+  `authenticated` caller belonging to the relevant shop(s), call the
+  RPC with (a) an `event`/`rule` pair from two different shops (caller
+  belongs to neither, or belongs to one), (b) a caller from a
+  *different* shop than the event's own shop (the `auth_shop_id() =
+  event.shop_id` eligibility gate), (c) a same-shop `event`/`rule`
+  pair whose `event_type` doesn't match the rule's `event_type` (e.g.
+  a `sale.returned` event against the `drawer_variance` rule), and (d)
+  a same-shop, matching-event-type pair where the rule is `enabled =
+  false` — asserting each is rejected before any `rule_action_log` row
+  or `notifications` row is created (per §2.3's authorization/invariant
+  checks in step 3).
+- **`execute_rule_action` malicious-caller / authoritative-re-evaluation
+  test (the critical one for this RPC's security model)**: as a valid
+  `authenticated` caller belonging to the correct shop, call
+  `execute_rule_action` directly for a real `sale.returned` event whose
+  `refundAmountUsd` is *below* `large_return`'s threshold, bypassing
+  `evaluateLocally()` entirely (as if a compromised or hand-crafted
+  client tried to force the rule to fire) — assert the RPC returns
+  `'not_matched'` and writes neither a `rule_action_log` row nor a
+  `notifications` row. This is the proof that the client's local
+  evaluation has no authority and the RPC's own re-evaluation (§2.3
+  step 4) is the actual security boundary, not merely business logic.
 - **Event contract test** (WAFI-157 convention), checked in both
   directions: (a) every event type with a `business-rules:*` subscriber
   registered is present in `eventContractFixtures.ts`'s
