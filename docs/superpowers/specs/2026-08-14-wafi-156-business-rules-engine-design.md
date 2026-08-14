@@ -415,7 +415,7 @@ Postgres (the actual trust boundary):
     auth_shop_id() = event.shop_id                    -- caller must belong to this shop
         ↓
     event.shop_id    = rule.shop_id                   -- same invariant as before
-    event.event_type = rule.event_type                -- same invariant as before
+    event.type       = rule.event_type                -- same invariant as before (events.type ↔ business_rules.event_type)
         ↓
     rule.enabled = true                               -- a disabled rule can never fire,
         ↓                                                even via direct RPC call
@@ -507,9 +507,13 @@ Inside `execute_rule_action(p_event_id uuid, p_rule_id uuid)`:
    - `auth_shop_id() = v_event.shop_id` — the calling session must
      belong to the event's own shop (coarse eligibility gate).
    - `v_event.shop_id = v_rule.shop_id` — cross-shop pairing rejected.
-   - `v_event.event_type = v_rule.event_type` — mismatched pairing
-     rejected (e.g. a `sale.returned` event against the
-     `drawer_variance` rule, which targets `shift.closed`).
+   - `v_event.type = v_rule.event_type` — mismatched pairing rejected
+     (e.g. a `sale.returned` event against the `drawer_variance` rule,
+     which targets `shift.closed`). Note the column name: `events.type`
+     is the actual column (matching `DomainEvent.type` in
+     `domainEvent.types.ts`), compared against `business_rules`'s
+     `event_type` column — the two tables simply name the same concept
+     differently; this RPC is the one place that bridges them.
    - `v_rule.enabled = true` — a disabled rule can never fire, even
      via a direct RPC call bypassing `evaluateLocally()`.
 4. **Authoritative condition evaluation** — re-derive the rule's
@@ -517,10 +521,16 @@ Inside `execute_rule_action(p_event_id uuid, p_rule_id uuid)`:
    `transform`, and compare against its `threshold` using its
    `operator`, entirely inside the function, ignoring whatever the
    client's `evaluateLocally()` concluded:
+   `events.payload` is `text` holding a JSON-encoded object (not
+   `jsonb` — see `074_events_bus_core.sql`'s explicit comment on why:
+   avoiding a client/server JSON-parse-shape mismatch bug class), so
+   the RPC casts it once (`v_payload := v_event.payload::jsonb`) before
+   extracting fields:
    ```sql
+   v_payload := v_event.payload::jsonb;
    v_field_value := CASE v_rule.field
-     WHEN 'refundAmountUsd' THEN (v_event.payload->>'refundAmountUsd')::numeric
-     WHEN 'variance'        THEN (v_event.payload->>'variance')::numeric
+     WHEN 'refundAmountUsd' THEN (v_payload->>'refundAmountUsd')::numeric
+     WHEN 'variance'        THEN (v_payload->>'variance')::numeric
      -- extended only when a future rule's field is added to the vocabulary
    END;
    v_transformed := CASE v_rule.transform
