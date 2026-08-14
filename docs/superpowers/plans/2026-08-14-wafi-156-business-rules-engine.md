@@ -884,142 +884,20 @@ git commit -m "feat(WAFI-156): add BusinessRule client types and synced business
 
 ---
 
-### Task 7: Local evaluator (`evaluateLocally`) — non-authoritative pre-filter, with Large Return / Drawer Variance parity fixtures
+### Task 7: `loadEnabledRules` + `businessRuleSubscriber.ts` (shared per-event-type subscriber, no client-side condition filter)
 
-**Read `src/services/notifications/rules/largeReturn.rule.ts` and `src/services/notifications/rules/drawerVariance.rule.ts` in full again immediately before writing this task's test fixtures** — the parity bar (spec §3) is exact behavioral match, not "a technically equivalent formula." Both currently use a strict `>` (not `>=`) comparison and `Math.abs()` with no rounding before comparison — confirm this is still true by re-reading, since this plan was written from an earlier read.
-
-**Files:**
-- Create: `src/services/events/ruleEvaluator.ts`
-- Test: `src/services/events/ruleEvaluator.test.ts`
-
-**Interfaces:**
-- Consumes: `BusinessRule` (Task 6), `DurableEvent<T>` (existing, `runDurableSubscriber.ts`).
-- Produces: `function evaluateLocally(rule: BusinessRule, event: DurableEvent<unknown>): boolean` — pure function, no I/O, no authority (comment must say so explicitly, per spec §2.2/§2.3).
-
-- [ ] **Step 1: Write the failing tests**
-
-```ts
-// src/services/events/ruleEvaluator.test.ts
-import { describe, it, expect } from 'vitest'
-import { evaluateLocally } from './ruleEvaluator'
-import type { BusinessRule } from './businessRules.types'
-import type { DurableEvent } from './runDurableSubscriber'
-
-const largeReturnRule: BusinessRule = {
-  id: 'r1', shopId: 's1', ruleKey: 'large_return', name: 'إرجاع كبير',
-  eventType: 'sale.returned', field: 'refundAmountUsd', transform: 'none',
-  operator: 'gt', threshold: 100, action: 'notify_owner', enabled: true,
-}
-
-const drawerVarianceRule: BusinessRule = {
-  id: 'r2', shopId: 's1', ruleKey: 'drawer_variance', name: 'فرق في الصندوق',
-  eventType: 'shift.closed', field: 'variance', transform: 'abs',
-  operator: 'gt', threshold: 15, action: 'notify_owner', enabled: true,
-}
-
-function returnedEvent(refundAmountUsd: number): DurableEvent<unknown> {
-  return {
-    eventId: 'e1', type: 'sale.returned', entityId: 'ret1',
-    payload: { refundAmountUsd, returnId: 'ret1', saleId: 'sale1', restockedItemCount: 1, cogsReversalUsd: 0 },
-    payloadVersion: 1, staffId: null, shopId: 's1', occurredAt: new Date().toISOString(),
-  }
-}
-
-function shiftClosedEvent(variance: number): DurableEvent<unknown> {
-  return {
-    eventId: 'e2', type: 'shift.closed', entityId: 'shift1',
-    payload: { shiftId: 'shift1', staffId: 'staff1', expectedCash: 100, countedCash: 100 + variance, variance },
-    payloadVersion: 1, staffId: null, shopId: 's1', occurredAt: new Date().toISOString(),
-  }
-}
-
-describe('evaluateLocally', () => {
-  // Large Return: 'none' transform, 'gt' operator -- parity with largeReturn.rule.ts's
-  // `event.payload.refundAmountUsd <= settings.refundUsdCap` early-return (strict >).
-  it('matches when refundAmountUsd is strictly greater than threshold', () => {
-    expect(evaluateLocally(largeReturnRule, returnedEvent(101))).toBe(true)
-  })
-  it('does not match when refundAmountUsd equals the threshold (strict gt, not gte)', () => {
-    expect(evaluateLocally(largeReturnRule, returnedEvent(100))).toBe(false)
-  })
-  it('does not match when refundAmountUsd is below the threshold', () => {
-    expect(evaluateLocally(largeReturnRule, returnedEvent(50))).toBe(false)
-  })
-
-  // Drawer Variance: 'abs' transform, 'gt' operator -- parity with drawerVariance.rule.ts's
-  // `Math.abs(variance) <= settings.varianceUsdCap` early-return (strict >, abs before compare).
-  it('matches a positive variance beyond the threshold', () => {
-    expect(evaluateLocally(drawerVarianceRule, shiftClosedEvent(20))).toBe(true)
-  })
-  it('matches a negative variance beyond the threshold via abs()', () => {
-    expect(evaluateLocally(drawerVarianceRule, shiftClosedEvent(-20))).toBe(true)
-  })
-  it('does not match when abs(variance) equals the threshold (strict gt)', () => {
-    expect(evaluateLocally(drawerVarianceRule, shiftClosedEvent(-15))).toBe(false)
-  })
-  it('does not match a small variance within the threshold', () => {
-    expect(evaluateLocally(drawerVarianceRule, shiftClosedEvent(5))).toBe(false)
-  })
-
-  it('returns false for an unsupported field defensively rather than throwing', () => {
-    const bogus = { ...largeReturnRule, field: 'nonexistentField' as BusinessRule['field'] }
-    expect(evaluateLocally(bogus, returnedEvent(999))).toBe(false)
-  })
-})
-```
-
-- [ ] **Step 2: Run the tests to verify they fail**
-
-Run: `npx vitest run src/services/events/ruleEvaluator.test.ts`
-Expected: FAIL — `Cannot find module './ruleEvaluator'`.
-
-- [ ] **Step 3: Write the implementation**
-
-```ts
-// src/services/events/ruleEvaluator.ts
-import type { BusinessRule } from './businessRules.types'
-import type { DurableEvent } from './runDurableSubscriber'
-
-/**
- * Client-side pre-filter ONLY (spec §2.2/§2.3) -- decides whether it's worth
- * calling execute_rule_action() at all. It has ZERO authority: the RPC
- * independently re-derives the field value from the authoritative event row
- * and re-evaluates the same condition, ignoring this function's result.
- * A bug or staleness here can only cause a missed/extra RPC call, never an
- * incorrect notification, because the RPC is the actual trust boundary.
- */
-export function evaluateLocally(rule: BusinessRule, event: DurableEvent<unknown>): boolean {
-  const payload = event.payload as Record<string, unknown>
-  const raw = payload[rule.field]
-  if (typeof raw !== 'number') return false
-
-  const transformed = rule.transform === 'abs' ? Math.abs(raw) : raw
-
-  switch (rule.operator) {
-    case 'gt':  return transformed >  rule.threshold
-    case 'gte': return transformed >= rule.threshold
-    case 'lt':  return transformed <  rule.threshold
-    case 'lte': return transformed <= rule.threshold
-    case 'eq':  return transformed === rule.threshold
-  }
-}
-```
-
-- [ ] **Step 4: Run the tests to verify they pass**
-
-Run: `npx vitest run src/services/events/ruleEvaluator.test.ts`
-Expected: PASS (9/9).
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add src/services/events/ruleEvaluator.ts src/services/events/ruleEvaluator.test.ts
-git commit -m "feat(WAFI-156): add evaluateLocally client-side pre-filter with Large Return/Drawer Variance parity tests"
-```
-
----
-
-### Task 8: `loadEnabledRules` + `businessRuleSubscriber.ts` (shared per-event-type subscriber)
+**Correction from an earlier version of this plan:** an earlier draft included a
+`ruleEvaluator.ts`/`evaluateLocally()` client-side pre-filter step before this
+task. It was removed entirely (not merged into this task, deleted) — see spec
+§2.2's "Corrected: no client-side condition pre-filter in the correctness
+path." WAFI is offline-first and `business_rules` is synced config that can be
+stale on a given device; a local gate that concludes "doesn't match, don't
+call the RPC" based on a stale threshold would silently suppress a real
+notification (a missed business action), which is unacceptable — whereas an
+unnecessary RPC call that the RPC correctly rejects is harmless. So: **every
+enabled rule loaded for an event type gets an RPC call, unconditionally, with
+no local condition check gating it.** Do not write a `ruleEvaluator.ts` file
+as part of this task.
 
 **Files:**
 - Create: `src/services/events/loadEnabledRules.ts`
@@ -1027,8 +905,8 @@ git commit -m "feat(WAFI-156): add evaluateLocally client-side pre-filter with L
 - Test: `src/services/events/businessRuleSubscriber.test.ts`
 
 **Interfaces:**
-- Consumes: `runDurableSubscriber` (existing), `evaluateLocally` (Task 7), `BusinessRule`/`parseBusinessRuleRow` (Task 6), `db` from `@/data/powersync/db` (existing, used identically by `largeReturn.rule.ts`), `supabase` from `@/data/supabase/client` (existing, used identically by `src/data/powersync/ops.ts`/`src/features/staff/composables/useOwnerBootstrap.ts` for `.rpc()` calls).
-- Produces: `function loadEnabledRules(shopId: string, eventType: DataDrivenRuleEventType): Promise<BusinessRule[]>`; `function startBusinessRuleSubscribers(shopId: string): { stop: () => void }`; `export const DATA_DRIVEN_RULE_EVENT_TYPES: DataDrivenRuleEventType[]` (mirrors `NOTIFIED_EVENT_TYPES`'s role in `notificationSubscriber.ts:88-91`, for the event-contract consumer-completeness check in Task 10).
+- Consumes: `runDurableSubscriber` (existing), `BusinessRule`/`parseBusinessRuleRow` (Task 6), `db` from `@/data/powersync/db` (existing, used identically by `largeReturn.rule.ts`), `supabase` from `@/data/supabase/client` (existing, used identically by `src/data/powersync/ops.ts`/`src/features/staff/composables/useOwnerBootstrap.ts` for `.rpc()` calls).
+- Produces: `function loadEnabledRules(shopId: string, eventType: DataDrivenRuleEventType): Promise<BusinessRule[]>`; `function startBusinessRuleSubscribers(shopId: string): { stop: () => void }`; `export const DATA_DRIVEN_RULE_EVENT_TYPES: DataDrivenRuleEventType[]` (mirrors `NOTIFIED_EVENT_TYPES`'s role in `notificationSubscriber.ts:88-91`, for the event-contract consumer-completeness check in Task 8).
 
 - [ ] **Step 1: Write `loadEnabledRules.ts`**
 
@@ -1068,9 +946,6 @@ vi.mock('./runDurableSubscriber', () => ({ runDurableSubscriber: (opts: unknown)
 const mockLoadEnabledRules = vi.fn()
 vi.mock('./loadEnabledRules', () => ({ loadEnabledRules: (...args: unknown[]) => mockLoadEnabledRules(...args) }))
 
-const mockEvaluateLocally = vi.fn()
-vi.mock('./ruleEvaluator', () => ({ evaluateLocally: (...args: unknown[]) => mockEvaluateLocally(...args) }))
-
 const mockRpc = vi.fn()
 vi.mock('@/data/supabase/client', () => ({ supabase: { rpc: (...args: unknown[]) => mockRpc(...args) } }))
 
@@ -1096,11 +971,10 @@ describe('startBusinessRuleSubscribers', () => {
     )
   })
 
-  it("the sale.returned handler loads rules, pre-filters via evaluateLocally, and calls execute_rule_action only for matches", async () => {
+  it('the sale.returned handler loads every enabled rule and calls execute_rule_action for each, unconditionally', async () => {
     mockLoadEnabledRules.mockResolvedValue([
       { id: 'rule-a', ruleKey: 'large_return' }, { id: 'rule-b', ruleKey: 'other' },
     ])
-    mockEvaluateLocally.mockImplementation((rule) => rule.id === 'rule-a')
     mockRpc.mockResolvedValue({ data: 'executed', error: null })
 
     startBusinessRuleSubscribers('shop1')
@@ -1113,22 +987,33 @@ describe('startBusinessRuleSubscribers', () => {
     await handler(event)
 
     expect(mockLoadEnabledRules).toHaveBeenCalledWith('shop1', 'sale.returned')
-    expect(mockRpc).toHaveBeenCalledTimes(1)
+    // Called once per loaded rule, regardless of any condition -- there is no
+    // local filter to suppress a call, per this task's correction above.
+    expect(mockRpc).toHaveBeenCalledTimes(2)
     expect(mockRpc).toHaveBeenCalledWith('execute_rule_action', { p_event_id: 'e1', p_rule_id: 'rule-a' })
+    expect(mockRpc).toHaveBeenCalledWith('execute_rule_action', { p_event_id: 'e1', p_rule_id: 'rule-b' })
   })
 
-  it('does not call execute_rule_action when no rule pre-filters as a match', async () => {
-    mockLoadEnabledRules.mockResolvedValue([{ id: 'rule-a', ruleKey: 'large_return' }])
-    mockEvaluateLocally.mockReturnValue(false)
+  it('one rule RPC failure still lets sibling rule calls proceed independently', async () => {
+    mockLoadEnabledRules.mockResolvedValue([
+      { id: 'rule-a', ruleKey: 'large_return' }, { id: 'rule-b', ruleKey: 'other' },
+    ])
+    mockRpc
+      .mockResolvedValueOnce({ data: null, error: new Error('boom') })
+      .mockResolvedValueOnce({ data: 'executed', error: null })
 
     startBusinessRuleSubscribers('shop1')
     const saleReturnedCall = mockRunDurableSubscriber.mock.calls.find(
       ([opts]) => opts.eventType === 'sale.returned',
     )
     const handler = saleReturnedCall![0].handler
-    await handler({ eventId: 'e1', shopId: 'shop1', type: 'sale.returned', payload: {}, entityId: 'x', payloadVersion: 1, staffId: null, occurredAt: '' })
+    const event = { eventId: 'e1', shopId: 'shop1', type: 'sale.returned', payload: {}, entityId: 'x', payloadVersion: 1, staffId: null, occurredAt: '' }
 
-    expect(mockRpc).not.toHaveBeenCalled()
+    // The whole handler call is allowed to reject (runDurableSubscriber's own
+    // catch/retry-queue wraps it) -- but both rules must have been attempted.
+    await handler(event).catch(() => {})
+
+    expect(mockRpc).toHaveBeenCalledTimes(2)
   })
 })
 ```
@@ -1145,8 +1030,6 @@ Expected: FAIL — module not found.
 import { supabase } from '@/data/supabase/client'
 import { runDurableSubscriber } from './runDurableSubscriber'
 import { loadEnabledRules } from './loadEnabledRules'
-import { evaluateLocally } from './ruleEvaluator'
-import { logger } from './logger'
 import type { DataDrivenRuleEventType } from './domainEvent.types'
 import type { DurableEvent } from './runDurableSubscriber'
 
@@ -1157,20 +1040,25 @@ export const DATA_DRIVEN_RULE_EVENT_TYPES: DataDrivenRuleEventType[] = ['sale.re
 
 async function handleEventForType(eventType: DataDrivenRuleEventType, event: DurableEvent<unknown>): Promise<void> {
   const rules = await loadEnabledRules(event.shopId, eventType)
+  // No local condition filter (spec §2.2 correction): execute_rule_action is
+  // the sole evaluator, called for every enabled rule regardless of what a
+  // possibly-stale local copy of the rule's threshold would suggest. Each
+  // call is independent -- one rule's failure must not prevent the next
+  // rule's call in this same loop from being attempted.
+  const errors: unknown[] = []
   for (const rule of rules) {
-    // Pre-filter only -- zero authority, see ruleEvaluator.ts's doc comment.
-    if (!evaluateLocally(rule, event)) continue
-
     const { error } = await supabase.rpc('execute_rule_action', {
       p_event_id: event.eventId,
       p_rule_id: rule.id,
     })
-    if (error) {
-      // runDurableSubscriber's own catch/retry-queue wraps this handler --
-      // rethrow so a single rule's RPC failure routes through the existing
-      // retry mechanism rather than being silently swallowed here.
-      throw error
-    }
+    if (error) errors.push(error)
+  }
+  if (errors.length > 0) {
+    // runDurableSubscriber's own catch/retry-queue wraps this handler --
+    // rethrow (after every rule in this event has been attempted) so the
+    // failure routes through the existing retry mechanism rather than being
+    // silently swallowed here.
+    throw errors[0]
   }
 }
 
@@ -1202,12 +1090,12 @@ Expected: PASS.
 
 ```bash
 git add src/services/events/loadEnabledRules.ts src/services/events/businessRuleSubscriber.ts src/services/events/businessRuleSubscriber.test.ts
-git commit -m "feat(WAFI-156): add loadEnabledRules and businessRuleSubscriber with fixed per-event-type registration"
+git commit -m "feat(WAFI-156): add loadEnabledRules and businessRuleSubscriber, unconditional per-rule RPC calls with no client-side filter"
 ```
 
 ---
 
-### Task 9: Wire into `App.vue`, retire the two migrated native rules
+### Task 8: Wire into `App.vue`, retire the two migrated native rules
 
 **Files:**
 - Modify: `src/App.vue` (add `startBusinessRuleSubscribers` call)
@@ -1262,14 +1150,14 @@ git commit -m "feat(WAFI-156): retire native Large Return/Drawer Variance rules,
 
 ---
 
-### Task 10: Event contract test coverage (WAFI-157 convention, bidirectional)
+### Task 9: Event contract test coverage (WAFI-157 convention, bidirectional)
 
 **Files:**
 - Modify: `src/services/events/__tests__/eventContractFixtures.ts` (or wherever `DORMANT_EVENTS`/consumer lists live — locate via the existing WAFI-157 file structure before editing)
 - Create/modify: `src/services/events/__tests__/eventContracts.subscribers.test.ts` (add business-rules coverage alongside the existing audit/notification/projection coverage)
 
 **Interfaces:**
-- Consumes: `DATA_DRIVEN_RULE_EVENT_TYPES` (Task 8), `DataDrivenRuleEventType` (Task 6).
+- Consumes: `DATA_DRIVEN_RULE_EVENT_TYPES` (Task 7), `DataDrivenRuleEventType` (Task 6).
 
 - [ ] **Step 1: Read the existing `eventContracts.subscribers.test.ts` in full** to find its exact consumer-completeness assertion shape (it already checks `AUDITED_EVENT_TYPES`/`NOTIFIED_EVENT_TYPES`/the three projections' event-type lists per prior research — mirror that exact pattern for `DATA_DRIVEN_RULE_EVENT_TYPES`).
 
@@ -1308,7 +1196,7 @@ git commit -m "test(WAFI-156): add business rule engine to event contract consum
 
 ---
 
-### Task 11: `RulesScreen.vue` — owner-only view/edit UI
+### Task 10: `RulesScreen.vue` — owner-only view/edit UI
 
 **Files:**
 - Create: `src/features/settings/screens/RulesScreen.vue`
@@ -1439,7 +1327,7 @@ git commit -m "feat(WAFI-156): add owner-only RulesScreen.vue for viewing/editin
 
 ---
 
-### Task 12: Documentation — Domain Interaction Matrix, SIGNALS.md, EVENT_SUBSCRIBERS.md
+### Task 11: Documentation — Domain Interaction Matrix, SIGNALS.md, EVENT_SUBSCRIBERS.md
 
 **Files:**
 - Modify: `AI_PRINCIPAL_ENGINEER_REVIEW.md` (Domain Interaction Matrix — add the Business Rules row per spec §4)
@@ -1481,7 +1369,7 @@ git commit -m "docs(WAFI-156): update Domain Interaction Matrix, SIGNALS.md, EVE
 
 ---
 
-### Task 13: Full-suite verification and whole-branch review prep
+### Task 12: Full-suite verification and whole-branch review prep
 
 **Files:** none new — verification only.
 
