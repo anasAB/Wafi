@@ -1,7 +1,7 @@
 # WAFI-156 — Business Rules Engine (Design Spec)
 
 Date: 2026-08-14
-Status: Approved, implementation-ready — 3rd review pass, concurrent-idempotency/RPC and owner-authorization model hardened
+Status: Approved, implementation-ready — 4th review pass: execute_rule_action() reclassified as a server-side execution primitive (not client-authorized), concurrency invariant wording fixed, rule_action_log confirmed server-only with no client sync surface, shop-provisioning path specified against verified bootstrap code
 Ticket: WAFI-156, Macro-Phase 3 (Enterprise Scale), P2, roadmap estimate 2 sprints
 
 ## 1. Scope
@@ -133,9 +133,9 @@ subscriber.
 
 ### 2.1 `business_rules` — policy data, not runtime infrastructure
 
-A new Postgres table, synced per-shop (same pattern as
-`notification_settings`), seeded via migration with the two proof
-rows. Deliberately **not** merged into `notification_settings`:
+A new Postgres table, synced per-shop (same sync-scoping pattern as
+`notification_settings`). Deliberately **not** merged into
+`notification_settings`:
 `notification_settings` answers "how should this shop receive
 notifications" (delivery/preference); `business_rules` answers "under
 what business condition should the system act" (policy). Coupling
@@ -231,6 +231,38 @@ contract test in §5, not by a DB-level enum (Postgres `CHECK IN
 (...)` here would need updating every time a new event type adopts
 the engine, which is an acceptable manual step given `event_type` is
 already system-controlled and not owner-facing).
+
+**Provisioning for existing and new shops.** Unlike
+`notification_settings`, `business_rules` cannot rely on a
+missing-row-means-default pattern — there is no code-side hardcoded
+rule to fall back to; a rule must exist as a real row to be evaluated,
+listed in `RulesScreen.vue`, or edited via `update_business_rule()` at
+all. Checked against the actual shop-bootstrap code before writing
+this: **no existing per-shop config table is bootstrapped this way**
+— `notification_settings` itself gets no row at shop creation (it
+depends entirely on `getNotificationSettings()`'s code-side default
+fallback); the only tables genuinely eagerly-inserted at bootstrap are
+`shops` (via the `auth.users` trigger, `021_provision_shop_on_signup.sql`)
+and `staff`/`devices`/`device_sessions` (via the
+`bootstrap_owner_identity()` RPC, `069_bootstrap_owner_identity.sql`).
+So this ticket must add its own provisioning step rather than reuse
+one:
+
+- **Existing shops:** this ticket's migration inserts the two proof
+  rows (`large_return`, `drawer_variance`) for every row currently in
+  `shops`, once, as a backfill.
+- **New shops (signed up after this ticket ships):** `bootstrap_owner_identity()`
+  (069) is extended with one more insert — the same two canonical
+  `business_rules` rows — alongside its existing `devices`/`staff`/
+  `device_sessions` inserts, so a freshly-bootstrapped shop has its
+  rules present from the same moment its owner/device rows are
+  created, not as a separate follow-up step that could be skipped or
+  raced.
+
+Both inserts key on `(shop_id, rule_key)` (`ON CONFLICT (shop_id,
+rule_key) DO NOTHING`), so the backfill and the bootstrap-time insert
+share one idempotent seed statement rather than diverging into two
+implementations of "what the canonical rules are."
 
 **Authorization:** RLS scopes the `SELECT` grant by `auth_shop_id()`;
 see the authorization model above for why write access is via RPC
@@ -334,13 +366,51 @@ data) — WAFI-156 reuses that precedent rather than inventing a new
 one: **the claim, the `notifications` write, and the `executed_at`
 stamp all happen inside one Postgres transaction in a single
 `SECURITY DEFINER` RPC, `execute_rule_action(event_id, rule_id,
-action)`**, called by the client (via `auth_shop_id()`-authorized
-`rpc()`), never assembled client-side across separate statements.
-`rule_action_log` itself is an ordinary server-side Postgres table —
-**not** PowerSync-synced to a local table the way `business_rules`
-(config) is; clients never write to it directly, they only read
-their own shop's rows (for the Notification Center / any future
-"rule fired N times" surfacing) through normal sync rules.
+action)`**, never assembled client-side across separate statements.
+
+**This is a server-side execution primitive, invoked by the durable
+subscriber's own backend context — it is not a client-facing RPC and
+must not be authorized against a caller's `auth_shop_id()`.** A
+durable subscriber (per WAFI-150) runs as server/background
+execution processing an event that already carries its own
+authoritative `shop_id`; nothing about which browser/device happens to
+be the current authenticated session is relevant to whether a rule
+action for that event should execute. `execute_rule_action` derives
+its own authorization entirely from its inputs: it looks up the
+`event_id` row itself (rejecting if it doesn't exist), looks up the
+`rule_id` row itself, and requires `event.shop_id = rule.shop_id`
+before doing anything else (this is the same invariant asserted by
+the pgTAP test in §5 — enforced in the RPC body, not merely tested
+after the fact) — it does not consult `auth_shop_id()` at all. This
+gives WAFI-156 two clearly separate RPCs with two different security
+models:
+
+```
+Owner path (authenticated-session-scoped):
+  RulesScreen.vue → update_business_rule(rule_id, name, threshold, enabled)
+                     authorized via auth_shop_id() = rule's own shop_id
+
+Execution path (event-scoped, no client identity involved):
+  durable subscriber → execute_rule_action(event_id, rule_id, action)
+                        authorized via event.shop_id = rule.shop_id (derived from inputs)
+```
+
+Conflating these — e.g. authorizing `execute_rule_action` by the
+currently-authenticated client's `auth_shop_id()` — would be wrong
+even if it happened to work in the common case, because the caller
+executing a durable subscriber's retry may not correspond to any
+particular signed-in user/session at all, and the action's legitimacy
+must not depend on one.
+
+`rule_action_log` itself is an ordinary server-only Postgres table:
+**not** PowerSync-synced, and clients have **no direct read or write
+access** to it in WAFI-156 — there is no product requirement today for
+surfacing "this rule fired N times" to any client, so no sync surface
+is introduced for it. The Notification Center continues to be backed
+entirely by `notifications` (which *is* synced, exactly as it is
+today for the native rules); `rule_action_log` is purely the
+server-side execution ledger behind `execute_rule_action` and is
+invisible to every client.
 
 Inside `execute_rule_action`, per matched rule:
 
@@ -382,12 +452,16 @@ undercount on transient failures) in exchange for never having a row
 silently claim more than it can prove.
 
 **Invariant (the one this whole section exists to guarantee): at most
-one execution attempt for a given `(event_id, rule_id, action)` may
-ever proceed to the `notifications` write, including under concurrent
-redelivery from two devices/subscriber-invocations at the same
-instant — concurrent callers serialize on the `rule_action_log` row
-lock inside `execute_rule_action` and the loser skips once it observes
-a committed `executed_at`.**
+one *concurrent* execution attempt for a given `(event_id, rule_id,
+action)` may proceed to the `notifications` write.** Concurrent
+callers (e.g. two subscriber-invocations racing at the same instant,
+possibly from different devices' redelivery) serialize on the
+`rule_action_log` row lock inside `execute_rule_action`, and the loser
+skips once it observes a committed `executed_at`. This is distinct
+from the sequential-retry case: after a failed attempt rolls back
+(no row, or row with `executed_at IS NULL`), a *later, non-concurrent*
+retry is expected and allowed to proceed; only after a successful
+commit do all subsequent attempts — concurrent or sequential — skip.
 
 `last_error` is **diagnostic metadata only** — it is not consulted for
 claiming, idempotency, retry eligibility, or correctness, and a
