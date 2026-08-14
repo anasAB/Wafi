@@ -1,7 +1,7 @@
 # WAFI-156 — Business Rules Engine (Design Spec)
 
 Date: 2026-08-14
-Status: Approved, implementation-ready — 4th review pass: execute_rule_action() reclassified as a server-side execution primitive (not client-authorized), concurrency invariant wording fixed, rule_action_log confirmed server-only with no client sync surface, shop-provisioning path specified against verified bootstrap code
+Status: Approved, implementation-ready — 5th review pass (final gate): execute_rule_action() EXECUTE privilege explicitly restricted to service_role (REVOKE from anon/authenticated), RPC validates event.event_type = rule.event_type and rule.action = requested action before any claim logic runs
 Ticket: WAFI-156, Macro-Phase 3 (Enterprise Scale), P2, roadmap estimate 2 sprints
 
 ## 1. Scope
@@ -378,10 +378,29 @@ be the current authenticated session is relevant to whether a rule
 action for that event should execute. `execute_rule_action` derives
 its own authorization entirely from its inputs: it looks up the
 `event_id` row itself (rejecting if it doesn't exist), looks up the
-`rule_id` row itself, and requires `event.shop_id = rule.shop_id`
-before doing anything else (this is the same invariant asserted by
-the pgTAP test in §5 — enforced in the RPC body, not merely tested
-after the fact) — it does not consult `auth_shop_id()` at all. This
+`rule_id` row itself, and — **before doing anything else, including
+the claim in step 2 below** — requires all three of:
+
+```
+event.shop_id    = rule.shop_id
+event.event_type = rule.event_type
+rule.action      = $action   (the action argument passed in)
+```
+
+The RPC does not trust its caller to have assembled a correct
+`(event, rule)` pair — the normal subscriber path can't produce a
+mismatched pair today, since it loads `business_rules WHERE event_type
+= $event_type` before ever calling this RPC (§2.2), but
+`execute_rule_action` is the actual execution/authorization boundary
+and must reject a mismatch itself, not merely rely on every future
+caller assembling inputs correctly. A shop-scope mismatch, an
+event-type mismatch (e.g. a `sale.returned` event paired with the
+`drawer_variance` rule, which targets `shift.closed`), or an action
+mismatch (a rule whose `action` isn't the one requested) all raise and
+abort before the claim/notification logic runs — none of this is
+merely tested after the fact (see §5's pgTAP coverage), it's enforced
+in the RPC body as the first thing it does. It does not consult
+`auth_shop_id()` at all. This
 gives WAFI-156 two clearly separate RPCs with two different security
 models:
 
@@ -389,10 +408,12 @@ models:
 Owner path (authenticated-session-scoped):
   RulesScreen.vue → update_business_rule(rule_id, name, threshold, enabled)
                      authorized via auth_shop_id() = rule's own shop_id
+                     EXECUTE granted to: authenticated (owner-role-checked inside)
 
 Execution path (event-scoped, no client identity involved):
   durable subscriber → execute_rule_action(event_id, rule_id, action)
                         authorized via event.shop_id = rule.shop_id (derived from inputs)
+                        EXECUTE granted to: server/background execution role only
 ```
 
 Conflating these — e.g. authorizing `execute_rule_action` by the
@@ -401,6 +422,36 @@ even if it happened to work in the common case, because the caller
 executing a durable subscriber's retry may not correspond to any
 particular signed-in user/session at all, and the action's legitimacy
 must not depend on one.
+
+**`execute_rule_action`'s security boundary is not `SECURITY DEFINER`
+alone — it is the Postgres `EXECUTE` grant.** `SECURITY DEFINER` only
+controls which role's *row-level* permissions the function body runs
+with; it does not by itself restrict *who may call the function*. Since
+this RPC deliberately does not check `auth_shop_id()` — by design, per
+above, because it trusts the supplied `(event_id, rule_id, action)`
+relationship rather than caller identity — leaving it callable by
+`authenticated` would let any signed-in client invoke it directly for
+an arbitrary `(event_id, rule_id, action)` triple within their own
+shop (or, absent the check in point 2 below, even across shops),
+bypassing the entire notification/idempotency pipeline and writing
+fabricated `notifications` rows. The required grant is therefore:
+
+```sql
+REVOKE EXECUTE ON FUNCTION execute_rule_action(uuid, uuid, text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION execute_rule_action(uuid, uuid, text) FROM anon, authenticated;
+GRANT  EXECUTE ON FUNCTION execute_rule_action(uuid, uuid, text) TO service_role;
+```
+
+i.e. only the backend/durable-subscriber execution context (running
+under `service_role`, the same role WAFI-151's `rebuild_daily_event_counts_scope`
+already restricts itself to) may ever call it — matching that
+migration's existing "no client-reachable path" precedent rather than
+introducing a new authorization shape. `update_business_rule`, by
+contrast, is deliberately `authenticated`-callable (any signed-in
+staff member of the shop can call it; it enforces the owner-only role
+check in its own body, the same pattern WAFI-018's
+`can_view_staff_performance` uses for a structurally-owner-only
+capability).
 
 `rule_action_log` itself is an ordinary server-only Postgres table:
 **not** PowerSync-synced, and clients have **no direct read or write
@@ -630,6 +681,22 @@ and "Reports/Dashboards affected" columns are unchanged.
   asserts `rule_action_log` can never contain a row where the
   referenced event's `shop_id` differs from the referenced rule's
   `shop_id` (§2.3's invariant).
+- **`execute_rule_action` EXECUTE-privilege test (required, not
+  optional)**: as both `anon` and `authenticated` roles, attempt to
+  call `execute_rule_action(event_id, rule_id, action)` directly and
+  assert it fails on `permission denied for function`, not merely on
+  a data-validation error — confirming the `REVOKE`/`GRANT` in §2.3 is
+  actually in effect, not just documented. Only a `service_role`-context
+  call (matching how the pgTAP suite itself would invoke it to test
+  the claim/idempotency logic in the tests above) may succeed.
+- **`execute_rule_action` mismatch-rejection tests**: call the RPC
+  with (a) an `event`/`rule` pair from two different shops, (b) a
+  same-shop `event`/`rule` pair whose `event_type` doesn't match the
+  rule's `event_type` (e.g. a `sale.returned` event against the
+  `drawer_variance` rule), and (c) a `rule`/`action` mismatch —
+  asserting each is rejected before any `rule_action_log` row or
+  `notifications` row is created (per §2.3's three-part invariant
+  check).
 - **Event contract test** (WAFI-157 convention), checked in both
   directions: (a) every event type with a `business-rules:*` subscriber
   registered is present in `eventContractFixtures.ts`'s
