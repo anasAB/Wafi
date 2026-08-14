@@ -1,7 +1,7 @@
 # WAFI-156 — Business Rules Engine (Design Spec)
 
 Date: 2026-08-14
-Status: Approved, implementation-ready — 6th review pass: execute_rule_action() corrected from an unimplementable service_role-only design to an authenticated-callable RPC that is itself the authoritative evaluation/security boundary (client-side evaluation is a non-authoritative pre-filter only), verified against WAFI's actual client-only durable-subscriber architecture (no deployed backend exists)
+Status: Approved, implementation-ready — 7th review pass: removed the client-side evaluateLocally() pre-filter from the correctness path entirely (a stale-synced local threshold could cause a false-negative and silently suppress a real notification, which is unsafe under offline-first config sync lag, unlike the harmless false-positive direction); the subscriber now calls execute_rule_action() for every enabled rule unconditionally and Postgres is the sole evaluator
 Ticket: WAFI-156, Macro-Phase 3 (Enterprise Scale), P2, roadmap estimate 2 sprints
 
 ## 1. Scope
@@ -309,19 +309,43 @@ runDurableSubscriber({
   handler: async (event) => {
     const rules = await loadEnabledRules(event.shopId, 'sale.returned')
     for (const rule of rules) {
-      // Client-side evaluation here is a pre-filter/optimization only — it
-      // decides whether to *call* the RPC at all, so an obviously-non-matching
-      // rule doesn't cost a round-trip. It has zero authority: the RPC
-      // in §2.3 re-evaluates the same condition against the authoritative
-      // event row itself and will refuse to act if this pre-filter was wrong
-      // (stale local data, a bug, or a bypass calling the RPC directly).
-      if (evaluateLocally(rule, event)) {
-        await executeRuleAction(event.eventId, rule.id)   // see §2.3
-      }
+      // No client-side condition filter in the correctness path (see the
+      // "no local pre-filter" correction below) — the RPC is called for
+      // every enabled rule matching this event_type, unconditionally.
+      await executeRuleAction(event.eventId, rule.id)   // see §2.3
     }
   },
 })
 ```
+
+**Corrected: no client-side condition pre-filter in the correctness
+path.** An earlier version of this design added a local
+`evaluateLocally(rule, event)` gate before calling the RPC, reasoning
+that it was "zero authority" since the RPC re-evaluates anyway. That
+reasoning was wrong in one direction: WAFI is offline-first and
+`business_rules` is synced config, which can be stale on a given
+device relative to Postgres. Consider a device whose local copy of
+`large_return.threshold` is still `200` (an owner edit to `100` hasn't
+synced down yet) evaluating a `refundAmountUsd = 150` return: a local
+gate would conclude "150 is not > 200, don't call the RPC" and the
+owner would silently never be notified — a **missed business action**,
+not a harmless inefficiency. The reverse case (stale local threshold
+*lower* than authoritative, causing an unnecessary RPC call that the
+RPC then correctly rejects as `'not_matched'`) is harmless — but the
+asymmetry means a local filter can only ever be safe in the
+false-positive direction, never the false-negative one, and a simple
+boolean gate can't tell which direction it's wrong in before the fact.
+**The fix: call `execute_rule_action` for every enabled rule loaded
+for this event type, with no local condition check gating the call at
+all.** This is not a loss of an important optimization — the RPC was
+already going to do the authoritative evaluation regardless, so
+removing the local gate simply removes a redundant (and, given sync
+lag, unsafe) computation, not a real one. A local evaluator may still
+exist later purely for non-authority purposes that can never suppress
+a call (e.g. UI preview of "would this currently fire" in
+`RulesScreen.vue`, or telemetry) — but nothing resembling
+`ruleEvaluator.ts`'s original role as a correctness-path gate is part
+of this ticket.
 
 This keeps infrastructure topology (subscriber count) fixed regardless
 of how many rules exist per event type — adding a tenth rule to
@@ -401,9 +425,9 @@ correctness*:
 Client (untrusted for authority, trusted only to trigger):
   runDurableSubscriber(event_type)
         ↓
-  evaluateLocally(rule, event)     ← optimization/pre-filter only, zero authority
-        ↓ (candidate match)
-  execute_rule_action(event_id, rule_id)   ← authenticated RPC call
+  loadEnabledRules(shopId, event_type)     ← may be stale (synced config, offline-first)
+        ↓ (every enabled rule, no local condition check)
+  execute_rule_action(event_id, rule_id)   ← authenticated RPC call, called for each
 
 Postgres (the actual trust boundary):
   execute_rule_action(event_id, rule_id):
@@ -420,8 +444,9 @@ Postgres (the actual trust boundary):
     rule.enabled = true                               -- a disabled rule can never fire,
         ↓                                                even via direct RPC call
     evaluate rule.field/transform/operator/threshold
-    against event.payload — AUTHORITATIVELY, ignoring
-    whatever the client's evaluateLocally() concluded
+    against event.payload — AUTHORITATIVELY, against the
+    server's own current business_rules row, regardless of
+    what the client's (possibly stale-synced) local copy said
         ↓ no match → return 'not_matched', nothing written
         ↓ match
     claim + notification + executed_at (§2.3 below, unchanged)
@@ -438,9 +463,9 @@ uuid, rule_id uuid)`.
 
 **Why this is still safe against a malicious `authenticated` caller.**
 Consider a signed-in staff member calling `execute_rule_action(some_sale_returned_event_id,
-large_return_rule_id)` directly, bypassing `RulesScreen.vue` and
-`evaluateLocally()` entirely, for a return that was well under the
-`large_return` threshold. The RPC still independently re-derives
+large_return_rule_id)` directly, bypassing the normal subscriber flow
+entirely, for a return that was well under the `large_return`
+threshold. The RPC still independently re-derives
 `refundAmountUsd` from `event.payload` (the authoritative, already-committed
 event row — not anything the caller asserts), applies `large_return`'s
 `transform`/`operator`/`threshold`, and finds no match — it returns
@@ -515,12 +540,13 @@ Inside `execute_rule_action(p_event_id uuid, p_rule_id uuid)`:
      `event_type` column — the two tables simply name the same concept
      differently; this RPC is the one place that bridges them.
    - `v_rule.enabled = true` — a disabled rule can never fire, even
-     via a direct RPC call bypassing `evaluateLocally()`.
+     via a direct RPC call.
 4. **Authoritative condition evaluation** — re-derive the rule's
    `field` from `v_event.payload` (a `jsonb` column), apply its
    `transform`, and compare against its `threshold` using its
-   `operator`, entirely inside the function, ignoring whatever the
-   client's `evaluateLocally()` concluded:
+   `operator`, entirely inside the function, against the server's own
+   current `business_rules` row (the client never gates this call on
+   any local condition check — see the correction in §2.2):
    `events.payload` is `text` holding a JSON-encoded object (not
    `jsonb` — see `074_events_bus_core.sql`'s explicit comment on why:
    avoiding a client/server JSON-parse-shape mismatch bug class), so
@@ -791,17 +817,28 @@ and "Reports/Dashboards affected" columns are unchanged.
   false` — asserting each is rejected before any `rule_action_log` row
   or `notifications` row is created (per §2.3's authorization/invariant
   checks in step 3).
-- **`execute_rule_action` malicious-caller / authoritative-re-evaluation
-  test (the critical one for this RPC's security model)**: as a valid
-  `authenticated` caller belonging to the correct shop, call
-  `execute_rule_action` directly for a real `sale.returned` event whose
-  `refundAmountUsd` is *below* `large_return`'s threshold, bypassing
-  `evaluateLocally()` entirely (as if a compromised or hand-crafted
-  client tried to force the rule to fire) — assert the RPC returns
-  `'not_matched'` and writes neither a `rule_action_log` row nor a
-  `notifications` row. This is the proof that the client's local
-  evaluation has no authority and the RPC's own re-evaluation (§2.3
-  step 4) is the actual security boundary, not merely business logic.
+- **`execute_rule_action` non-matching-condition test (the critical one
+  for this RPC's evaluation model)**: as a valid `authenticated` caller
+  belonging to the correct shop, call `execute_rule_action` directly
+  for a real `sale.returned` event whose `refundAmountUsd` is *below*
+  `large_return`'s threshold — assert the RPC returns `'not_matched'`
+  and writes neither a `rule_action_log` row nor a `notifications`
+  row. This proves the RPC's own condition re-evaluation (§2.3 step 4)
+  is authoritative regardless of who calls it or why — including the
+  normal subscriber path, which (per §2.2's correction) calls this RPC
+  for every enabled rule with no local condition check first, relying
+  entirely on this server-side evaluation to filter non-matches.
+- **Stale-local-config safety test**: seed a rule with threshold `100`
+  in Postgres, then call `execute_rule_action` for an event with
+  `refundAmountUsd = 150` while a *separate* in-memory/local copy of
+  the rule (simulating a device that hasn't yet synced down a recent
+  owner edit) has a stale threshold of `200` — assert the RPC still
+  returns `'executed'` and writes the notification, proving the
+  server's own current row is what's evaluated, never whatever the
+  caller's local state believed. This is the regression test for the
+  false-negative bug the client-side pre-filter design would have
+  introduced (§2.2's correction) — it belongs here because the RPC,
+  not the client, is what must never be fooled by local staleness.
 - **Event contract test** (WAFI-157 convention), checked in both
   directions: (a) every event type with a `business-rules:*` subscriber
   registered is present in `eventContractFixtures.ts`'s
