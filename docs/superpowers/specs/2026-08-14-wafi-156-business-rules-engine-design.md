@@ -119,6 +119,18 @@ Both paths write to the same `notifications` table and are visible
 identically in `NotificationCenterScreen.vue` — an owner never sees a
 difference between a data-driven and a native-code notification.
 
+**Multiple consumers of the same domain event are intentional and
+pre-existing** (Drawer Variance and Shift Late Close already
+independently subscribe to `shift.closed` today). WAFI-156 does not
+consolidate native notification subscribers down to one per event
+type — it introduces one *additional* shared consumer for the
+data-driven rule set alongside whatever native consumers already exist
+for that event type. Only the two migrated native consumers
+(`largeReturn.rule.ts`, `drawerVariance.rule.ts`) are removed; Shift
+Late Close's native subscriber on `shift.closed` is untouched and
+continues running alongside the new `business-rules:shift.closed`
+subscriber.
+
 ### 2.1 `business_rules` — policy data, not runtime infrastructure
 
 A new Postgres table, synced per-shop (same pattern as
@@ -134,28 +146,70 @@ specifically, making a future second action harder to add cleanly.
 business_rules
   id            uuid PK
   shop_id       uuid                 -- RLS scope
-  rule_key      text                 -- stable machine identity, e.g. 'large_return'
+  rule_key      text                 -- stable machine identity, e.g. 'large_return'; immutable
   name          text                 -- human-readable, owner-editable
-  event_type    text                 -- DomainEventType, e.g. 'sale.returned'
-  field         text                 -- e.g. 'refundAmountUsd', 'variance'
-  transform     text                 -- 'none' | 'abs'  (closed enum)
-  operator      text                 -- 'gt' | 'gte' | 'lt' | 'lte' | 'eq'  (closed enum)
-  threshold     numeric              -- generic, not USD-specific
-  action        text                 -- 'notify_owner' (only value today)
-  enabled       boolean not null default true
+  event_type    text                 -- DomainEventType, e.g. 'sale.returned'; system-controlled
+  field         text                 -- e.g. 'refundAmountUsd', 'variance'; system-controlled
+  transform     text  CHECK (transform IN ('none', 'abs'))                  -- system-controlled
+  operator      text  CHECK (operator IN ('gt', 'gte', 'lt', 'lte', 'eq'))  -- system-controlled
+  threshold     numeric              -- generic, not USD-specific; owner-editable
+  action        text  CHECK (action = 'notify_owner')                      -- system-controlled
+  enabled       boolean not null default true                              -- owner-editable
   updated_at    timestamptz not null default now()
+
+  UNIQUE (shop_id, rule_key)
 ```
 
+The closed-vocabulary claim in §1 is enforced by the database, not
+just by convention — the `CHECK` constraints above are the actual
+guarantee that `transform`/`operator`/`action` can never silently
+drift into an unsupported value via a direct write, a bad migration,
+or a future bug in `RulesScreen.vue`.
+
+**Owner-editable vs. system-controlled columns.** The scope in §1 says
+an owner can change "a rule's condition, threshold, and enabled
+state" — that must not be read as every column being editable.
+`RulesScreen.vue` exposes exactly:
+
+- **Owner-editable:** `name`, `threshold`, `enabled`.
+- **System-controlled / immutable after seed:** `rule_key`,
+  `event_type`, `field`, `transform`, `operator`, `action`.
+
+An owner can retune *when* a rule fires (its threshold) and *whether*
+it fires (enabled), and rename it for their own reference — they
+cannot repoint a rule at a different field, event type, or operator.
+This is enforced both in the UI (those fields aren't rendered as
+inputs) and, more importantly, at the RLS/RPC layer: the owner-facing
+update path only ever writes `name`/`threshold`/`enabled`, never the
+system-controlled columns, so `RulesScreen.vue` cannot become an
+accidental rule-authoring system regardless of future UI changes.
+Authoring genuinely new rules (new `event_type`/`field` combinations)
+is out of scope for this ticket (§6).
+
 `rule_key` is a stable identifier independent of the human-readable
-`name`, so an owner renaming a rule doesn't break its identity (used
-by `rule_action_log`, by seed-migration upserts, and by any future
-code that needs to reference a specific rule by identity rather than
-by current display name).
+`name`, so an owner renaming a rule doesn't break its identity — it is
+what `rule_action_log.rule_id` ultimately traces back to (via
+`business_rules.id`, see §2.3) and what seed-migration upserts key on.
+`business_rules.id` (surrogate PK) is the FK target used everywhere at
+runtime; `rule_key` is the human/ops-facing stable name for that same
+row, unique per shop (`UNIQUE (shop_id, rule_key)`) so "large_return"
+always identifies the same logical rule within a shop even if `id`
+values differ across environments (e.g. a disposable test project vs.
+production).
 
 `event_type` is stored per-row, not inferred from which subscriber
 loaded it — the subscriber topology stays fixed at the event-type
 level (§2.2) while the set of rules per event type is pure data that
-can grow without any code or infrastructure change.
+can grow without any code or infrastructure change. A row's
+`event_type` must be one of the finite set of event types the engine
+actually has a registered subscriber for (`DataDrivenRuleEventType`,
+a subset of `DomainEventType` — see §8's event-contract test), not
+any arbitrary `DomainEventType` string; this is enforced by the seed
+migration being the only writer of `event_type` and by the event
+contract test in §5, not by a DB-level enum (Postgres `CHECK IN
+(...)` here would need updating every time a new event type adopts
+the engine, which is an acceptable manual step given `event_type` is
+already system-controlled and not owner-facing).
 
 **Authorization:** RLS scopes rows by `auth_shop_id()`. Write access
 (`INSERT`/`UPDATE`/`DELETE`) is owner-only, enforced at the database
@@ -166,10 +220,32 @@ boundary is the RLS policy, not a hidden UI route.
 
 ### 2.2 Shared subscriber per event_type
 
-One `runDurableSubscriber` instance per **event type** that has any
-enabled data-driven rules — not one per rule. For the two proof rules
-this means one subscriber for `sale.returned` and one for
-`shift.closed`.
+One `runDurableSubscriber` instance per **supported event type** — not
+one per rule, and not one per *currently-enabled* rule. Subscriber
+registration is **fixed at deploy time**, independent of whether any
+rule targeting that event type is presently enabled:
+
+```
+Supported event types (this ticket: sale.returned, shift.closed)
+        ↓
+fixed subscriber registrations  ← registered unconditionally at app start,
+        ↓                          same as every other durable subscriber
+load currently-enabled business_rules for this event_type
+        ↓
+zero or more matches
+```
+
+Concretely, `startBusinessRuleSubscribers` registers
+`business-rules:sale.returned` and `business-rules:shift.closed`
+unconditionally, the same way `startNotificationSubscribers` registers
+its nine subscribers unconditionally regardless of each rule's
+`notification_settings.enabled` flag today. If an owner disables every
+rule targeting `sale.returned`, the subscriber keeps running (loading
+zero rules, doing nothing) — it does not stop and does not need to be
+re-registered when a rule is re-enabled. This is what makes the
+"infrastructure topology stays fixed while policy data changes" claim
+in §2 actually true, including through a disable/enable cycle, not
+just through a threshold edit.
 
 ```ts
 runDurableSubscriber({
@@ -205,40 +281,73 @@ rule's already-succeeded action to be treated as failed or re-run.
 
 ```sql
 rule_action_log
-  event_id     uuid          -- FK to events.id
-  rule_id      uuid          -- FK to business_rules.id
+  event_id     uuid references events(id)         on delete restrict
+  rule_id      uuid references business_rules(id) on delete restrict
   action       text          -- 'notify_owner'
-  status       text          -- 'pending' | 'succeeded' | 'failed'
   attempts     int not null default 0
   last_error   text
-  executed_at  timestamptz
+  executed_at  timestamptz   -- NULL until the action has actually succeeded
   updated_at   timestamptz not null default now()
   PRIMARY KEY (event_id, rule_id, action)
 ```
 
-Per matched rule, execution is atomic and independent:
+No `status` column — a transaction cannot both persist `'failed'` and
+roll itself back, so a separate status enum implying a durable
+"failed" state was internally contradictory with using rollback for
+failure handling. Instead, **row existence + `executed_at IS NOT
+NULL`** is the entire success state, determined per matched rule as:
 
-1. Claim/upsert the `(event_id, rule_id, action)` row (`status =
-   'pending'`, `attempts += 1`).
-2. Write the `notifications` row.
-3. On success, same transaction, set `status = 'succeeded'`,
-   `executed_at = now()`.
-4. On failure, `status = 'failed'`, `last_error` recorded; the claim
-   is rolled back to a retryable state, not left silently
-   `'succeeded'`.
+1. `BEGIN`.
+2. `INSERT ... ON CONFLICT (event_id, rule_id, action) DO UPDATE SET
+   attempts = rule_action_log.attempts + 1, updated_at = now()` —
+   claims the row and records the attempt regardless of outcome.
+3. Write the `notifications` row.
+4. On success, same transaction: `UPDATE ... SET executed_at = now()`.
+5. `COMMIT`.
 
-A rule whose row is already `'succeeded'` for a given event is skipped
-on redelivery (the idempotency guarantee). A rule whose row is
-`'pending'`/`'failed'` is retried independently of any sibling rule's
-outcome for the same event. The subscriber handler must not wrap all
-matched rules' executions in one outer transaction — each rule's
-claim+notification pair is its own transaction, so rule B failing
-never rolls back rule A's or rule C's already-committed success.
+On failure at step 3 or 4, the entire transaction is **rolled back** —
+including the `attempts` increment from step 2. The row is left
+exactly as it was before this attempt (absent, on the very first
+attempt; or present with `executed_at IS NULL` and its previous
+`attempts` count, on a retry). This means `attempts` only reliably
+counts *committed* attempts, which is an accepted, deliberate trade-off
+(an undercount on transient failures) in exchange for never having a
+row silently claim more than it can prove: there is no state where the
+row exists with `executed_at IS NULL` and a `last_error` from a
+transaction that itself never committed. `last_error` is best-effort,
+written by the calling code (not inside the rolled-back transaction)
+immediately after a caught failure, purely for operator visibility —
+it is not part of the correctness guarantee.
+
+A rule whose row has `executed_at IS NOT NULL` for a given event is
+skipped on redelivery (the idempotency guarantee — this is the only
+check the subscriber needs before re-running a rule). A rule with no
+row, or a row with `executed_at IS NULL`, is retried independently of
+any sibling rule's outcome for the same event. The subscriber handler
+must not wrap all matched rules' executions in one outer transaction —
+each rule's claim+notification+executed_at update is its own
+transaction, so rule B failing (and rolling back) never touches rule
+A's or rule C's already-committed, already-`executed_at`-stamped
+success.
 
 Composite key `(event_id, rule_id, action)` rather than just
 `(event_id, rule_id)` deliberately leaves room for a rule to support a
 second action later (e.g. `notify_owner` and a future
 `create_task`) without an identity redesign.
+
+**Shop isolation and FK behavior.** `events.shop_id = (SELECT shop_id
+FROM business_rules WHERE id = rule_id)` is a guaranteed invariant for
+every valid `rule_action_log` row — the subscriber only ever loads
+rules scoped to the event's own shop (§2.2's `loadEnabledRules`
+already filters by `event.shopId`), so a cross-shop row is not
+reachable through the intended write path; this is asserted directly
+by a pgTAP test rather than left as an implicit consequence of RLS
+alone (see §5). Both FKs are `ON DELETE RESTRICT`: deleting a
+`business_rules` row (not currently exposed to owners — see the
+owner-editable column list above) or an `events` row must not silently
+destroy historical action-execution identity; a rule intended to be
+retired is disabled (`enabled = false`), never deleted, while any rows
+exist in `rule_action_log`.
 
 ## 3. Proof rules
 
@@ -262,7 +371,20 @@ Both existing `.rule.ts` files (`largeReturn.rule.ts`,
 `drawerVariance.rule.ts`) and their dedicated `runDurableSubscriber`
 registrations are deleted; their behavior is fully reproduced by the
 shared engine, with parity tests (see §5) confirming no observable
-behavior change to an owner.
+behavior change to an owner. "Same formula, different representation"
+is the bar — the migration must preserve every existing behavior of
+these two rules, not just their headline threshold comparison: the
+implementation task must first read `largeReturn.rule.ts` and
+`drawerVariance.rule.ts` in full to confirm (and the parity fixtures
+must lock in) their exact existing operator semantics (`>` vs `>=`),
+any currency/rounding/precision normalization applied to
+`refundAmountUsd`/`variance` before comparison, the exact
+`notifications` payload shape and severity produced today, and their
+current dedup behavior — before writing the data-driven equivalent.
+Where the current implementation does anything beyond the seeded
+`operator`/`threshold` comparison (e.g. rounds `variance` before
+`abs()`, or applies it after), the evaluator must replicate that
+exactly, not merely "a technically equivalent formula."
 
 Deliberately **not** chosen as proof rules:
 
@@ -300,18 +422,36 @@ and "Reports/Dashboards affected" columns are unchanged.
   fixtures the current `.rule.ts` tests use, run through the new
   evaluator, asserting identical `notifications` row output (type,
   severity, payload) to lock in zero behavior change for an owner.
+  Per §3, these fixtures must also cover normalization/rounding
+  edge cases already exercised by the existing `.rule.ts` test files
+  (not just the headline threshold-crossing case) — the migration
+  changes rule *representation*, not business *semantics*.
 - **Evaluator unit tests**: each `operator`/`transform` combination
   used by the proof rules, plus boundary conditions (`gt` is strict,
   matching today's crossing semantics where relevant).
 - **Idempotency tests**: redelivering the same event after one rule
-  succeeded and a sibling rule failed — confirm the succeeded rule is
-  not re-executed and the failed rule is retried.
+  succeeded (`executed_at` set) and a sibling rule failed (no row, or
+  row present with `executed_at IS NULL`) — confirm the succeeded rule
+  is not re-executed and the failed rule is retried, and confirm a
+  failed transaction leaves no `attempts`-incremented row behind (per
+  §2.3's rollback semantics).
 - **RLS tests** (pgTAP): non-owner roles cannot `INSERT`/`UPDATE`/
-  `DELETE` `business_rules`; cross-shop isolation on both new tables.
-- **Event contract test** (WAFI-157 convention): `business-rules:*`
-  subscribers registered in `eventContractFixtures.ts`'s consumer-
-  completeness check alongside the existing audit/notification
-  consumers.
+  `DELETE` `business_rules`; the owner-facing update RPC/path only ever
+  writes `name`/`threshold`/`enabled`, never `event_type`/`field`/
+  `transform`/`operator`/`action`; cross-shop isolation on both new
+  tables, explicitly including a test that asserts `rule_action_log`
+  can never contain a row where the referenced event's `shop_id`
+  differs from the referenced rule's `shop_id` (§2.3's invariant).
+- **Event contract test** (WAFI-157 convention), checked in both
+  directions: (a) every event type with a `business-rules:*` subscriber
+  registered is present in `eventContractFixtures.ts`'s
+  consumer-completeness check, matching the existing audit/notification
+  consumer convention; and (b) every `business_rules.event_type` value
+  that exists (seeded or otherwise) is a member of the finite
+  `DataDrivenRuleEventType` set the engine actually has a subscriber
+  for — i.e. `business_rules.event_type ⊆ DataDrivenRuleEventType ⊆
+  DomainEventType`, so a row can never reference an event type nothing
+  is listening for.
 
 ## 6. Explicitly out of scope
 
