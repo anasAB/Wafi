@@ -1,7 +1,7 @@
 # WAFI-156 — Business Rules Engine (Design Spec)
 
 Date: 2026-08-14
-Status: Approved (design), not yet implemented
+Status: Approved, implementation-ready — 3rd review pass, concurrent-idempotency/RPC and owner-authorization model hardened
 Ticket: WAFI-156, Macro-Phase 3 (Enterprise Scale), P2, roadmap estimate 2 sprints
 
 ## 1. Scope
@@ -104,7 +104,7 @@ evaluate each rule independently           ← no rule blocks another
         ↓
 matched rule
         ↓
-atomic: rule_action_log claim + notification write
+execute_rule_action(event_id, rule_id, action)  ← single Postgres RPC, atomic claim + notification write
 ```
 
 Coexistence with the native WAFI-145 rules that don't migrate:
@@ -178,13 +178,34 @@ state" — that must not be read as every column being editable.
 An owner can retune *when* a rule fires (its threshold) and *whether*
 it fires (enabled), and rename it for their own reference — they
 cannot repoint a rule at a different field, event type, or operator.
-This is enforced both in the UI (those fields aren't rendered as
-inputs) and, more importantly, at the RLS/RPC layer: the owner-facing
-update path only ever writes `name`/`threshold`/`enabled`, never the
-system-controlled columns, so `RulesScreen.vue` cannot become an
-accidental rule-authoring system regardless of future UI changes.
-Authoring genuinely new rules (new `event_type`/`field` combinations)
-is out of scope for this ticket (§6).
+Since RLS alone grants row-level access, not column-level immutability
+— an owner `UPDATE` permission on the table would let them write any
+column, not just the editable three — the actual authorization model
+is:
+
+- **Owner role:** `SELECT` only at the table level, scoped by
+  `auth_shop_id()`. **No direct `INSERT`/`UPDATE`/`DELETE` grant on
+  `business_rules` at all.** Edits go through a dedicated
+  `SECURITY DEFINER` RPC, `update_business_rule(rule_id, name,
+  threshold, enabled)`, whose signature structurally accepts only
+  those three values — there is no code path, correct or buggy, by
+  which an owner-initiated write can touch `event_type`, `field`,
+  `transform`, `operator`, or `action`, because those columns are
+  never parameters the RPC accepts. `RulesScreen.vue` calls this RPC;
+  it never issues a raw `UPDATE business_rules ...`.
+- **Migration/system:** the only writer of `INSERT` (seed migration)
+  and the only path capable of ever changing a system-controlled
+  column (a future migration, not runtime code).
+
+This also closes the gap the event-contract test in §5 would
+otherwise only catch after the fact: since owners cannot `INSERT` at
+all, an owner can never create a `business_rules` row with an
+unsupported `event_type` in the first place — the seed migration is
+the only writer of `event_type`, and it is reviewed code, not
+owner-facing input. The event-contract test remains as a second,
+independent guard against a future migration mistake, not as the
+primary defense. Authoring genuinely new rules (new `event_type`/
+`field` combinations) is out of scope for this ticket (§6).
 
 `rule_key` is a stable identifier independent of the human-readable
 `name`, so an owner renaming a rule doesn't break its identity — it is
@@ -211,12 +232,14 @@ contract test in §5, not by a DB-level enum (Postgres `CHECK IN
 the engine, which is an acceptable manual step given `event_type` is
 already system-controlled and not owner-facing).
 
-**Authorization:** RLS scopes rows by `auth_shop_id()`. Write access
-(`INSERT`/`UPDATE`/`DELETE`) is owner-only, enforced at the database
-level — matching WAFI-018's precedent of a structurally owner-only
-capability that cannot be widened by a stale or tampered permission
-grant. `RulesScreen.vue` is presentation only; the authorization
-boundary is the RLS policy, not a hidden UI route.
+**Authorization:** RLS scopes the `SELECT` grant by `auth_shop_id()`;
+see the authorization model above for why write access is via RPC
+rather than a table-level grant. Restricting real editing power to a
+narrow RPC signature — not merely gating a UI route — matches WAFI-018's
+precedent of a structurally owner-only capability that cannot be
+widened by a stale or tampered permission grant. `RulesScreen.vue` is
+presentation only; the authorization boundary is the RPC's own
+signature and its owner-only execute grant, not the UI route.
 
 ### 2.2 Shared subscriber per event_type
 
@@ -295,40 +318,96 @@ No `status` column — a transaction cannot both persist `'failed'` and
 roll itself back, so a separate status enum implying a durable
 "failed" state was internally contradictory with using rollback for
 failure handling. Instead, **row existence + `executed_at IS NOT
-NULL`** is the entire success state, determined per matched rule as:
+NULL`** is the entire success state.
 
-1. `BEGIN`.
-2. `INSERT ... ON CONFLICT (event_id, rule_id, action) DO UPDATE SET
-   attempts = rule_action_log.attempts + 1, updated_at = now()` —
-   claims the row and records the attempt regardless of outcome.
-3. Write the `notifications` row.
-4. On success, same transaction: `UPDATE ... SET executed_at = now()`.
-5. `COMMIT`.
+**This must be a server-side atomic operation, not a client-side
+PowerSync write.** WAFI is offline-first with multiple devices per
+shop; a claim implemented as an ordinary optimistic local-table write
+(the generic PowerSync upload path) would let two devices each pass
+their own local "not yet executed" check before either write
+round-trips to Postgres — exactly the double-execution risk this
+ledger exists to prevent. This is the same class of problem WAFI-151
+already solved for `daily_event_counts` (`apply_daily_event_count`,
+a `SECURITY DEFINER` RPC with an advisory lock, deriving state from
+the authoritative event row rather than trusting client-supplied
+data) — WAFI-156 reuses that precedent rather than inventing a new
+one: **the claim, the `notifications` write, and the `executed_at`
+stamp all happen inside one Postgres transaction in a single
+`SECURITY DEFINER` RPC, `execute_rule_action(event_id, rule_id,
+action)`**, called by the client (via `auth_shop_id()`-authorized
+`rpc()`), never assembled client-side across separate statements.
+`rule_action_log` itself is an ordinary server-side Postgres table —
+**not** PowerSync-synced to a local table the way `business_rules`
+(config) is; clients never write to it directly, they only read
+their own shop's rows (for the Notification Center / any future
+"rule fired N times" surfacing) through normal sync rules.
 
-On failure at step 3 or 4, the entire transaction is **rolled back** —
-including the `attempts` increment from step 2. The row is left
+Inside `execute_rule_action`, per matched rule:
+
+1. `BEGIN` (implicit, function body).
+2. Atomic conditional claim:
+   ```sql
+   INSERT INTO rule_action_log (event_id, rule_id, action, attempts, updated_at)
+   VALUES ($1, $2, $3, 1, now())
+   ON CONFLICT (event_id, rule_id, action) DO UPDATE
+     SET attempts = rule_action_log.attempts + 1, updated_at = now()
+     WHERE rule_action_log.executed_at IS NULL
+   RETURNING *;
+   ```
+   Postgres's `ON CONFLICT ... DO UPDATE` takes a row-level lock on
+   the conflicting row before evaluating its `WHERE` clause, so a
+   second, truly-concurrent call for the same `(event_id, rule_id,
+   action)` blocks on that lock rather than racing it — it proceeds
+   only after the first call's transaction commits or rolls back, at
+   which point it re-evaluates `executed_at IS NULL` against the
+   now-final state. If the first call committed with `executed_at`
+   set, the `WHERE` clause excludes the row, the `UPDATE` affects zero
+   rows, and `RETURNING` yields nothing.
+3. **If no row was returned in step 2, stop and return "already
+   executed" — do not write a notification.** This is the fix for
+   concurrent redelivery: at most one caller ever proceeds past this
+   point for a given `(event_id, rule_id, action)`.
+4. Write the `notifications` row.
+5. `UPDATE rule_action_log SET executed_at = now() WHERE (event_id,
+   rule_id, action) = ($1, $2, $3)`.
+6. `COMMIT` (implicit, function return).
+
+On failure at step 4 or 5, the function raises and the whole
+transaction (including the step 2 claim) rolls back — the row is left
 exactly as it was before this attempt (absent, on the very first
 attempt; or present with `executed_at IS NULL` and its previous
 `attempts` count, on a retry). This means `attempts` only reliably
-counts *committed* attempts, which is an accepted, deliberate trade-off
-(an undercount on transient failures) in exchange for never having a
-row silently claim more than it can prove: there is no state where the
-row exists with `executed_at IS NULL` and a `last_error` from a
-transaction that itself never committed. `last_error` is best-effort,
-written by the calling code (not inside the rolled-back transaction)
-immediately after a caught failure, purely for operator visibility —
-it is not part of the correctness guarantee.
+counts *committed* attempts, an accepted, deliberate trade-off (an
+undercount on transient failures) in exchange for never having a row
+silently claim more than it can prove.
 
-A rule whose row has `executed_at IS NOT NULL` for a given event is
-skipped on redelivery (the idempotency guarantee — this is the only
-check the subscriber needs before re-running a rule). A rule with no
-row, or a row with `executed_at IS NULL`, is retried independently of
-any sibling rule's outcome for the same event. The subscriber handler
-must not wrap all matched rules' executions in one outer transaction —
-each rule's claim+notification+executed_at update is its own
-transaction, so rule B failing (and rolling back) never touches rule
-A's or rule C's already-committed, already-`executed_at`-stamped
-success.
+**Invariant (the one this whole section exists to guarantee): at most
+one execution attempt for a given `(event_id, rule_id, action)` may
+ever proceed to the `notifications` write, including under concurrent
+redelivery from two devices/subscriber-invocations at the same
+instant — concurrent callers serialize on the `rule_action_log` row
+lock inside `execute_rule_action` and the loser skips once it observes
+a committed `executed_at`.**
+
+`last_error` is **diagnostic metadata only** — it is not consulted for
+claiming, idempotency, retry eligibility, or correctness, and a
+concurrent or later retry may overwrite or supersede it. Because a
+failed transaction rolls back the row entirely (per above), there is
+no in-transaction moment where `last_error` can be durably set
+alongside the failure it describes; a best-effort separate statement
+(outside the failed transaction, e.g. logged from the calling code
+after the RPC raises) may record it for operator visibility, but no
+part of the engine's correctness depends on `last_error` existing,
+being current, or being consistent with `attempts`.
+
+A rule whose row has `executed_at IS NOT NULL` for a given event has
+already fully executed (the idempotency guarantee). A rule with no
+row, or a row with `executed_at IS NULL`, is eligible for another
+attempt, independent of any sibling rule's outcome for the same
+event — the subscriber handler calls `execute_rule_action` once per
+matched rule, and each call is its own independent transaction, so
+rule B failing (and rolling back) never touches rule A's or rule C's
+already-committed, already-`executed_at`-stamped success.
 
 Composite key `(event_id, rule_id, action)` rather than just
 `(event_id, rule_id)` deliberately leaves room for a rule to support a
@@ -337,17 +416,37 @@ second action later (e.g. `notify_owner` and a future
 
 **Shop isolation and FK behavior.** `events.shop_id = (SELECT shop_id
 FROM business_rules WHERE id = rule_id)` is a guaranteed invariant for
-every valid `rule_action_log` row — the subscriber only ever loads
-rules scoped to the event's own shop (§2.2's `loadEnabledRules`
-already filters by `event.shopId`), so a cross-shop row is not
-reachable through the intended write path; this is asserted directly
-by a pgTAP test rather than left as an implicit consequence of RLS
-alone (see §5). Both FKs are `ON DELETE RESTRICT`: deleting a
-`business_rules` row (not currently exposed to owners — see the
-owner-editable column list above) or an `events` row must not silently
-destroy historical action-execution identity; a rule intended to be
-retired is disabled (`enabled = false`), never deleted, while any rows
-exist in `rule_action_log`.
+every valid `rule_action_log` row — `execute_rule_action` only ever
+operates on a rule scoped to the calling event's own shop (checked
+inside the RPC before doing anything else, in addition to
+`loadEnabledRules` already filtering by `event.shopId` client-side), so
+a cross-shop row is not reachable through the intended write path;
+this is asserted directly by a pgTAP test rather than left as an
+implicit consequence of RLS alone (see §5). Both FKs are `ON DELETE
+RESTRICT`: deleting a `business_rules` row (not exposed to owners at
+all — see the authorization model above) or an `events` row must not
+silently destroy historical action-execution identity; a rule
+intended to be retired is disabled (`enabled = false`), never deleted,
+while any rows exist in `rule_action_log`.
+
+**Why this table is safe from the offline-dedup trap that
+`local_event_processed_ledger`/`local_subscriber_processed_events`
+deliberately accept elsewhere in this codebase.** Those two ledgers
+are correctly per-device/local — they exist only to stop one device
+from redundantly reprocessing an event it has already handled
+locally, and their design explicitly accepts that they "cannot see
+across devices" (this is fine for their purpose: rebuildable,
+best-effort local projections and at-least-once subscriber dedup,
+where the actual source of truth is elsewhere). `rule_action_log` is
+different in kind, not degree: it is the *sole* mechanism guaranteeing
+a `notify_owner` action fires once, and if it were local-only, Device
+A and Device B could each independently see "not yet executed" and
+each write a `notifications` row for the same event/rule — an owner
+would see a duplicate notification. That is why §2.3 requires
+`rule_action_log` to be an authoritative, non-synced, server-only
+Postgres table written to exclusively through `execute_rule_action`,
+never a `local_`-prefixed PowerSync table populated by independent
+per-device logic.
 
 ## 3. Proof rules
 
@@ -407,7 +506,7 @@ from Notifications — policy definition vs. delivery, per §2.1):
 
 | Domain | Writes to (tables) | Reads from (other domains) | Key composables | Reports/Dashboards affected |
 |---|---|---|---|---|
-| Business Rules (WAFI-156) | `business_rules`, `rule_action_log` | Events (subscribes to `sale.returned`, `shift.closed`, extensible to any `DomainEventType`), Notifications (writes `notifications` rows via the same path native rules use) | `businessRuleSubscriber.ts`, `ruleEvaluator.ts`, `loadEnabledRules.ts`, `RulesScreen.vue` composables | Notification Center (rows created by data-driven rules are indistinguishable from native-rule rows); Settings (new `RulesScreen.vue`, owner-only) |
+| Business Rules (WAFI-156) | `business_rules` (synced config), `rule_action_log` (server-only, not synced) via `execute_rule_action()`/`update_business_rule()` RPCs | Events (subscribes to `sale.returned`, `shift.closed`, extensible to any `DomainEventType`), Notifications (writes `notifications` rows via the same path native rules use) | `businessRuleSubscriber.ts`, `ruleEvaluator.ts`, `loadEnabledRules.ts`, `RulesScreen.vue` composables | Notification Center (rows created by data-driven rules are indistinguishable from native-rule rows); Settings (new `RulesScreen.vue`, owner-only) |
 
 The existing **Notifications** row's "Key composables" column should
 be understood as now covering two coexisting rule mechanisms
@@ -429,19 +528,34 @@ and "Reports/Dashboards affected" columns are unchanged.
 - **Evaluator unit tests**: each `operator`/`transform` combination
   used by the proof rules, plus boundary conditions (`gt` is strict,
   matching today's crossing semantics where relevant).
-- **Idempotency tests**: redelivering the same event after one rule
-  succeeded (`executed_at` set) and a sibling rule failed (no row, or
-  row present with `executed_at IS NULL`) — confirm the succeeded rule
-  is not re-executed and the failed rule is retried, and confirm a
-  failed transaction leaves no `attempts`-incremented row behind (per
-  §2.3's rollback semantics).
-- **RLS tests** (pgTAP): non-owner roles cannot `INSERT`/`UPDATE`/
-  `DELETE` `business_rules`; the owner-facing update RPC/path only ever
-  writes `name`/`threshold`/`enabled`, never `event_type`/`field`/
-  `transform`/`operator`/`action`; cross-shop isolation on both new
-  tables, explicitly including a test that asserts `rule_action_log`
-  can never contain a row where the referenced event's `shop_id`
-  differs from the referenced rule's `shop_id` (§2.3's invariant).
+- **Sequential idempotency tests**: redelivering the same event after
+  one rule succeeded (`executed_at` set) and a sibling rule failed (no
+  row, or row present with `executed_at IS NULL`) — confirm the
+  succeeded rule is not re-executed and the failed rule is retried,
+  and confirm a failed transaction leaves no `attempts`-incremented
+  row behind (per §2.3's rollback semantics).
+- **Concurrent idempotency test (the critical one)**: call
+  `execute_rule_action` for the same `(event_id, rule_id, action)`
+  twice concurrently (two overlapping Postgres sessions/transactions,
+  not two sequential calls) — assert exactly one `notifications` row
+  is created, the loser's call returns "already executed" with no
+  notification write, and exactly one `rule_action_log` row exists
+  with `executed_at IS NOT NULL` afterward. This is the pgTAP-level
+  proof of §2.3's core invariant and must exercise real transaction
+  overlap (e.g. via two concurrent connections holding open
+  transactions against the same claim), not merely two sequential
+  calls that happen to be fast.
+- **RLS/authorization tests** (pgTAP): the owner role has no direct
+  `INSERT`/`UPDATE`/`DELETE` grant on `business_rules` (attempting a
+  raw `UPDATE`/`INSERT` as the owner role fails on privilege, not
+  merely on data validation); `update_business_rule()`'s signature is
+  confirmed to accept only `name`/`threshold`/`enabled` (no test can
+  pass an `event_type`/`field`/`transform`/`operator`/`action`
+  argument to it, because the parameter doesn't exist); cross-shop
+  isolation on both new tables, explicitly including a test that
+  asserts `rule_action_log` can never contain a row where the
+  referenced event's `shop_id` differs from the referenced rule's
+  `shop_id` (§2.3's invariant).
 - **Event contract test** (WAFI-157 convention), checked in both
   directions: (a) every event type with a `business-rules:*` subscriber
   registered is present in `eventContractFixtures.ts`'s
