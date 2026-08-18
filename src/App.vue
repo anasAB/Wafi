@@ -26,6 +26,7 @@ import { startProcessingRetrySweeper } from '@/services/events/eventProcessingRe
 import { startDashboardRevenueProjection } from '@/services/events/dashboardRevenueProjection'
 import { startProfitCacheProjection } from '@/services/events/profitCacheProjection'
 import { startNotificationSubscribers, handleDiscountEvent } from '@/services/events/notificationSubscriber'
+import { startBusinessRuleSubscribers } from '@/services/events/businessRuleSubscriber'
 import { startDeferredJobWorker } from '@/services/events/deferredJobWorker'
 import { checkDeviceSyncStaleness } from '@/services/notifications/syncStalenessCheck'
 import type { DomainEvent } from '@/services/events/domainEvent.types'
@@ -148,6 +149,11 @@ onMounted(async () => {
   startDashboardRevenueProjection(useDeviceStore().shopId)
   startProfitCacheProjection(useDeviceStore().shopId)
   startNotificationSubscribers(useDeviceStore().shopId)
+
+  // WAFI-156: data-driven business rule engine -- Large Return/Drawer Variance
+  // are now evaluated here (via execute_rule_action), not as native rules
+  // registered above.
+  startBusinessRuleSubscribers(useDeviceStore().shopId)
 
   // WAFI-145 Task 14: Sync Failure / stale-device check. State-derived, not event
   // driven -- this offline-first PWA has no periodic in-app timer, so it runs on

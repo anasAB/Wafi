@@ -3,11 +3,9 @@ import { runDurableSubscriber } from './runDurableSubscriber'
 import type { DurableEvent } from './runDurableSubscriber'
 import type { DomainEvent, DomainEventType, SaleDiscountedPayload } from './domainEvent.types'
 import { getNotificationSettings } from '@/services/notifications/notificationSettings'
-import { handleDrawerVarianceEvent } from '@/services/notifications/rules/drawerVariance.rule'
 import { handleShiftLateCloseEvent } from '@/services/notifications/rules/shiftLateClose.rule'
 import { handleCustomerDebtThresholdEvent } from '@/services/notifications/rules/customerDebtThreshold.rule'
 import { handleAfterHoursExpenseEvent } from '@/services/notifications/rules/afterHoursExpense.rule'
-import { handleLargeReturnEvent } from '@/services/notifications/rules/largeReturn.rule'
 import { handleCashierLockoutEvent } from '@/services/notifications/rules/cashierLockout.rule'
 import { handleNewDeviceEvent } from '@/services/notifications/rules/newDevice.rule'
 import { handleSettlementPaidEvent } from '@/services/notifications/rules/settlementPaid.rule'
@@ -85,15 +83,20 @@ export async function handleDiscountEvent(event: DurableEvent<unknown>): Promise
 // subscriber group actually registers for, exported as inspectable data (WAFI-157)
 // rather than left buried inside the `subs` array below, so a consumer-completeness
 // check can read it as the source of truth instead of hand-duplicating this list.
+// WAFI-156: 'sale.returned' removed -- Large Return was the only sale.returned
+// consumer in this file, retired in favor of the data-driven business rule
+// engine (businessRuleSubscriber.ts). 'shift.closed' stays -- Shift Late Close
+// still subscribes to it (Drawer Variance, the other shift.closed consumer,
+// was retired the same way).
 export const NOTIFIED_EVENT_TYPES: DomainEventType[] = [
-  'shift.closed', 'customer.debt_changed', 'expense.recorded', 'sale.returned',
+  'shift.closed', 'customer.debt_changed', 'expense.recorded',
   'staff.pin_locked_out', 'device.registered', 'settlement.paid', 'sale.discounted',
 ]
 
 export function startNotificationSubscribers(shopId: string): { stop: () => void } {
   // One runDurableSubscriber per (source event, rule) pair -- independently
-  // retryable even when two rules share a source event (drawer variance + late
-  // close both react to shift.closed), per the design spec's architecture note.
+  // retryable even when two rules share a source event, per the design spec's
+  // architecture note.
   // NOTE: the discount subscriber is registered LAST in this array. It's functionally
   // order-independent in production (each is its own useEventSubscription watch loop),
   // but notificationSubscriber.test.ts's mock of useEventSubscription captures a single
@@ -101,11 +104,9 @@ export function startNotificationSubscribers(shopId: string): { stop: () => void
   // whichever subscriber registers last is the one the existing (unchanged) tests
   // exercise. Keep this one last so those tests keep testing the discount handler.
   const subs = [
-    runDurableSubscriber({ subscriberName: 'notifications-drawer-variance', eventType: 'shift.closed',        shopId, handler: handleDrawerVarianceEvent }),
     runDurableSubscriber({ subscriberName: 'notifications-shift-late-close', eventType: 'shift.closed',       shopId, handler: handleShiftLateCloseEvent }),
     runDurableSubscriber({ subscriberName: 'notifications-customer-debt',  eventType: 'customer.debt_changed', shopId, handler: handleCustomerDebtThresholdEvent }),
     runDurableSubscriber({ subscriberName: 'notifications-after-hours-expense', eventType: 'expense.recorded', shopId, handler: handleAfterHoursExpenseEvent }),
-    runDurableSubscriber({ subscriberName: 'notifications-large-return',   eventType: 'sale.returned',        shopId, handler: handleLargeReturnEvent }),
     runDurableSubscriber({ subscriberName: 'notifications-cashier-lockout', eventType: 'staff.pin_locked_out', shopId, handler: handleCashierLockoutEvent }),
     runDurableSubscriber({ subscriberName: 'notifications-new-device',     eventType: 'device.registered',    shopId, handler: handleNewDeviceEvent }),
     runDurableSubscriber({ subscriberName: 'notifications-settlement-paid', eventType: 'settlement.paid',     shopId, handler: handleSettlementPaidEvent }),
