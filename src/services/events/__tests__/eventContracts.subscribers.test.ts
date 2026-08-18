@@ -25,6 +25,7 @@ import { mapEventToNotification, NOTIFIED_EVENT_TYPES } from '@/services/events/
 import { startDashboardRevenueProjection, DASHBOARD_PROJECTION_EVENT_TYPES } from '@/services/events/dashboardRevenueProjection'
 import { startProfitCacheProjection, PROFIT_CACHE_PROJECTION_EVENT_TYPES } from '@/services/events/profitCacheProjection'
 import { startDailyEventCountsProjection, DAILY_EVENT_COUNTS_EVENT_TYPES } from '@/services/events/dailyEventCountsProjection'
+import { DATA_DRIVEN_RULE_EVENT_TYPES } from '@/services/events/businessRuleSubscriber'
 import type { DomainEvent, DomainEventType } from '@/services/events/domainEvent.types'
 
 function fakeAsyncIterable(results: unknown[]) {
@@ -55,6 +56,7 @@ describe('event consumer completeness', () => {
     ...DASHBOARD_PROJECTION_EVENT_TYPES,
     ...PROFIT_CACHE_PROJECTION_EVENT_TYPES,
     ...DAILY_EVENT_COUNTS_EVENT_TYPES,
+    ...DATA_DRIVEN_RULE_EVENT_TYPES,
   ])
 
   it.each(Object.keys(FIXTURES) as DomainEventType[])('%s has a registered consumer or is explicitly dormant', (type) => {
@@ -185,5 +187,25 @@ describe('startDailyEventCountsProjection against the canonical sale.completed f
 
     const insertCall = vi.mocked(db.execute).mock.calls.find(([sql]) => sql.toLowerCase().includes('insert into daily_event_counts'))
     expect(insertCall).toBeDefined()
+  })
+})
+
+// --- business rule engine (WAFI-156) ---------------------------------------
+
+describe('business rule engine consumer completeness (WAFI-156)', () => {
+  it('every DATA_DRIVEN_RULE_EVENT_TYPES entry is a real DomainEventType with a canonical fixture', () => {
+    for (const eventType of DATA_DRIVEN_RULE_EVENT_TYPES) {
+      expect(FIXTURES[eventType]).toBeDefined()
+    }
+  })
+
+  // Covered by the CONSUMER_EVENT_TYPES set above (spread includes
+  // DATA_DRIVEN_RULE_EVENT_TYPES) -- this assertion just documents the
+  // specific claim for this ticket rather than relying on the generic
+  // it.each loop alone to make it legible.
+  it('sale.returned and shift.closed are registered as business-rule consumers', () => {
+    expect(DATA_DRIVEN_RULE_EVENT_TYPES).toEqual(
+      expect.arrayContaining(['sale.returned', 'shift.closed']),
+    )
   })
 })
