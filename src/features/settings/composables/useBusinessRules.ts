@@ -23,13 +23,13 @@ export function useBusinessRules(shopId: string) {
   async function updateRule(
     ruleId: string,
     changes: { name: string; threshold: number; enabled: boolean },
-  ): Promise<'updated' | 'forbidden' | 'invalid_name'> {
+  ): Promise<'updated' | 'forbidden' | 'invalid_name' | 'invalid_threshold'> {
     const { data, error } = await supabase.rpc('update_business_rule', {
       p_rule_id: ruleId, p_name: changes.name, p_threshold: changes.threshold, p_enabled: changes.enabled,
     })
     if (error) throw error
     if (data === 'updated') await load()
-    return data as 'updated' | 'forbidden' | 'invalid_name'
+    return data as 'updated' | 'forbidden' | 'invalid_name' | 'invalid_threshold'
   }
 
   return { rules, load, updateRule }

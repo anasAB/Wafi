@@ -36,4 +36,10 @@ describe('useBusinessRules', () => {
     const { updateRule } = useBusinessRules('s1')
     expect(await updateRule('r1', { name: 'x', threshold: 1, enabled: true })).toBe('forbidden')
   })
+
+  it('updateRule surfaces an invalid_threshold result without throwing', async () => {
+    mockRpc.mockResolvedValue({ data: 'invalid_threshold', error: null })
+    const { updateRule } = useBusinessRules('s1')
+    expect(await updateRule('r1', { name: 'x', threshold: -5, enabled: true })).toBe('invalid_threshold')
+  })
 })

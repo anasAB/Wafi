@@ -43,6 +43,8 @@ async function save(rule: BusinessRule) {
     savedRuleId.value = rule.id
   } else if (result === 'invalid_name') {
     errorByRuleId.value = { ...errorByRuleId.value, [rule.id]: 'الاسم مطلوب' }
+  } else if (result === 'invalid_threshold') {
+    errorByRuleId.value = { ...errorByRuleId.value, [rule.id]: 'يجب أن يكون الحد رقمًا صحيحًا وغير سالب' }
   } else {
     errorByRuleId.value = { ...errorByRuleId.value, [rule.id]: 'لا تملك صلاحية تعديل هذه القاعدة' }
   }

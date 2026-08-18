@@ -3,7 +3,7 @@
 -- only (spec §2.1). Run via: npx supabase test db
 
 BEGIN;
-SELECT plan(6);
+SELECT plan(8);
 
 -- ========================================================================
 -- Fixtures: two shops (A, B). Shop A gets an owner and a cashier plus a
@@ -76,6 +76,20 @@ SELECT is(
   public.update_business_rule('f0000000-0000-0000-0000-000000000071', 'x', 1, true),
   'forbidden',
   'owner of shop A cannot update a rule belonging to shop B'
+);
+
+-- 5. Negative threshold rejected without mutating the row (whole-branch
+-- review fix, migration 098) -- a negative threshold would make the rule
+-- match every event of its type regardless of operator.
+SELECT is(
+  public.update_business_rule('f0000000-0000-0000-0000-000000000070', 'x', -1, true),
+  'invalid_threshold',
+  'negative threshold is rejected'
+);
+SELECT is(
+  (SELECT threshold FROM public.business_rules WHERE id = 'f0000000-0000-0000-0000-000000000070'),
+  200::numeric,
+  'threshold unchanged after a rejected negative-threshold call'
 );
 
 RESET ROLE;
