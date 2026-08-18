@@ -80,24 +80,44 @@ Every durable subscriber currently wired in `startNotificationSubscribers`
 | Subscriber name | Event type | Handler file |
 |---|---|---|
 | `notifications-discount` | `sale.discounted` | `notificationSubscriber.ts` (`handleDiscountEvent`) |
-| `notifications-drawer-variance` | `shift.closed` | `src/services/notifications/rules/drawerVariance.rule.ts` |
 | `notifications-shift-late-close` | `shift.closed` | `src/services/notifications/rules/shiftLateClose.rule.ts` |
 | `notifications-customer-debt` | `customer.debt_changed` | `src/services/notifications/rules/customerDebtThreshold.rule.ts` |
 | `notifications-after-hours-expense` | `expense.recorded` | `src/services/notifications/rules/afterHoursExpense.rule.ts` |
-| `notifications-large-return` | `sale.returned` | `src/services/notifications/rules/largeReturn.rule.ts` |
 | `notifications-cashier-lockout` | `staff.pin_locked_out` | `src/services/notifications/rules/cashierLockout.rule.ts` |
 | `notifications-new-device` | `device.registered` | `src/services/notifications/rules/newDevice.rule.ts` |
 | `notifications-settlement-paid` | `settlement.paid` | `src/services/notifications/rules/settlementPaid.rule.ts` |
-
-Note two rules (drawer variance, late close) share the same source event
-(`shift.closed`) but run as independently retryable subscribers, per the
-decision rule above.
 
 `customer.debt_changed` has two producers: `useReturnSheet.ts` (reason=`return`)
 and, as of WAFI-145, `sales.service.ts`'s `completeSale` (reason=`credit_sale`).
 `staff.pin_locked_out` is a WAFI-145 addition, published from
 `usePinLockout.ts`'s `recordFailure` (called from `LockScreen.vue`,
 `IdleLockOverlay.vue`, and `PinRecovery.vue`).
+
+### Data-driven business rule subscribers (WAFI-156)
+
+| Subscriber name | Event type | Handler file |
+|---|---|---|
+| `business-rules:sale.returned` | `sale.returned` | `src/services/events/businessRuleSubscriber.ts` |
+| `business-rules:shift.closed` | `shift.closed` | `src/services/events/businessRuleSubscriber.ts` |
+
+**Deliberate departure from the 1-subscriber-per-rule convention above:**
+every other durable subscriber in this doc maps one handler file to one
+native rule. `businessRuleSubscriber.ts` instead registers exactly one
+`runDurableSubscriber` **per SUPPORTED EVENT TYPE**, fixed at registration
+time (`DATA_DRIVEN_RULE_EVENT_TYPES`) — not one per `business_rules` row.
+The handler loads every *enabled* rule for that event type from the synced
+`business_rules` table at event-processing time and calls
+`execute_rule_action()` (an authenticated-callable, authoritative-re-evaluation
+RPC — see `docs/superpowers/specs/2026-08-14-wafi-156-business-rules-engine-design.md`
+§2.2/§2.3) once per rule, unconditionally, with no local condition
+pre-filter. So a shop with 5 enabled `sale.returned` rules is still just one
+subscriber (`business-rules:sale.returned`), not five — adding or disabling a
+rule is a data change under this one subscriber, not a new
+`runDurableSubscriber` registration. This retires the former
+`notifications-large-return` (`largeReturn.rule.ts`) and
+`notifications-drawer-variance` (`drawerVariance.rule.ts`) native-rule rows
+above — both deleted; their `sale.returned`/`shift.closed` behavior is now
+served by these two shared subscribers instead.
 
 ## State-derived checks (not event subscribers)
 

@@ -48,10 +48,10 @@ codebase has tested the multi-version-support path in practice.
 | `sale.completed` | `sales.service.ts:324` `completeSale()` | `startDailyEventCountsProjection` (lightweight), `startDashboardRevenueProjection` (lightweight), auditSubscriber (durable, real row) | only event with 3 consumers |
 | `sale.discounted` | `sales.service.ts:276` (per-line), `:306` (sale-level) — bespoke direct `publishEvent()`, 2 sites | `startNotificationSubscribers` (durable) — only produces a notification when `belowCost \|\| pinApproval` | **no audit-log consumer at all** — not in `AUDITED_EVENT_TYPES` |
 | `shift.opened` | `staff.service.ts:179` `openShift()` | **none** — dormant | switch case exists but not registered in `AUDITED_EVENT_TYPES` |
-| `shift.closed` | `staff.service.ts:211` `closeShift()` (`toEvent:` at `:244`) | **none** — dormant | same as above |
+| `shift.closed` | `staff.service.ts:211` `closeShift()` (`toEvent:` at `:244`) | **none** (audit) — dormant; `businessRuleSubscriber` (durable, WAFI-156) — data-driven `drawer_variance` rule via `execute_rule_action()`, retiring the former native `drawerVariance.rule.ts` | audit is still dormant; business-rules consumer is new |
 | `settlement.paid` | `staff.service.ts:109` `paySettlement()` | auditSubscriber (durable) — real row (mapped to legacy `staff_settlement.paid`) | |
 | `staff.ledger_entry_added` | `staff.service.ts:68` `addLedgerEntry()` | auditSubscriber (durable) — real row (mapped to legacy `staff_ledger.entry_created`) | |
-| `sale.returned` | `useReturnSheet.ts:328` `confirm()` | auditSubscriber (durable) — real row (mapped to legacy `return.processed`) | |
+| `sale.returned` | `useReturnSheet.ts:328` `confirm()` | auditSubscriber (durable) — real row (mapped to legacy `return.processed`); `businessRuleSubscriber` (durable, WAFI-156) — data-driven `large_return` rule via `execute_rule_action()`, retiring the former native `largeReturn.rule.ts` | |
 | `cash.movement_recorded` | `useCashMovements.ts:81` `record()` | auditSubscriber (durable) — real row (mapped to legacy `cash_movement.recorded`) | |
 | `stock.taken` | `useStockTake.ts:204` `confirmSession()` | auditSubscriber (durable) — real row (mapped to legacy `stock_take.completed`) | |
 | `product.price_changed` | `useProducts.ts:115` `save()` | auditSubscriber (durable) — real row (product name not carried) | shares one `toEvent` slot with `cost_updated`; if both change in one save, only `cost_updated` fires |

@@ -307,6 +307,7 @@ spec for a feature touching this table keeps it current.
 | Notifications | `notifications`, `notification_settings` | Sales (`sale.discounted`, `sale.returned`, credit-sale debt), Returns (`sale.returned`, return debt), Customer Credit (`customer.debt_changed`), Staff (`staff.pin_locked_out`, recipient targeting), Cash/Shifts (`shift.closed`), Expense (`expense.recorded`), Devices (`device.registered`), Staff (`settlement.paid` — `staff_settlements`), Shops (business-hours config), Inventory (low-stock state), Sync (device staleness state) | `notificationSubscriber` + per-rule modules under `src/services/notifications/rules/`, `lowStockCheck.ts`, `syncStalenessCheck.ts`, `notificationRouting.ts`, notification-center composables | Full center (`NotificationCenterScreen`, `NotificationSettingsScreen`); 11 types across 9 event-driven subscribers + 2 state-derived checks |
 | Shops | `shops` (`open_time`, `close_time`, `is_24_7`) | n/a | — | Notifications (after-hours-expense rule is the only consumer today) |
 | Insights (WAFI-144) | none (stateless, no persistence) | Sales, Products/Cost (via `useDashboardMetrics`/`useProfitTrend`) | `useAutomaticInsights` | Home, Reports page |
+| Business Rules (WAFI-156) | `business_rules` (synced config), `rule_action_log` (server-only, not synced) via `execute_rule_action()`/`update_business_rule()` RPCs | Events (subscribes to `sale.returned`, `shift.closed`, extensible to any `DomainEventType`), Notifications (writes `notifications` rows via the same path native rules use) | `businessRuleSubscriber.ts`, `loadEnabledRules.ts`, `useBusinessRules.ts` (RulesScreen.vue's composable) | Notification Center (rows created by data-driven rules are indistinguishable from native-rule rows); Settings (new `RulesScreen.vue`, owner-only) |
 
 If a feature touches a domain not listed here, add a new row rather
 than leaving it undocumented.
@@ -354,6 +355,14 @@ Domains touched but not covered in the original spec checklist: none
 ```
 ## Cross-Epic Edge-Case Checklist (final review)
 Matrix rows re-checked after implementation: Sales, Returns, Inventory, Staff, Customer Credit, Insights
+Domains touched but not covered in the original spec checklist: none
+```
+
+### WAFI-156 — Business Rules Engine (final review)
+
+```
+## Cross-Epic Edge-Case Checklist (final review)
+Matrix rows re-checked after implementation: Business Rules, Notifications, Events, Returns (source of sale.returned), Cash/Shifts (source of shift.closed)
 Domains touched but not covered in the original spec checklist: none
 ```
 
