@@ -68,6 +68,13 @@ const router = createRouter({
         { path: 'denominations', component: () => import('@/features/settings/screens/DenominationSettingsScreen.vue') },
         { path: 'discount-caps', component: () => import('@/features/pos/DiscountCapsSettingsScreen.vue') },
         { path: 'notifications', component: () => import('@/features/settings/screens/NotificationSettingsScreen.vue') },
+        // WAFI-156: structurally owner-only, same reuse of can_view_staff_performance
+        // as WAFI-018's /reports/staff below (it's never granted to a manager/cashier,
+        // see permissionsForRole) -- overrides the parent's can_manage_settings, which
+        // is NOT structurally owner-only (a cashier's stored custom permissions can
+        // carry it). update_business_rule (Task 4) enforces the same boundary
+        // server-side regardless of what this route guard does.
+        { path: 'rules', component: () => import('@/features/settings/screens/RulesScreen.vue'), meta: { permission: 'can_view_staff_performance' } },
       ],
     },
     { path: '/reports',         component: () => import('@/features/dashboard/components/ReportsPage.vue'),      meta: { permission: 'can_view_reports', feature: 'reporting_pack' } },
