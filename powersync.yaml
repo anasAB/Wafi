@@ -75,11 +75,13 @@ streams:
       - SELECT * FROM public.denomination_configs       WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
 
       # WAFI-151: needed for client-side rebuild of local_today_revenue_projection.
-      # Bounded to the last 14 days -- local_today_revenue_projection's rebuild
-      # only ever needs recent events (its coverage check and replay both key
-      # off "today"), so the design spec requires this sync scope be limited
-      # to that window rather than syncing the shop's full historical event log.
-      - SELECT * FROM public.events              WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id()) AND occurred_at > now() - interval '14 days'
+      # PowerSync sync rules can't filter on now()/interval -- bucket membership
+      # must be deterministic from row data, not wall-clock time (a row silently
+      # leaving a time-window bucket produces no diff event, so clients would
+      # never learn to drop it). The 14-day bound from the design spec is
+      # therefore enforced client-side, in the SQLite query the projection
+      # rebuild runs against the local synced `events` table, not here.
+      - SELECT * FROM public.events              WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
       - SELECT * FROM public.daily_event_counts   WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
 
       # WAFI-153: profit_cache, same pattern as daily_event_counts above.
