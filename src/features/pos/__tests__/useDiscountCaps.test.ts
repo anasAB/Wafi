@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
-const mockExecute = vi.fn().mockResolvedValue(undefined)
+const mockExecute = vi.fn().mockResolvedValue({ rows: { _array: [{ id: 'shop-1' }] } })
 const mockGetOptional = vi.fn().mockResolvedValue(null)
 vi.mock('@/data/powersync/db', () => ({
   db: { execute: (...args: unknown[]) => mockExecute(...args), getOptional: (...args: unknown[]) => mockGetOptional(...args) },

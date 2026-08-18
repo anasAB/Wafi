@@ -21,6 +21,7 @@ beforeEach(() => {
   setActivePinia(createPinia())
   mockGetOptional.mockReset()
   mockExecute.mockReset()
+  mockExecute.mockResolvedValue({ rows: { _array: [{ id: 'shop-1' }] } })
 })
 
 describe('useDiscountCaps', () => {
@@ -47,10 +48,21 @@ describe('useDiscountCaps', () => {
     await caps.load()
     await caps.save({ cashierPct: 10, managerPct: 20 })
     expect(mockExecute).toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE shops SET cashier_discount_cap_pct'),
+      expect.stringContaining('UPDATE shops'),
       [10, 20, 'shop-1'],
     )
     expect(caps.cashierPct.value).toBe(10)
     expect(caps.managerPct.value).toBe(20)
+  })
+
+  it('save() throws when no shops row was updated', async () => {
+    mockGetOptional.mockResolvedValue({ cashier_discount_cap_pct: 0, manager_discount_cap_pct: 15 })
+    mockExecute.mockResolvedValueOnce({ rows: { _array: [] } })
+    const caps = useDiscountCaps()
+    await caps.load()
+
+    await expect(caps.save({ cashierPct: 10, managerPct: 20 }))
+      .rejects
+      .toThrow('Shop row not found locally; discount caps were not saved')
   })
 })

@@ -5,9 +5,11 @@ import AppHeader from '@/components/ui/AppHeader.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import { useDiscountCaps } from '@/features/pos/useDiscountCaps'
 import { validateDiscountCaps, type DiscountCapsErrors } from '@/features/pos/discountCapsValidation'
+import { useSessionStore } from '@/store/session.store'
 
 const router = useRouter()
 const caps = useDiscountCaps()
+const session = useSessionStore()
 
 const cashierInput = ref(String(caps.cashierPct.value))
 const managerInput = ref(String(caps.managerPct.value))
@@ -41,6 +43,11 @@ const confirmMessage = computed(() => {
 })
 
 function submit() {
+  if (session.activeStaff?.role !== 'owner') {
+    toast.value = { kind: 'error', message: 'فقط المالك يمكنه تعديل حدود الخصم' }
+    return
+  }
+
   const result = validateDiscountCaps({ cashier: String(cashierInput.value), manager: String(managerInput.value) })
   errors.value = result.errors
   if (!result.valid || !result.parsed) return
@@ -58,8 +65,11 @@ async function confirmSave() {
   const sinceIso = new Date().toISOString()
   try {
     await caps.save(next)
-  } catch {
-    toast.value = { kind: 'error', message: 'تعذّر الحفظ' }
+  } catch (err) {
+    const message = err instanceof Error && err.message.includes('Shop row not found locally')
+      ? 'تعذّر الحفظ: بيانات المتجر غير جاهزة على هذا الجهاز بعد'
+      : 'تعذّر الحفظ'
+    toast.value = { kind: 'error', message }
     return
   }
   toast.value = { kind: 'success', message: 'تم الحفظ' }

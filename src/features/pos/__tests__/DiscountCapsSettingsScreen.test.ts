@@ -13,6 +13,12 @@ vi.mock('@/features/pos/useDiscountCaps', () => ({
   }),
 }))
 
+vi.mock('@/store/session.store', () => ({
+  useSessionStore: () => ({
+    activeStaff: { role: 'owner' },
+  }),
+}))
+
 import DiscountCapsSettingsScreen from '@/features/pos/DiscountCapsSettingsScreen.vue'
 
 function mountScreen() {

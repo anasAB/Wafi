@@ -36,10 +36,17 @@ export function useDiscountCaps() {
     }
 
     const device = useDeviceStore()
-    await db.execute(
-      `UPDATE shops SET cashier_discount_cap_pct = ?, manager_discount_cap_pct = ? WHERE id = ?`,
+    const result = await db.execute(
+      `UPDATE shops
+       SET cashier_discount_cap_pct = ?, manager_discount_cap_pct = ?
+       WHERE id = ?
+       RETURNING id`,
       [next.cashierPct, next.managerPct, device.shopId],
     )
+    const updatedRows = ((result as any)?.rows?._array ?? []) as Array<{ id: string }>
+    if (updatedRows.length === 0) {
+      throw new Error('Shop row not found locally; discount caps were not saved')
+    }
     cashierPct.value = next.cashierPct
     managerPct.value = next.managerPct
   }
