@@ -1,0 +1,47 @@
+-- supabase/tests/wafi156_execute_rule_action_concurrent.test.sql
+-- WAFI-156: documents the concurrent-claim guarantee that
+-- execute_rule_action()'s `INSERT ... ON CONFLICT (event_id, rule_id, action)
+-- DO UPDATE ... WHERE executed_at IS NULL RETURNING *` claim is meant to
+-- provide -- see spec §2.3 "atomic conditional claim".
+--
+-- pgTAP's single-session model can't express true transaction overlap (one
+-- `psql`/pgTAP session cannot hold two concurrently-open transactions against
+-- the same connection). This suite is therefore NOT a pgTAP file to be run
+-- via `npx supabase test db` -- it is exercised by a separate script using
+-- two real client connections: scripts/testing/wafi156-concurrent-rpc-test.mjs
+-- (Node + the `pg` package). This file records the scenario and the
+-- assertions the .mjs script makes, for reviewers who don't want to read JS
+-- to understand what's being proven.
+--
+-- Scenario: two connections both call
+--   SELECT public.execute_rule_action(<event-id>, <rule-id>)
+-- for the SAME (event_id, rule_id) pair, fired back-to-back without awaiting
+-- the first call before issuing the second, so both requests reach Postgres
+-- nearly simultaneously and genuinely race for the same row.
+--
+-- Why no artificial pg_sleep hook is needed: the race is decided entirely
+-- inside execute_rule_action's `INSERT ... ON CONFLICT ... DO UPDATE`. That
+-- statement takes a row lock on the (event_id, rule_id, action) row as part
+-- of evaluating the ON CONFLICT clause -- whichever transaction's INSERT
+-- reaches Postgres first wins the row lock and proceeds to insert; the second
+-- transaction's statement blocks on that row lock until the first commits,
+-- then evaluates its own `DO UPDATE ... WHERE executed_at IS NULL` against
+-- the now-committed row (executed_at already stamped) and correctly finds no
+-- row to return (v_claim IS NULL -> 'already_executed'). No `pg_sleep` or
+-- advisory-lock hook is required to force overlap, and none was added to the
+-- production RPC body -- adding a test-only sleep to the function itself
+-- would be a permanent behavior change smuggled in for a test's convenience,
+-- which is worse than firing both calls unawaited and trusting Postgres's own
+-- row-locking to serialize the real contention point.
+--
+-- Assert (checked by the .mjs script after both calls settle):
+--   - exactly one of the two calls returns 'executed', the other returns
+--     'already_executed' (never both 'executed', never both anything else)
+--   - exactly one row in public.notifications for this event/rule
+--   - exactly one row in public.rule_action_log for this (event_id, rule_id,
+--     action) with executed_at IS NOT NULL and attempts = 2
+--
+-- Run: node scripts/testing/wafi156-concurrent-rpc-test.mjs
+-- (requires a running local Supabase Postgres; DATABASE_URL env var; not
+-- runnable in this sandbox -- see task-3-report.md for why this was verified
+-- by reading only, not execution.)
