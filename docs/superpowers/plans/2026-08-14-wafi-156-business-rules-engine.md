@@ -4,11 +4,35 @@
 
 **Goal:** Generalize WAFI-145's Large Return and Drawer Variance notification rules into a data-driven, owner-configurable rule engine (`business_rules` + `rule_action_log` + `execute_rule_action()` RPC + `update_business_rule()` RPC + a shared per-event-type durable subscriber), while leaving the other 7 WAFI-145 rules native and unchanged.
 
-**Architecture:** A shared `runDurableSubscriber` per event type (`sale.returned`, `shift.closed`) evaluates enabled `business_rules` rows client-side as a non-authoritative pre-filter, then calls the `authenticated`-callable `execute_rule_action(event_id, rule_id)` RPC, which is the actual trust boundary: it re-derives the event's shop/type, re-evaluates the rule's `field`/`transform`/`operator`/`threshold` against the authoritative event row itself, and only then does an atomic claim (`rule_action_log`, keyed `(event_id, rule_id, action)`, `ON CONFLICT ... WHERE executed_at IS NULL`) + `notifications` insert in one transaction.
+**Architecture:** A shared `runDurableSubscriber` per event type (`sale.returned`, `shift.closed`) loads every *enabled* `business_rules` row for that event type and calls the `authenticated`-callable `execute_rule_action(event_id, rule_id)` RPC for each, unconditionally — no client-side condition pre-filter (spec §2.2 correction: `business_rules` is synced config that can be stale on a given device, so a local match/no-match gate could silently suppress a real notification). The RPC is the sole evaluator and the actual trust boundary: it re-derives the event's shop/type, re-evaluates the rule's `field`/`transform`/`operator`/`threshold` against the authoritative event row itself, and only then does an atomic claim (`rule_action_log`, keyed `(event_id, rule_id, action)`, `ON CONFLICT ... WHERE executed_at IS NULL`) + `notifications` insert in one transaction.
 
 **Tech Stack:** Vue 3 + TypeScript (Vitest), Postgres/Supabase (pgTAP), PowerSync (client-local SQLite sync).
 
 **Spec:** `docs/superpowers/specs/2026-08-14-wafi-156-business-rules-engine-design.md` (6 review passes; read in full before starting — this plan implements it verbatim, including the corrected `execute_rule_action` security model in its §2.3).
+
+## Implementation Status (2026-08-18)
+
+All 12 tasks implemented on branch `worktree-wafi-156-business-rules-engine` (12 feature/test/docs commits + 1 whole-branch-review fix commit, `cd9fcd2..f94fb31`). Individual step checkboxes below are left unchecked (not maintained live during this pass) — this table is the authoritative status.
+
+| Task | Status | Notes |
+|---|---|---|
+| 1. `business_rules` table | ✅ Done | Migration `092`. |
+| 2. `rule_action_log` table | ✅ Done | Migration `093`. Zero client-reachable path confirmed by whole-branch review. |
+| 3. `execute_rule_action()` RPC | ✅ Done, then hardened | Migration `094`, then `097` (whole-branch review fix: scoped event/rule lookups to `auth_shop_id()` to close a cross-shop id-enumeration oracle). pgTAP suite + concurrency script written, unexecuted (no Docker in this sandbox). |
+| 4. `update_business_rule()` RPC | ✅ Done, then hardened | Migration `095`, then `098` (whole-branch review fix: reject negative/NaN threshold server-side, not just via the client's bypassable `min="0"`). |
+| 5. Bootstrap provisioning | ✅ Done | Migration `096`, one line added to the verified-current `bootstrap_owner_identity()` body. |
+| 6. Client types + PowerSync schema | ✅ Done | `businessRules.types.ts`, `schema.ts`, `powersync.yaml`. |
+| 7. `loadEnabledRules` + subscriber | ✅ Done | No `ruleEvaluator.ts` written, per the plan's own §2.2 correction. |
+| 8. Wire into `App.vue`, retire native rules | ✅ Done | `largeReturn.rule.ts`/`drawerVariance.rule.ts` and their tests deleted; no leftover references. |
+| 9. Event contract test coverage | ✅ Done | `DATA_DRIVEN_RULE_EVENT_TYPES` added to the consumer-completeness check. |
+| 10. `RulesScreen.vue` | ✅ Done | Route reuses the structurally-owner-only `can_view_staff_performance` flag (WAFI-018 precedent) rather than a new permission. Manual on-device pass (Step 8) NOT performed — no running dev instance in this session. |
+| 11. Documentation | ✅ Done | Domain Interaction Matrix, `SIGNALS.md`, `EVENT_SUBSCRIBERS.md`, final-review checklist block. |
+| 12. Full-suite verification + review | ✅ Done | `vue-tsc -b` clean; vitest full suite shows the same pre-existing failures as base `main` (confirmed via `git stash`), no regressions. `superpowers:requesting-code-review` run: no Critical findings, 2 Important findings both fixed (see Task 3/4 rows above). pgTAP suites and the concurrency script (`scripts/testing/wafi156-concurrent-rpc-test.mjs`) remain unexecuted — **no Docker daemon in this sandbox**, the same recurring limitation as WAFI-150/143/151. |
+
+**Outstanding before this is production-verified:**
+- Run all `supabase/tests/wafi156_*.test.sql` pgTAP suites + `wafi156-concurrent-rpc-test.mjs` against a real local Postgres.
+- Manual on-device pass: owner can view/edit both proof rules and it persists; a non-owner staff account cannot reach `/settings/rules`.
+- Apply migrations `092`-`098` to production and merge this branch.
 
 ## Global Constraints
 
