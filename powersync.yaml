@@ -84,3 +84,7 @@ streams:
 
       # WAFI-153: profit_cache, same pattern as daily_event_counts above.
       - SELECT * FROM public.profit_cache         WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
+
+      # WAFI-156: business_rules config, synced so RulesScreen.vue can list/edit.
+      # rule_action_log is deliberately NOT synced -- server-only execution ledger.
+      - SELECT * FROM public.business_rules       WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())

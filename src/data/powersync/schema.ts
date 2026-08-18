@@ -580,6 +580,24 @@ const notification_settings = new Table({
   updated_at:     column.text,
 })
 
+// WAFI-156: data-driven business rule definitions (public.business_rules,
+// migration 092), synced so RulesScreen.vue can list/edit. rule_action_log
+// is deliberately NOT a table here -- server-only execution ledger, no
+// client sync surface (spec §2.3).
+const business_rules = new Table({
+  shop_id:    column.text,
+  rule_key:   column.text,
+  name:       column.text,
+  event_type: column.text,
+  field:      column.text,
+  transform:  column.text,
+  operator:   column.text,
+  threshold:  column.real,
+  action:     column.text,
+  enabled:    column.integer,  // 0/1, same convention as notification_settings.enabled
+  updated_at: column.text,
+})
+
 export const AppSchema = new Schema({
   products,
   stock_adjustments,
@@ -611,6 +629,7 @@ export const AppSchema = new Schema({
   local_today_revenue_projection,
   notifications,
   notification_settings,
+  business_rules,
   suppliers,
   stock_receivings,
   stock_receiving_line_items,

@@ -72,6 +72,14 @@ export type DomainEventType =
   | ExpenseEventType | InventoryEventType | CustomerEventType | SalesEventType | StaffEventType
   | ReturnsEventType | CashEventType | StockTakeEventType | ProductEventType | DeviceEventType
 
+/** WAFI-156: the finite set of event types the data-driven rule engine has a
+ *  registered subscriber for. business_rules.event_type must always be a
+ *  member of this set (enforced by the seed migration being the only writer
+ *  of event_type, and by the event-contract test in businessRuleSubscriber.test.ts)
+ *  -- adding a new value here is a deliberate vocabulary decision, not a
+ *  runtime-data-only change (see the design spec §1). */
+export type DataDrivenRuleEventType = 'sale.returned' | 'shift.closed'
+
 export interface DomainEvent<TPayload = unknown> {
   type: DomainEventType
   /** ID of the primary entity this event is about (expenseId, receivingId, saleId, ...) — the
