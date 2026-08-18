@@ -26,7 +26,11 @@ demand, from already-synced local data, and present them in the app.** Schedulin
 - All 13 report definitions (`compute()` functions)
 - The 3 proven shared aggregation primitives + new report-specific aggregation where no primitive fits
 - The report registry
-- On-demand generation triggered by opening the Reports UI
+- On-demand generation, lazy per selected report: opening the Reports list must only read the registry
+  (id/name/cadenceHint metadata) to render the catalogue — `compute()` runs only for the one report the owner
+  actually opens, never all 13 eagerly on list load. Several `compute()` implementations run genuinely expensive
+  aggregation (top-N ranking, inventory turnover, cash reconciliation); triggering all of them from the list
+  screen would defeat the entire "on-demand" framing and make opening the Reports page itself slow.
 - Reports UI: list, view, loading/error/empty states
 - Authorization appropriate to report data
 - Tests for each report's computation
@@ -265,12 +269,17 @@ as-of-date filter, and top-N ranking.
    query pattern.
 
 **Implementation rule, enforced by the integration layer above:** every report query's date-boundary filtering
-must use the same inclusive local-calendar-day interpretation already used throughout this codebase
-(`DATE(created_at, 'localtime')` or equivalent — see `useAnomalyDetection.ts`, `useDailyDigest.ts`, `profit_cache`'s
-day bucketing) and must never mix UTC truncation with local-date filtering within the same report or across
-reports. A report whose date math silently disagrees with `useDailyDigest.ts`'s "today" for the same nominal
-calendar day is a correctness bug, not a rounding difference — the integration tests should assert this
-explicitly for every date-bounded query, not just assert "produces a number."
+must implement the identical semantic invariant already used throughout this codebase — an inclusive
+`[from, to]` device-local calendar-day range (see `useAnomalyDetection.ts`'s `DATE(created_at, 'localtime')`,
+`useDailyDigest.ts`, `profit_cache`'s day bucketing) — and must never mix UTC truncation with local-date
+filtering within the same report or across reports. This is a semantic requirement, not a mandated SQL
+technique: `DATE(created_at, 'localtime') BETWEEN ? AND ?` is one valid implementation, but
+`created_at >= ? AND created_at < ?` against pre-computed local range boundaries is equally valid and may be
+more efficient against an indexed `created_at` column (a `DATE(...)` wrapper on the column defeats a plain
+index) — whichever technique a given query uses, it must produce identical results to the others for the same
+nominal calendar day, and the integration tests should assert that explicitly (e.g. a fixture straddling a
+local-day boundary near UTC midnight), not just assert "produces a number." A report whose date math silently
+disagrees with `useDailyDigest.ts`'s "today" for the same nominal calendar day is a correctness bug.
 
 ## Cross-Epic Edge-Case Checklist (design time)
 
@@ -289,5 +298,7 @@ Open cross-feature questions: whether report-level authorization (S5) needs a fi
 An implementation plan (via `superpowers:writing-plans`) should sequence: (1) the `Report`/`ReportSection`
 type shell, (2) the 3 shared primitives, (3) the registry with an empty map, (4) each report definition in the
 build order from §4 — each one task-reviewable independently since they don't depend on each other, only on the
-shell and whichever primitives they use, (5) the two presentation components + Reports page, (6) route/nav
+shell and whichever primitives they use, (5) the two presentation components + a Reports list page (registry
+metadata only, no `compute()` calls) + a per-report page/route that lazily calls `compute()` for the one
+selected report, (6) route/nav
 wiring reusing the existing `/reports` permission pattern.
