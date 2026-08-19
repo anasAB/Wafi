@@ -78,6 +78,12 @@ const router = createRouter({
       ],
     },
     { path: '/reports',         component: () => import('@/features/dashboard/components/ReportsPage.vue'),      meta: { permission: 'can_view_reports', feature: 'reporting_pack' } },
+    // WAFI-147A: a distinct list page for the new registry-driven "Automatic Reports"
+    // (13 registered report definitions, ReportsListPage.vue) -- kept at a separate
+    // path rather than replacing /reports because the existing /reports page above is
+    // an unrelated, already-shipped profit/expense dashboard (ReportsPage.vue, with its
+    // own charts, drilldowns, dead-stock panel, etc.), not a stub for this feature.
+    { path: '/reports-list',    component: () => import('@/features/reports/ReportsListPage.vue'), meta: { permission: 'can_view_reports', feature: 'reporting_pack' } },
     { path: '/reports/:reportId', component: () => import('@/features/reports/ReportDetailPage.vue'), meta: { permission: 'can_view_reports', feature: 'reporting_pack' } },
     { path: '/dashboard',       component: () => import('@/features/dashboard/components/Dashboard2Screen.vue'),   meta: { permission: 'can_view_reports', feature: 'reporting_pack' } },
     // WAFI-018: structurally owner-only — can_view_staff_performance is never

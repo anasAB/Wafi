@@ -1,6 +1,14 @@
 <script setup lang="ts">
-import type { SummarySection } from '../report.types'
+import type { ReportMetric, SummarySection } from '../report.types'
 defineProps<{ section: SummarySection }>()
+
+/** Metrics have no `format` field (unlike ReportColumn) -- `unit === 'USD'` is
+ *  the signal a non-integer value (e.g. an average-basket figure) needs
+ *  rounding for display. Non-numeric/other-unit values render as-is. */
+function metricValue(m: ReportMetric): string | number {
+  if (m.unit === 'USD' && typeof m.value === 'number') return m.value.toFixed(2)
+  return m.value
+}
 </script>
 
 <template>
@@ -9,7 +17,7 @@ defineProps<{ section: SummarySection }>()
     <div class="metrics-grid">
       <div v-for="(m, i) in section.metrics" :key="i" class="metric-row">
         <span class="metric-label">{{ m.label }}</span>
-        <span class="metric-value">{{ m.value }}<span v-if="m.unit" class="metric-unit"> {{ m.unit }}</span></span>
+        <span class="metric-value">{{ metricValue(m) }}<span v-if="m.unit" class="metric-unit"> {{ m.unit }}</span></span>
       </div>
     </div>
   </section>

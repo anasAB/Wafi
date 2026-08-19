@@ -24,8 +24,14 @@ describe('readShiftCashReconciliation integration', () => {
   })
 
   it('an open (not-yet-closed) shift is excluded even if its z_report_data column happens to be non-null', async () => {
+    // I8: z_report_data is a valid, non-null, non-zero snapshot here -- if the
+    // `status = 'closed'` filter in readShiftCashReconciliation.ts's query were
+    // ever removed, this row's real $500 would leak into the sum and the
+    // assertion below would fail. A NULL z_report_data (the prior fixture) would
+    // always contribute zero regardless of the status filter, so it couldn't
+    // actually prove the filter does the excluding.
     conn.exec(`INSERT INTO cashier_shifts (id, shop_id, status, closed_at, z_report_data) VALUES
-      ('sh3', 'shop1', 'open', NULL, NULL)`)
+      ('sh3', 'shop1', 'open', '2026-08-18T09:00:00', '${JSON.stringify({ expectedUsd: 500, actualUsd: 500, varianceUsd: 0, cashUsdSales: 500, cashExpensesUsd: 0, cashRefundsUsd: 0, cashCreditPaymentsUsd: 0, cashPayInsUsd: 0, cashPayOutsUsd: 0 })}')`)
     const result = await readShiftCashReconciliation('shop1', { from: '2026-08-18', to: '2026-08-18' })
     expect(result.expectedUsd).toBe(0)
   })

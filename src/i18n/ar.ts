@@ -16,6 +16,7 @@ export default {
     receivings: 'الاستلام',
     shifts:     'الورديات',
     reports:    'التقارير',
+    reportsList: 'التقارير التلقائية',
     settings:   'الإعدادات',
     more:       'المزيد',
     closeShift: 'إغلاق الوردية',

@@ -29,6 +29,8 @@ vi.mock('../../primitives/getCustomerAgingSnapshot', () => ({
 }))
 
 import { computeWeeklySummaryReport } from '../weeklySummary'
+import { readProfitCache } from '../../primitives/readProfitCache'
+import { getCustomerAgingSnapshot } from '../../primitives/getCustomerAgingSnapshot'
 
 describe('computeWeeklySummaryReport', () => {
   beforeEach(() => vi.clearAllMocks())
@@ -76,5 +78,24 @@ describe('computeWeeklySummaryReport', () => {
       expect(report.sections[4].metrics.find((m) => m.label === 'Outstanding debt')?.value).toBe(150) // 100 + 50
       expect(report.sections[4].metrics.find((m) => m.label === 'Change vs. last week')?.value).toBe(30) // 150 - 120
     }
+  })
+
+  it('I4: shifts the prior-period comparison back by the ACTUAL selected range length, not a hardcoded 7 days', async () => {
+    // Self-contained: readProfitCache/getCustomerAgingSnapshot's module-level
+    // mockResolvedValueOnce queues (above) are shared across this file's tests
+    // and consumed by the previous test -- reset + re-queue fresh values here
+    // so this test doesn't depend on run order.
+    const minimalProfit = { revenueUsd: 0, revenueSyp: 0, cogsUsd: 0, cogsReversalUsd: 0, expensesUsd: 0, refundsUsd: 0, discountUsd: 0, invoiceCount: 0, returnCount: 0, costlessSaleCount: 0, netRevenueUsd: 0, netCogsUsd: 0, profitUsd: 0 }
+    vi.mocked(readProfitCache).mockReset().mockResolvedValue(minimalProfit)
+    vi.mocked(getCustomerAgingSnapshot).mockReset().mockResolvedValue([])
+    mockGetAll.mockResolvedValueOnce([]).mockResolvedValueOnce([])
+
+    // A 30-day range (Aug 1 - Aug 30 inclusive): the prior period must be the
+    // same 30-day length immediately before it, i.e. Jul 2 - Jul 31 -- NOT
+    // Jul 25 - Aug 23 (a hardcoded -7 day shift).
+    await computeWeeklySummaryReport('shop1', { from: '2026-08-01', to: '2026-08-30' })
+
+    const priorRangeCall = vi.mocked(readProfitCache).mock.calls[1]
+    expect(priorRangeCall[1]).toEqual({ from: '2026-07-02', to: '2026-07-31' })
   })
 })

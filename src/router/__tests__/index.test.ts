@@ -110,6 +110,14 @@ describe('router meta.permission wiring for dashboard route (WAFI-146)', () => {
   })
 })
 
+describe('router meta.permission wiring for /reports-list (WAFI-147A C1)', () => {
+  it('registers /reports-list, pointing at ReportsListPage.vue, gated same as /reports/:reportId', () => {
+    const route = router.getRoutes().find(r => r.path === '/reports-list')
+    expect(route).toBeDefined()
+    expect(route?.meta).toEqual({ permission: 'can_view_reports', feature: 'reporting_pack' })
+  })
+})
+
 describe('router platform-admin guard for /admin/rollouts (WAFI-155)', () => {
   beforeEach(async () => {
     setActivePinia(createPinia())

@@ -144,8 +144,101 @@ describe('ReportDetailPage', () => {
     expect(text.indexOf('Cash Reconciliation')).toBeLessThan(text.indexOf('Top 5 Products'))
   })
 
-  // New tests for Important fixes are covered by code inspection:
-  // 1. Route-param reactivity: watch on route.params.reportId resets state and re-derives definition
-  // 2. Race guard: generationToken prevents stale results from overwriting newer ones
-  // 3. Error handling: try/catch on staff-list fetch mirrors generate()'s error pattern
+  it('re-derives definition/range and re-computes when route.params.reportId changes (I9)', async () => {
+    const { reactive } = await import('vue')
+    const reactiveRoute = reactive({ params: { reportId: 'daily-closing' } })
+    const vueRouter = await import('vue-router')
+    vi.mocked(vueRouter.useRoute).mockReturnValue(reactiveRoute as any)
+
+    const dailyComputeSpy = vi.fn().mockResolvedValue({
+      id: 'daily-closing', name: 'Daily Closing Report',
+      dateRange: { from: '2026-08-18', to: '2026-08-18' }, generatedAt: '2026-08-18T00:00:00.000Z',
+      sections: [{ type: 'summary', title: 'Daily Totals', metrics: [], visibility: 'shop' }],
+    })
+    const weeklyComputeSpy = vi.fn().mockResolvedValue({
+      id: 'weekly-summary', name: 'Weekly Summary',
+      dateRange: { from: '2026-08-12', to: '2026-08-18' }, generatedAt: '2026-08-18T00:00:00.000Z',
+      sections: [{ type: 'summary', title: 'Weekly Totals', metrics: [], visibility: 'shop' }],
+    })
+    REPORT_DEFINITIONS['daily-closing'] = { id: 'daily-closing', name: 'Daily Closing Report', cadenceHint: 'daily', compute: dailyComputeSpy }
+    REPORT_DEFINITIONS['weekly-summary'] = { id: 'weekly-summary', name: 'Weekly Summary', cadenceHint: 'weekly', compute: weeklyComputeSpy }
+
+    const wrapper = mount(ReportDetailPage, { global: { mocks: { $router: createMockRouter() } } })
+    await flushPromises()
+
+    expect(dailyComputeSpy).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('Daily Totals')
+
+    reactiveRoute.params.reportId = 'weekly-summary'
+    await flushPromises()
+
+    expect(weeklyComputeSpy).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('Weekly Totals')
+    expect(wrapper.text()).not.toContain('Daily Totals')
+  })
+
+  it('applies only the newest generate() call\'s result when an older call resolves later (race guard, I9)', async () => {
+    const vueRouter = await import('vue-router')
+    vi.mocked(vueRouter.useRoute).mockReturnValue({ params: { reportId: 'daily-closing' } } as any)
+
+    let resolveFirst!: (v: any) => void
+    let resolveSecond!: (v: any) => void
+    const first = new Promise((resolve) => { resolveFirst = resolve })
+    const second = new Promise((resolve) => { resolveSecond = resolve })
+    const computeSpy = vi.fn()
+      .mockImplementationOnce(() => first)
+      .mockImplementationOnce(() => second)
+    REPORT_DEFINITIONS['daily-closing'] = { id: 'daily-closing', name: 'Daily Closing Report', cadenceHint: 'daily', compute: computeSpy }
+
+    const wrapper = mount(ReportDetailPage, { global: { mocks: { $router: createMockRouter() } } })
+    await flushPromises() // triggers the first (onMounted) generate() call
+
+    // Trigger a second generate() call before the first resolves.
+    await wrapper.find('[data-testid="regenerate-button"]').trigger('click')
+    await flushPromises()
+
+    expect(computeSpy).toHaveBeenCalledTimes(2)
+
+    // Resolve the OLDER call last -- its result must be discarded.
+    resolveSecond({
+      id: 'daily-closing', name: 'Daily Closing Report',
+      dateRange: { from: '2026-08-18', to: '2026-08-18' }, generatedAt: '2026-08-18T00:00:00.000Z',
+      sections: [{ type: 'summary', title: 'Newer Result', metrics: [], visibility: 'shop' }],
+    })
+    await flushPromises()
+    resolveFirst({
+      id: 'daily-closing', name: 'Daily Closing Report',
+      dateRange: { from: '2026-08-18', to: '2026-08-18' }, generatedAt: '2026-08-18T00:00:00.000Z',
+      sections: [{ type: 'summary', title: 'Older Result', metrics: [], visibility: 'shop' }],
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Newer Result')
+    expect(wrapper.text()).not.toContain('Older Result')
+  })
+
+  it('rejects an inverted date range with a visible error and never calls compute() (I9)', async () => {
+    const vueRouter = await import('vue-router')
+    vi.mocked(vueRouter.useRoute).mockReturnValue({ params: { reportId: 'daily-closing' } } as any)
+
+    const computeSpy = vi.fn().mockResolvedValue({
+      id: 'daily-closing', name: 'Daily Closing Report',
+      dateRange: { from: '2026-08-18', to: '2026-08-18' }, generatedAt: '2026-08-18T00:00:00.000Z',
+      sections: [{ type: 'summary', title: 'Totals', metrics: [], visibility: 'shop' }],
+    })
+    REPORT_DEFINITIONS['daily-closing'] = { id: 'daily-closing', name: 'Daily Closing Report', cadenceHint: 'daily', compute: computeSpy }
+
+    const wrapper = mount(ReportDetailPage, { global: { mocks: { $router: createMockRouter() } } })
+    await flushPromises()
+    computeSpy.mockClear()
+
+    await wrapper.find('[data-testid="range-from"]').setValue('2026-08-20')
+    await wrapper.find('[data-testid="range-to"]').setValue('2026-08-10')
+    await wrapper.find('[data-testid="regenerate-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="range-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="range-error"]').text()).toContain('يجب أن يكون تاريخ البداية قبل تاريخ النهاية أو مساويًا له')
+    expect(computeSpy).not.toHaveBeenCalled()
+  })
 })

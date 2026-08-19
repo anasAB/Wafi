@@ -7,8 +7,15 @@ import type { Report, ReportDateRange } from '../report.types'
 import { REPORT_DEFINITIONS } from '../reportRegistry'
 import { addCalendarDays } from '../dateUtils'
 
+/** I4: shift back by the ACTUAL selected range length (inclusive day count), not a
+ *  hardcoded 7 -- ReportDetailPage lets an owner pick any date range, and "prior
+ *  week" for a 3-day or 30-day selection must be that same length immediately
+ *  before it, not a fixed week-sized jump. */
 function priorWeekRange(range: ReportDateRange): ReportDateRange {
-  return { from: addCalendarDays(range.from, -7), to: addCalendarDays(range.to, -7) }
+  const [fy, fm, fd] = range.from.split('-').map(Number)
+  const [ty, tm, td] = range.to.split('-').map(Number)
+  const rangeLengthDays = Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86400000) + 1
+  return { from: addCalendarDays(range.from, -rangeLengthDays), to: addCalendarDays(range.to, -rangeLengthDays) }
 }
 
 export interface InventoryChangeRow { productId: string; nameAr: string; adjustmentCount: number; netQuantityDelta: number }

@@ -87,13 +87,42 @@ export async function getStaffMetrics(shopId: string, range: ReportDateRange): P
     ),
   ])
 
+  const salesMap = new Map(salesRows.map((r) => [r.staffId, r]))
   const cogsMap = new Map(cogsRows.map((r) => [r.staffId, r.cogs]))
   const returnRevenueMap = new Map(returnRevenueRows.map((r) => [r.staffId, r.total]))
   const returnCountMap = new Map(returnRevenueRows.map((r) => [r.staffId, r.returnCount]))
   const returnCogsMap = new Map(returnCogsRows.map((r) => [r.staffId, r.cogs]))
   const discountMap = new Map(discountRows.map((r) => [r.staffId, r.discountUsd]))
 
-  const built = salesRows.map((s): StaffMetricsRow => {
+  // I5: a staff member who only processed returns during the range (zero sales
+  // rung up) is not in salesRows at all -- build the result set from the UNION
+  // of staff ids appearing in EITHER salesRows or returnRevenueRows, so they
+  // still surface (with salesCount 0, avgTicketUsd null, and their real
+  // returnRevenueUsd/returnCount), instead of being silently dropped and
+  // under-reporting vs. Returns Report's own "Total Returns" summary.
+  const returnOnlyStaffIds = returnRevenueRows
+    .map((r) => r.staffId)
+    .filter((id) => !salesMap.has(id))
+  const uniqueReturnOnlyStaffIds = [...new Set(returnOnlyStaffIds)]
+
+  // salesRows already carries `name` via its own JOIN; return-only staff ids
+  // need a dedicated name lookup since they have no row in that query.
+  const returnOnlyStaffNames = uniqueReturnOnlyStaffIds.length === 0
+    ? []
+    : await db.getAll<{ id: string; name: string }>(
+        `SELECT id, name FROM staff WHERE shop_id = ? AND id IN (${uniqueReturnOnlyStaffIds.map(() => '?').join(',')})`,
+        [shopId, ...uniqueReturnOnlyStaffIds],
+      )
+  const returnOnlyNameMap = new Map(returnOnlyStaffNames.map((r) => [r.id, r.name]))
+
+  const salesLikeRows = [
+    ...salesRows,
+    ...uniqueReturnOnlyStaffIds.map((staffId) => ({
+      staffId, name: returnOnlyNameMap.get(staffId) ?? staffId, salesCount: 0, grossUsd: 0,
+    })),
+  ]
+
+  const built = salesLikeRows.map((s): StaffMetricsRow => {
     const returnRevenue = returnRevenueMap.get(s.staffId) ?? 0
     const returnCogs = returnCogsMap.get(s.staffId) ?? 0
     const revenueUsd = s.grossUsd - returnRevenue

@@ -16,6 +16,7 @@ export default {
     receivings: 'Receiving',
     shifts:     'Shifts',
     reports:    'Reports',
+    reportsList: 'Automatic Reports',
     settings:   'Settings',
     more:       'More',
     closeShift: 'Close shift',

@@ -40,8 +40,18 @@ const BALANCE_USD_EXPR_AS_OF = `
               WHERE s.customer_id = c.id AND s.is_credit = 0 AND r.refund_method = 'store_credit' AND r.shop_id = ? AND DATE(r.created_at, 'localtime') <= ?), 0)
   ) AS balance_usd`
 
+/** I12: `toIso` here is always `asOfDate`, a 'YYYY-MM-DD' calendar date with no
+ *  time component -- `new Date('YYYY-MM-DD')` parses that as UTC MIDNIGHT
+ *  (start of day), which differs from the existing Collections feature's
+ *  creditDebtors.ts convention of comparing against `new Date().toISOString()`
+ *  (a full current timestamp, i.e. END of "now"). Treating asOfDate as the END
+ *  of that calendar day keeps this figure consistent with that precedent --
+ *  "how many days have elapsed as of the end of this date" -- instead of
+ *  under-counting by ~1 day. Credit Report's 30/60/90-day risk buckets are
+ *  built directly from this value. */
 function daysBetween(fromIso: string, toIso: string): number {
-  const ms = new Date(toIso).getTime() - new Date(fromIso).getTime()
+  const toEndOfDay = /^\d{4}-\d{2}-\d{2}$/.test(toIso) ? `${toIso}T23:59:59.999` : toIso
+  const ms = new Date(toEndOfDay).getTime() - new Date(fromIso).getTime()
   return Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)))
 }
 
