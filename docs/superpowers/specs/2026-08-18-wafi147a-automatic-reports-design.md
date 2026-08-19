@@ -76,12 +76,27 @@ type ReportMetric = { label: string; value: string | number; unit?: string }
 // simultaneously, which a generic on the union itself cannot express without an `unknown`
 // escape hatch — exactly the "GenericTableRow" outcome this design set out to avoid. Row typing
 // instead lives at construction time, not at the stored/serialized shape.
-type ReportColumn = { key: string; label: string }
+type ReportColumn = {
+  key: string
+  label: string
+  /** Presentation hint only — the UI stays generic/"dumb," row values are always the real typed
+   *  data (numbers, ISO date strings, etc.), never pre-formatted strings. `currency-usd` (not the
+   *  generic `currency`) because WAFI is dual-currency and a future column may need `currency-syp`. */
+  format?: 'text' | 'number' | 'currency-usd' | 'percent' | 'date'
+  align?: 'start' | 'center' | 'end'
+}
 type DetailSection = {
   type: 'detail'
   title: string
   columns: ReportColumn[]
   rows: object[]
+  /** True when the underlying query applied a hard row cap and more rows existed than were
+   *  materialized (e.g. Dead Stock's `LIMIT 500`). Reports already capped at a small fixed N
+   *  (e.g. Top Customers' `LIMIT 20`) never set this — the cap IS the full intended result, not a
+   *  truncation. No `totalRowCount`: that requires a second COUNT(*) query per section and a
+   *  pagination concept 147A doesn't otherwise have. The UI shows a "showing first N results"
+   *  notice when `truncated` is true, nothing more precise. */
+  truncated?: boolean
 }
 
 /** The only place row typing is checked. Each report definition calls this with its own Row
@@ -143,7 +158,8 @@ type ReportDefinition = {
    *  147B's problem entirely; this field exists so the Reports UI can group/label reports,
    *  nothing more. */
   cadenceHint: 'per-shift' | 'daily' | 'weekly' | 'monthly'
-  compute: (shopId: string, range: ReportDateRange) => Promise<Report>
+  /** context is optional and only Employee Summary reads it — see §9.1/§9.2. */
+  compute: (shopId: string, range: ReportDateRange, context?: ReportContext) => Promise<Report>
 }
 
 const REPORT_DEFINITIONS: Record<ReportId, ReportDefinition> = { /* ... */ }
