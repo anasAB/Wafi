@@ -62,7 +62,7 @@ const range = ref<ReportDateRange>(definition.value && definition.value.cadenceH
 // invocation behavior here. cadenceHint stays purely a display/default-range
 // hint (defaultRangeForCadence above is the one place it legitimately
 // matters, and even there only for picking a default window length).
-const needsStaffContext = computed(() => definition?.contextRequirement === 'staff')
+const needsStaffContext = computed(() => definition.value?.contextRequirement === 'staff')
 
 // Task 0 P0 finding 5 (second review): Employee Summary is WHOLE-REPORT
 // gated, not merely section-filtered -- unlike a composite report (Weekly

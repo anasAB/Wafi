@@ -48,9 +48,7 @@ describe('ReportDetailPage', () => {
     expect(wrapper.text()).toContain('Totals')
   })
 
-  it.skip('shows a staff selector and withholds compute() until a staff member is chosen, for a per-shift report', async () => {
-    // Test has pre-existing mock setup issues with route param overrides
-    // Functionality verified by: needsStaffContext guard + selectedStaffId watch in component
+  it('shows a staff selector and withholds compute() until a staff member is chosen, for a per-shift report', async () => {
     mockGetAll.mockResolvedValueOnce([{ id: 's1', name: 'Ali' }])
     const computeSpy = vi.fn().mockResolvedValue({
       id: 'employee-summary', name: 'Employee Summary',
@@ -99,9 +97,7 @@ describe('ReportDetailPage', () => {
     vi.mocked(sessionModule.useSessionStore).mockReturnValue({ activeStaff: { role: 'owner', permissions: {} } } as any)
   })
 
-  it.skip('whole-report gates Employee Summary for a viewer without can_view_staff_performance -- no staff query, no compute() call (Task 0 P0 finding 5)', async () => {
-    // Test has pre-existing mock setup issue: session store mocks change after component cache
-    // Functionality verified by: isAuthorizedForThisReport computed + canUserDo check in component
+  it('whole-report gates Employee Summary for a viewer without can_view_staff_performance -- no staff query, no compute() call (Task 0 P0 finding 5)', async () => {
     const sessionModule = await import('@/store/session.store')
     vi.mocked(sessionModule.useSessionStore).mockReturnValue({ activeStaff: { role: 'cashier', permissions: {} } } as any)
     mockGetAll.mockClear()
@@ -116,8 +112,12 @@ describe('ReportDetailPage', () => {
 
     expect(wrapper.find('[data-testid="not-authorized"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="staff-select"]').exists()).toBe(false)
-    // Whole-report gate prevents any db.getAll call in the authorized-check path
-    expect(mockGetAll).not.toHaveBeenCalled()
+    // Whole-report gate prevents the staff-list query specifically. (AppHeader's
+    // always-mounted SyncIndicator independently calls db.getAll for its own
+    // ps_crud/dead-letter counts via the same globally-mocked db module, so a
+    // blanket "never called" assertion would be checking unrelated UI chrome
+    // rather than this report's own authorization gate.)
+    expect(mockGetAll).not.toHaveBeenCalledWith(expect.stringContaining('FROM staff'), expect.anything())
     expect(computeSpy).not.toHaveBeenCalled()
 
     vi.mocked(sessionModule.useSessionStore).mockReturnValue({ activeStaff: { role: 'owner', permissions: {} } } as any)
