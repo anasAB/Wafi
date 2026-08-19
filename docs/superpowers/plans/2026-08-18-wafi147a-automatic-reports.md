@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the `Report`/`ReportSection` contract, 3 shared aggregation primitives, all 13 report definitions from `WAFI_Event_Driven_Platform_Plan_v1.md:639-786`, and an on-demand (lazy, no scheduling) Reports UI.
+**Goal:** Build the `Report`/`ReportSection` contract, 5 shared aggregation primitives (`readProfitCache`, `getStaffMetrics`, `getCustomerAgingSnapshot`, `readShiftCashReconciliation`, `queryDeadStockRows`), all 13 report definitions from `WAFI_Event_Driven_Platform_Plan_v1.md:639-786`, and an on-demand (lazy, no scheduling) Reports UI.
 
 **Architecture:** A report definition is a plain async function `(shopId, range) => Promise<Report>` registered in a keyed `Record<ReportId, ReportDefinition>`. Each report composes `SummarySection`/`DetailSection` values from 3 reusable primitives (`readProfitCache`, `getStaffMetrics`, `getCustomerAgingSnapshot`) plus report-specific SQL where no primitive fits. The Reports list page reads only registry metadata; a per-report page calls `compute()` lazily for the one selected report.
 
@@ -36,7 +36,7 @@
 
 **Decisions made now, applied throughout this plan (recorded here so they don't need re-litigating per-task):**
 
-5. **Weekly Summary's "inventory changes" field (from the original 13-report spec) is real and buildable — restored, not dropped.** `stock_adjustments` (already synced) records every inventory change with a `reason`/`delta_quantity`; Task 8 adds an "Inventory Changes" detail section summarizing adjustment count and net quantity delta in range, alongside the customer-debt-trend section already planned — both are kept, not one replacing the other.
+5. **Weekly Summary's "inventory changes" field (from the original 13-report spec) is real and buildable — restored, not dropped.** `stock_adjustments` (migration `009_expand_domain_tables_for_sync.sql`) records every inventory change via `old_value`/`new_value`/`reason` columns — the delta is `new_value - old_value`, not a stored `delta_quantity` column (verified against the actual migration, not assumed). Task 8 adds an "Inventory Changes" detail section computing that delta, summarizing adjustment count and net quantity change in range.
 6. **Inventory Health's Dead Stock section is real and buildable — restored, not dropped.** Task 16 now includes a `detailSection` built from the same query Task 17's dedicated Dead Stock report uses (extracted as a small shared function both tasks call — see Task 16/17 below — not duplicated SQL).
 7. **Confirmed de-scoped items** (checked against the actual codebase, genuinely absent, not merely inconvenient to build) — this is the authoritative final list; do not re-add these speculatively in any task below, and do not treat their absence as an oversight:
    - Profit Trend: "profit by product category" (no product-category cost attribution exists) and "profit vs. target" (no target/goal concept exists anywhere in this codebase).
@@ -103,7 +103,7 @@ interface FakeRow { id: string; label: string; total: number }
 describe('summarySection', () => {
   it('builds a well-shaped summary section', () => {
     const s = summarySection({ title: 'Totals', metrics: [{ label: 'Revenue', value: 100, unit: 'USD' }] })
-    expect(s).toEqual({ type: 'summary', title: 'Totals', metrics: [{ label: 'Revenue', value: 100, unit: 'USD' }] })
+    expect(s).toEqual({ type: 'summary', title: 'Totals', metrics: [{ label: 'Revenue', value: 100, unit: 'USD' }], visibility: 'shop' })
   })
 })
 
@@ -120,7 +120,13 @@ describe('detailSection', () => {
       title: 'Rows',
       columns: [{ key: 'label', label: 'Label' }, { key: 'total', label: 'Total' }],
       rows,
+      visibility: 'shop',
     })
+  })
+
+  it('accepts an explicit visibility: "staff" for staff-identifying sections', () => {
+    const s = detailSection<FakeRow>({ title: 'Staff', columns: [{ key: 'id', label: 'ID' }], rows: [], visibility: 'staff' })
+    expect(s.visibility).toBe('staff')
   })
 
   it('mixed sections coexist in one Report without a shared row type', () => {
@@ -159,10 +165,19 @@ export type ReportDateRange = {
 
 export type ReportMetric = { label: string; value: string | number; unit?: string }
 
+/** 'staff' means "identifies an individual staff member's figures" -- gated by
+ *  can_view_staff_performance at render time (see ReportDetailPage, Task 21),
+ *  the same structurally-owner-only flag WAFI-018 established for
+ *  /reports/staff. Defaults to 'shop' (every existing call site that doesn't
+ *  pass this stays correct with no change) -- only the handful of genuinely
+ *  staff-identifying sections (Task 0 P0 finding 2) pass 'staff' explicitly. */
+export type SectionVisibility = 'shop' | 'staff'
+
 export type SummarySection = {
   type: 'summary'
   title: string
   metrics: ReportMetric[]
+  visibility: SectionVisibility
 }
 
 export type ReportColumn = { key: string; label: string }
@@ -176,6 +191,7 @@ export type DetailSection = {
   title: string
   columns: ReportColumn[]
   rows: object[]
+  visibility: SectionVisibility
 }
 
 export type ReportSection = SummarySection | DetailSection
@@ -201,8 +217,8 @@ export type Report = {
   sections: ReportSection[]
 }
 
-export function summarySection(args: { title: string; metrics: ReportMetric[] }): SummarySection {
-  return { type: 'summary', title: args.title, metrics: args.metrics }
+export function summarySection(args: { title: string; metrics: ReportMetric[]; visibility?: SectionVisibility }): SummarySection {
+  return { type: 'summary', title: args.title, metrics: args.metrics, visibility: args.visibility ?? 'shop' }
 }
 
 /** The only place row typing is checked. Each report definition calls this with its own
@@ -212,12 +228,14 @@ export function detailSection<Row extends object>(args: {
   title: string
   columns: { key: keyof Row; label: string }[]
   rows: Row[]
+  visibility?: SectionVisibility
 }): DetailSection {
   return {
     type: 'detail',
     title: args.title,
     columns: args.columns.map((c) => ({ key: String(c.key), label: c.label })),
     rows: args.rows,
+    visibility: args.visibility ?? 'shop',
   }
 }
 ```
@@ -232,6 +250,79 @@ Expected: PASS (3/3).
 ```bash
 git add src/features/reports/report.types.ts src/features/reports/__tests__/report.types.test.ts
 git commit -m "feat(WAFI-147A): add Report/ReportSection contract with detailSection() row-typing helper"
+```
+
+---
+
+### Task 1b: Shared local-date utilities (Task 0 P1 finding 19)
+
+An earlier draft of this plan had `shiftLocalDate()` (Task 8) and `toLocalDateStr()` (Task 21) as two separately-written, near-identical implementations of the same local-calendar-date logic. Not a reporting engine — just the two small date functions every report-adjacent piece of code needs, written once.
+
+**Files:**
+- Create: `src/features/reports/dateUtils.ts`
+- Test: `src/features/reports/__tests__/dateUtils.test.ts`
+
+**Interfaces:**
+- Produces: `function formatLocalDate(d: Date): string` (YYYY-MM-DD from local date parts); `function addCalendarDays(dateStr: string, days: number): string` (shifts a YYYY-MM-DD string by N local calendar days, positive or negative).
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+// src/features/reports/__tests__/dateUtils.test.ts
+import { describe, it, expect } from 'vitest'
+import { formatLocalDate, addCalendarDays } from '../dateUtils'
+
+describe('formatLocalDate', () => {
+  it('formats local date parts as YYYY-MM-DD, zero-padded', () => {
+    expect(formatLocalDate(new Date(2026, 0, 5))).toBe('2026-01-05') // month is 0-indexed in the Date constructor
+  })
+})
+
+describe('addCalendarDays', () => {
+  it('shifts forward and backward across a month boundary', () => {
+    expect(addCalendarDays('2026-08-01', -7)).toBe('2026-07-25')
+    expect(addCalendarDays('2026-08-29', 7)).toBe('2026-09-05')
+  })
+  it('is a no-op for 0 days', () => {
+    expect(addCalendarDays('2026-08-18', 0)).toBe('2026-08-18')
+  })
+})
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `npx vitest run src/features/reports/__tests__/dateUtils.test.ts`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Write `dateUtils.ts`**
+
+```ts
+// src/features/reports/dateUtils.ts
+// WAFI-147A: the ONE place local-calendar-date formatting/arithmetic lives
+// for this feature -- matches useProfitCache.ts's toDateStr() convention.
+// NEVER toISOString() (UTC, wrong day near local midnight).
+
+export function formatLocalDate(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+export function addCalendarDays(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return formatLocalDate(new Date(y, m - 1, d + days))
+}
+```
+
+- [ ] **Step 4: Run to verify it passes**
+
+Run: `npx vitest run src/features/reports/__tests__/dateUtils.test.ts`
+Expected: PASS (4/4).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/features/reports/dateUtils.ts src/features/reports/__tests__/dateUtils.test.ts
+git commit -m "feat(WAFI-147A): add shared local-date utilities, replacing two near-duplicate implementations"
 ```
 
 ---
@@ -279,7 +370,7 @@ describe('readProfitCache', () => {
     expect(result.returnCount).toBe(1)
   })
 
-  it('clamps a transiently negative costlessSaleCount and flags profitIsEstimated only when positive', async () => {
+  it('clamps a transiently negative costlessSaleCount to zero for display (no profitIsEstimated field on this primitive -- see Task 0 P1 finding 20, this only covers the clamp)', async () => {
     mockGetAll.mockResolvedValue([
       { revenue_usd: 1000, revenue_syp: 0, cogs_usd: 0, cogs_reversal_usd: 0, expenses_usd: 0, refunds_usd: 0, discount_usd: 0, invoice_count: 1, return_count: 0, costless_sale_count: -1 },
     ])
@@ -482,6 +573,11 @@ export async function getStaffMetrics(shopId: string, range: ReportDateRange): P
        GROUP BY s.staff_id`,
       [shopId, start, end],
     ),
+    // Task 0 P2 finding 21: staffId here is whoever's SHIFT the return fell
+    // under (cashier_shifts.staff_id via r.shift_id) -- the staff member who
+    // PROCESSED the return, not necessarily the original sale's cashier. Both
+    // Returns Report's "By Staff" section (Task 12) and any future consumer
+    // must be read as "returns processed by," not "returns caused by."
     db.getAll<{ staffId: string; total: number; returnCount: number }>(
       `SELECT cs.staff_id AS staffId, COALESCE(SUM(r.refund_amount_usd), 0) AS total, COUNT(*) AS returnCount
        FROM returns r
@@ -632,6 +728,16 @@ Base this on `creditDebtors.ts`'s `fetchCreditDebtors`/`BALANCE_USD_EXPR`, addin
 // formula has no date boundary (always means "balance right now"), which would
 // silently misreport a historical report's period-end balance as today's live
 // balance. Every subquery here is bounded by asOfDate.
+//
+// Task 0 P1 finding 13, verified: customer_payments.paid_at is a DATE column
+// (migration 009_expand_domain_tables_for_sync.sql), not a TIMESTAMPTZ -- no
+// time-of-day component, so `paid_at <= asOfDate` needs no end-of-day boundary
+// adjustment. Also verified: the oldest-unpaid-sale subquery below intentionally
+// nets only `returns` against `is_credit = 1` sales, mirroring the main balance
+// formula's first+third components -- NOT its fourth component (is_credit = 0
+// store-credit refunds), which is a debt source with no originating credit sale
+// to anchor a FIFO age against, so it's correctly excluded here, not an
+// oversight or an inconsistency to fix.
 import { db } from '@/data/powersync/db'
 
 export interface CustomerAgingRow {
@@ -751,8 +857,8 @@ describe('readShiftCashReconciliation', () => {
 
   it('sums the ZReportMetrics fields out of every closed shift\'s z_report_data in range', async () => {
     mockGetAll.mockResolvedValue([
-      { z_report_data: JSON.stringify({ expectedUsd: 100, actualUsd: 98, varianceUsd: -2, cashUsdSales: 80, cashExpensesUsd: 10, cashRefundsUsd: 5, cashCreditPaymentsUsd: 20, cashPayInsUsd: 0, cashPayOutsUsd: 15 }) },
-      { z_report_data: JSON.stringify({ expectedUsd: 50, actualUsd: 50, varianceUsd: 0, cashUsdSales: 40, cashExpensesUsd: 0, cashRefundsUsd: 0, cashCreditPaymentsUsd: 10, cashPayInsUsd: 5, cashPayOutsUsd: 0 }) },
+      { id: 'sh1', z_report_data: JSON.stringify({ expectedUsd: 100, actualUsd: 98, varianceUsd: -2, cashUsdSales: 80, cashExpensesUsd: 10, cashRefundsUsd: 5, cashCreditPaymentsUsd: 20, cashPayInsUsd: 0, cashPayOutsUsd: 15 }) },
+      { id: 'sh2', z_report_data: JSON.stringify({ expectedUsd: 50, actualUsd: 50, varianceUsd: 0, cashUsdSales: 40, cashExpensesUsd: 0, cashRefundsUsd: 0, cashCreditPaymentsUsd: 10, cashPayInsUsd: 5, cashPayOutsUsd: 0 }) },
     ])
 
     const result = await readShiftCashReconciliation('shop1', { from: '2026-08-18', to: '2026-08-18' })
@@ -769,9 +875,21 @@ describe('readShiftCashReconciliation', () => {
   })
 
   it('treats a shift with no z_report_data (legacy/pre-WAFI-060 row) as all-zero, not a throw', async () => {
-    mockGetAll.mockResolvedValue([{ z_report_data: null }])
+    mockGetAll.mockResolvedValue([{ id: 'sh-legacy', z_report_data: null }])
     const result = await readShiftCashReconciliation('shop1', { from: '2026-08-01', to: '2026-08-01' })
     expect(result.expectedUsd).toBe(0)
+  })
+
+  it('throws, naming the shift, on unparseable JSON -- never silently treats it as zero (Task 0 P0 finding 12)', async () => {
+    mockGetAll.mockResolvedValue([{ id: 'sh-broken', z_report_data: '{not valid json' }])
+    await expect(readShiftCashReconciliation('shop1', { from: '2026-08-01', to: '2026-08-01' }))
+      .rejects.toThrow(/sh-broken/)
+  })
+
+  it('throws, naming the field, when a required numeric field is missing or NaN -- never silently treats it as zero', async () => {
+    mockGetAll.mockResolvedValue([{ id: 'sh-incomplete', z_report_data: JSON.stringify({ expectedUsd: 100, actualUsd: 100, varianceUsd: 0, cashUsdSales: 80, cashExpensesUsd: 0, cashRefundsUsd: 0, cashCreditPaymentsUsd: 0, cashPayInsUsd: 0 /* cashPayOutsUsd missing */ }) }])
+    await expect(readShiftCashReconciliation('shop1', { from: '2026-08-01', to: '2026-08-01' }))
+      .rejects.toThrow(/sh-incomplete.*cashPayOutsUsd/)
   })
 })
 ```
@@ -815,16 +933,49 @@ type ZReportSubset = {
   cashCreditPaymentsUsd: number; cashPayInsUsd: number; cashPayOutsUsd: number
 }
 
+const REQUIRED_FIELDS: (keyof ZReportSubset)[] = [
+  'expectedUsd', 'actualUsd', 'varianceUsd', 'cashUsdSales', 'cashExpensesUsd',
+  'cashRefundsUsd', 'cashCreditPaymentsUsd', 'cashPayInsUsd', 'cashPayOutsUsd',
+]
+
+/** Task 0 P0 finding 12: a financial report must never silently treat
+ *  malformed/incomplete z_report_data as zero -- that would understate real
+ *  cash movement and look like a clean reconciliation when the underlying
+ *  data is actually broken. JSON.parse() throwing, or any required field
+ *  being missing/non-finite (NaN, undefined, a string), is treated as a hard
+ *  failure: this function throws, which surfaces as the report's visible
+ *  error state (ReportDetailPage.vue's existing catch/error.value), not a
+ *  silently-wrong number. A legacy pre-WAFI-060 row with a genuinely NULL
+ *  z_report_data column is the one deliberately tolerated case -- that's a
+ *  known, documented absence (shifts closed before the Z-report snapshot
+ *  existed), not malformed data. */
+function parseZReport(shiftId: string, raw: string): ZReportSubset {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error(`readShiftCashReconciliation: shift ${shiftId} has unparseable z_report_data`)
+  }
+  const obj = parsed as Record<string, unknown>
+  for (const field of REQUIRED_FIELDS) {
+    const value = obj[field]
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      throw new Error(`readShiftCashReconciliation: shift ${shiftId}'s z_report_data.${field} is missing or not a finite number`)
+    }
+  }
+  return obj as unknown as ZReportSubset
+}
+
 export async function readShiftCashReconciliation(shopId: string, range: ReportDateRange): Promise<ShiftCashSummary> {
-  const rows = await db.getAll<{ z_report_data: string | null }>(
-    `SELECT z_report_data FROM cashier_shifts
+  const rows = await db.getAll<{ id: string; z_report_data: string | null }>(
+    `SELECT id, z_report_data FROM cashier_shifts
      WHERE shop_id = ? AND status = 'closed' AND DATE(closed_at, 'localtime') BETWEEN ? AND ?`,
     [shopId, range.from, range.to],
   )
 
   return rows.reduce<ShiftCashSummary>((acc, row) => {
     if (!row.z_report_data) return acc // legacy pre-WAFI-060 row, no snapshot -- contributes nothing, does not throw
-    const z: ZReportSubset = JSON.parse(row.z_report_data)
+    const z = parseZReport(row.id, row.z_report_data)
     return {
       expectedUsd: acc.expectedUsd + z.expectedUsd,
       actualUsd: acc.actualUsd + z.actualUsd,
@@ -854,6 +1005,99 @@ git commit -m "feat(WAFI-147A): add readShiftCashReconciliation primitive reusin
 
 ---
 
+### Task 4c: `queryDeadStockRows` primitive (moved from a report definition, Task 0 P0 finding 6)
+
+An earlier draft of this plan put `queryDeadStockRows`/`DeadStockRow` inside `definitions/inventoryHealth.ts`, with Task 17's dedicated Dead Stock report importing it from there. Review correctly flagged this as backwards: a primitive genuinely shared by two report definitions belongs in `primitives/`, not inside one of its own consumers (that dependency direction makes `inventoryHealth.ts` a load-bearing import for an unrelated report, and buries a shared primitive one level too deep). Moved here as the 5th shared primitive.
+
+**Files:**
+- Create: `src/features/reports/primitives/queryDeadStockRows.ts`
+- Test: `src/features/reports/primitives/__tests__/queryDeadStockRows.test.ts`
+
+**Interfaces:**
+- Consumes: `db` (existing).
+- Produces: `interface DeadStockRow { productId, nameAr, currentStock, valueUsd, lastSoldAt }`; `function queryDeadStockRows(shopId: string, thresholdDays: number): Promise<DeadStockRow[]>`.
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+// src/features/reports/primitives/__tests__/queryDeadStockRows.test.ts
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+const mockGetAll = vi.fn()
+vi.mock('@/data/powersync/db', () => ({ db: { getAll: (...a: unknown[]) => mockGetAll(...a) } }))
+
+import { queryDeadStockRows } from '../queryDeadStockRows'
+
+describe('queryDeadStockRows', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('computes valueUsd as current_stock * cost_price_usd and excludes uncosted products', async () => {
+    mockGetAll.mockResolvedValue([
+      { id: 'p1', name_ar: 'قلم', current_stock: 10, cost_price_usd: 2, last_sold_at: null },
+      { id: 'p2', name_ar: 'دفتر', current_stock: 5, cost_price_usd: 0, last_sold_at: '2026-05-01' }, // uncosted, excluded
+    ])
+    const rows = await queryDeadStockRows('shop1', 90)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ productId: 'p1', currentStock: 10, valueUsd: 20, lastSoldAt: null })
+  })
+})
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `npx vitest run src/features/reports/primitives/__tests__/queryDeadStockRows.test.ts`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Write `queryDeadStockRows.ts`**
+
+```ts
+// src/features/reports/primitives/queryDeadStockRows.ts
+// WAFI-147A primitive 5: shared by Inventory Health's Dead Stock section
+// (Task 16) and the dedicated Dead Stock report (Task 17) -- ported from
+// useDeadStockReport.ts's query (Vue-bound composable's logic, extracted to
+// a plain function). Threshold is a parameter (the original report spec
+// offers 60/90/180) rather than hardcoded, so both callers can share one
+// implementation even with different defaults.
+import { db } from '@/data/powersync/db'
+
+export interface DeadStockRow {
+  productId: string; nameAr: string; currentStock: number; valueUsd: number; lastSoldAt: string | null
+}
+
+export async function queryDeadStockRows(shopId: string, thresholdDays: number): Promise<DeadStockRow[]> {
+  const cutoff = new Date(Date.now() - thresholdDays * 24 * 3_600_000).toISOString()
+  const rows = await db.getAll<{ id: string; name_ar: string; current_stock: number; cost_price_usd: number; last_sold_at: string | null }>(
+    `SELECT p.id, p.name_ar, p.current_stock, p.cost_price_usd, ls.last_sold_at
+     FROM products p
+     LEFT JOIN (
+       SELECT sli.product_id, MAX(s.created_at) AS last_sold_at
+       FROM sale_line_items sli JOIN sales s ON s.id = sli.sale_id
+       WHERE s.shop_id = ? GROUP BY sli.product_id
+     ) ls ON ls.product_id = p.id
+     WHERE p.shop_id = ? AND (p.deleted = 0 OR p.deleted IS NULL) AND p.current_stock > 0
+       AND (ls.last_sold_at IS NULL OR ls.last_sold_at < ?)`,
+    [shopId, shopId, cutoff],
+  )
+  return rows
+    .filter((r) => r.cost_price_usd > 0)
+    .map((r) => ({ productId: r.id, nameAr: r.name_ar, currentStock: r.current_stock, valueUsd: r.current_stock * r.cost_price_usd, lastSoldAt: r.last_sold_at }))
+}
+```
+
+- [ ] **Step 4: Run to verify it passes**
+
+Run: `npx vitest run src/features/reports/primitives/__tests__/queryDeadStockRows.test.ts`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/features/reports/primitives/queryDeadStockRows.ts src/features/reports/primitives/__tests__/queryDeadStockRows.test.ts
+git commit -m "feat(WAFI-147A): add queryDeadStockRows as a shared primitive, not a report-definition export"
+```
+
+---
+
 ### Task 5: Empty registry
 
 **Files:**
@@ -862,7 +1106,7 @@ git commit -m "feat(WAFI-147A): add readShiftCashReconciliation primitive reusin
 
 **Interfaces:**
 - Consumes: `Report`, `ReportId`, `ReportContext`, `ReportDateRange` (Task 1 — `ReportId` is defined there, not here, to avoid a circular import since `Report.id: ReportId`).
-- Produces: `interface ReportDefinition { id: ReportId; name: string; cadenceHint: 'per-shift'|'daily'|'weekly'|'monthly'; compute: (shopId: string, range: ReportDateRange, context?: ReportContext) => Promise<Report> }`; `const REPORT_DEFINITIONS: Record<ReportId, ReportDefinition>`.
+- Produces: `interface ReportDefinition { id: ReportId; name: string; cadenceHint: 'per-shift'|'daily'|'weekly'|'monthly'; contextRequirement?: 'staff'; compute: (shopId: string, range: ReportDateRange, context?: ReportContext) => Promise<Report> }`; `const REPORT_DEFINITIONS: Record<ReportId, ReportDefinition>`. `cadenceHint` is purely descriptive; `contextRequirement` is the real, checkable invocation contract Task 21's UI branches on (Task 0 P0 finding 4 — do not conflate the two).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -922,8 +1166,18 @@ export interface ReportDefinition {
   id: ReportId
   name: string
   /** Display/UX metadata only -- does NOT determine execution, scheduling,
-   *  eligibility, or availability. Scheduling is 147B's problem entirely. */
+   *  eligibility, or availability. Scheduling is 147B's problem entirely.
+   *  Task 0 P0 finding 4: this is PURELY descriptive -- ReportDetailPage
+   *  (Task 21) must never branch on cadenceHint to decide what context a
+   *  report needs. That's contextRequirement's job, below. */
   cadenceHint: 'per-shift' | 'daily' | 'weekly' | 'monthly'
+  /** What ReportDetailPage must collect before calling compute(). Absent
+   *  (undefined) means only (shopId, range) is needed -- the common case.
+   *  'staff' means compute() requires context.staffId (currently only
+   *  Employee Summary) -- the page must show a staff selector and withhold
+   *  compute() until one is chosen. This is a real, checkable invocation
+   *  contract, not inferred from cadenceHint or any other unrelated field. */
+  contextRequirement?: 'staff'
   compute: (shopId: string, range: ReportDateRange, context?: ReportContext) => Promise<Report>
 }
 
@@ -1245,26 +1499,17 @@ import { getCustomerAgingSnapshot } from '../primitives/getCustomerAgingSnapshot
 import { summarySection, detailSection } from '../report.types'
 import type { Report, ReportDateRange } from '../report.types'
 import { REPORT_DEFINITIONS } from '../reportRegistry'
-
-// Local calendar-date shift -- NEVER toISOString() (UTC, wrong day near local
-// midnight; see Global Constraints / Task 0 finding 4). Matches
-// useProfitCache.ts's toDateStr() convention.
-function shiftLocalDate(d: string, days: number): string {
-  const [y, m, day] = d.split('-').map(Number)
-  const dt = new Date(y, m - 1, day + days)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`
-}
+import { addCalendarDays } from '../dateUtils'
 
 function priorWeekRange(range: ReportDateRange): ReportDateRange {
-  return { from: shiftLocalDate(range.from, -7), to: shiftLocalDate(range.to, -7) }
+  return { from: addCalendarDays(range.from, -7), to: addCalendarDays(range.to, -7) }
 }
 
 export interface InventoryChangeRow { productId: string; nameAr: string; adjustmentCount: number; netQuantityDelta: number }
 
 export async function computeWeeklySummaryReport(shopId: string, range: ReportDateRange): Promise<Report> {
   const prior = priorWeekRange(range)
-  const [current, previous, staff, currentAging, priorAging, inventoryChanges] = await Promise.all([
+  const [current, previous, staff, currentAging, priorAging, inventoryChanges, dailyRows] = await Promise.all([
     readProfitCache(shopId, range),
     readProfitCache(shopId, prior),
     getStaffMetrics(shopId, range),
@@ -1279,11 +1524,20 @@ export async function computeWeeklySummaryReport(shopId: string, range: ReportDa
        GROUP BY sa.product_id, p.name_ar ORDER BY adjustmentCount DESC`,
       [shopId, range.from, range.to],
     ),
+    // "Best/worst performing days" (original 13-report spec field, previously
+    // dropped without note in an earlier draft of this plan -- restored here).
+    // profit_cache already has one row per day; no new aggregation needed.
+    db.getAll<{ day: string; revenue_usd: number }>(
+      `SELECT day, revenue_usd FROM profit_cache WHERE shop_id = ? AND day BETWEEN ? AND ? ORDER BY revenue_usd DESC`,
+      [shopId, range.from, range.to],
+    ),
   ])
 
   const currentDebt = currentAging.reduce((s, r) => s + Math.max(0, r.balanceUsd), 0)
   const priorDebt = priorAging.reduce((s, r) => s + Math.max(0, r.balanceUsd), 0)
   const ranked = [...staff].sort((a, b) => b.revenueUsd - a.revenueUsd)
+  const bestDay = dailyRows[0]
+  const worstDay = dailyRows[dailyRows.length - 1]
 
   return {
     id: 'weekly-summary', name: 'Weekly Summary', dateRange: range, generatedAt: new Date().toISOString(),
@@ -1301,12 +1555,23 @@ export async function computeWeeklySummaryReport(shopId: string, range: ReportDa
         title: 'Staff Ranking',
         columns: [{ key: 'name', label: 'Staff' }, { key: 'revenueUsd', label: 'Revenue' }],
         rows: ranked,
+        visibility: 'staff',
       }),
       detailSection<InventoryChangeRow>({
         title: 'Inventory Changes',
         columns: [{ key: 'nameAr', label: 'Product' }, { key: 'adjustmentCount', label: 'Adjustments' }, { key: 'netQuantityDelta', label: 'Net Qty Change' }],
         rows: inventoryChanges,
       }),
+      summarySection({
+        title: 'Best/Worst Performing Days',
+        metrics: dailyRows.length === 0 ? [] : [
+          { label: 'Best day', value: `${bestDay.day} ($${(bestDay.revenue_usd / 100).toFixed(2)})` },
+          { label: 'Worst day', value: `${worstDay.day} ($${(worstDay.revenue_usd / 100).toFixed(2)})` },
+        ],
+      }),
+      // Customer Debt Trend is a real field in the original spec's Weekly
+      // Summary list (WAFI_Event_Driven_Platform_Plan_v1.md:667), not an
+      // addition invented merely because getCustomerAgingSnapshot exists.
       summarySection({
         title: 'Customer Debt Trend',
         metrics: [
@@ -1386,7 +1651,7 @@ Note: "profit by product category" and "profit vs. target" (from the original 13
 - Create: `src/features/reports/definitions/employeeSummary.ts`
 - Test: `src/features/reports/definitions/__tests__/employeeSummary.test.ts`
 
-**Interfaces:** Per spec, generated per single staff member. `ReportDefinition.compute`'s signature (Task 5) is `(shopId, range, context?: ReportContext)` where `ReportContext = { staffId?: string }` — the registry entry below is a real, callable implementation through that same uniform signature (not a throwing stub): when `context?.staffId` is present it returns the real report; when absent it returns an explicit `not-selected` state as data (a one-`SummarySection` `Report` saying so), never an exception. Task 21's per-report page checks `cadenceHint === 'per-shift'` to know it must collect a `staffId` (via a staff-selector control) before calling `compute`, and re-calls `compute` once one is chosen.
+**Interfaces:** Per spec, generated per single staff member. `ReportDefinition.compute`'s signature (Task 5) is `(shopId, range, context?: ReportContext)` where `ReportContext = { staffId?: string }` — the registry entry below is a real, callable implementation through that same uniform signature (not a throwing stub): when `context?.staffId` is present it returns the real report; when absent it returns an explicit `not-selected` state as data (a one-`SummarySection` `Report` saying so), never an exception. Task 21's per-report page checks `definition.contextRequirement === 'staff'` (not `cadenceHint` — Task 0 P0 finding 4) to know it must collect a `staffId` before calling `compute`, and re-calls `compute` once one is chosen.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1491,6 +1756,7 @@ export async function computeEmployeeSummaryReport(shopId: string, range: Report
         { label: 'Cash variance', value: variance, unit: 'USD' },
         { label: 'Hours worked', value: Math.round((hoursRow?.hours ?? 0) * 10) / 10 },
       ],
+      visibility: 'staff',
     })],
   }
 }
@@ -1499,6 +1765,7 @@ REPORT_DEFINITIONS['employee-summary'] = {
   id: 'employee-summary',
   name: 'Employee Summary',
   cadenceHint: 'per-shift',
+  contextRequirement: 'staff', // the real, checkable signal Task 21's UI branches on -- not cadenceHint
   compute: computeEmployeeSummaryReport,
 }
 ```
@@ -1572,6 +1839,7 @@ export async function computeDiscountReport(shopId: string, range: ReportDateRan
         title: 'By Staff',
         columns: [{ key: 'name', label: 'Staff' }, { key: 'discountUsd', label: 'Discount' }],
         rows: [...staff].sort((a, b) => b.discountUsd - a.discountUsd),
+        visibility: 'staff',
       }),
       detailSection<DiscountByProductRow>({
         title: 'By Product',
@@ -1655,6 +1923,7 @@ export async function computeReturnsReport(shopId: string, range: ReportDateRang
         rows: staff
           .filter((s) => s.returnCount > 0)
           .map((s): ReturnByStaffRow => ({ staffId: s.staffId, name: s.name, returnCount: s.returnCount, returnRevenueUsd: s.returnRevenueUsd })),
+        visibility: 'staff',
       }),
       detailSection<ReturnByProductRow>({
         title: 'By Product',
@@ -1798,12 +2067,17 @@ export async function computeTopCustomersReport(shopId: string, range: ReportDat
        HAVING lastVisit IS NULL OR DATE(lastVisit, 'localtime') < DATE(?, '-60 days')`,
       [shopId, shopId, range.to],
     ),
+    // Task 0 P0 finding 7: revenueUsd here MUST be bound to `range`, not
+    // all-time -- an earlier draft's unbounded subquery computed lifetime
+    // revenue for a "new customers THIS PERIOD" row, which is meaningless
+    // (and that draft never even displayed the column, hiding the bug).
     db.getAll<NewCustomerRow>(
       `SELECT c.id AS customerId, c.name AS customerName, c.created_at AS createdAt,
-              COALESCE((SELECT SUM(total_usd) FROM sales WHERE customer_id = c.id AND shop_id = ?), 0) AS revenueUsd
+              COALESCE((SELECT SUM(total_usd) FROM sales
+                        WHERE customer_id = c.id AND shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?), 0) AS revenueUsd
        FROM customers c
        WHERE c.shop_id = ? AND DATE(c.created_at, 'localtime') BETWEEN ? AND ?`,
-      [shopId, shopId, range.from, range.to],
+      [shopId, range.from, range.to, shopId, range.from, range.to],
     ),
   ])
 
@@ -1812,8 +2086,14 @@ export async function computeTopCustomersReport(shopId: string, range: ReportDat
     sections: [
       detailSection<TopCustomerRow>({ title: 'Top 20 by Revenue', columns: [{ key: 'customerName', label: 'Customer' }, { key: 'revenueUsd', label: 'Revenue' }], rows: byRevenue }),
       detailSection<TopCustomerRow>({ title: 'Top 20 by Visits', columns: [{ key: 'customerName', label: 'Customer' }, { key: 'visitCount', label: 'Visits' }], rows: byVisits }),
-      detailSection<AtRiskCustomerRow>({ title: 'At-Risk Customers (no visit in 60 days)', columns: [{ key: 'customerName', label: 'Customer' }, { key: 'lastVisit', label: 'Last visit' }], rows: atRisk }),
-      detailSection<NewCustomerRow>({ title: 'New Customers This Period', columns: [{ key: 'customerName', label: 'Customer' }, { key: 'createdAt', label: 'Joined' }], rows: newCustomers }),
+      // "(current rolling snapshot)" -- Task 0 P0 finding 17: at-risk status is
+      // computed relative to TODAY (`range.to`'s -60-day window is itself
+      // period-relative, but "hasn't visited" reads as a live status an owner
+      // would expect to mean "as of now," not strictly "as of the report's end
+      // date" if that end date is in the past). Labeled explicitly so it's not
+      // confused with a period-bounded metric.
+      detailSection<AtRiskCustomerRow>({ title: 'At-Risk Customers (no visit in 60 days, current rolling snapshot)', columns: [{ key: 'customerName', label: 'Customer' }, { key: 'lastVisit', label: 'Last visit' }], rows: atRisk }),
+      detailSection<NewCustomerRow>({ title: 'New Customers This Period', columns: [{ key: 'customerName', label: 'Customer' }, { key: 'createdAt', label: 'Joined' }, { key: 'revenueUsd', label: 'Revenue (this period)' }], rows: newCustomers }),
     ],
   }
 }
@@ -1833,7 +2113,7 @@ Note: "Top 20 by loyalty" from the original spec is dropped — this codebase ha
 - Create: `src/features/reports/definitions/topProducts.ts`
 - Test: `src/features/reports/definitions/__tests__/topProducts.test.ts`
 
-**Interfaces:** Pure `DetailSection` report — genuinely new (no primitive covers product-level profit/discount/returns joins).
+**Interfaces:** Pure `DetailSection` report — genuinely new (no primitive covers product-level profit/discount/returns joins). Two semantics made explicit per Task 0 P0 findings 8-9, not left implicit in SQL: **"Most Returned" = units returned** (`SUM(qty_returned)`), not return-transaction count, since one return can cover several units. **"Profit" = gross sale-line profit, NOT net of returns** — netting would require joining each returned unit back to its original sale's cost via the same `return_line_items` → `sale_line_items` cost-lookup pattern `getStaffMetrics` already uses for per-staff return-COGS, which is a real, separate piece of work this task deliberately does not duplicate; the section title says "gross, not net of returns" so this is never silently ambiguous to a reader of the output.
 
 ```ts
 // src/features/reports/definitions/topProducts.ts
@@ -1858,6 +2138,8 @@ export async function computeTopProductsReport(shopId: string, range: ReportDate
       FROM sale_line_items sli JOIN products p ON p.id = sli.product_id JOIN sales s ON s.id = sli.sale_id
       WHERE sli.shop_id = ? AND DATE(s.created_at, 'localtime') BETWEEN ? AND ?
       GROUP BY sli.product_id, p.name_ar ORDER BY value DESC LIMIT 20`),
+    // "Profit" = GROSS sale-line profit, not net of returns -- see this task's
+    // Interfaces note above for why netting is deliberately out of scope here.
     topBy(shopId, range, `SELECT sli.product_id AS productId, p.name_ar AS nameAr,
         SUM(sli.line_total_usd - sli.quantity * COALESCE(sli.unit_cost_usd, 0)) AS value
       FROM sale_line_items sli JOIN products p ON p.id = sli.product_id JOIN sales s ON s.id = sli.sale_id
@@ -1869,7 +2151,9 @@ export async function computeTopProductsReport(shopId: string, range: ReportDate
       WHERE sli.shop_id = ? AND sli.discount_amount_usd > 0
         AND DATE(s.created_at, 'localtime') BETWEEN ? AND ?
       GROUP BY sli.product_id, p.name_ar ORDER BY value DESC LIMIT 20`),
-    topBy(shopId, range, `SELECT rli.product_id AS productId, p.name_ar AS nameAr, COUNT(*) AS value
+    // "Most Returned" = UNITS returned (SUM(qty_returned)), not return-
+    // transaction count -- one return transaction can return several units.
+    topBy(shopId, range, `SELECT rli.product_id AS productId, p.name_ar AS nameAr, SUM(rli.qty_returned) AS value
       FROM return_line_items rli JOIN products p ON p.id = rli.product_id JOIN returns r ON r.id = rli.return_id
       WHERE r.shop_id = ? AND DATE(r.created_at, 'localtime') BETWEEN ? AND ?
       GROUP BY rli.product_id, p.name_ar ORDER BY value DESC LIMIT 20`),
@@ -1880,10 +2164,10 @@ export async function computeTopProductsReport(shopId: string, range: ReportDate
     id: 'top-products', name: 'Top Products Report', dateRange: range, generatedAt: new Date().toISOString(),
     sections: [
       detailSection<TopProductByMetricRow>({ title: 'Top 20 by Revenue', columns: cols, rows: byRevenue }),
-      detailSection<TopProductByMetricRow>({ title: 'Top 20 by Quantity', columns: cols, rows: byQty }),
-      detailSection<TopProductByMetricRow>({ title: 'Top 20 by Profit', columns: cols, rows: byProfit }),
+      detailSection<TopProductByMetricRow>({ title: 'Top 20 by Quantity Sold', columns: cols, rows: byQty }),
+      detailSection<TopProductByMetricRow>({ title: 'Top 20 by Profit (gross, not net of returns)', columns: cols, rows: byProfit }),
       detailSection<TopProductByMetricRow>({ title: 'Most Discounted', columns: cols, rows: mostDiscounted }),
-      detailSection<TopProductByMetricRow>({ title: 'Most Returned', columns: cols, rows: mostReturned }),
+      detailSection<TopProductByMetricRow>({ title: 'Most Returned (units)', columns: cols, rows: mostReturned }),
     ],
   }
 }
@@ -1903,7 +2187,7 @@ Note: "Most discounted" sums `sale_line_items.discount_amount_usd`, the same rea
 - Create: `src/features/reports/definitions/inventoryHealth.ts`
 - Test: `src/features/reports/definitions/__tests__/inventoryHealth.test.ts`
 
-**Interfaces:** Exports a shared `queryDeadStockRows(shopId, thresholdDays)` function that this task's Dead Stock section AND Task 17's dedicated Dead Stock report both call (Task 0 finding 6 — genuinely reused, not duplicated SQL; Task 17 imports it from this file). New: turnover rate, low-stock alerts (reuses `products.current_stock <= products.low_stock_threshold`, the existing low-stock check's own condition — see `lowStockCheck.ts`), fast/slow movers (30-day sales velocity), shrinkage (confirmed de-scoped, Task 0 finding 7 / spec §8).
+**Interfaces:** Consumes `queryDeadStockRows` (Task 4c — a shared primitive, not exported from this file; Task 17 imports it from `primitives/`, not from here). New: turnover rate, low-stock alerts (reuses `products.current_stock <= products.low_stock_threshold`, the existing low-stock check's own condition — see `lowStockCheck.ts`), fast/slow movers (30-day sales velocity), shrinkage (confirmed de-scoped, Task 0 finding 7 / spec §8).
 
 ```ts
 // src/features/reports/definitions/inventoryHealth.ts
@@ -1911,35 +2195,11 @@ import { db } from '@/data/powersync/db'
 import { summarySection, detailSection } from '../report.types'
 import type { Report, ReportDateRange } from '../report.types'
 import { REPORT_DEFINITIONS } from '../reportRegistry'
+import { queryDeadStockRows } from '../primitives/queryDeadStockRows'
+import type { DeadStockRow } from '../primitives/queryDeadStockRows'
 
 export interface LowStockRow { productId: string; nameAr: string; currentStock: number; lowStockThreshold: number }
 export interface VelocityRow { productId: string; nameAr: string; quantitySold: number }
-export interface DeadStockRow { productId: string; nameAr: string; currentStock: number; valueUsd: number; lastSoldAt: string | null }
-
-/** Shared by this report's Dead Stock section and Task 17's dedicated Dead Stock
- *  report -- ported from useDeadStockReport.ts's query (Vue-bound composable's
- *  logic, extracted to a plain function; not re-derived independently in each
- *  report, per Task 0 finding 6). Threshold is a parameter (the original report
- *  spec offers 60/90/180) rather than hardcoded, so both callers can share one
- *  implementation even if they ever want different defaults. */
-export async function queryDeadStockRows(shopId: string, thresholdDays: number): Promise<DeadStockRow[]> {
-  const cutoff = new Date(Date.now() - thresholdDays * 24 * 3_600_000).toISOString()
-  const rows = await db.getAll<{ id: string; name_ar: string; current_stock: number; cost_price_usd: number; last_sold_at: string | null }>(
-    `SELECT p.id, p.name_ar, p.current_stock, p.cost_price_usd, ls.last_sold_at
-     FROM products p
-     LEFT JOIN (
-       SELECT sli.product_id, MAX(s.created_at) AS last_sold_at
-       FROM sale_line_items sli JOIN sales s ON s.id = sli.sale_id
-       WHERE s.shop_id = ? GROUP BY sli.product_id
-     ) ls ON ls.product_id = p.id
-     WHERE p.shop_id = ? AND (p.deleted = 0 OR p.deleted IS NULL) AND p.current_stock > 0
-       AND (ls.last_sold_at IS NULL OR ls.last_sold_at < ?)`,
-    [shopId, shopId, cutoff],
-  )
-  return rows
-    .filter((r) => r.cost_price_usd > 0)
-    .map((r) => ({ productId: r.id, nameAr: r.name_ar, currentStock: r.current_stock, valueUsd: r.current_stock * r.cost_price_usd, lastSoldAt: r.last_sold_at }))
-}
 
 const DEAD_STOCK_THRESHOLD_DAYS = 90 // spec offers 60/90/180; 90 is the shared default (matches useDeadStockReport.ts)
 
@@ -2029,15 +2289,15 @@ Note: "Shrinkage summary" is a confirmed de-scope (Task 0 finding 7 / spec §8) 
 - Create: `src/features/reports/definitions/deadStock.ts`
 - Test: `src/features/reports/definitions/__tests__/deadStock.test.ts`
 
-**Interfaces:** Consumes `queryDeadStockRows` (Task 16 — genuinely shared, not duplicated SQL, per Task 0 finding 6) at a fixed 90-day threshold, returning one `DetailSection` plus a summary of frozen capital.
+**Interfaces:** Consumes `queryDeadStockRows` (Task 4c, a shared primitive — genuinely shared, not duplicated SQL, per Task 0 P0 finding 6) at a fixed 90-day threshold, returning one `DetailSection` plus a summary of frozen capital.
 
 ```ts
 // src/features/reports/definitions/deadStock.ts
 import { summarySection, detailSection } from '../report.types'
 import type { Report, ReportDateRange } from '../report.types'
 import { REPORT_DEFINITIONS } from '../reportRegistry'
-import { queryDeadStockRows } from './inventoryHealth'
-import type { DeadStockRow } from './inventoryHealth'
+import { queryDeadStockRows } from '../primitives/queryDeadStockRows'
+import type { DeadStockRow } from '../primitives/queryDeadStockRows'
 
 const THRESHOLD_DAYS = 90 // spec offers 60/90/180; 90 is this report's fixed default, matching Task 16 and useDeadStockReport.ts
 
@@ -2074,7 +2334,7 @@ Note: "Suggested actions (discount, bundle, discontinue)" from the original spec
 - Create: `src/features/reports/definitions/monthlyHealth.ts`
 - Test: `src/features/reports/definitions/__tests__/monthlyHealth.test.ts`
 
-**Interfaces:** The rollup report — reuses `readProfitCache`, `getStaffMetrics`, `getCustomerAgingSnapshot`, plus calls into `computeTopProductsReport`/`computeTopCustomersReport`'s underlying top-N logic and the inventory valuation computed in Task 16. Built last per the build order since it depends on every other primitive/report already existing.
+**Interfaces:** The rollup report — reuses `readProfitCache`, `getStaffMetrics`, plus the same top-10-products/top-10-customers query shapes as Tasks 15/14 and the inventory valuation query shape from Task 16. Built last per the build order since it depends on every other primitive/report already existing. **Does NOT use `getCustomerAgingSnapshot`** (Task 0 P1 finding 16 — an earlier draft's Interfaces line claimed this dependency, but the original spec's Monthly Health field list has no customer-credit line item, and the implementation below never calls it; corrected here rather than adding an unrequested section just because the primitive exists).
 
 ```ts
 // src/features/reports/definitions/monthlyHealth.ts
@@ -2127,7 +2387,7 @@ export async function computeMonthlyHealthReport(shopId: string, range: ReportDa
       summarySection({ title: 'Inventory Valuation (current snapshot)', metrics: [{ label: 'Current inventory value', value: valuationRow?.total ?? 0, unit: 'USD' }] }),
       detailSection<TopProductByMetricRow>({ title: 'Top 10 Products', columns: [{ key: 'nameAr', label: 'Product' }, { key: 'value', label: 'Revenue' }], rows: topProducts }),
       detailSection<TopCustomerRow>({ title: 'Top 10 Customers', columns: [{ key: 'customerName', label: 'Customer' }, { key: 'revenueUsd', label: 'Revenue' }], rows: topCustomers }),
-      detailSection({ title: 'Staff Performance Review', columns: [{ key: 'name', label: 'Staff' }, { key: 'marginUsd', label: 'Margin' }], rows: staff }),
+      detailSection({ title: 'Staff Performance Review', columns: [{ key: 'name', label: 'Staff' }, { key: 'marginUsd', label: 'Margin' }], rows: staff, visibility: 'staff' }),
     ],
   }
 }
@@ -2163,7 +2423,7 @@ import SummaryReportView from '../SummaryReportView.vue'
 describe('SummaryReportView', () => {
   it('renders every metric label and value', () => {
     const wrapper = mount(SummaryReportView, {
-      props: { section: { type: 'summary', title: 'Totals', metrics: [{ label: 'Revenue', value: 100, unit: 'USD' }] } },
+      props: { section: { type: 'summary', title: 'Totals', metrics: [{ label: 'Revenue', value: 100, unit: 'USD' }], visibility: 'shop' } },
     })
     expect(wrapper.text()).toContain('Totals')
     expect(wrapper.text()).toContain('Revenue')
@@ -2187,6 +2447,7 @@ describe('DetailReportView', () => {
           type: 'detail', title: 'Rows',
           columns: [{ key: 'name', label: 'Name' }, { key: 'total', label: 'Total' }],
           rows: [{ name: 'A', total: 10 }],
+          visibility: 'shop',
         },
       },
     })
@@ -2198,7 +2459,7 @@ describe('DetailReportView', () => {
 
   it('renders an empty-state message when rows is empty', () => {
     const wrapper = mount(DetailReportView, {
-      props: { section: { type: 'detail', title: 'Rows', columns: [{ key: 'name', label: 'Name' }], rows: [] } },
+      props: { section: { type: 'detail', title: 'Rows', columns: [{ key: 'name', label: 'Name' }], rows: [], visibility: 'shop' } },
     })
     expect(wrapper.text()).toContain('لا توجد بيانات')
   })
@@ -2432,9 +2693,12 @@ git commit -m "feat(WAFI-147A): add Reports list page reading registry metadata 
 import { describe, it, expect, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 
-vi.mock('@/store/session.store', () => ({ useSessionStore: () => ({ activeStaff: { role: 'owner', permissions: {} } }) }))
+// useSessionStore and useRoute are wrapped in vi.fn() (not plain arrow functions)
+// specifically so later tests can call vi.mocked(...).mockReturnValue(...) to
+// change the active staff / selected reportId per-test, per Task 0 P0 finding 3.
+vi.mock('@/store/session.store', () => ({ useSessionStore: vi.fn(() => ({ activeStaff: { role: 'owner', permissions: {} } })) }))
 vi.mock('@/store/device.store', () => ({ useDeviceStore: () => ({ shopId: 'shop1' }) }))
-vi.mock('vue-router', async (orig) => ({ ...(await orig<any>()), useRoute: () => ({ params: { reportId: 'daily-closing' } }) }))
+vi.mock('vue-router', async (orig) => ({ ...(await orig<any>()), useRoute: vi.fn(() => ({ params: { reportId: 'daily-closing' } })) }))
 
 const mockGetAll = vi.fn().mockResolvedValue([])
 vi.mock('@/data/powersync/db', () => ({ db: { getAll: (...a: unknown[]) => mockGetAll(...a) } }))
@@ -2447,7 +2711,7 @@ describe('ReportDetailPage', () => {
     const computeSpy = vi.fn().mockResolvedValue({
       id: 'daily-closing', name: 'Daily Closing Report',
       dateRange: { from: '2026-08-18', to: '2026-08-18' }, generatedAt: '2026-08-18T00:00:00.000Z',
-      sections: [{ type: 'summary', title: 'Totals', metrics: [{ label: 'Revenue', value: 100 }] }],
+      sections: [{ type: 'summary', title: 'Totals', metrics: [{ label: 'Revenue', value: 100 }], visibility: 'shop' }],
     })
     REPORT_DEFINITIONS['daily-closing'] = { id: 'daily-closing', name: 'Daily Closing Report', cadenceHint: 'daily', compute: computeSpy }
 
@@ -2466,15 +2730,13 @@ describe('ReportDetailPage', () => {
     const computeSpy = vi.fn().mockResolvedValue({
       id: 'employee-summary', name: 'Employee Summary',
       dateRange: { from: '2026-08-18', to: '2026-08-18' }, generatedAt: '2026-08-18T00:00:00.000Z',
-      sections: [{ type: 'summary', title: 'Ali', metrics: [] }],
+      sections: [{ type: 'summary', title: 'Ali', metrics: [], visibility: 'staff' }],
     })
-    REPORT_DEFINITIONS['employee-summary'] = { id: 'employee-summary', name: 'Employee Summary', cadenceHint: 'per-shift', compute: computeSpy }
+    REPORT_DEFINITIONS['employee-summary'] = { id: 'employee-summary', name: 'Employee Summary', cadenceHint: 'per-shift', contextRequirement: 'staff', compute: computeSpy }
 
-    const wrapper = await import('vue-router').then(async () => {
-      const vueRouter = await import('vue-router')
-      vi.mocked(vueRouter.useRoute).mockReturnValue({ params: { reportId: 'employee-summary' } } as any)
-      return mount(ReportDetailPage)
-    })
+    const vueRouterForStaffTest = await import('vue-router')
+    vi.mocked(vueRouterForStaffTest.useRoute).mockReturnValue({ params: { reportId: 'employee-summary' } } as any)
+    const wrapper = mount(ReportDetailPage)
     await flushPromises()
 
     expect(computeSpy).not.toHaveBeenCalled() // withheld until staff is chosen
@@ -2482,6 +2744,31 @@ describe('ReportDetailPage', () => {
     await flushPromises()
 
     expect(computeSpy).toHaveBeenCalledWith('shop1', expect.any(Object), { staffId: 's1' })
+  })
+
+  it('omits a staff-visibility section for a viewer without can_view_staff_performance, without hiding the rest of the report (Task 0 P0 finding 3)', async () => {
+    const sessionModule = await import('@/store/session.store')
+    vi.mocked(sessionModule.useSessionStore).mockReturnValue({ activeStaff: { role: 'cashier', permissions: {} } } as any)
+
+    const computeSpy = vi.fn().mockResolvedValue({
+      id: 'weekly-summary', name: 'Weekly Summary',
+      dateRange: { from: '2026-08-12', to: '2026-08-18' }, generatedAt: '2026-08-18T00:00:00.000Z',
+      sections: [
+        { type: 'summary', title: 'Week over Week', metrics: [], visibility: 'shop' },
+        { type: 'detail', title: 'Staff Ranking', columns: [], rows: [], visibility: 'staff' },
+      ],
+    })
+    REPORT_DEFINITIONS['weekly-summary'] = { id: 'weekly-summary', name: 'Weekly Summary', cadenceHint: 'weekly', compute: computeSpy }
+    const vueRouter = await import('vue-router')
+    vi.mocked(vueRouter.useRoute).mockReturnValue({ params: { reportId: 'weekly-summary' } } as any)
+
+    const wrapper = mount(ReportDetailPage)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Week over Week') // shop-visibility section still renders
+    expect(wrapper.text()).not.toContain('Staff Ranking') // staff-visibility section omitted, not the whole report
+
+    vi.mocked(sessionModule.useSessionStore).mockReturnValue({ activeStaff: { role: 'owner', permissions: {} } } as any)
   })
 })
 ```
@@ -2506,47 +2793,68 @@ import { useRoute, useRouter } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import { db } from '@/data/powersync/db'
 import { useDeviceStore } from '@/store/device.store'
+import { useSessionStore } from '@/store/session.store'
+import { canUserDo } from '@/router/permissions'
+import { formatLocalDate, addCalendarDays } from './dateUtils'
 import { REPORT_DEFINITIONS } from './reportRegistry'
 import type { ReportId } from './reportRegistry'
-import type { Report, ReportDateRange } from './report.types'
+import type { Report, ReportDateRange, ReportSection } from './report.types'
 import SummaryReportView from './components/SummaryReportView.vue'
 import DetailReportView from './components/DetailReportView.vue'
 
 const route = useRoute()
 const router = useRouter()
+const session = useSessionStore()
 const report = ref<Report | null>(null)
 const error = ref<string | null>(null)
 const loading = ref(false)
 const staffOptions = ref<{ id: string; name: string }[]>([])
 const selectedStaffId = ref<string>('')
+const rangeError = ref<string | null>(null)
 
 const reportId = route.params.reportId as ReportId
 const definition = REPORT_DEFINITIONS[reportId]
 
-// Local calendar-date parts -- NEVER toISOString() (UTC, produces the wrong
-// day near local midnight; see Global Constraints / Task 0 finding 4).
-function toLocalDateStr(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
+// Task 0 P0 finding 3: section-level authorization happens HERE, not just as
+// whole-report list hiding (Task 20 still hides Employee Summary from the
+// list for a non-permitted viewer, but a composite report like Weekly
+// Summary must render normally minus its staff-identifying sections, not be
+// hidden outright over one section). visibility: 'shop' sections always pass.
+const canSeeStaffSections = computed(() => canUserDo(session.activeStaff, 'can_view_staff_performance'))
+const visibleSections = computed((): ReportSection[] =>
+  (report.value?.sections ?? []).filter((s) => s.visibility === 'shop' || canSeeStaffSections.value),
+)
 
 function defaultRangeForCadence(cadenceHint: string): ReportDateRange {
-  const today = new Date()
-  const start = new Date(today)
+  const today = formatLocalDate(new Date())
   // Task 0 finding 9: rolling windows, not calendar-aligned week/month -- a
   // report opened mid-week/mid-month should show a meaningful trailing
   // window, not a partial current one. Isolated here, no report definition
   // hardcodes a window length itself.
-  if (cadenceHint === 'weekly') start.setDate(today.getDate() - 6)
-  else if (cadenceHint === 'monthly') start.setDate(today.getDate() - 29)
-  return { from: toLocalDateStr(start), to: toLocalDateStr(today) }
+  if (cadenceHint === 'weekly') return { from: addCalendarDays(today, -6), to: today }
+  if (cadenceHint === 'monthly') return { from: addCalendarDays(today, -29), to: today }
+  return { from: today, to: today }
 }
 
 const range = ref<ReportDateRange>(definition ? defaultRangeForCadence(definition.cadenceHint) : { from: '', to: '' })
+// Task 0 P0 finding 4: contextRequirement, NOT cadenceHint, is what drives
+// invocation behavior here. cadenceHint stays purely a display/default-range
+// hint (defaultRangeForCadence above is the one place it legitimately
+// matters, and even there only for picking a default window length).
+const needsStaffContext = computed(() => definition?.contextRequirement === 'staff')
 
 async function generate() {
   if (!definition) { error.value = 'التقرير غير موجود'; return }
-  if (definition.cadenceHint === 'per-shift' && !selectedStaffId.value) return // withhold until a staff member is chosen
+  if (needsStaffContext.value && !selectedStaffId.value) return // withhold until a staff member is chosen
+
+  // Task 0 P0 finding 18: reject an inverted range before calling compute() --
+  // an invalid range must surface as a visible error, never a silently empty
+  // "valid-looking" report.
+  rangeError.value = null
+  if (range.value.from > range.value.to) {
+    rangeError.value = 'يجب أن يكون تاريخ البداية قبل تاريخ النهاية أو مساويًا له'
+    return
+  }
 
   loading.value = true
   error.value = null
@@ -2562,7 +2870,7 @@ async function generate() {
 }
 
 onMounted(async () => {
-  if (definition?.cadenceHint === 'per-shift') {
+  if (needsStaffContext.value) {
     const { shopId } = useDeviceStore()
     staffOptions.value = await db.getAll<{ id: string; name: string }>(
       `SELECT id, name FROM staff WHERE shop_id = ? AND is_active = 1 ORDER BY name`,
@@ -2581,7 +2889,7 @@ watch(selectedStaffId, (id) => { if (id) generate() })
     <AppHeader :title="definition?.name ?? 'تقرير'" :show-back="true" @back="router.back()" />
   </div>
   <div class="page-body" dir="rtl">
-    <div v-if="definition?.cadenceHint === 'per-shift'" class="staff-picker">
+    <div v-if="needsStaffContext" class="staff-picker">
       <label>الموظف</label>
       <select data-testid="staff-select" v-model="selectedStaffId">
         <option value="" disabled>اختر موظفًا</option>
@@ -2589,16 +2897,17 @@ watch(selectedStaffId, (id) => { if (id) generate() })
       </select>
     </div>
 
-    <div v-if="definition && definition.cadenceHint !== 'per-shift'" class="range-picker">
+    <div v-if="definition && !needsStaffContext" class="range-picker">
       <label>من<input type="date" v-model="range.from" data-testid="range-from"></label>
       <label>إلى<input type="date" v-model="range.to" data-testid="range-to"></label>
       <button type="button" data-testid="regenerate-button" @click="generate">تحديث</button>
     </div>
+    <p v-if="rangeError" class="state-message state-message--error" data-testid="range-error">{{ rangeError }}</p>
 
     <p v-if="loading" class="state-message">...جارٍ إنشاء التقرير</p>
     <p v-else-if="error" class="state-message state-message--error">{{ error }}</p>
     <template v-else-if="report">
-      <template v-for="(s, i) in report.sections" :key="i">
+      <template v-for="(s, i) in visibleSections" :key="i">
         <SummaryReportView v-if="s.type === 'summary'" :section="s" />
         <DetailReportView v-else :section="s" />
       </template>
@@ -2628,9 +2937,9 @@ Add to `ReportDetailPage.test.ts`:
       id: 'daily-closing', name: 'Daily Closing Report',
       dateRange: { from: '2026-08-18', to: '2026-08-18' }, generatedAt: '2026-08-18T00:00:00.000Z',
       sections: [
-        { type: 'summary', title: 'Sales Totals', metrics: [] },
-        { type: 'summary', title: 'Cash Reconciliation', metrics: [] },
-        { type: 'detail', title: 'Top 5 Products', columns: [], rows: [] },
+        { type: 'summary', title: 'Sales Totals', metrics: [], visibility: 'shop' },
+        { type: 'summary', title: 'Cash Reconciliation', metrics: [], visibility: 'shop' },
+        { type: 'detail', title: 'Top 5 Products', columns: [], rows: [], visibility: 'shop' },
       ],
     })
     REPORT_DEFINITIONS['daily-closing'] = { id: 'daily-closing', name: 'Daily Closing Report', cadenceHint: 'daily', compute: computeSpy }
@@ -2692,16 +3001,16 @@ git commit -m "feat(WAFI-147A): add lazy per-report detail page, route wiring, a
 
 ### Task 22: Real-SQLite integration tests for shared primitives and high-risk queries
 
-**Files:**
-- Create: `src/features/reports/__tests__/helpers/reportsSqliteDb.ts`
-- Create: `src/features/reports/__tests__/integration/primitives.integration.test.ts`
-- Create: `src/features/reports/__tests__/integration/dateBoundary.integration.test.ts`
-- Create: `src/features/reports/__tests__/integration/moneyUnits.integration.test.ts`
-- Create: `src/features/reports/__tests__/integration/cashReconciliation.integration.test.ts`
-- Create: `src/features/reports/__tests__/integration/discountAttribution.integration.test.ts`
+**Files (1 helper + 5 test files — Task 0 P2 finding 23: be exact about the count and what each one actually covers, not "all 6 files" as an earlier draft imprecisely said):**
+- Create: `src/features/reports/__tests__/helpers/reportsSqliteDb.ts` — the shared real-SQLite harness (not itself a test file).
+- Create: `src/features/reports/__tests__/integration/primitives.integration.test.ts` — `getCustomerAgingSnapshot`'s as-of-date filter (a payment made after `asOfDate` must not reduce the balance).
+- Create: `src/features/reports/__tests__/integration/dateBoundary.integration.test.ts` — local-calendar-day inclusion at a timezone boundary, via `getStaffMetrics`.
+- Create: `src/features/reports/__tests__/integration/moneyUnits.integration.test.ts` — `readProfitCache` divides `profit_cache`'s bigint-cents columns by 100; `getStaffMetrics` does NOT divide `sales.total_usd` (plain dollars).
+- Create: `src/features/reports/__tests__/integration/cashReconciliation.integration.test.ts` — `readShiftCashReconciliation`'s `z_report_data` JSON-extraction and summing across shifts, the open-shift exclusion, and the malformed-JSON throw (Task 0 P0 finding 12).
+- Create: `src/features/reports/__tests__/integration/discountAttribution.integration.test.ts` — discount-by-product (`discount_amount_usd`), returns-by-product (`SUM(qty_returned)`, Task 0 P0 finding 10), and top-N `LIMIT 20` truncation with >20 candidate rows (Task 0 P0 finding 11), as three separate `describe` blocks in one file.
 
 **Interfaces:**
-- Consumes: Node's built-in `node:sqlite` (already a dependency per `src/__tests__/helpers/realSqliteDb.ts`'s precedent), all 4 primitives (Tasks 2-4b).
+- Consumes: Node's built-in `node:sqlite` (already a dependency per `src/__tests__/helpers/realSqliteDb.ts`'s precedent), all 5 primitives (Tasks 2-4c).
 - Produces: a reusable `createReportsTestDb()` helper seeding plain (non-PowerSync-view-wrapped) tables — unlike `realSqliteDb.ts`, these are ordinary synced tables, not a `localOnly` table, so no JSON-blob view/trigger machinery is needed, only `CREATE TABLE` matching the columns each primitive's queries touch.
 
 **Acceptance criterion (Task 0 finding 10):** every genuinely distinct high-risk query *shape* introduced across Tasks 2-18 gets at least one real-SQLite test here — not one per report. This task covers: date-boundary inclusion, `getCustomerAgingSnapshot`'s as-of-date filter, the cents-vs-dollars distinction (finding 3 — `readProfitCache` divides by 100, nothing else does), `readShiftCashReconciliation`'s JSON-extraction aggregation (finding 2), and discount-by-product/returns-by-product attribution (the `discount_amount_usd` column Task 11/15 depend on). Top-N ranking (`ORDER BY ... LIMIT 20`) is exercised implicitly by the discount-attribution test's ordering assertion below, rather than a 7th dedicated file.
@@ -2711,7 +3020,7 @@ git commit -m "feat(WAFI-147A): add lazy per-report detail page, route wiring, a
 ```ts
 // src/features/reports/__tests__/helpers/reportsSqliteDb.ts
 // WAFI-147A: a real SQLite database (Node's built-in node:sqlite), for
-// integration-testing the 3 shared primitives and high-risk report queries
+// integration-testing the shared primitives and high-risk report queries
 // against real SQL semantics -- date boundaries, joins, aggregation -- which
 // db-mocking (used by every report definition's own unit test) cannot
 // validate. Unlike src/__tests__/helpers/realSqliteDb.ts (built for a
@@ -2919,6 +3228,12 @@ describe('readShiftCashReconciliation integration', () => {
     const result = await readShiftCashReconciliation('shop1', { from: '2026-08-18', to: '2026-08-18' })
     expect(result.expectedUsd).toBe(0)
   })
+
+  it('a closed shift with malformed z_report_data throws against a real query result, not just a mocked one (Task 0 P0 finding 12)', async () => {
+    conn.exec(`INSERT INTO cashier_shifts (id, shop_id, status, closed_at, z_report_data) VALUES
+      ('sh4', 'shop1', 'closed', '2026-08-18T12:00:00', 'not json at all')`)
+    await expect(readShiftCashReconciliation('shop1', { from: '2026-08-18', to: '2026-08-18' })).rejects.toThrow(/sh4/)
+  })
 })
 ```
 
@@ -2957,19 +3272,78 @@ describe('discount-by-product attribution integration', () => {
     expect(rows[0]).toMatchObject({ productId: 'p1', discountUsd: 5 })
     expect(rows[1]).toMatchObject({ productId: 'p2', discountUsd: 2 })
   })
+
+  // Task 0 P0 finding 10: an earlier draft of this task claimed coverage for
+  // returns-by-product but only actually exercised discount-by-product --
+  // the two are separate query shapes (different tables, different join
+  // path) and both need real coverage.
+  it('sums return_line_items.qty_returned per product (Task 12/15\'s "units returned" query shape), not return-transaction count', async () => {
+    conn.exec(`
+      INSERT INTO products (id, shop_id, name_ar) VALUES ('p1', 'shop1', 'قلم');
+      INSERT INTO sales (id, shop_id, created_at) VALUES ('s1', 'shop1', '2026-08-10T10:00:00');
+      INSERT INTO returns (id, shop_id, original_sale_id, created_at) VALUES
+        ('r1', 'shop1', 's1', '2026-08-18T10:00:00'), ('r2', 'shop1', 's1', '2026-08-18T11:00:00');
+      INSERT INTO return_line_items (id, return_id, product_id, qty_returned, unit_price_usd) VALUES
+        ('rli1', 'r1', 'p1', 3, 10), ('rli2', 'r2', 'p1', 2, 10);
+    `)
+    const rows = conn.prepare(
+      `SELECT rli.product_id AS productId, p.name_ar AS nameAr, SUM(rli.qty_returned) AS value
+       FROM return_line_items rli JOIN products p ON p.id = rli.product_id JOIN returns r ON r.id = rli.return_id
+       WHERE r.shop_id = ? AND DATE(r.created_at, 'localtime') BETWEEN ? AND ?
+       GROUP BY rli.product_id, p.name_ar ORDER BY value DESC`,
+    ).all('shop1', '2026-08-18', '2026-08-18') as { productId: string; value: number }[]
+
+    // 2 return transactions, 5 total units -- proves SUM(qty_returned), not
+    // COUNT(*), is what's actually being tested (the bug this finding exists
+    // to catch would silently pass a COUNT(*)-based assertion of 2).
+    expect(rows[0]).toMatchObject({ productId: 'p1', value: 5 })
+  })
 })
 ```
 
-- [ ] **Step 9: Run the full integration suite**
+- [ ] **Step 9: Write the Top-N ranking integration test (Task 0 P0 finding 11)**
+
+An earlier draft of Task 22 claimed `ORDER BY ... LIMIT 20` coverage "implicitly" via the discount-attribution test's 2-row ordering assertion — that's not the same risk: LIMIT's truncation behavior is only exercised when the candidate set exceeds the limit. This test seeds 25 rows and asserts exactly 20 come back, in the right order.
+
+```ts
+// (append to discountAttribution.integration.test.ts, or a new file --
+// either is fine; shown here as its own describe block in the same file)
+describe('top-N ranking integration (LIMIT 20 with >20 candidate rows)', () => {
+  beforeEach(() => { conn = createReportsTestDb() })
+
+  it('returns exactly 20 rows, ranked descending, when 25 products have sales -- proves LIMIT truncates correctly, not just that ORDER BY works on a small set', async () => {
+    conn.exec(`INSERT INTO sales (id, shop_id, created_at) VALUES ('s1', 'shop1', '2026-08-18T10:00:00')`)
+    for (let i = 0; i < 25; i++) {
+      conn.exec(
+        `INSERT INTO products (id, shop_id, name_ar) VALUES ('p${i}', 'shop1', 'p${i}');
+         INSERT INTO sale_line_items (id, sale_id, shop_id, product_id, quantity, unit_price_usd, line_total_usd)
+         VALUES ('li${i}', 's1', 'shop1', 'p${i}', 1, ${i}, ${i})`,
+      )
+    }
+    const rows = conn.prepare(
+      `SELECT sli.product_id AS productId, SUM(sli.line_total_usd) AS value
+       FROM sale_line_items sli JOIN sales s ON s.id = sli.sale_id
+       WHERE sli.shop_id = ? AND DATE(s.created_at, 'localtime') BETWEEN ? AND ?
+       GROUP BY sli.product_id ORDER BY value DESC LIMIT 20`,
+    ).all('shop1', '2026-08-18', '2026-08-18') as { productId: string; value: number }[]
+
+    expect(rows).toHaveLength(20) // not 25 -- LIMIT actually truncates
+    expect(rows[0]).toMatchObject({ productId: 'p24', value: 24 }) // highest value first
+    expect(rows[19]).toMatchObject({ productId: 'p5', value: 5 }) // the 20th-highest, not an arbitrary row
+  })
+})
+```
+
+- [ ] **Step 10: Run the full integration suite**
 
 Run: `npx vitest run src/features/reports/__tests__/integration/`
 Expected: PASS (all 6 files).
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
 git add src/features/reports/__tests__/helpers/reportsSqliteDb.ts src/features/reports/__tests__/integration/
-git commit -m "test(WAFI-147A): add real-SQLite integration tests for primitives, money units, cash reconciliation, and discount attribution"
+git commit -m "test(WAFI-147A): add real-SQLite integration tests for primitives, money units, cash reconciliation, discount/returns attribution, and top-N ranking"
 ```
 
 ---
