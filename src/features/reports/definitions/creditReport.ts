@@ -19,7 +19,6 @@ export async function computeCreditReport(shopId: string, range: ReportDateRange
     getCustomerAgingSnapshot(shopId, range.from),
   ])
   const debtors = current.filter((r) => r.balanceUsd > 0.001)
-  const currentIds = new Set(current.map((r) => r.customerId))
   const priorDebtIds = new Set(prior.filter((r) => r.balanceUsd > 0.001).map((r) => r.customerId))
   const newDebtCustomers = debtors.filter((r) => !priorDebtIds.has(r.customerId))
   const overdue = debtors.filter((r) => r.daysOutstanding > 30)
