@@ -24,7 +24,7 @@ demand, from already-synced local data, and present them in the app.** Schedulin
 **In scope:**
 - The `Report`/`ReportSection` output contract
 - All 13 report definitions (`compute()` functions)
-- The 3 proven shared aggregation primitives + new report-specific aggregation where no primitive fits
+- The 5 shared aggregation primitives (§9.3) + new report-specific aggregation where no primitive fits
 - The report registry
 - On-demand generation, lazy per selected report: opening the Reports list must only read the registry
   (id/name/cadenceHint metadata) to render the catalogue — `compute()` runs only for the one report the owner
@@ -149,9 +149,9 @@ type ReportDefinition = {
 const REPORT_DEFINITIONS: Record<ReportId, ReportDefinition> = { /* ... */ }
 ```
 
-A keyed map, not an array — "get report by id" is the common operation the Reports UI actually performs
-(list → pick one → generate), and a keyed structure makes a duplicate `ReportId` a compile-time impossibility
-rather than a runtime bug to discover. `Object.values(REPORT_DEFINITIONS)` covers the list case.
+A keyed map is used because "get report by id" is the common operation the Reports UI performs. `ReportId`
+provides compile-time validation of the allowed keys, but duplicate side-effect registration is a runtime/process
+concern rather than something TypeScript prevents. `Object.values(REPORT_DEFINITIONS)` covers the list case.
 
 **A report definition is a plain function, not a declarative model.** `compute()` is free to run whatever SQL or
 call whatever composables it needs internally — exactly like `useDailyDigest.ts` does today. No `ReportEngine`,
@@ -170,9 +170,9 @@ exclude scheduling.
 
 ## 4. The 13 reports, mapped
 
-From the report×dimension analysis (2026-08-18): three primitives cover most of the scalar/rollup work; five to
-six domains need genuinely new aggregation with no shared shape between them (do not force a common abstraction
-over these — they don't share a computation shape, only a rough time-window shape).
+From the report×dimension analysis (2026-08-18): five primitives (§9.3) cover most of the scalar/rollup work;
+several domains still need genuinely new aggregation with no shared shape between them (do not force a common
+abstraction over these — they don't share a computation shape, only a rough time-window shape).
 
 **Shared primitives (build/generalize once, reuse across reports):**
 1. `readProfitCache(shopId, range)` — thin wrapper over the existing `profit_cache` table (WAFI-153, already
@@ -189,9 +189,8 @@ over these — they don't share a computation shape, only a rough time-window sh
    (Aug 18's) live balance as if it were the period's balance — that would silently misreport every historical
    report. The primitive therefore takes `asOfDate` and adds `AND created_at <= asOfDate` to the existing
    payments/returns sums (both tables already carry `created_at`, so this is a filter addition to the existing
-   query, not new data). Every report using this primitive passes `range.to` as `asOfDate` — an explicit
-   as-of-period-end snapshot, consistent across Weekly Summary, Monthly Health, Credit Report, and Top
-   Customers. A live "what's owed right now" view (e.g. the existing Money Owed page, if it ever adopts this
+   query, not new data). Every report that uses this primitive passes `range.to` as `asOfDate`, currently Weekly
+   Summary and Credit Report. A live "what's owed right now" view (e.g. the existing Money Owed page, if it ever adopts this
    primitive) would pass today's date, which is just `asOfDate = range.to` where `range.to` happens to be today
    — the same function, no special-casing needed.
 
@@ -203,15 +202,15 @@ over these — they don't share a computation shape, only a rough time-window sh
 | 2 | Weekly Summary | S(revenue/profit/expenses, WoW) + D(staff ranking, inventory changes) | primitive 1 + 2, new: inventory-change delta query |
 | 3 | Monthly Health | S(P&L, inventory valuation) + D(top 10 products, top 10 customers, staff review) | primitive 1 + 2 + 3, new: top-N products/customers, inventory valuation |
 | 4 | Employee Summary | S only (sales/basket/discounts/returns/variance/hours, single staff) | primitive 2, new: cash variance + hours-worked from shift ledger |
-| 5 | Inventory Health | S(turnover rate, shrinkage) + D(dead stock, fast/slow movers) | `useDeadStockReport.ts` covers dead-stock core; new: turnover rate, shrinkage, fast/slow classification |
+| 5 | Inventory Health | S(current snapshot: inventory value/turnover) + D(low stock, fast/slow movers, dead stock) | primitive 5 (dead stock) + `useDeadStockReport.ts`; new: turnover rate, low-stock, fast/slow classification |
 | 6 | Discount Report | S(total) + D(by staff, by product, below-cost list) | primitive 2 (staff cut), new: by-product discount aggregation |
 | 7 | Returns Report | S(total count/value) + D(by staff, by product, by reason) | primitive 2 (staff cut), new: by-product/by-reason returns aggregation |
-| 8 | Credit Report | S(outstanding/new debt/payments) + D(overdue accounts, risk distribution) | primitive 3, new: risk-score distribution, average collection time |
+| 8 | Credit Report | S(outstanding/new debt) + D(overdue accounts, risk distribution) | primitive 3, new: risk-score distribution |
 | 9 | Cash Flow | S only (cash in/out/net, drawer reconciliation) | new: cash-movement + shift ledger aggregation (shared with #1) |
-| 10 | Profit Trend | D only (daily series, by category, by staff, by day-of-week, vs. target) | primitive 1 (daily series) + 2, new: by-category, vs.-target |
-| 11 | Top Customers | D only (top 20 by revenue/visits/loyalty, at-risk, new) | primitive 3, new: visits/loyalty ranking, at-risk/new-customer queries |
+| 10 | Profit Trend | D only (daily revenue/profit series) | primitive 1 (daily series) + 2 |
+| 11 | Top Customers | D only (top 20 revenue, top 20 visits, at-risk, new customers) | primitive 3, new: visits ranking, at-risk/new-customer queries |
 | 12 | Top Products | D only (top 20 by revenue/qty/profit, most discounted, most returned) | new: product-level profit+discount+returns joins (no existing primitive) |
-| 13 | Dead Stock | S(capital tied up) + D(rows, suggested actions) | `useDeadStockReport.ts` covers the core |
+| 13 | Dead Stock | S(capital tied up) + D(dead-stock rows) | primitive 5 + `useDeadStockReport.ts` covers the core |
 
 **Recommended build order** (cheapest/highest-leverage first, from the primitives pass): Daily Closing (
 `useDailyDigest.ts` already covers ~60% of its summary sections) → Cash Flow (shares the same ledger work as
@@ -407,8 +406,9 @@ visibility, not a new data-security boundary — 147A introduces no new sync sur
 ### 9.6 Current-snapshot labeling
 
 Any metric built from `products.current_stock`/`cost_price_usd` (inventory valuation, dead stock, low-stock
-alerts, turnover rate) or from a "no activity since X days ago relative to the report's own end date" query
-(Top Customers' at-risk section) reflects today's/the query's own point-in-time state, not a value scoped to
-`range`. Every such section's title says so explicitly (e.g. "Inventory Overview (current snapshot)", "At-Risk
-Customers (no visit in 60 days as of report end)") — a Monthly Health report for last month legitimately
-contains today's inventory valuation, but must never present that figure as if it were last month's.
+alerts, turnover rate) reflects today's live point-in-time state, not a value scoped to `range` — every such
+section's title says so explicitly (e.g. "Inventory Overview (current snapshot)"). Top Customers' at-risk section
+is a related but distinct case: it reflects the report-end point-in-time status, not a period aggregate — bound
+to `range.to`, not literally "today" — so its title reads "At-Risk Customers (no visit in 60 days as of report
+end)" rather than "(current snapshot)". A Monthly Health report for last month legitimately contains today's
+inventory valuation, but must never present that figure as if it were last month's.
