@@ -29,8 +29,12 @@ const staffOptions = ref<{ id: string; name: string }[]>([])
 const selectedStaffId = ref<string>('')
 const rangeError = ref<string | null>(null)
 
-const reportId = route.params.reportId as ReportId
-const definition = REPORT_DEFINITIONS[reportId]
+// Reactive refs for current report being displayed
+const reportId = ref<ReportId>(route.params.reportId as ReportId)
+const definition = ref(REPORT_DEFINITIONS[reportId.value])
+
+// Race guard: increment on each generate() call, only apply result if token matches
+const generationToken = ref(0)
 
 // Task 0 P0 finding 3: section-level authorization happens HERE, not just as
 // whole-report list hiding (Task 20 still hides Employee Summary from the
@@ -53,7 +57,7 @@ function defaultRangeForCadence(cadenceHint: string): ReportDateRange {
   return { from: today, to: today }
 }
 
-const range = ref<ReportDateRange>(definition ? defaultRangeForCadence(definition.cadenceHint) : { from: '', to: '' })
+const range = ref<ReportDateRange>(definition.value && definition.value.cadenceHint ? defaultRangeForCadence(definition.value.cadenceHint) : { from: '', to: '' })
 // Task 0 P0 finding 4: contextRequirement, NOT cadenceHint, is what drives
 // invocation behavior here. cadenceHint stays purely a display/default-range
 // hint (defaultRangeForCadence above is the one place it legitimately
@@ -74,7 +78,7 @@ const isAuthorizedForThisReport = computed(() =>
 )
 
 async function generate() {
-  if (!definition) { error.value = 'التقرير غير موجود'; return }
+  if (!definition.value) { error.value = 'التقرير غير موجود'; return }
   if (!isAuthorizedForThisReport.value) return // whole-report gate; UI never reaches the staff selector for this case either
   if (needsStaffContext.value && !selectedStaffId.value) return // withhold until a staff member is chosen
 
@@ -87,33 +91,88 @@ async function generate() {
     return
   }
 
+  // Race guard: increment token to mark this call, cancel older in-flight calls
+  const callToken = ++generationToken.value
   loading.value = true
   error.value = null
   try {
     const { shopId } = useDeviceStore()
     const context = selectedStaffId.value ? { staffId: selectedStaffId.value } : undefined
-    report.value = await definition.compute(shopId, range.value, context)
+    const result = await definition.value.compute(shopId, range.value, context)
+    // Only apply result if this call's token is still current (no newer call started)
+    if (callToken === generationToken.value) {
+      report.value = result
+    }
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'تعذّر إنشاء التقرير'
+    // Only apply error if this call's token is still current
+    if (callToken === generationToken.value) {
+      error.value = err instanceof Error ? err.message : 'تعذّر إنشاء التقرير'
+    }
   } finally {
-    loading.value = false
+    // Only clear loading if this call's token is still current (prevents premature clearing)
+    if (callToken === generationToken.value) {
+      loading.value = false
+    }
   }
 }
 
 onMounted(async () => {
   if (!isAuthorizedForThisReport.value) return // do not generate, do not show the staff selector, do not query staff -- "not authorized" renders from the template's own check
   if (needsStaffContext.value) {
-    const { shopId } = useDeviceStore()
-    staffOptions.value = await db.getAll<{ id: string; name: string }>(
-      `SELECT id, name FROM staff WHERE shop_id = ? AND is_active = 1 ORDER BY name`,
-      [shopId],
-    )
+    try {
+      const { shopId } = useDeviceStore()
+      staffOptions.value = await db.getAll<{ id: string; name: string }>(
+        `SELECT id, name FROM staff WHERE shop_id = ? AND is_active = 1 ORDER BY name`,
+        [shopId],
+      )
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'تعذّر تحميل قائمة الموظفين'
+    }
     return // wait for staff selection before generating (see `generate()`'s own guard)
   }
   await generate()
 })
 
 watch(selectedStaffId, (id) => { if (id) generate() })
+
+// Route-param change handler: reset state and re-derive definition/range for new report
+watch(() => route.params.reportId, async (newReportIdParam) => {
+  const newReportId = newReportIdParam as ReportId
+  if (newReportId === reportId.value) return // no actual change
+
+  // Update refs with new report
+  reportId.value = newReportId
+  definition.value = REPORT_DEFINITIONS[newReportId]
+
+  // Reset all state for the new report
+  report.value = null
+  error.value = null
+  loading.value = false
+  selectedStaffId.value = ''
+  staffOptions.value = []
+  rangeError.value = null
+
+  // Re-derive range for the new definition
+  if (definition.value) {
+    range.value = defaultRangeForCadence(definition.value.cadenceHint)
+  }
+
+  // Trigger appropriate generation flow
+  if (!isAuthorizedForThisReport.value) return // do not proceed if not authorized
+  if (needsStaffContext.value) {
+    try {
+      const { shopId } = useDeviceStore()
+      staffOptions.value = await db.getAll<{ id: string; name: string }>(
+        `SELECT id, name FROM staff WHERE shop_id = ? AND is_active = 1 ORDER BY name`,
+        [shopId],
+      )
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'تعذّر تحميل قائمة الموظفين'
+    }
+    return // wait for staff selection before generating
+  }
+  await generate()
+})
 </script>
 
 <template>
