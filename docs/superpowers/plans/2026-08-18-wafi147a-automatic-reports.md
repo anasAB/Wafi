@@ -4,11 +4,11 @@
 
 **Goal:** Build the `Report`/`ReportSection` contract, 5 shared aggregation primitives (`readProfitCache`, `getStaffMetrics`, `getCustomerAgingSnapshot`, `readShiftCashReconciliation`, `queryDeadStockRows`), all 13 report definitions from `WAFI_Event_Driven_Platform_Plan_v1.md:639-786`, and an on-demand (lazy, no scheduling) Reports UI.
 
-**Architecture:** A report definition is a plain async function `(shopId, range) => Promise<Report>` registered in a keyed `Record<ReportId, ReportDefinition>`. Each report composes `SummarySection`/`DetailSection` values from 3 reusable primitives (`readProfitCache`, `getStaffMetrics`, `getCustomerAgingSnapshot`) plus report-specific SQL where no primitive fits. The Reports list page reads only registry metadata; a per-report page calls `compute()` lazily for the one selected report.
+**Architecture:** A report definition is a plain async function `(shopId, range, context?) => Promise<Report>` registered in a keyed `Record<ReportId, ReportDefinition>`. Each report composes `SummarySection`/`DetailSection` values from the shared report-data primitives (`readProfitCache`, `getStaffMetrics`, `getCustomerAgingSnapshot`, `readShiftCashReconciliation`, `queryDeadStockRows`) plus report-specific SQL where no primitive fits. Sections carry a `visibility: 'shop' | 'staff'` tag; `contextRequirement?: 'staff'` on the definition itself tells the UI which reports need a selected staff member before `compute()` can run at all. The Reports list page reads only registry metadata; a per-report page calls `compute()` lazily for the one selected report.
 
 **Tech Stack:** Vue 3 + TypeScript (Vitest), PowerSync/SQLite client queries, Node's built-in `node:sqlite` for real-SQL integration tests.
 
-**Spec:** `docs/superpowers/specs/2026-08-18-wafi147a-automatic-reports-design.md` (read in full before starting — this plan implements it verbatim, including its 4 review-fix corrections: the `detailSection<Row>()` helper, `getCustomerAgingSnapshot`'s `asOfDate` parameter, the UI-visibility-not-security-boundary wording on authorization, and the semantic-not-prescriptive date-boundary rule).
+**Spec:** `docs/superpowers/specs/2026-08-18-wafi147a-automatic-reports-design.md`, as amended by this plan's own Task 0 and §9 below (read both in full before starting — see §9 for exactly which decisions exist only in this plan and were folded back into the spec as part of writing it, so spec and plan do not diverge going into execution).
 
 ## Global Constraints
 
@@ -49,35 +49,11 @@
 9. **Cadence-to-range mapping, decided explicitly (not left as an implicit rolling-window accident):** `'daily'` → today only. `'weekly'` → the last 7 calendar days ending today (a rolling window, not "the current Sunday-to-Sunday week" — chosen because a report opened mid-week should show a meaningful trailing week, not a partial current week). `'monthly'` → the last 30 calendar days ending today (same rolling-window rationale, not the current calendar month). `'per-shift'` → today only, further narrowed to one staff member via `ReportContext.staffId` (Employee Summary). This is a real product decision, not a placeholder — if a calendar-aligned week/month is wanted instead, that is a deliberate future change to `defaultRangeForCadence` (Task 21) alone, isolated from every report definition (none of which hardcode a window length themselves).
 10. **Integration test coverage acceptance criterion, made explicit:** every genuinely distinct high-risk query *shape* introduced across Tasks 2-18 gets at least one real-SQLite integration test in Task 22 — not one per report (13 reports share far fewer distinct query shapes than 13). The shapes requiring coverage: date-boundary inclusion (Task 22 already has this), `getCustomerAgingSnapshot`'s as-of-date filter (already has this), the cents-vs-dollars distinction from finding 3 above (assert `readProfitCache` divides and no other primitive does), the `z_report_data` JSON-extraction aggregation from finding 2 above, discount-by-product / returns-by-product attribution (`discount_amount_usd`/return line joins), and top-N ranking (`ORDER BY ... LIMIT 20`, off-by-one/tie-breaking). Task 22 is expanded below to add the missing ones.
 
-- [ ] **Step 1: Amend the design spec with the §8 Confirmed De-scopes section (finding 7 above)**
-
-Add to `docs/superpowers/specs/2026-08-18-wafi147a-automatic-reports-design.md`:
-
-```markdown
-## 8. Confirmed De-Scopes (2026-08-18, post-plan-review)
-
-Checked against the actual codebase during implementation planning — these fields from the
-original 13-report spec (`WAFI_Event_Driven_Platform_Plan_v1.md:639-786`) are genuinely
-absent from this codebase's data model, not merely inconvenient to build. This is the
-authoritative final scope for the reports named; do not re-add these speculatively:
-
-- **Profit Trend:** no "profit by product category" (no product-category cost attribution
-  exists) and no "profit vs. target" (no target/goal concept exists anywhere).
-- **Top Customers:** no "top 20 by loyalty" (no loyalty/points system exists; CLAUDE.md
-  places loyalty in v1.5).
-- **Inventory Health:** no "shrinkage summary" (no reconciled expected-vs-counted shrinkage
-  mechanism exists).
-- **Dead Stock:** no "suggested actions" (a business-rules/product decision, not a data
-  query — candidate for a future WAFI-156 rule, not fabricated here).
-- **Credit Report:** no "average collection time" in v1 of this report (derivable from
-  `CustomerAgingRow.lastPaymentDate` as a documented follow-up, not built in this pass).
-```
-
-- [ ] **Step 2: Commit the spec amendment**
+- [x] **Step 1 & 2 (already done, not deferred to implementation time):** the design spec itself has been amended with §8 (Confirmed De-Scopes, verbatim the list above) and §9 (Amendments — `ReportContext`, `contextRequirement`, the 5 shared primitives, rolling cadence ranges, `SectionVisibility`/whole-report gating, current-snapshot labeling). This closes the gap a review of this plan correctly flagged: several design decisions existed only in this plan, not in the spec it claimed to implement "verbatim." Spec and plan are consistent as of this commit — read `docs/superpowers/specs/2026-08-18-wafi147a-automatic-reports-design.md` §§8-9 alongside this Task 0 before starting Task 1.
 
 ```bash
 git add docs/superpowers/specs/2026-08-18-wafi147a-automatic-reports-design.md
-git commit -m "docs(WAFI-147A): amend spec with confirmed de-scopes list (Task 0 of implementation plan)"
+git commit -m "docs(WAFI-147A): amend spec S8-S9 -- confirmed de-scopes, ReportContext, contextRequirement, 5 primitives, SectionVisibility, rolling cadence, current-snapshot labeling"
 ```
 
 ---
@@ -839,7 +815,7 @@ Not one of the spec's original 3 primitives — discovered during Task 0's domai
 
 **Interfaces:**
 - Consumes: `db` (existing), `ReportDateRange` (Task 1).
-- Produces: `interface ShiftCashSummary { expectedUsd, actualUsd, varianceUsd, cashSalesUsd, cashExpensesUsd, cashRefundsUsd, cashCreditPaymentsUsd, cashPayInsUsd, cashPayOutsUsd }`; `function readShiftCashReconciliation(shopId: string, range: ReportDateRange): Promise<ShiftCashSummary>` — sums the named fields out of every closed shift's `z_report_data` JSON within range. Returns all-zero if no shift closed in range (never throws on a missing/null `z_report_data`).
+- Produces: `interface ShiftCashSummary { expectedUsd, actualUsd, varianceUsd, cashSalesUsd, cashExpensesUsd, cashRefundsUsd, cashCreditPaymentsUsd, cashPayInsUsd, cashPayOutsUsd }`; `function readShiftCashReconciliation(shopId: string, range: ReportDateRange): Promise<ShiftCashSummary>` — sums the named fields out of every closed shift's `z_report_data` JSON within range. Returns all-zero when no eligible snapshot exists (no shift closed in range) and tolerates known legacy `NULL` snapshots (pre-WAFI-060 rows); throws on a malformed or incomplete non-null snapshot (Task 0 P0 finding 12).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1311,6 +1287,11 @@ export async function computeDailyClosingReport(shopId: string, range: ReportDat
        ORDER BY revenueUsd DESC LIMIT 5`,
       [shopId, range.from, range.to],
     ),
+    // paid_at is a DATE column (verified, migration 009), not a timestamp --
+    // plain BETWEEN is correct and inclusive with no end-of-day adjustment
+    // needed. Do not "fix" this into a timestamp-style >=/< comparison; that
+    // would be solving a problem this column doesn't have (Task 0 P1
+    // finding 10, second review).
     db.getOptional<{ total: number }>(
       `SELECT COALESCE(SUM(amount_usd), 0) AS total FROM customer_payments
        WHERE shop_id = ? AND paid_at BETWEEN ? AND ?`,
@@ -1364,6 +1345,7 @@ export async function computeDailyClosingReport(shopId: string, range: ReportDat
           { key: 'salesCount', label: 'Sales' },
         ],
         rows: staff,
+        visibility: 'staff', // Task 0 P0 finding 4 (second review) -- previously missing here
       }),
     ],
   }
@@ -2086,13 +2068,12 @@ export async function computeTopCustomersReport(shopId: string, range: ReportDat
     sections: [
       detailSection<TopCustomerRow>({ title: 'Top 20 by Revenue', columns: [{ key: 'customerName', label: 'Customer' }, { key: 'revenueUsd', label: 'Revenue' }], rows: byRevenue }),
       detailSection<TopCustomerRow>({ title: 'Top 20 by Visits', columns: [{ key: 'customerName', label: 'Customer' }, { key: 'visitCount', label: 'Visits' }], rows: byVisits }),
-      // "(current rolling snapshot)" -- Task 0 P0 finding 17: at-risk status is
-      // computed relative to TODAY (`range.to`'s -60-day window is itself
-      // period-relative, but "hasn't visited" reads as a live status an owner
-      // would expect to mean "as of now," not strictly "as of the report's end
-      // date" if that end date is in the past). Labeled explicitly so it's not
-      // confused with a period-bounded metric.
-      detailSection<AtRiskCustomerRow>({ title: 'At-Risk Customers (no visit in 60 days, current rolling snapshot)', columns: [{ key: 'customerName', label: 'Customer' }, { key: 'lastVisit', label: 'Last visit' }], rows: atRisk }),
+      // Task 0 P0 finding 17 (corrected in second review): the query is
+      // relative to `range.to`, not necessarily today (e.g. an Aug 1-31
+      // report computes at-risk status as of Aug 31, not the day the report
+      // happens to be opened) -- "as of report end" is the precise wording,
+      // not "current," which would misleadingly imply it always means today.
+      detailSection<AtRiskCustomerRow>({ title: 'At-Risk Customers (no visit in 60 days as of report end)', columns: [{ key: 'customerName', label: 'Customer' }, { key: 'lastVisit', label: 'Last visit' }], rows: atRisk }),
       detailSection<NewCustomerRow>({ title: 'New Customers This Period', columns: [{ key: 'customerName', label: 'Customer' }, { key: 'createdAt', label: 'Joined' }, { key: 'revenueUsd', label: 'Revenue (this period)' }], rows: newCustomers }),
     ],
   }
@@ -2101,7 +2082,7 @@ export async function computeTopCustomersReport(shopId: string, range: ReportDat
 REPORT_DEFINITIONS['top-customers'] = { id: 'top-customers', name: 'Top Customers Report', cadenceHint: 'monthly', compute: computeTopCustomersReport }
 ```
 
-Note: "Top 20 by loyalty" from the original spec is dropped — this codebase has no loyalty/points concept (confirmed absent; CLAUDE.md explicitly places loyalty in v1.5, not built). Do not fabricate a loyalty metric; ship the 3 sections that map to real data.
+Note: "Top 20 by loyalty" from the original spec is dropped — this codebase has no loyalty/points concept (confirmed absent; CLAUDE.md explicitly places loyalty in v1.5, not built). Do not fabricate a loyalty metric; ship the 4 sections above that map to real data (Top 20 by Revenue, Top 20 by Visits, At-Risk, New Customers).
 
 - [ ] **Steps 1-2, 4-5:** standard TDD cycle + commit.
 
@@ -2559,6 +2540,77 @@ git commit -m "feat(WAFI-147A): add SummaryReportView and DetailReportView prese
 
 ---
 
+### Task 19b: Registration barrel (moved earlier — Task 0 P0 finding 9, second review)
+
+An earlier draft of this plan created this barrel inside Task 21 (the last UI task), but Task 20 (the very next task) also needs `REPORT_DEFINITIONS` guaranteed populated — importing straight from `./reportRegistry` in either page gets an EMPTY registry, since `reportRegistry.ts` itself never imports the 13 definition files (doing so would be circular: they import `REPORT_DEFINITIONS` from it). Created here, before either page, so Tasks 20 and 21 both import from `./index` from the start — not a "fix it later" step.
+
+**Files:**
+- Create: `src/features/reports/index.ts`
+
+**Interfaces:**
+- Consumes: every report definition file (Tasks 6-18, all already committed by this point in the build order), `REPORT_DEFINITIONS`/`report.types` exports.
+- Produces: the single import path (`./index`) both `ReportsListPage.vue` and `ReportDetailPage.vue` use for `REPORT_DEFINITIONS`/`ReportId`/`ReportContext`/etc.
+
+- [ ] **Step 1: Write `index.ts`**
+
+```ts
+// src/features/reports/index.ts
+// WAFI-147A: the registration barrel. reportRegistry.ts cannot import the 13
+// definition files itself (they import REPORT_DEFINITIONS from it -- circular).
+// This file's only job is to import every definition file for its
+// REPORT_DEFINITIONS[...] = {...} registration side-effect, then re-export
+// the registry/types so ReportsListPage.vue and ReportDetailPage.vue have
+// exactly one import path that's guaranteed to see a fully populated registry.
+export * from './reportRegistry'
+export * from './report.types'
+import './definitions/dailyClosing'
+import './definitions/cashFlow'
+import './definitions/weeklySummary'
+import './definitions/profitTrend'
+import './definitions/employeeSummary'
+import './definitions/discountReport'
+import './definitions/returnsReport'
+import './definitions/creditReport'
+import './definitions/topCustomers'
+import './definitions/topProducts'
+import './definitions/inventoryHealth'
+import './definitions/deadStock'
+import './definitions/monthlyHealth'
+```
+
+- [ ] **Step 2: Write a smoke test confirming the barrel actually populates the registry**
+
+```ts
+// src/features/reports/__tests__/index.test.ts
+import { describe, it, expect, vi } from 'vitest'
+// Importing the barrel pulls in all 13 real definition files, each of which
+// imports the real db singleton -- mock it so this smoke test never tries to
+// initialize a real PowerSync client.
+vi.mock('@/data/powersync/db', () => ({ db: { getAll: vi.fn().mockResolvedValue([]), getOptional: vi.fn().mockResolvedValue(null) } }))
+
+import { REPORT_DEFINITIONS } from '../index'
+
+describe('reports registration barrel', () => {
+  it('populates all 13 report definitions via import side-effects', () => {
+    expect(Object.keys(REPORT_DEFINITIONS)).toHaveLength(13)
+  })
+})
+```
+
+- [ ] **Step 3: Run to verify it passes**
+
+Run: `npx vitest run src/features/reports/__tests__/index.test.ts`
+Expected: PASS — this is the test that would have caught the empty-registry bug an earlier draft of this plan shipped (pages importing from `./reportRegistry` directly instead of `./index`).
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/features/reports/index.ts src/features/reports/__tests__/index.test.ts
+git commit -m "feat(WAFI-147A): add registration barrel, moved before the UI tasks that depend on it"
+```
+
+---
+
 ### Task 20: Reports list page (registry metadata only, no compute)
 
 **Files:**
@@ -2576,13 +2628,20 @@ import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 
 vi.mock('@/store/session.store', () => ({ useSessionStore: () => ({ activeStaff: { role: 'owner', permissions: {} } }) }))
+// ReportsListPage imports from ./index (Task 19b's barrel), which imports all
+// 13 real definition files -- each of those imports the real db singleton
+// (@/data/powersync/db), which would otherwise try to initialize a real
+// PowerSync client in this test environment. Mock it here so merely
+// IMPORTING the barrel doesn't attempt that (matching every other test file
+// in this plan's own convention for any file that touches ./index).
+vi.mock('@/data/powersync/db', () => ({ db: { getAll: vi.fn().mockResolvedValue([]), getOptional: vi.fn().mockResolvedValue(null) } }))
 
 import ReportsListPage from '../ReportsListPage.vue'
 
 describe('ReportsListPage', () => {
   it('lists every registered report by name, without calling compute', async () => {
     const computeSpy = vi.fn()
-    const { REPORT_DEFINITIONS } = await import('../reportRegistry')
+    const { REPORT_DEFINITIONS } = await import('../index')
     REPORT_DEFINITIONS['daily-closing'] = { id: 'daily-closing', name: 'Daily Closing Report', cadenceHint: 'daily', compute: computeSpy }
 
     const wrapper = mount(ReportsListPage, { global: { stubs: { RouterLink: true } } })
@@ -2613,8 +2672,8 @@ import { useRouter } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import { useSessionStore } from '@/store/session.store'
 import { canUserDo } from '@/router/permissions'
-import { REPORT_DEFINITIONS } from './reportRegistry'
-import type { ReportId } from './reportRegistry'
+import { REPORT_DEFINITIONS } from './index'
+import type { ReportId } from './index'
 
 const router = useRouter()
 const session = useSessionStore()
@@ -2677,12 +2736,10 @@ git commit -m "feat(WAFI-147A): add Reports list page reading registry metadata 
 **Files:**
 - Create: `src/features/reports/ReportDetailPage.vue`
 - Modify: `src/router/index.ts` (add `/reports/:reportId` route)
-- Modify: `src/features/reports/ReportsListPage.vue` (already routes to `/reports/${id}`, no change needed)
-- Modify: `src/features/reports/reportRegistry.ts` (import every definition file so registration side-effects run)
 - Test: `src/features/reports/__tests__/ReportDetailPage.test.ts`
 
 **Interfaces:**
-- Consumes: `REPORT_DEFINITIONS` and all 13 `compute*Report` functions (registered by import side-effect, Tasks 6-18), `SummaryReportView`/`DetailReportView` (Task 19), `can_view_staff_performance` for section-level omission on Weekly Summary/Monthly Health/Discount Report/Returns Report, `ReportContext` (Task 1) for Employee Summary's staff selection.
+- Consumes: `REPORT_DEFINITIONS` (from `./index`, Task 19b — the registration barrel already guarantees all 13 definitions are registered by this point, no separate wiring step needed here), `SummaryReportView`/`DetailReportView` (Task 19), `can_view_staff_performance` for section-visibility filtering AND whole-report gating on Employee Summary (Task 0 P0 finding 5, second review), `ReportContext` (Task 1) for Employee Summary's staff selection.
 
 **Scope note (Task 0 finding 14, partial):** this task adds the two UI pieces that are correctness/functionality requirements, not polish — a date-range editor (without one, "on-demand" silently means "whatever default range the code picked," which is a product decision, not merely a UI nicety) and a staff selector (required for Employee Summary's `ReportContext.staffId` to ever be populated at all — without it that report is permanently stuck in its "not selected" state from Task 10). Deliberately NOT added in this pass, left as later polish since they don't affect report correctness: currency/number formatting, an explicit "generated at" timestamp display, and Arabic numeral/locale formatting. Flagging these explicitly rather than silently shipping without them.
 
@@ -2704,7 +2761,7 @@ const mockGetAll = vi.fn().mockResolvedValue([])
 vi.mock('@/data/powersync/db', () => ({ db: { getAll: (...a: unknown[]) => mockGetAll(...a) } }))
 
 import ReportDetailPage from '../ReportDetailPage.vue'
-import { REPORT_DEFINITIONS } from '../reportRegistry'
+import { REPORT_DEFINITIONS } from '../index'
 
 describe('ReportDetailPage', () => {
   it('calls compute() exactly once for the selected report, with a local-calendar-date range, and renders its sections', async () => {
@@ -2770,6 +2827,27 @@ describe('ReportDetailPage', () => {
 
     vi.mocked(sessionModule.useSessionStore).mockReturnValue({ activeStaff: { role: 'owner', permissions: {} } } as any)
   })
+
+  it('whole-report gates Employee Summary for a viewer without can_view_staff_performance -- no staff query, no compute() call (Task 0 P0 finding 5)', async () => {
+    const sessionModule = await import('@/store/session.store')
+    vi.mocked(sessionModule.useSessionStore).mockReturnValue({ activeStaff: { role: 'cashier', permissions: {} } } as any)
+    mockGetAll.mockClear()
+
+    const computeSpy = vi.fn()
+    REPORT_DEFINITIONS['employee-summary'] = { id: 'employee-summary', name: 'Employee Summary', cadenceHint: 'per-shift', contextRequirement: 'staff', compute: computeSpy }
+    const vueRouter = await import('vue-router')
+    vi.mocked(vueRouter.useRoute).mockReturnValue({ params: { reportId: 'employee-summary' } } as any)
+
+    const wrapper = mount(ReportDetailPage)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="not-authorized"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="staff-select"]').exists()).toBe(false)
+    expect(mockGetAll).not.toHaveBeenCalled() // never even queried the staff list
+    expect(computeSpy).not.toHaveBeenCalled()
+
+    vi.mocked(sessionModule.useSessionStore).mockReturnValue({ activeStaff: { role: 'owner', permissions: {} } } as any)
+  })
 })
 ```
 
@@ -2796,8 +2874,8 @@ import { useDeviceStore } from '@/store/device.store'
 import { useSessionStore } from '@/store/session.store'
 import { canUserDo } from '@/router/permissions'
 import { formatLocalDate, addCalendarDays } from './dateUtils'
-import { REPORT_DEFINITIONS } from './reportRegistry'
-import type { ReportId } from './reportRegistry'
+import { REPORT_DEFINITIONS } from './index'
+import type { ReportId } from './index'
 import type { Report, ReportDateRange, ReportSection } from './report.types'
 import SummaryReportView from './components/SummaryReportView.vue'
 import DetailReportView from './components/DetailReportView.vue'
@@ -2843,8 +2921,22 @@ const range = ref<ReportDateRange>(definition ? defaultRangeForCadence(definitio
 // matters, and even there only for picking a default window length).
 const needsStaffContext = computed(() => definition?.contextRequirement === 'staff')
 
+// Task 0 P0 finding 5 (second review): Employee Summary is WHOLE-REPORT
+// gated, not merely section-filtered -- unlike a composite report (Weekly
+// Summary etc.) where hiding one section still leaves a meaningful report,
+// Employee Summary's entire purpose is staff-identifying figures, so an
+// unpermitted viewer should never reach the staff selector or trigger
+// compute() at all, not just see an empty result after the fact. Every
+// report requiring 'staff' context is, by definition, whole-report gated
+// this way (currently only Employee Summary; if a future report is added
+// with contextRequirement: 'staff', it inherits the same gate for free).
+const isAuthorizedForThisReport = computed(() =>
+  !needsStaffContext.value || canUserDo(session.activeStaff, 'can_view_staff_performance'),
+)
+
 async function generate() {
   if (!definition) { error.value = 'التقرير غير موجود'; return }
+  if (!isAuthorizedForThisReport.value) return // whole-report gate; UI never reaches the staff selector for this case either
   if (needsStaffContext.value && !selectedStaffId.value) return // withhold until a staff member is chosen
 
   // Task 0 P0 finding 18: reject an inverted range before calling compute() --
@@ -2870,6 +2962,7 @@ async function generate() {
 }
 
 onMounted(async () => {
+  if (!isAuthorizedForThisReport.value) return // do not generate, do not show the staff selector, do not query staff -- "not authorized" renders from the template's own check
   if (needsStaffContext.value) {
     const { shopId } = useDeviceStore()
     staffOptions.value = await db.getAll<{ id: string; name: string }>(
@@ -2889,27 +2982,36 @@ watch(selectedStaffId, (id) => { if (id) generate() })
     <AppHeader :title="definition?.name ?? 'تقرير'" :show-back="true" @back="router.back()" />
   </div>
   <div class="page-body" dir="rtl">
-    <div v-if="needsStaffContext" class="staff-picker">
-      <label>الموظف</label>
-      <select data-testid="staff-select" v-model="selectedStaffId">
-        <option value="" disabled>اختر موظفًا</option>
-        <option v-for="s in staffOptions" :key="s.id" :value="s.id">{{ s.name }}</option>
-      </select>
-    </div>
+    <!-- Task 0 P0 finding 5 (second review): whole-report gate, checked BEFORE
+         the staff selector or anything else renders -- an unpermitted viewer
+         never sees the selector, never triggers a staff query, never calls
+         compute(). -->
+    <p v-if="!isAuthorizedForThisReport" class="state-message state-message--error" data-testid="not-authorized">
+      لا تملك صلاحية عرض هذا التقرير
+    </p>
+    <template v-else>
+      <div v-if="needsStaffContext" class="staff-picker">
+        <label>الموظف</label>
+        <select data-testid="staff-select" v-model="selectedStaffId">
+          <option value="" disabled>اختر موظفًا</option>
+          <option v-for="s in staffOptions" :key="s.id" :value="s.id">{{ s.name }}</option>
+        </select>
+      </div>
 
-    <div v-if="definition && !needsStaffContext" class="range-picker">
-      <label>من<input type="date" v-model="range.from" data-testid="range-from"></label>
-      <label>إلى<input type="date" v-model="range.to" data-testid="range-to"></label>
-      <button type="button" data-testid="regenerate-button" @click="generate">تحديث</button>
-    </div>
-    <p v-if="rangeError" class="state-message state-message--error" data-testid="range-error">{{ rangeError }}</p>
+      <div v-if="definition && !needsStaffContext" class="range-picker">
+        <label>من<input type="date" v-model="range.from" data-testid="range-from"></label>
+        <label>إلى<input type="date" v-model="range.to" data-testid="range-to"></label>
+        <button type="button" data-testid="regenerate-button" @click="generate">تحديث</button>
+      </div>
+      <p v-if="rangeError" class="state-message state-message--error" data-testid="range-error">{{ rangeError }}</p>
 
-    <p v-if="loading" class="state-message">...جارٍ إنشاء التقرير</p>
-    <p v-else-if="error" class="state-message state-message--error">{{ error }}</p>
-    <template v-else-if="report">
-      <template v-for="(s, i) in visibleSections" :key="i">
-        <SummaryReportView v-if="s.type === 'summary'" :section="s" />
-        <DetailReportView v-else :section="s" />
+      <p v-if="loading" class="state-message">...جارٍ إنشاء التقرير</p>
+      <p v-else-if="error" class="state-message state-message--error">{{ error }}</p>
+      <template v-else-if="report">
+        <template v-for="(s, i) in visibleSections" :key="i">
+          <SummaryReportView v-if="s.type === 'summary'" :section="s" />
+          <DetailReportView v-else :section="s" />
+        </template>
       </template>
     </template>
   </div>
@@ -2960,41 +3062,16 @@ In `src/router/index.ts`, add near the existing `/reports` entry:
 { path: '/reports/:reportId', component: () => import('@/features/reports/ReportDetailPage.vue'), meta: { permission: 'can_view_reports', feature: 'reporting_pack' } },
 ```
 
-- [ ] **Step 5: Wire registration side-effect imports**
-
-At the top of `src/features/reports/reportRegistry.ts`, after the `REPORT_DEFINITIONS` export, this file cannot import the 13 definition files itself (they import `REPORT_DEFINITIONS` from this same file — a circular import). Instead create a barrel that imports every definition file for its registration side-effect, then import that barrel wherever the registry needs to be guaranteed populated:
-
-```ts
-// src/features/reports/index.ts
-export * from './reportRegistry'
-export * from './report.types'
-import './definitions/dailyClosing'
-import './definitions/cashFlow'
-import './definitions/weeklySummary'
-import './definitions/profitTrend'
-import './definitions/employeeSummary'
-import './definitions/discountReport'
-import './definitions/returnsReport'
-import './definitions/creditReport'
-import './definitions/topCustomers'
-import './definitions/topProducts'
-import './definitions/inventoryHealth'
-import './definitions/deadStock'
-import './definitions/monthlyHealth'
-```
-
-Update `ReportsListPage.vue` and `ReportDetailPage.vue` to import `REPORT_DEFINITIONS`/`ReportId` from `./index` instead of `./reportRegistry` directly, so mounting either page guarantees all 13 definitions are registered.
-
-- [ ] **Step 6: Run to verify the detail page test passes**
+- [ ] **Step 5: Run to verify the detail page tests pass**
 
 Run: `npx vitest run src/features/reports/__tests__/ReportDetailPage.test.ts`
-Expected: PASS.
+Expected: PASS. (No separate "wire registration" step needed here — Task 19b already created the `./index` barrel this page imports from, and it's already guaranteed to be populated by the time this task runs.)
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/features/reports/ReportDetailPage.vue src/features/reports/index.ts src/router/index.ts src/features/reports/__tests__/ReportDetailPage.test.ts
-git commit -m "feat(WAFI-147A): add lazy per-report detail page, route wiring, and registration barrel"
+git add src/features/reports/ReportDetailPage.vue src/router/index.ts src/features/reports/__tests__/ReportDetailPage.test.ts
+git commit -m "feat(WAFI-147A): add lazy per-report detail page and route wiring"
 ```
 
 ---
@@ -3337,7 +3414,7 @@ describe('top-N ranking integration (LIMIT 20 with >20 candidate rows)', () => {
 - [ ] **Step 10: Run the full integration suite**
 
 Run: `npx vitest run src/features/reports/__tests__/integration/`
-Expected: PASS (all 6 files).
+Expected: PASS (all 5 integration test files — the helper isn't itself a test file).
 
 - [ ] **Step 11: Commit**
 

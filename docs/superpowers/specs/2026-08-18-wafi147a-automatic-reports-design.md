@@ -296,9 +296,119 @@ Open cross-feature questions: whether report-level authorization (S5) needs a fi
 ## 7. What comes after this spec
 
 An implementation plan (via `superpowers:writing-plans`) should sequence: (1) the `Report`/`ReportSection`
-type shell, (2) the 3 shared primitives, (3) the registry with an empty map, (4) each report definition in the
+type shell, (2) the shared primitives (§9.3), (3) the registry with an empty map, (4) each report definition in the
 build order from §4 — each one task-reviewable independently since they don't depend on each other, only on the
 shell and whichever primitives they use, (5) the two presentation components + a Reports list page (registry
 metadata only, no `compute()` calls) + a per-report page/route that lazily calls `compute()` for the one
-selected report, (6) route/nav
-wiring reusing the existing `/reports` permission pattern.
+selected report, (6) route/nav wiring reusing the existing `/reports` permission pattern.
+
+## 8. Confirmed De-Scopes (2026-08-18, post-plan-review)
+
+Checked against the actual codebase during implementation planning — these fields from the original 13-report
+spec (`WAFI_Event_Driven_Platform_Plan_v1.md:639-786`) are genuinely absent from this codebase's data model, not
+merely inconvenient to build. This is the authoritative final scope for the reports named; do not re-add these
+speculatively:
+
+- **Profit Trend:** no "profit by product category" (no product-category cost attribution exists) and no "profit
+  vs. target" (no target/goal concept exists anywhere).
+- **Top Customers:** no "top 20 by loyalty" (no loyalty/points system exists; CLAUDE.md places loyalty in v1.5).
+- **Inventory Health:** no "shrinkage summary" (no reconciled expected-vs-counted shrinkage mechanism exists).
+- **Dead Stock:** no "suggested actions" (a business-rules/product decision, not a data query — candidate for a
+  future WAFI-156 rule, not fabricated here).
+- **Credit Report:** no "average collection time" in v1 of this report (derivable from
+  `CustomerAgingRow.lastPaymentDate` as a documented follow-up, not built in this pass).
+- **Top Products "Profit":** gross sale-line profit, NOT net of returns — netting would require joining each
+  returned unit back to its original sale's cost via the same cost-lookup pattern `getStaffMetrics` already uses
+  for per-staff return-COGS, a separate piece of work deliberately not duplicated here. The report's own section
+  title says "gross, not net of returns" so this is never silently ambiguous.
+- **Top Products "Most Returned":** units returned (`SUM(qty_returned)`), not return-transaction count.
+
+## 9. Amendments from implementation planning (2026-08-18)
+
+The implementation plan's own review process (two rounds) surfaced several real design gaps this spec did not
+originally cover. Recorded here so spec and plan do not diverge going into execution — these are not
+afterthoughts bolted onto the plan; they are now part of this design.
+
+### 9.1 `ReportContext` — the third `compute()` parameter
+
+§3's `ReportDefinition.compute` signature is actually `(shopId: string, range: ReportDateRange, context?:
+ReportContext) => Promise<Report>`, where:
+
+```ts
+type ReportContext = { staffId?: string }
+```
+
+Employee Summary is the only report needing anything beyond `(shopId, range)` — it requires a specific staff
+member. Rather than a special-cased signature or a throwing stub for that one report, every `ReportDefinition`
+carries the same three-parameter shape; reports that don't need `context` simply never read it. Absent
+`context.staffId`, Employee Summary's `compute()` returns an explicit "not selected" `Report` (one
+`SummarySection` saying so) — never an exception. `contextRequirement?: 'staff'` (§9.2) is the companion field
+that tells the UI *when* to collect this before calling `compute()`.
+
+### 9.2 `contextRequirement` — decoupled from `cadenceHint`
+
+`cadenceHint: 'per-shift' | 'daily' | 'weekly' | 'monthly'` remains purely descriptive metadata — it selects a
+sensible default date range (§9.4) and labels the report in the UI, and must never be branched on to decide
+what invocation context a report needs. That is `contextRequirement?: 'staff'`'s job: when present, the Reports
+UI must collect a staff selection (and gate the entire report — §9.5 below) before ever calling `compute()`.
+Currently only Employee Summary sets this.
+
+### 9.3 Five shared primitives, not three
+
+The original §3 primitives list undercounted by two, found necessary during planning:
+
+1. `readProfitCache(shopId, range)` — unchanged from the original draft.
+2. `getStaffMetrics(shopId, range)` — unchanged, generalized from `useStaffPerformanceMetrics.ts`, extended with
+   `returnRevenueUsd`/`returnCount` per staff (needed by Returns Report's "By Staff" section — see below).
+3. `getCustomerAgingSnapshot(shopId, asOfDate)` — unchanged, as-of-date semantics per this spec's original §2
+   correction.
+4. **`readShiftCashReconciliation(shopId, range)`** — new. Daily Closing's and Cash Flow's cash-reconciliation
+   figures must come from `cashier_shifts.z_report_data`, an immutable snapshot of `ZReportMetrics`
+   (`src/features/shifts/shift.types.ts`) already captured by this app's own verified `computeCashReconciliation`
+   engine at shift-close time. An independently reconstructed equation (`expected = opening + revenue -
+   expenses`) omits credit-payment collection, refunds, and mid-shift pay-in/pay-out movements — a real
+   correctness bug, not a simplification. This primitive throws (naming the shift and the missing/invalid field)
+   on unparseable JSON or a missing/non-finite required field — a financial primitive must fail loudly on
+   malformed data, never silently produce a wrong number by treating it as zero. A genuinely absent (`NULL`)
+   `z_report_data` on a legacy pre-this-feature shift is the one tolerated case, contributing zero, not an error.
+5. **`queryDeadStockRows(shopId, thresholdDays)`** — new. Shared by Inventory Health's Dead Stock section and
+   the dedicated Dead Stock report — a primitive used by two report definitions belongs in `primitives/`, not
+   inside one of its own consumers.
+
+### 9.4 Rolling cadence ranges, decided explicitly
+
+`cadenceHint` maps to a default `ReportDateRange` as follows, and this mapping lives in exactly one place (the
+Reports UI, never inside a report definition): `'daily'` → today only. `'weekly'` → the last 7 calendar days
+ending today (a rolling window, not the current Sunday-to-Sunday week — a report opened mid-week should show a
+meaningful trailing week). `'monthly'` → the last 30 calendar days ending today (same rolling-window rationale,
+not the current calendar month). `'per-shift'` → today only, further narrowed to one staff member via
+`ReportContext.staffId`.
+
+### 9.5 `SectionVisibility` and whole-report gating
+
+Extending §2's `ReportSection` union, every section carries `visibility: 'shop' | 'staff'` (defaulting to
+`'shop'` via the `summarySection()`/`detailSection()` helpers, so most call sites need no change):
+
+```ts
+type SectionVisibility = 'shop' | 'staff'
+```
+
+`'staff'` marks a section as identifying an individual staff member's figures — the staff-ranking sections in
+Weekly Summary/Monthly Health/Daily Closing, the staff-cut sections in Discount Report/Returns Report, and
+Employee Summary's entire content. At render time, the Reports UI filters `report.sections` by
+`visibility === 'shop' || canUserDo(activeStaff, 'can_view_staff_performance')` — the same structurally-owner-only
+flag WAFI-018 established for `/reports/staff`. This is section-level filtering for composite reports (Weekly
+Summary renders normally minus its staff-ranking section for an unpermitted viewer), distinct from **whole-report
+gating** for any report whose `contextRequirement === 'staff'` (currently only Employee Summary): an unpermitted
+viewer reaches neither the staff selector nor a `compute()` call for that report at all, since its entire purpose
+is staff-identifying and there is no meaningful shop-level remainder to show. Per §5, this remains UI/report
+visibility, not a new data-security boundary — 147A introduces no new sync surface or server read path.
+
+### 9.6 Current-snapshot labeling
+
+Any metric built from `products.current_stock`/`cost_price_usd` (inventory valuation, dead stock, low-stock
+alerts, turnover rate) or from a "no activity since X days ago relative to the report's own end date" query
+(Top Customers' at-risk section) reflects today's/the query's own point-in-time state, not a value scoped to
+`range`. Every such section's title says so explicitly (e.g. "Inventory Overview (current snapshot)", "At-Risk
+Customers (no visit in 60 days as of report end)") — a Monthly Health report for last month legitimately
+contains today's inventory valuation, but must never present that figure as if it were last month's.
