@@ -94,15 +94,30 @@ describe('detailSection', () => {
     expect(s).toEqual({
       type: 'detail',
       title: 'Rows',
-      columns: [{ key: 'label', label: 'Label' }, { key: 'total', label: 'Total' }],
+      columns: [
+        { key: 'label', label: 'Label', format: undefined, align: undefined },
+        { key: 'total', label: 'Total', format: undefined, align: undefined },
+      ],
       rows,
       visibility: 'shop',
+      truncated: false,
     })
   })
 
   it('accepts an explicit visibility: "staff" for staff-identifying sections', () => {
     const s = detailSection<FakeRow>({ title: 'Staff', columns: [{ key: 'id', label: 'ID' }], rows: [], visibility: 'staff' })
     expect(s.visibility).toBe('staff')
+  })
+
+  it('carries format/align column hints and an explicit truncated flag through', () => {
+    const s = detailSection<FakeRow>({
+      title: 'Rows',
+      columns: [{ key: 'total', label: 'Total', format: 'currency-usd', align: 'end' }],
+      rows: [],
+      truncated: true,
+    })
+    expect(s.columns[0]).toMatchObject({ format: 'currency-usd', align: 'end' })
+    expect(s.truncated).toBe(true)
   })
 
   it('mixed sections coexist in one Report without a shared row type', () => {
@@ -156,7 +171,16 @@ export type SummarySection = {
   visibility: SectionVisibility
 }
 
-export type ReportColumn = { key: string; label: string }
+/** format/align are presentation hints only -- the UI stays generic, row values are always
+ *  real typed data (numbers, ISO date strings), never pre-formatted strings. `currency-usd`
+ *  (not generic `currency`) since WAFI is dual-currency and a future column may need
+ *  `currency-syp`. */
+export type ReportColumn = {
+  key: string
+  label: string
+  format?: 'text' | 'number' | 'currency-usd' | 'percent' | 'date'
+  align?: 'start' | 'center' | 'end'
+}
 
 /** Plain, generic-free runtime shape -- a single Report's sections legitimately mix
  *  DetailSection built from different Row types at once, which a generic on this type
@@ -168,6 +192,12 @@ export type DetailSection = {
   columns: ReportColumn[]
   rows: object[]
   visibility: SectionVisibility
+  /** True when the underlying query applied a hard row cap and more rows existed than were
+   *  materialized (e.g. Dead Stock's LIMIT 500). Reports already capped at a small fixed N
+   *  (e.g. Top Customers' LIMIT 20) never set this -- the cap IS the full intended result,
+   *  not a truncation. No totalRowCount: that needs a second COUNT(*) per section and a
+   *  pagination concept this plan doesn't otherwise have. */
+  truncated?: boolean
 }
 
 export type ReportSection = SummarySection | DetailSection
@@ -202,16 +232,18 @@ export function summarySection(args: { title: string; metrics: ReportMetric[]; v
  *  normalized into the plain runtime DetailSection shape. */
 export function detailSection<Row extends object>(args: {
   title: string
-  columns: { key: keyof Row; label: string }[]
+  columns: { key: keyof Row; label: string; format?: ReportColumn['format']; align?: ReportColumn['align'] }[]
   rows: Row[]
   visibility?: SectionVisibility
+  truncated?: boolean
 }): DetailSection {
   return {
     type: 'detail',
     title: args.title,
-    columns: args.columns.map((c) => ({ key: String(c.key), label: c.label })),
+    columns: args.columns.map((c) => ({ key: String(c.key), label: c.label, format: c.format, align: c.align })),
     rows: args.rows,
     visibility: args.visibility ?? 'shop',
+    truncated: args.truncated ?? false,
   }
 }
 ```
@@ -219,7 +251,7 @@ export function detailSection<Row extends object>(args: {
 - [ ] **Step 4: Run to verify it passes**
 
 Run: `npx vitest run src/features/reports/__tests__/report.types.test.ts`
-Expected: PASS (3/3).
+Expected: PASS (4/4).
 
 - [ ] **Step 5: Commit**
 
@@ -991,7 +1023,7 @@ An earlier draft of this plan put `queryDeadStockRows`/`DeadStockRow` inside `de
 
 **Interfaces:**
 - Consumes: `db` (existing).
-- Produces: `interface DeadStockRow { productId, nameAr, currentStock, valueUsd, lastSoldAt }`; `function queryDeadStockRows(shopId: string, thresholdDays: number): Promise<DeadStockRow[]>`.
+- Produces: `interface DeadStockRow { productId, nameAr, currentStock, valueUsd, lastSoldAt }`; `const DEAD_STOCK_ROW_CAP = 500`; `function queryDeadStockRows(shopId: string, thresholdDays: number): Promise<{ rows: DeadStockRow[]; truncated: boolean }>` — rows sorted by `valueUsd` descending, capped at `DEAD_STOCK_ROW_CAP`, `truncated` true when the uncapped result exceeded the cap.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1007,14 +1039,26 @@ import { queryDeadStockRows } from '../queryDeadStockRows'
 describe('queryDeadStockRows', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('computes valueUsd as current_stock * cost_price_usd and excludes uncosted products', async () => {
+  it('computes valueUsd as current_stock * cost_price_usd, excludes uncosted products, not truncated below the cap', async () => {
     mockGetAll.mockResolvedValue([
       { id: 'p1', name_ar: 'قلم', current_stock: 10, cost_price_usd: 2, last_sold_at: null },
       { id: 'p2', name_ar: 'دفتر', current_stock: 5, cost_price_usd: 0, last_sold_at: '2026-05-01' }, // uncosted, excluded
     ])
-    const rows = await queryDeadStockRows('shop1', 90)
+    const { rows, truncated } = await queryDeadStockRows('shop1', 90)
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ productId: 'p1', currentStock: 10, valueUsd: 20, lastSoldAt: null })
+    expect(truncated).toBe(false)
+  })
+
+  it('caps at DEAD_STOCK_ROW_CAP, sorted by valueUsd descending, and reports truncated', async () => {
+    const many = Array.from({ length: 501 }, (_, i) => ({
+      id: `p${i}`, name_ar: `منتج ${i}`, current_stock: 1, cost_price_usd: i + 1, last_sold_at: null,
+    }))
+    mockGetAll.mockResolvedValue(many)
+    const { rows, truncated } = await queryDeadStockRows('shop1', 90)
+    expect(rows).toHaveLength(500)
+    expect(rows[0].valueUsd).toBe(501) // highest cost_price_usd (i=500) sorts first
+    expect(truncated).toBe(true)
   })
 })
 ```
@@ -1036,11 +1080,18 @@ Expected: FAIL — module not found.
 // implementation even with different defaults.
 import { db } from '@/data/powersync/db'
 
+export const DEAD_STOCK_ROW_CAP = 500
+
 export interface DeadStockRow {
   productId: string; nameAr: string; currentStock: number; valueUsd: number; lastSoldAt: string | null
 }
 
-export async function queryDeadStockRows(shopId: string, thresholdDays: number): Promise<DeadStockRow[]> {
+/** Returns at most DEAD_STOCK_ROW_CAP rows, ordered by capital tied up (highest first) so a
+ *  capped result still shows the most material items, plus whether the cap actually truncated
+ *  the result -- a neglected shop's dead stock can genuinely run into the thousands, and
+ *  rendering that many rows in one DetailSection would freeze the UI thread (§2's ReportColumn/
+ *  DetailSection `truncated` field, added post-plan-review). */
+export async function queryDeadStockRows(shopId: string, thresholdDays: number): Promise<{ rows: DeadStockRow[]; truncated: boolean }> {
   const cutoff = new Date(Date.now() - thresholdDays * 24 * 3_600_000).toISOString()
   const rows = await db.getAll<{ id: string; name_ar: string; current_stock: number; cost_price_usd: number; last_sold_at: string | null }>(
     `SELECT p.id, p.name_ar, p.current_stock, p.cost_price_usd, ls.last_sold_at
@@ -1054,9 +1105,11 @@ export async function queryDeadStockRows(shopId: string, thresholdDays: number):
        AND (ls.last_sold_at IS NULL OR ls.last_sold_at < ?)`,
     [shopId, shopId, cutoff],
   )
-  return rows
+  const mapped = rows
     .filter((r) => r.cost_price_usd > 0)
     .map((r) => ({ productId: r.id, nameAr: r.name_ar, currentStock: r.current_stock, valueUsd: r.current_stock * r.cost_price_usd, lastSoldAt: r.last_sold_at }))
+    .sort((a, b) => b.valueUsd - a.valueUsd)
+  return { rows: mapped.slice(0, DEAD_STOCK_ROW_CAP), truncated: mapped.length > DEAD_STOCK_ROW_CAP }
 }
 ```
 
@@ -1786,8 +1839,14 @@ import { REPORT_DEFINITIONS } from '../reportRegistry'
 export interface DiscountByProductRow { productId: string; nameAr: string; discountUsd: number }
 export interface BelowCostSaleRow { saleId: string; productId: string; nameAr: string; unitPriceUsd: number; unitCostUsd: number }
 
+// Both "By Product" (one row per distinct product) and "Below-Cost Sales" (one row per
+// matching line item, genuinely unbounded over a wide range) can exceed a size that's safe
+// to render as a single mobile DetailSection -- fetch one extra row over the cap so the
+// exact-boundary case (rows.length === DETAIL_ROW_CAP) is never misreported as truncated.
+const DETAIL_ROW_CAP = 500
+
 export async function computeDiscountReport(shopId: string, range: ReportDateRange): Promise<Report> {
-  const [profit, staff, byProduct, belowCost] = await Promise.all([
+  const [profit, staff, byProductRows, belowCostRows] = await Promise.all([
     readProfitCache(shopId, range),
     getStaffMetrics(shopId, range),
     db.getAll<DiscountByProductRow>(
@@ -1798,8 +1857,8 @@ export async function computeDiscountReport(shopId: string, range: ReportDateRan
        JOIN sales s ON s.id = sli.sale_id
        WHERE sli.shop_id = ? AND sli.discount_amount_usd > 0
          AND DATE(s.created_at, 'localtime') BETWEEN ? AND ?
-       GROUP BY sli.product_id, p.name_ar ORDER BY discountUsd DESC`,
-      [shopId, range.from, range.to],
+       GROUP BY sli.product_id, p.name_ar ORDER BY discountUsd DESC LIMIT ?`,
+      [shopId, range.from, range.to, DETAIL_ROW_CAP + 1],
     ),
     db.getAll<BelowCostSaleRow>(
       `SELECT sli.sale_id AS saleId, sli.product_id AS productId, p.name_ar AS nameAr,
@@ -1808,10 +1867,14 @@ export async function computeDiscountReport(shopId: string, range: ReportDateRan
        JOIN sales s ON s.id = sli.sale_id
        JOIN products p ON p.id = sli.product_id
        WHERE sli.shop_id = ? AND sli.unit_cost_usd IS NOT NULL AND sli.unit_price_usd < sli.unit_cost_usd
-         AND DATE(s.created_at, 'localtime') BETWEEN ? AND ?`,
-      [shopId, range.from, range.to],
+         AND DATE(s.created_at, 'localtime') BETWEEN ? AND ? LIMIT ?`,
+      [shopId, range.from, range.to, DETAIL_ROW_CAP + 1],
     ),
   ])
+  const byProduct = byProductRows.slice(0, DETAIL_ROW_CAP)
+  const byProductTruncated = byProductRows.length > DETAIL_ROW_CAP
+  const belowCost = belowCostRows.slice(0, DETAIL_ROW_CAP)
+  const belowCostTruncated = belowCostRows.length > DETAIL_ROW_CAP
 
   return {
     id: 'discount-report', name: 'Discount Report', dateRange: range, generatedAt: new Date().toISOString(),
@@ -1825,13 +1888,15 @@ export async function computeDiscountReport(shopId: string, range: ReportDateRan
       }),
       detailSection<DiscountByProductRow>({
         title: 'By Product',
-        columns: [{ key: 'nameAr', label: 'Product' }, { key: 'discountUsd', label: 'Discount' }],
+        columns: [{ key: 'nameAr', label: 'Product' }, { key: 'discountUsd', label: 'Discount', format: 'currency-usd', align: 'end' }],
         rows: byProduct,
+        truncated: byProductTruncated,
       }),
       detailSection<BelowCostSaleRow>({
         title: 'Below-Cost Sales',
-        columns: [{ key: 'nameAr', label: 'Product' }, { key: 'unitPriceUsd', label: 'Sold at' }, { key: 'unitCostUsd', label: 'Cost' }],
+        columns: [{ key: 'nameAr', label: 'Product' }, { key: 'unitPriceUsd', label: 'Sold at', format: 'currency-usd', align: 'end' }, { key: 'unitCostUsd', label: 'Cost', format: 'currency-usd', align: 'end' }],
         rows: belowCost,
+        truncated: belowCostTruncated,
       }),
     ],
   }
@@ -1867,8 +1932,15 @@ export interface ReturnByProductRow { productId: string; nameAr: string; returnC
 export interface ReturnByReasonRow { reason: string; count: number }
 export interface ReturnByStaffRow { staffId: string; name: string; returnCount: number; returnRevenueUsd: number }
 
+// Same shape risk and same cap as Task 11's Discount Report -- "By Product" (one row per
+// distinct returned product) and "Return Reasons" can both exceed a size safe to render as
+// one mobile DetailSection. Kept as a local constant (not imported from discountReport.ts)
+// since report definitions are deliberately independent modules, not coupled through
+// cross-imports of each other's internals.
+const DETAIL_ROW_CAP = 500
+
 export async function computeReturnsReport(shopId: string, range: ReportDateRange): Promise<Report> {
-  const [profit, staff, byProduct, byReason] = await Promise.all([
+  const [profit, staff, byProductRows, byReasonRows] = await Promise.all([
     readProfitCache(shopId, range),
     getStaffMetrics(shopId, range),
     db.getAll<ReturnByProductRow>(
@@ -1878,16 +1950,20 @@ export async function computeReturnsReport(shopId: string, range: ReportDateRang
        JOIN returns r ON r.id = rli.return_id
        JOIN products p ON p.id = rli.product_id
        WHERE r.shop_id = ? AND DATE(r.created_at, 'localtime') BETWEEN ? AND ?
-       GROUP BY rli.product_id, p.name_ar ORDER BY refundUsd DESC`,
-      [shopId, range.from, range.to],
+       GROUP BY rli.product_id, p.name_ar ORDER BY refundUsd DESC LIMIT ?`,
+      [shopId, range.from, range.to, DETAIL_ROW_CAP + 1],
     ),
     db.getAll<ReturnByReasonRow>(
       `SELECT COALESCE(reason, 'unspecified') AS reason, COUNT(*) AS count
        FROM returns WHERE shop_id = ? AND DATE(created_at, 'localtime') BETWEEN ? AND ?
-       GROUP BY reason ORDER BY count DESC`,
-      [shopId, range.from, range.to],
+       GROUP BY reason ORDER BY count DESC LIMIT ?`,
+      [shopId, range.from, range.to, DETAIL_ROW_CAP + 1],
     ),
   ])
+  const byProduct = byProductRows.slice(0, DETAIL_ROW_CAP)
+  const byProductTruncated = byProductRows.length > DETAIL_ROW_CAP
+  const byReason = byReasonRows.slice(0, DETAIL_ROW_CAP)
+  const byReasonTruncated = byReasonRows.length > DETAIL_ROW_CAP
 
   return {
     id: 'returns-report', name: 'Returns Report', dateRange: range, generatedAt: new Date().toISOString(),
@@ -1909,13 +1985,15 @@ export async function computeReturnsReport(shopId: string, range: ReportDateRang
       }),
       detailSection<ReturnByProductRow>({
         title: 'By Product',
-        columns: [{ key: 'nameAr', label: 'Product' }, { key: 'returnCount', label: 'Count' }, { key: 'refundUsd', label: 'Refund' }],
+        columns: [{ key: 'nameAr', label: 'Product' }, { key: 'returnCount', label: 'Count', align: 'end' }, { key: 'refundUsd', label: 'Refund', format: 'currency-usd', align: 'end' }],
         rows: byProduct,
+        truncated: byProductTruncated,
       }),
       detailSection<ReturnByReasonRow>({
         title: 'Return Reasons',
-        columns: [{ key: 'reason', label: 'Reason' }, { key: 'count', label: 'Count' }],
+        columns: [{ key: 'reason', label: 'Reason' }, { key: 'count', label: 'Count', align: 'end' }],
         rows: byReason,
+        truncated: byReasonTruncated,
       }),
     ],
   }
@@ -2185,7 +2263,7 @@ export interface VelocityRow { productId: string; nameAr: string; quantitySold: 
 const DEAD_STOCK_THRESHOLD_DAYS = 90 // spec offers 60/90/180; 90 is the shared default (matches useDeadStockReport.ts)
 
 export async function computeInventoryHealthReport(shopId: string, range: ReportDateRange): Promise<Report> {
-  const [lowStock, fastMovers, slowMovers, valuationRow, deadStock] = await Promise.all([
+  const [lowStock, fastMovers, slowMovers, valuationRow, deadStockResult] = await Promise.all([
     db.getAll<LowStockRow>(
       `SELECT id AS productId, name_ar AS nameAr, current_stock AS currentStock, low_stock_threshold AS lowStockThreshold
        FROM products WHERE shop_id = ? AND (deleted = 0 OR deleted IS NULL)
@@ -2227,6 +2305,7 @@ export async function computeInventoryHealthReport(shopId: string, range: Report
   )
   const currentValuation = valuationRow?.totalCost ?? 0
   const turnoverRate = currentValuation > 0 ? (cogsInRange?.cogs ?? 0) / currentValuation : 0
+  const { rows: deadStock, truncated: deadStockTruncated } = deadStockResult
 
   return {
     id: 'inventory-health', name: 'Inventory Health Report', dateRange: range, generatedAt: new Date().toISOString(),
@@ -2248,8 +2327,9 @@ export async function computeInventoryHealthReport(shopId: string, range: Report
       detailSection<VelocityRow>({ title: 'Slow-Moving SKUs', columns: [{ key: 'nameAr', label: 'Product' }, { key: 'quantitySold', label: 'Qty Sold' }], rows: slowMovers }),
       detailSection<DeadStockRow>({
         title: `Dead Stock (${DEAD_STOCK_THRESHOLD_DAYS}+ days, current snapshot)`,
-        columns: [{ key: 'nameAr', label: 'Product' }, { key: 'currentStock', label: 'Stock' }, { key: 'valueUsd', label: 'Value' }],
+        columns: [{ key: 'nameAr', label: 'Product' }, { key: 'currentStock', label: 'Stock', align: 'end' }, { key: 'valueUsd', label: 'Value', format: 'currency-usd', align: 'end' }],
         rows: deadStock,
+        truncated: deadStockTruncated,
       }),
     ],
   }
@@ -2283,18 +2363,32 @@ import type { DeadStockRow } from '../primitives/queryDeadStockRows'
 const THRESHOLD_DAYS = 90 // spec offers 60/90/180; 90 is this report's fixed default, matching Task 16 and useDeadStockReport.ts
 
 export async function computeDeadStockReport(shopId: string, range: ReportDateRange): Promise<Report> {
-  const deadStock = await queryDeadStockRows(shopId, THRESHOLD_DAYS)
+  const { rows: deadStock, truncated } = await queryDeadStockRows(shopId, THRESHOLD_DAYS)
 
   return {
     id: 'dead-stock', name: 'Dead Stock Report', dateRange: range, generatedAt: new Date().toISOString(),
     sections: [
       // "(current snapshot)" -- see Task 16's identical labeling rationale:
-      // current_stock/cost_price_usd reflect today, not `range`.
-      summarySection({ title: 'Capital Tied Up (current snapshot)', metrics: [{ label: `Capital in dead stock (${THRESHOLD_DAYS}+ days)`, value: deadStock.reduce((s, r) => s + r.valueUsd, 0), unit: 'USD' }] }),
+      // current_stock/cost_price_usd reflect today, not `range`. The capital-tied-up
+      // total only sums the capped/returned rows (queryDeadStockRows already sorts by
+      // valueUsd descending, so a truncated result still totals the most material items,
+      // not an arbitrary sample) -- if truncated, the summary label says so rather than
+      // silently implying it's the shop's full dead-stock total.
+      summarySection({
+        title: 'Capital Tied Up (current snapshot)',
+        metrics: [{
+          label: truncated
+            ? `Capital in top ${deadStock.length} dead-stock items (${THRESHOLD_DAYS}+ days, more not shown)`
+            : `Capital in dead stock (${THRESHOLD_DAYS}+ days)`,
+          value: deadStock.reduce((s, r) => s + r.valueUsd, 0),
+          unit: 'USD',
+        }],
+      }),
       detailSection<DeadStockRow>({
         title: `Products with No Sales in ${THRESHOLD_DAYS}+ Days (current snapshot)`,
-        columns: [{ key: 'nameAr', label: 'Product' }, { key: 'currentStock', label: 'Stock' }, { key: 'valueUsd', label: 'Value' }, { key: 'lastSoldAt', label: 'Last Sold' }],
+        columns: [{ key: 'nameAr', label: 'Product' }, { key: 'currentStock', label: 'Stock', align: 'end' }, { key: 'valueUsd', label: 'Value', format: 'currency-usd', align: 'end' }, { key: 'lastSoldAt', label: 'Last Sold', format: 'date' }],
         rows: deadStock,
+        truncated,
       }),
     ],
   }
