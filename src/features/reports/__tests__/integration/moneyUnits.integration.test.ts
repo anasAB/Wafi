@@ -12,11 +12,16 @@ import { getStaffMetrics } from '../../primitives/getStaffMetrics'
 describe('money-units integration', () => {
   beforeEach(() => { conn = createReportsTestDb() })
 
-  it('readProfitCache divides profit_cache\'s bigint-cents columns by 100', async () => {
+  it('readProfitCache divides profit_cache\'s bigint-cents columns by 100, uniformly across fields (not just revenueUsd)', async () => {
     conn.exec(`INSERT INTO profit_cache (shop_id, day, revenue_usd, revenue_syp, cogs_usd, cogs_reversal_usd, expenses_usd, refunds_usd, discount_usd, invoice_count, return_count, costless_sale_count)
-      VALUES ('shop1', '2026-08-18', 10000, 0, 4000, 0, 0, 0, 0, 1, 0, 0)`) // 10000 cents
+      VALUES ('shop1', '2026-08-18', 10000, 0, 4000, 0, 0, 0, 250, 1, 0, 0)`) // 10000 cents revenue, 4000 cents cogs, 250 cents discount
     const result = await readProfitCache('shop1', { from: '2026-08-18', to: '2026-08-18' })
     expect(result.revenueUsd).toBe(100) // $100.00, not $10,000 and not $1.00
+    // Asserting a second, independent field confirms the /100 division is
+    // applied uniformly across columns, not coincidentally correct for
+    // revenueUsd alone.
+    expect(result.cogsUsd).toBe(40) // $40.00, not $4,000 and not $0.40
+    expect(result.discountUsd).toBe(2.5) // $2.50, not $250 and not $0.025
   })
 
   it('getStaffMetrics sums sales.total_usd as a plain dollar NUMERIC column -- no /100 division', async () => {

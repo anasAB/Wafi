@@ -5,7 +5,7 @@ let conn: ReturnType<typeof createReportsTestDb>
 
 vi.mock('@/data/powersync/db', () => ({
   db: {
-    getAll: async (sql: string, params: unknown[]) => conn.prepare(sql.replace(/\?/g, () => '?')).all(...(params as any[])),
+    getAll: async (sql: string, params: unknown[]) => conn.prepare(sql).all(...(params as any[])),
     getOptional: async (sql: string, params: unknown[]) => {
       const rows = conn.prepare(sql).all(...(params as any[]))
       return rows[0] ?? null
