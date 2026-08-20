@@ -198,9 +198,14 @@ created only when the snapshot insert actually creates a new row (not on a no-op
 fails, the whole transaction rolls back and a retry safely re-attempts both together. Without this rule, a
 snapshot committed in one transaction followed by a notification insert that fails separately would leave a
 permanently notification-less snapshot — a later retry would see the snapshot already exists, no-op, and
-never emit the notification. The notification's own unique natural key (e.g. on the snapshot's id, or the
-same `(shop_id, report_type, period_start, period_end)`) is kept as defense-in-depth, not as the primary
-correctness mechanism — the transaction boundary is.
+never emit the notification. Each recipient notification is independently idempotent on
+`(snapshot_id, recipient_user_id)` — not on the snapshot alone. A single snapshot can have multiple eligible
+recipients (owner, and potentially manager/staff per the shop's authorization model — see In-app
+notification below), so the natural key must include the recipient: `generate_report_snapshot(...)` resolves
+eligible recipients and inserts one notification row per recipient, each independently no-op-on-conflict
+against `(snapshot_id, recipient_user_id)`. This is kept as defense-in-depth per recipient, not as the
+primary correctness mechanism — the transaction boundary is — while still allowing the same snapshot to
+correctly notify multiple distinct users.
 
 ### Persisted artifact
 
@@ -233,18 +238,20 @@ no data renders the same "nothing to show" state either way).
 ### In-app notification
 
 On successful generation (new snapshot row actually inserted, not a no-op), emit a lightweight in-app
-signal — e.g. a row in an existing/new notifications mechanism — indicating a given report is ready. This is
-a downstream consumer of a successful snapshot, not the scheduler's core responsibility. Exact mechanism
-(dedicated table vs. reuse of an existing notification system, if one exists) to be determined during
-implementation planning by checking current notification infrastructure in the codebase.
+signal per eligible recipient — e.g. a row in an existing/new notifications mechanism, one per recipient —
+indicating a given report is ready. This is a downstream consumer of a successful snapshot, not the
+scheduler's core responsibility. Exact mechanism (dedicated table vs. reuse of an existing notification
+system, if one exists) to be determined during implementation planning by checking current notification
+infrastructure in the codebase.
 
 **Recipient resolution is decoupled from the snapshot.** The snapshot itself has no dependency on who gets
 notified — it is keyed only by shop/report/period. Notification delivery separately resolves which
 authorized users (owner, and potentially manager/staff depending on the shop's existing
-authorization/notification model) are eligible recipients for that shop's "report ready" signal at the time
-the notification is created. Keeping the artifact recipient-agnostic is deliberate: it is what lets WAFI-147C
-later attach a different delivery audience/channel (WhatsApp) to the same snapshot without touching how the
-snapshot itself is produced.
+authorization/notification model) are eligible recipients for that shop's "report ready" signal, then
+inserts one notification row per eligible recipient (see the atomicity/idempotency rule in Idempotency
+above — keyed on `(snapshot_id, recipient_user_id)`, not on the snapshot alone). Keeping the artifact itself
+recipient-agnostic is deliberate: it is what lets WAFI-147C later attach a different delivery audience/
+channel (WhatsApp) to the same snapshot without touching how the snapshot itself is produced.
 
 This also defines the producer boundary WAFI-147C will need later:
 
@@ -297,10 +304,12 @@ not a shared code artifact.
 
 - pgTAP coverage for `generate_scheduled_reports` (correct shops/report-types/period resolved per cadence)
   and `generate_report_snapshot` (idempotency — calling twice for the same natural key produces exactly one
-  row and one notification; the snapshot+notification atomicity invariant — a forced failure after the
-  snapshot insert rolls back the snapshot too, so a retry can safely redo both; and exact period-boundary
-  values per cadence, per the Period semantics section above — including the weekly case explicitly, since
-  it is the one most likely to regress to an off-by-one-week error).
+  snapshot row; multi-recipient notification fan-out — a shop with N eligible recipients produces exactly N
+  notification rows, one per `(snapshot_id, recipient_user_id)`, and calling twice never duplicates any of
+  them; the snapshot+notification atomicity invariant — a forced failure after the snapshot insert rolls
+  back the snapshot too, so a retry can safely redo both; and exact period-boundary values per cadence, per
+  the Period semantics section above — including the weekly case explicitly, since it is the one most likely
+  to regress to an off-by-one-week error).
 - Security tests: confirm neither function is `EXECUTE`-granted to `authenticated`/`anon`, and that
   `search_path` is fixed on both function definitions.
 - Cross-runtime period-parity tests: assert the PL/pgSQL and TypeScript/Vue period-boundary computations
