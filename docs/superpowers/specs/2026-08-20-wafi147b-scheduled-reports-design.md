@@ -76,11 +76,13 @@ needs to leave Postgres. This mirrors the existing trust model already used for 
 direct client write path, `service_role`/cron-invoked only.
 
 **Implementation invariant — cron scheduler timezone.** pg_cron's default scheduler timezone is GMT and is
-configurable via `cron.timezone`; Supabase Cron is built directly on pg_cron. The cron scheduler's effective
-timezone must be explicitly verified (and set via `cron.timezone` if the target Supabase project's default
-differs) to be UTC before the cron expressions in the Schedule scope table below are scheduled — the SQL
-cron expressions (`0 0 * * *`, etc.) must not rely on an unverified/undocumented instance timezone matching
-UTC by coincidence. This is an operationally testable step during implementation, not an assumption.
+configurable via `cron.timezone`; Supabase Cron is built directly on pg_cron, and Supabase Postgres projects
+themselves default to UTC. The effective pg_cron scheduler timezone must be verified as UTC before scheduling
+the jobs — the SQL cron expressions (`0 0 * * *`, etc.) must not rely on an unverified instance timezone
+matching UTC by coincidence. If the target environment's effective cron timezone differs, configure
+`cron.timezone` appropriately if permitted, or otherwise ensure the schedules execute at the specified UTC
+times (e.g. by offsetting the cron expressions to compensate) — a managed Supabase project may not permit
+changing this server-level setting, so this is a verify-and-adapt step, not an assumed configuration change.
 
 `generate_scheduled_reports(cadence)` is intentionally the **only** thing pg_cron calls. It is a thin
 resolver: given a cadence, find shops with a report of that cadence due, and invoke the shared per-report
@@ -281,8 +283,15 @@ to happen incidentally.
 "this month." If the viewer computed, say, `[2026-08-10 00:00, 2026-08-16 23:59:59.999999]` while the
 snapshot was stored as `[2026-08-10 00:00:00, 2026-08-17 00:00:00)`, the natural-key lookup would never
 match and every report would silently always fall through to live compute, defeating the purpose of 147B
-without any visible error. Both sides must share one canonical period-boundary computation — implemented
-once and imported by both (a shared function/constant), not independently re-derived in each place.
+without any visible error. PostgreSQL (PL/pgSQL) and the client (TypeScript/Vue) are different runtimes —
+neither can literally import a function from the other, and a shared package built solely to hold these
+date calculations would be disproportionate. Instead: the period semantics defined in this document are the
+single canonical contract; each runtime implements those exact rules natively (reusing 147A's existing
+period logic in the viewer if it already has one, rather than inventing a second). Neither implementation
+may derive its own notion of "week" or "month" independent of this contract. Cross-runtime period-parity
+tests assert identical `(period_start, period_end)` results for representative dates across daily, weekly,
+and monthly cadences, including the weekly week-boundary case — this is what actually guarantees agreement,
+not a shared code artifact.
 
 ## Testing
 
@@ -294,6 +303,10 @@ once and imported by both (a shared function/constant), not independently re-der
   it is the one most likely to regress to an off-by-one-week error).
 - Security tests: confirm neither function is `EXECUTE`-granted to `authenticated`/`anon`, and that
   `search_path` is fixed on both function definitions.
+- Cross-runtime period-parity tests: assert the PL/pgSQL and TypeScript/Vue period-boundary computations
+  produce identical `(period_start, period_end)` for representative dates across daily/weekly/monthly
+  cadences, including the weekly week-boundary case — this is the actual guarantee behind the read path's
+  snapshot lookup, not a shared code artifact.
 - Contract tests comparing server-generated `Report`/`ReportSection` JSON against 147A's existing
   live-computed JSON for equivalent fixture data, per report type.
 - Same recurring limitation as WAFI-150/151/143: no live Postgres/Supabase instance reachable in a sandboxed
