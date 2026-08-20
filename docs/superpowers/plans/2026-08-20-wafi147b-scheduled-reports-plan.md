@@ -1,5 +1,10 @@
 # WAFI-147B: Server-Side Scheduled Report Generation — Implementation Plan
 
+> **Status (2026-08-20): Implemented and merged to main** (merge commit `d1a887e`, source branch `worktree-wafi-147b-scheduled-reports`). Tasks 1-12 all landed, including post-merge fixes C1-C4/I1/I2/I6 (nonexistent-column filter, ON CONFLICT/cents/profit-formula bugs, staff-content RLS leak, snapshot lookup range/query shape). The per-step `- [ ]` checkboxes below were never checked off during execution and should not be read as "not done" — treat the commit history as authoritative instead. Two steps remain genuinely outstanding because they require a live Supabase project this sandbox can't reach:
+> - **Task 8, Step 1/4:** manually verify pg_cron availability/role permissions and the scheduled jobs on the live project.
+> - **Task 10, Step 3:** manually verify PowerSync end-to-end sync of the two new tables against a real device.
+> - Migrations `099`-`105` still need to be applied/deployed to the hosted Supabase project (not just committed) — see [[build_deploy_gotchas]] pattern of prior WAFI tickets shipping with a pending-deploy migration.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build server-side, wall-clock-scheduled generation of the 12 v1 wall-clock report types, persisted as durable snapshots the existing Reports viewer (WAFI-147A) reads before falling back to live compute, with a genuine server-side authorization split for the 5 reports containing staff-performance content.
