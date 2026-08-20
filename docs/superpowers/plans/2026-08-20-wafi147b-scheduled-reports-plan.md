@@ -367,7 +367,7 @@ SELECT throws_ok(
   $$ SELECT public.generate_report_snapshot(
        '11111111-1111-1111-1111-111111111111', 'weekly-summary',
        '2026-08-10 00:00:00+00', '2026-08-11 00:00:00+00', -- one day, not a week
-       '2026-08-17 09:00:00+00') $$,
+       '2026-08-23 09:00:00+00') $$,
   NULL, NULL,
   'period not matching (report_type, scheduled_for) is rejected'
 );
@@ -409,7 +409,7 @@ SELECT is(
 SELECT lives_ok(
   $$ SELECT public.generate_report_snapshot(
        '11111111-1111-1111-1111-111111111111', 'weekly-summary',
-       '2026-08-10 00:00:00+00', '2026-08-17 00:00:00+00', '2026-08-17 09:00:00+00') $$,
+       '2026-08-10 00:00:00+00', '2026-08-17 00:00:00+00', '2026-08-23 09:00:00+00') $$,
   'weekly-summary generation succeeds'
 );
 SELECT is(
@@ -469,12 +469,15 @@ BEGIN
       p_scheduled_for::timestamptz;
   ELSIF v_cadence = 'weekly' THEN
     -- scheduled_for is always a Sunday 09:00 UTC slot (validated by the
-    -- caller/resolver); the reporting week is the preceding Mon 00:00 to
-    -- the following Mon 00:00 (i.e. 7 days before the Sunday's own
-    -- midnight, per the design spec's worked example).
+    -- caller/resolver); the reporting week is the COMPLETED Mon-Sun week
+    -- that ended the day before the trigger day, per the design spec's
+    -- worked example: scheduled_for = 2026-08-23 (Sunday) -> period
+    -- [2026-08-10, 2026-08-17). That is 13 days before the trigger's own
+    -- midnight through 6 days before it -- NOT 6/-1, which would compute
+    -- the week CONTAINING the trigger day instead of the one before it.
     RETURN QUERY SELECT
-      (date_trunc('day', p_scheduled_for) - interval '6 days')::timestamptz,
-      (date_trunc('day', p_scheduled_for) + interval '1 day')::timestamptz;
+      (date_trunc('day', p_scheduled_for) - interval '13 days')::timestamptz,
+      (date_trunc('day', p_scheduled_for) - interval '6 days')::timestamptz;
   ELSE -- monthly
     RETURN QUERY SELECT
       (date_trunc('month', p_scheduled_for) - interval '1 month')::timestamptz,
@@ -1160,9 +1163,14 @@ export function expectedPeriodUtc(reportId: ReportId, scheduledFor: Date): { per
   }
 
   if (cadence === 'weekly') {
+    // The COMPLETED Mon-Sun week that ended the day before the trigger day
+    // (not the week containing the trigger day) -- 13 days before the
+    // trigger's own midnight through 6 days before it. E.g. scheduledFor =
+    // 2026-08-23 (Sunday) -> [2026-08-10, 2026-08-17), matching the server's
+    // _wafi147b_expected_period exactly (cross-runtime parity, Task 12).
     const dayStart = new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth(), s.getUTCDate()))
-    const periodStart = new Date(dayStart.getTime() - 6 * 24 * 60 * 60 * 1000)
-    const periodEnd = new Date(dayStart.getTime() + 1 * 24 * 60 * 60 * 1000)
+    const periodStart = new Date(dayStart.getTime() - 13 * 24 * 60 * 60 * 1000)
+    const periodEnd = new Date(dayStart.getTime() - 6 * 24 * 60 * 60 * 1000)
     return { periodStart, periodEnd }
   }
 
