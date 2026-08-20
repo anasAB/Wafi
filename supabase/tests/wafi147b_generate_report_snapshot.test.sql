@@ -4,7 +4,7 @@
 -- (cash-flow: simple; weekly-summary: composite/gated-section).
 -- Run via: npx supabase test db
 BEGIN;
-SELECT plan(28);
+SELECT plan(29);
 
 -- Fixture shop + owner + a manager with can_view_reports granted (for
 -- notification fan-out) + a cashier without it.
@@ -227,6 +227,22 @@ SELECT is(
    JOIN public.generated_reports gr ON gr.id = grs.generated_report_id
    WHERE gr.report_type = 'top-products' AND gr.shop_id = '11111111-1111-1111-1111-111111111111'),
   0, 'top-products (no gated section per topProducts.ts) never gets a staff_sections row'
+);
+
+-- 6. Final-review I2: no report_data snapshot, across all 12 report types
+--    generated above for this shop, ever contains a visibility:'staff'
+--    section -- the enforcement point for the whole staff/shop split-table
+--    security model (see 102/104's own comment on the weekly-summary
+--    branch). A single check across every row generated in this file, not
+--    one per type, since the invariant and its failure mode are identical
+--    for every branch: "the gated section var was accidentally selected
+--    INTO v_report_data instead of v_staff_section".
+SELECT is(
+  (SELECT count(*)::int FROM public.generated_reports gr
+   WHERE gr.shop_id = '11111111-1111-1111-1111-111111111111'
+     AND jsonb_path_exists(gr.report_data, '$.sections[*] ? (@.visibility == "staff")')),
+  0,
+  'no generated_reports.report_data (any of the 12 types generated above) ever contains a visibility:staff section'
 );
 
 SELECT * FROM finish();
