@@ -38,11 +38,13 @@ must match 147A's output contract, verified by contract tests — not by sharing
   architecture resolves "what's due" as a step separate from generation specifically so a follow-up ticket
   can replace the fixed-schedule source with per-shop configuration without redesigning the generation
   pipeline. **Follow-up ticket required**, not an informal "later."
-- **Daily Closing's shift-close event trigger.** The spec names a dual trigger ("generated at shift close or
-  midnight"). v1 implements the midnight wall-clock path only. The shift-close trigger is deferred to a later
-  event-driven integration ticket, which will call the same idempotent generation function this spec defines.
-  Whether that integration is a direct event consumer or routes through WAFI-156's Business Rules Engine is
-  a decision for that later ticket, not this one.
+- **Shift-close event triggers (Daily Closing and Employee Summary).** Daily Closing names a dual trigger
+  ("generated at shift close or midnight"); v1 implements the midnight wall-clock path only. Employee
+  Summary ("generated per staff at shift close") has no wall-clock component at all and is deferred in full.
+  Both are deferred to a later event-driven integration ticket, which will call
+  `generate_report_snapshot(...)` directly (see the function-boundary invariant below) rather than through
+  the cadence resolver. Whether that integration is a direct event consumer or routes through WAFI-156's
+  Business Rules Engine is a decision for that later ticket, not this one.
 - **Per-shop timezone-correct scheduling.** `shops.timezone` is dormant and unpopulated across the app today
   (same gap already documented in WAFI-151's write-up). v1 runs all cron schedules in UTC. This is an explicit,
   tracked limitation: "midnight" in v1 means 00:00 UTC, not each shop's local midnight. **Follow-up ticket
@@ -78,29 +80,79 @@ resolver: given a cadence, find shops with a report of that cadence due, and inv
 generation function for each. This keeps the door open for the shift-close trigger (or any future trigger)
 to call the same per-report generation function directly, bypassing the cadence resolver.
 
+**Explicit function-boundary invariant** — two distinct responsibilities, never merged:
+
+- **Cadence resolver** — `generate_scheduled_reports(cadence)`. Responsible only for: determining which
+  report types belong to this cadence, determining which reporting period is due (per "Period semantics"
+  below), determining applicable shops, and invoking the generation primitive once per (shop, report_type,
+  period). Never computes a report itself.
+- **Generation primitive** — `generate_report_snapshot(shop_id, report_type, period_start, period_end)`.
+  Responsible for: computing the report, constructing the canonical `Report`/`ReportSection` JSON,
+  inserting the snapshot and emitting its notification atomically (see Idempotency below), and respecting
+  the natural-key uniqueness constraint. This is the **only** function that ever writes a snapshot row.
+
+This split is what makes the deferred shift-close trigger (Daily Closing and Employee Summary) a future
+one-line integration rather than a redesign: `shift.closed` handler → `generate_report_snapshot(...)`
+directly, never through `generate_scheduled_reports(...)`.
+
+**Security invariants for both functions** (both are `SECURITY DEFINER`):
+
+- A fixed `search_path` is set explicitly on function definition (e.g. `SET search_path = public, pg_catalog`)
+  — never inherited from the caller — to prevent search-path hijacking.
+- No unsafe dynamic SQL (`EXECUTE` on unsanitized string-built queries) where a parameterized query suffices.
+- Neither function is exposed as a client-callable RPC. `service_role`/cron-invoked only — "no direct client
+  write path" is an enforced invariant (no `GRANT EXECUTE` to `authenticated`/`anon`), not merely a stated
+  intention.
+- `shop_id` is always resolved from server-side data the resolver already determined is due — the generation
+  primitive never accepts an arbitrary caller-supplied `shop_id` from a context that could be untrusted.
+  Even though no client path exists today, the function must not be written in a way that would silently
+  become exploitable if a future ticket added one.
+
 ### Schedule scope (v1)
 
-Fixed defaults per the original spec, applied to all shops, all in UTC:
+Fixed defaults per the original spec, applied to all shops, all in UTC. Period is the completed preceding
+window as of the trigger time — see "Period semantics" below for the exact boundary rule per cadence.
 
-| Report | Cadence | Trigger (v1) |
-|---|---|---|
-| Daily Closing | daily | midnight UTC only (shift-close deferred) |
-| Cash Flow Report | daily | midnight UTC |
-| Weekly Summary | weekly | Sunday 09:00 UTC |
-| Inventory Health | weekly | Sunday 09:00 UTC |
-| Discount Report | weekly | Sunday 09:00 UTC |
-| Returns Report | weekly | Sunday 09:00 UTC |
-| Credit Report | weekly | Sunday 09:00 UTC |
-| Dead Stock Report | weekly | Sunday 09:00 UTC |
-| Monthly Business Health | monthly | 1st 09:00 UTC |
-| Profit Trend Report | monthly | 1st 09:00 UTC |
-| Top Customers Report | monthly | 1st 09:00 UTC |
-| Top Products Report | monthly | 1st 09:00 UTC |
+| Report | Cadence | Trigger (v1) | Period covered |
+|---|---|---|---|
+| Daily Closing | daily | 00:00 UTC (shift-close trigger deferred, see Non-goals) | previous UTC calendar day |
+| Cash Flow Report | daily | 00:00 UTC | previous UTC calendar day |
+| Weekly Summary | weekly | Sunday 09:00 UTC | preceding Mon 00:00 – Sun 23:59:59 UTC (the week that just ended) |
+| Inventory Health | weekly | Sunday 09:00 UTC | preceding Mon 00:00 – Sun 23:59:59 UTC |
+| Discount Report | weekly | Sunday 09:00 UTC | preceding Mon 00:00 – Sun 23:59:59 UTC |
+| Returns Report | weekly | Sunday 09:00 UTC | preceding Mon 00:00 – Sun 23:59:59 UTC |
+| Credit Report | weekly | Sunday 09:00 UTC | preceding Mon 00:00 – Sun 23:59:59 UTC |
+| Dead Stock Report | weekly | Sunday 09:00 UTC | preceding Mon 00:00 – Sun 23:59:59 UTC |
+| Monthly Business Health | monthly | 1st 09:00 UTC | previous calendar month (full 1st–last day) |
+| Profit Trend Report | monthly | 1st 09:00 UTC | previous calendar month |
+| Top Customers Report | monthly | 1st 09:00 UTC | previous calendar month |
+| Top Products Report | monthly | 1st 09:00 UTC | previous calendar month |
 
-(13 reports named in the source spec; confirm the 13th — Employee Summary — cadence against
-`WAFI_Event_Driven_Platform_Plan_v1.md:639-786` during implementation planning if not already covered above.)
+**Employee Summary (the 13th report) is deliberately absent from this table.** Its source spec
+(`WAFI_Event_Driven_Platform_Plan_v1.md:679`) defines it as "generated per staff at shift close" — it has no
+wall-clock cadence at all; it is purely event-triggered, once per staff member, at shift close. It is not an
+unresolved gap in this table — it simply does not belong in a wall-clock schedule, and is deferred alongside
+Daily Closing's shift-close trigger (see Non-goals) to the same later event-driven integration ticket. The
+`generate_report_snapshot(...)` primitive defined below is designed so that ticket can call it directly with
+`report_type = 'employee_summary'` and a per-shift period, without going through the cadence resolver.
 
 No settings screen, no per-shop override, in v1.
+
+### Period semantics
+
+Generation always covers a **completed** window as of the trigger time, never the in-progress
+current period:
+
+- **Daily** (00:00 UTC trigger): `period_start`/`period_end` = the full previous UTC calendar day
+  (`[yesterday 00:00:00, yesterday 23:59:59.999999]` UTC). At the moment the 00:00 UTC cron fires, "today"
+  has zero elapsed data, so the report must describe the day that just ended, not the one just starting.
+- **Weekly** (Sunday 09:00 UTC trigger): the preceding Monday 00:00:00 UTC through that same Sunday
+  23:59:59.999999 UTC — i.e. the 7-day week that ended earlier that same day, 9 hours before generation.
+- **Monthly** (1st 09:00 UTC trigger): the full previous calendar month, first day 00:00:00 UTC through last
+  day 23:59:59.999999 UTC.
+
+This is a formal rule the generation function enforces, not something left to be inferred from the cron
+expression — pgTAP boundary tests assert exact `period_start`/`period_end` values per cadence.
 
 ### Idempotency
 
@@ -115,9 +167,15 @@ never a second snapshot and never a replacement. This makes safe by construction
 Regenerating a snapshot because its source data was corrected is a distinct, explicit future operation
 (not built in v1) — not a side effect of retry logic.
 
-The "report ready" in-app notification insert must independently be idempotent against the snapshot's
-natural key, so a cron retry that finds an existing snapshot (no-op) does not re-fire the notification, and
-so a notification is never sent before its snapshot exists.
+**Atomicity invariant:** the snapshot insert and its corresponding "report ready" notification insert must
+occur in the same PostgreSQL transaction, inside `generate_report_snapshot(...)`. The notification is
+created only when the snapshot insert actually creates a new row (not on a no-op conflict). If either insert
+fails, the whole transaction rolls back and a retry safely re-attempts both together. Without this rule, a
+snapshot committed in one transaction followed by a notification insert that fails separately would leave a
+permanently notification-less snapshot — a later retry would see the snapshot already exists, no-op, and
+never emit the notification. The notification's own unique natural key (e.g. on the snapshot's id, or the
+same `(shop_id, report_type, period_start, period_end)`) is kept as defense-in-depth, not as the primary
+correctness mechanism — the transaction boundary is.
 
 ### Persisted artifact
 
@@ -138,6 +196,14 @@ Server-side generation functions reimplement the needed data primitives in SQL/p
 same `Report`/`ReportSection` JSON shape 147A's client-side `compute()` functions produce. This is a
 parity requirement, not a code-sharing one — verify via contract tests comparing server-generated JSON
 against 147A's live-computed JSON for equivalent inputs, per report type, during implementation.
+
+**What "parity" means, precisely:** given equivalent fixture data and identical reporting period boundaries,
+the server-generated snapshot must be structurally and semantically equivalent to 147A's live
+`Report`/`ReportSection` output — not necessarily byte-for-byte identical JSON (property ordering or
+serialization details that aren't part of the UI contract don't need to match). Contract tests assert:
+same sections present, same fields per section, same values, same row/column ordering where ordering is
+part of what the UI renders, same totals/calculations, and same empty-state behavior (e.g. a section with
+no data renders the same "nothing to show" state either way).
 
 ### In-app notification
 
@@ -173,11 +239,20 @@ Snapshot-first with live fallback:
 
 No broken or missing-report states are introduced. No migration is required for historical shops/periods.
 
+**Implementation-scope note:** this is not migrations/SQL-only work. The existing Reports viewer (147A)
+needs a small, explicit client-side change to implement step 2 above — check for a matching snapshot before
+falling through to the existing `compute()` call. This must be listed as implementation scope, not assumed
+to happen incidentally.
+
 ## Testing
 
-- pgTAP coverage for `generate_scheduled_reports` and the per-report generation functions: idempotency
-  (calling twice for the same period produces one row), correct period boundaries, correct notification
-  emission (once, only on actual insert).
+- pgTAP coverage for `generate_scheduled_reports` (correct shops/report-types/period resolved per cadence)
+  and `generate_report_snapshot` (idempotency — calling twice for the same natural key produces exactly one
+  row and one notification; the snapshot+notification atomicity invariant — a forced failure after the
+  snapshot insert rolls back the snapshot too, so a retry can safely redo both; and exact period-boundary
+  values per cadence, per the Period semantics table above).
+- Security tests: confirm neither function is `EXECUTE`-granted to `authenticated`/`anon`, and that
+  `search_path` is fixed on both function definitions.
 - Contract tests comparing server-generated `Report`/`ReportSection` JSON against 147A's existing
   live-computed JSON for equivalent fixture data, per report type.
 - Same recurring limitation as WAFI-150/151/143: no live Postgres/Supabase instance reachable in a sandboxed
@@ -186,9 +261,12 @@ No broken or missing-report states are introduced. No migration is required for 
 
 ## Follow-up tickets (to be filed, not silently deferred)
 
-1. Per-shop configurable report schedules (replaces fixed defaults; UI + storage + validation).
-2. Shop-local timezone-correct scheduling (depends on populating `shops.timezone` authoritatively).
-3. Daily Closing shift-close event trigger, calling the same idempotent generation function as the
-   midnight cron path.
-4. WAFI-147C: automated WhatsApp delivery, consuming the snapshot producer boundary defined here — blocked
+Ticket IDs are not yet created; each `TBD` below must be replaced with a real ticket ID before this spec is
+treated as closed, so these don't silently rot into undocumented "later" work.
+
+1. `TBD` — Per-shop configurable report schedules (replaces fixed defaults; UI + storage + validation).
+2. `TBD` — Shop-local timezone-correct scheduling (depends on populating `shops.timezone` authoritatively).
+3. `TBD` — Shift-close event trigger for Daily Closing and Employee Summary, both calling
+   `generate_report_snapshot(...)` directly per shift, bypassing the cadence resolver.
+4. WAFI-147C — automated WhatsApp delivery, consuming the snapshot producer boundary defined here — blocked
    on WhatsApp Business API setup.
