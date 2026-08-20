@@ -4,7 +4,7 @@
 -- (cash-flow: simple; weekly-summary: composite/gated-section).
 -- Run via: npx supabase test db
 BEGIN;
-SELECT plan(8);
+SELECT plan(28);
 
 -- Fixture shop + owner + a manager with can_view_reports granted (for
 -- notification fan-out) + a cashier without it.
@@ -83,6 +83,150 @@ SELECT is(
    WHERE entity_type = 'generated_report' AND type = 'report_ready'
      AND recipient_staff_id IN ('33333333-3333-3333-3333-333333333333', '44444444-4444-4444-4444-444444444444')),
   2, 'exactly 2 notifications: owner + the can_view_reports-granted manager'
+);
+
+-- 5. Task 6: the remaining 10 report types. One lives_ok per type, plus a
+--    staff-section presence/absence check matching each type's composite
+--    status per its src/features/reports/definitions/<name>.ts source.
+
+-- daily-closing (daily cadence; composite -- gated Staff Performance section)
+SELECT lives_ok(
+  $$ SELECT public.generate_report_snapshot(
+       '11111111-1111-1111-1111-111111111111', 'daily-closing',
+       '2026-08-19 00:00:00+00', '2026-08-20 00:00:00+00', '2026-08-20 00:00:00+00') $$,
+  'daily-closing generation succeeds'
+);
+SELECT is(
+  (SELECT count(*)::int FROM public.generated_report_staff_sections grs
+   JOIN public.generated_reports gr ON gr.id = grs.generated_report_id
+   WHERE gr.report_type = 'daily-closing' AND gr.shop_id = '11111111-1111-1111-1111-111111111111'),
+  1, 'daily-closing (has a gated section per dailyClosing.ts) gets a staff_sections row'
+);
+
+-- inventory-health (weekly cadence; no gated section)
+SELECT lives_ok(
+  $$ SELECT public.generate_report_snapshot(
+       '11111111-1111-1111-1111-111111111111', 'inventory-health',
+       '2026-08-10 00:00:00+00', '2026-08-17 00:00:00+00', '2026-08-23 09:00:00+00') $$,
+  'inventory-health generation succeeds'
+);
+SELECT is(
+  (SELECT count(*)::int FROM public.generated_report_staff_sections grs
+   JOIN public.generated_reports gr ON gr.id = grs.generated_report_id
+   WHERE gr.report_type = 'inventory-health' AND gr.shop_id = '11111111-1111-1111-1111-111111111111'),
+  0, 'inventory-health (no gated section per inventoryHealth.ts) never gets a staff_sections row'
+);
+
+-- discount-report (weekly cadence; composite -- gated By Staff section)
+SELECT lives_ok(
+  $$ SELECT public.generate_report_snapshot(
+       '11111111-1111-1111-1111-111111111111', 'discount-report',
+       '2026-08-10 00:00:00+00', '2026-08-17 00:00:00+00', '2026-08-23 09:00:00+00') $$,
+  'discount-report generation succeeds'
+);
+SELECT is(
+  (SELECT count(*)::int FROM public.generated_report_staff_sections grs
+   JOIN public.generated_reports gr ON gr.id = grs.generated_report_id
+   WHERE gr.report_type = 'discount-report' AND gr.shop_id = '11111111-1111-1111-1111-111111111111'),
+  1, 'discount-report (has a gated section per discountReport.ts) gets a staff_sections row'
+);
+
+-- returns-report (weekly cadence; composite -- gated By Staff section)
+SELECT lives_ok(
+  $$ SELECT public.generate_report_snapshot(
+       '11111111-1111-1111-1111-111111111111', 'returns-report',
+       '2026-08-10 00:00:00+00', '2026-08-17 00:00:00+00', '2026-08-23 09:00:00+00') $$,
+  'returns-report generation succeeds'
+);
+SELECT is(
+  (SELECT count(*)::int FROM public.generated_report_staff_sections grs
+   JOIN public.generated_reports gr ON gr.id = grs.generated_report_id
+   WHERE gr.report_type = 'returns-report' AND gr.shop_id = '11111111-1111-1111-1111-111111111111'),
+  1, 'returns-report (has a gated section per returnsReport.ts) gets a staff_sections row'
+);
+
+-- credit-report (weekly cadence; no gated section)
+SELECT lives_ok(
+  $$ SELECT public.generate_report_snapshot(
+       '11111111-1111-1111-1111-111111111111', 'credit-report',
+       '2026-08-10 00:00:00+00', '2026-08-17 00:00:00+00', '2026-08-23 09:00:00+00') $$,
+  'credit-report generation succeeds'
+);
+SELECT is(
+  (SELECT count(*)::int FROM public.generated_report_staff_sections grs
+   JOIN public.generated_reports gr ON gr.id = grs.generated_report_id
+   WHERE gr.report_type = 'credit-report' AND gr.shop_id = '11111111-1111-1111-1111-111111111111'),
+  0, 'credit-report (no gated section per creditReport.ts) never gets a staff_sections row'
+);
+
+-- dead-stock (weekly cadence; no gated section)
+SELECT lives_ok(
+  $$ SELECT public.generate_report_snapshot(
+       '11111111-1111-1111-1111-111111111111', 'dead-stock',
+       '2026-08-10 00:00:00+00', '2026-08-17 00:00:00+00', '2026-08-23 09:00:00+00') $$,
+  'dead-stock generation succeeds'
+);
+SELECT is(
+  (SELECT count(*)::int FROM public.generated_report_staff_sections grs
+   JOIN public.generated_reports gr ON gr.id = grs.generated_report_id
+   WHERE gr.report_type = 'dead-stock' AND gr.shop_id = '11111111-1111-1111-1111-111111111111'),
+  0, 'dead-stock (no gated section per deadStock.ts) never gets a staff_sections row'
+);
+
+-- monthly-health (monthly cadence; composite -- gated Staff Performance Review section)
+SELECT lives_ok(
+  $$ SELECT public.generate_report_snapshot(
+       '11111111-1111-1111-1111-111111111111', 'monthly-health',
+       '2026-07-01 00:00:00+00', '2026-08-01 00:00:00+00', '2026-08-01 09:00:00+00') $$,
+  'monthly-health generation succeeds'
+);
+SELECT is(
+  (SELECT count(*)::int FROM public.generated_report_staff_sections grs
+   JOIN public.generated_reports gr ON gr.id = grs.generated_report_id
+   WHERE gr.report_type = 'monthly-health' AND gr.shop_id = '11111111-1111-1111-1111-111111111111'),
+  1, 'monthly-health (has a gated section per monthlyHealth.ts) gets a staff_sections row'
+);
+
+-- profit-trend (monthly cadence; no gated section)
+SELECT lives_ok(
+  $$ SELECT public.generate_report_snapshot(
+       '11111111-1111-1111-1111-111111111111', 'profit-trend',
+       '2026-07-01 00:00:00+00', '2026-08-01 00:00:00+00', '2026-08-01 09:00:00+00') $$,
+  'profit-trend generation succeeds'
+);
+SELECT is(
+  (SELECT count(*)::int FROM public.generated_report_staff_sections grs
+   JOIN public.generated_reports gr ON gr.id = grs.generated_report_id
+   WHERE gr.report_type = 'profit-trend' AND gr.shop_id = '11111111-1111-1111-1111-111111111111'),
+  0, 'profit-trend (no gated section per profitTrend.ts) never gets a staff_sections row'
+);
+
+-- top-customers (monthly cadence; no gated section)
+SELECT lives_ok(
+  $$ SELECT public.generate_report_snapshot(
+       '11111111-1111-1111-1111-111111111111', 'top-customers',
+       '2026-07-01 00:00:00+00', '2026-08-01 00:00:00+00', '2026-08-01 09:00:00+00') $$,
+  'top-customers generation succeeds'
+);
+SELECT is(
+  (SELECT count(*)::int FROM public.generated_report_staff_sections grs
+   JOIN public.generated_reports gr ON gr.id = grs.generated_report_id
+   WHERE gr.report_type = 'top-customers' AND gr.shop_id = '11111111-1111-1111-1111-111111111111'),
+  0, 'top-customers (no gated section per topCustomers.ts) never gets a staff_sections row'
+);
+
+-- top-products (monthly cadence; no gated section)
+SELECT lives_ok(
+  $$ SELECT public.generate_report_snapshot(
+       '11111111-1111-1111-1111-111111111111', 'top-products',
+       '2026-07-01 00:00:00+00', '2026-08-01 00:00:00+00', '2026-08-01 09:00:00+00') $$,
+  'top-products generation succeeds'
+);
+SELECT is(
+  (SELECT count(*)::int FROM public.generated_report_staff_sections grs
+   JOIN public.generated_reports gr ON gr.id = grs.generated_report_id
+   WHERE gr.report_type = 'top-products' AND gr.shop_id = '11111111-1111-1111-1111-111111111111'),
+  0, 'top-products (no gated section per topProducts.ts) never gets a staff_sections row'
 );
 
 SELECT * FROM finish();
