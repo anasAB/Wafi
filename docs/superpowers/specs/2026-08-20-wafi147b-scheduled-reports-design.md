@@ -112,12 +112,16 @@ to call the same per-report generation function directly, bypassing the cadence 
 
 **Explicit function-boundary invariant** — two distinct responsibilities, never merged:
 
-- **Cadence resolver** — `generate_scheduled_reports(cadence)`. Responsible only for: determining which
-  report types belong to this cadence, determining the scheduled slot and the reporting period due for it
-  (per "Scheduled-slot semantics" and "Period semantics" below — never from bare `now()`), determining
-  applicable shops (defined precisely below), and invoking the generation primitive once per (shop,
-  report_type, period), isolating each call's failure per "Failure isolation" below. Never computes a report
-  itself.
+- **Cadence resolver** — `generate_scheduled_reports(cadence, scheduled_for timestamptz DEFAULT NULL)`. The
+  slot is a first-class parameter, not an internal detail: when pg_cron invokes it with no argument, the
+  function resolves `scheduled_for` to the most recent canonical slot at-or-before actual execution time
+  (per Scheduled-slot semantics below); when a caller passes `scheduled_for` explicitly, that exact slot is
+  used instead — this is what makes retry-the-same-slot and recover-a-specific-missed-slot a direct call
+  with an explicit argument, not an internal behavior recovery has to reason about indirectly. Responsible
+  for: determining which report types belong to this cadence, deriving the reporting period from the
+  resolved `scheduled_for` (per "Period semantics" below — never from bare `now()`), determining applicable
+  shops (defined precisely below), and invoking the generation primitive once per (shop, report_type,
+  period), isolating each call's failure per "Failure isolation" below. Never computes a report itself.
 - **Generation primitive** — `generate_report_snapshot(shop_id, report_type, period_start, period_end,
   scheduled_for)`. Responsible for: computing the report, constructing the canonical `Report`/`ReportSection`
   JSON, inserting the snapshot and emitting its per-recipient notifications atomically (see Idempotency
@@ -148,10 +152,17 @@ directly, never through `generate_scheduled_reports(...)`.
   client write path" is an enforced invariant (no `GRANT EXECUTE` to `authenticated`/`anon`), not merely a
   stated intention. See the trust-model correction above the diagram: this is a fresh pattern for this
   codebase, not a reuse of an existing cron-only function.
-- `shop_id` is always resolved from server-side data the resolver already determined is due — the generation
-  primitive never accepts an arbitrary caller-supplied `shop_id` from a context that could be untrusted.
-  Even though no client path exists today, the function must not be written in a way that would silently
-  become exploitable if a future ticket added one.
+- **Trusted-caller rule (precise version):** `generate_report_snapshot(...)` does take an explicit
+  `shop_id` parameter, and that is correct — the cadence resolver, the admin-only operator recovery wrapper,
+  and (later) event-trigger callers such as `shift.closed` all legitimately pass a specific shop. What the
+  invariant actually forbids is an **untrusted caller supplying arbitrary shop scope**: only trusted
+  server-side callers may invoke this function at all (enforced by the `EXECUTE` grant restriction above,
+  not by the parameter shape), and each such caller is responsible for having independently established —
+  before calling — that the (shop, report_type, period) it's requesting is one that caller is actually
+  authorized to trigger (the resolver, by iterating applicable shops due for that cadence/slot; the recovery
+  wrapper, by whatever admin-authorization check gates it; a future event trigger, by the event itself
+  naming its own shop). No caller, trusted or not, may cause a snapshot to be generated for a shop that
+  particular call path hasn't legitimately determined is in scope.
 
 ### Data-finality policy (what "generated for a completed period" means)
 
@@ -198,32 +209,43 @@ briefly unavailable at the scheduled time and pg_cron's actual execution lands a
 they mean, versus accidentally generating whatever period `now()` implies at the moment they happen to run
 the recovery command.
 
-**Decision:** the resolver operates on an explicit **scheduled slot**, not on `now()`:
+**Decision:** the resolver's API makes the slot explicit rather than burying it as an internal computation —
+`generate_scheduled_reports(cadence, scheduled_for timestamptz DEFAULT NULL)` (see the function-boundary
+invariant above):
 
 ```
-scheduled_slot (e.g. 2026-08-23 09:00 UTC, the "weekly" slot for that Sunday)
+generate_scheduled_reports(cadence, scheduled_for)
         │
-        ▼
-period_start / period_end   (derived deterministically from the slot + cadence, per Period semantics)
+        ├── scheduled_for omitted (pg_cron's normal call) ──→ resolve most recent canonical slot
+        │                                                      at-or-before actual execution time
         │
-        ▼
-generate_report_snapshot(shop_id, report_type, period_start, period_end, scheduled_for := scheduled_slot)
+        └── scheduled_for supplied explicitly (retry / recovery-at-cadence-level) ──→ use it as-is
+                        │
+                        ▼
+        period_start / period_end   (derived deterministically from the resolved slot + cadence,
+                                      per Period semantics)
+                        │
+                        ▼
+        generate_report_snapshot(shop_id, report_type, period_start, period_end, scheduled_for)
 ```
 
-**Precise rule (one rule, not two alternatives):** pg_cron does not hand its target function "the timestamp
+**Precise resolution rule for the omitted case:** pg_cron does not hand its target function "the timestamp
 it was supposed to run at" — a job simply executes whenever pg_cron actually runs it, which may lag the
-intended time. For an actual cron-triggered invocation, `generate_scheduled_reports(cadence)` determines
-**the most recent canonical scheduled slot for that cadence at or before the actual execution time**, using
-the cadence's fixed UTC schedule (00:00 daily / Sunday 09:00 weekly / 1st 09:00 monthly), and derives
-`period_start`/`period_end` from that slot per Period semantics — never from execution `now()` directly.
-Examples: executing at Sunday 09:04 (a few minutes late) resolves to that same Sunday 09:00 slot; executing
-at Monday 14:00 (much later, e.g. after an outage) still resolves to the most recent Sunday 09:00 slot, not
-Monday's non-existent one; executing 8 days later still resolves to only the latest Sunday 09:00 slot —
-**older missed slots are not automatically caught up** (per the missed-slot policy below). Operator recovery
-never goes through this resolution — it always calls `generate_report_snapshot(...)` with an explicit,
-named period, which is what makes "regenerate the missed Sunday 2026-08-23 09:00 slot" well-defined and
-distinct from "run the weekly resolver right now" (which would resolve against whatever the *current* most
-recent slot is, not the one the operator actually means).
+intended time. When `scheduled_for` is omitted, `generate_scheduled_reports` determines **the most recent
+canonical scheduled slot for that cadence at or before the actual execution time**, using the cadence's
+fixed UTC schedule (00:00 daily / Sunday 09:00 weekly / 1st 09:00 monthly). Examples: executing at Sunday
+09:04 (a few minutes late) resolves to that same Sunday 09:00 slot; executing at Monday 14:00 (much later,
+e.g. after an outage) still resolves to the most recent Sunday 09:00 slot, not Monday's non-existent one;
+executing 8 days later still resolves to only the latest Sunday 09:00 slot — **older missed slots are not
+automatically caught up** (per the missed-slot policy below).
+
+Retrying an entire cadence run for a specific slot (e.g. after an outer-transaction failure, per Failure
+isolation below) calls `generate_scheduled_reports(cadence, scheduled_for := '2026-08-23 09:00:00+00')`
+explicitly — this is now a direct, unambiguous call with an explicit argument, not an internal detail the
+caller has to reason about indirectly. **Per-item operator recovery is a separate, narrower path**: it calls
+`generate_report_snapshot(...)` directly for one specific shop/report/period (see below), bypassing the
+cadence resolver entirely — used when only a handful of items from a run need regenerating, not the whole
+cadence.
 
 **Missed-slot policy (v1): no automatic catch-up.** If a scheduled pg_cron execution is missed entirely
 (the job never ran for a given slot — as opposed to running but hitting a per-item failure, see Failure
@@ -268,10 +290,12 @@ independently," and the spec must not claim otherwise:**
   connection drops mid-run, not merely one item failing), everything processed so far in that run — including
   otherwise-successful items — rolls back with it, uncommitted.
 - **Recovery from that catastrophic case relies on idempotent re-execution**, not on any per-item durability
-  guarantee: re-running `generate_scheduled_reports(cadence)` for the same scheduled slot safely regenerates
-  whatever didn't make it into a committed transaction, and no-ops on whatever did (per the Idempotency
-  natural key). This is why the Idempotency and Scheduled-slot mechanisms above are load-bearing here, not
-  optional hardening — they are literally what makes Option A's outer-transaction model recoverable.
+  guarantee: re-invoking `generate_scheduled_reports(cadence, scheduled_for := <the same slot>)` — the
+  explicit-slot form, not a bare re-run that would resolve against whatever the *current* latest slot
+  happens to be by the time someone retries — safely regenerates whatever didn't make it into a committed
+  transaction, and no-ops on whatever did (per the Idempotency natural key). This is why the Idempotency and
+  Scheduled-slot mechanisms above are load-bearing here, not optional hardening — they are literally what
+  makes Option A's outer-transaction model recoverable.
 - **Option B (true per-item durability, each item committing independently regardless of the outer
   invocation's fate) would require a different execution mechanism** — e.g. a top-level procedure issuing
   explicit `COMMIT` per item, or invoking `generate_report_snapshot(...)` as separate top-level calls rather
@@ -400,11 +424,21 @@ New table (name TBD at migration-writing time, e.g. `generated_reports`):
 | `report_type` | `text NOT NULL` — constrained via a `CHECK` against a fixed list (or an actual Postgres `enum`; decide which at migration-writing time against how 147A's own report-type identifiers are already represented in the codebase, and reuse that representation rather than inventing a second) to **only the 12 wall-clock report identifiers this ticket implements** (the Schedule scope table below) — deliberately **not** all 13. Employee Summary must not be a valid value in the v1 constraint: its snapshot identity needs a `staff_id`/`shift_id` dimension this table doesn't have (see the schema caveat below), so allowing it as a value here would let a row be inserted that the natural key can't actually disambiguate. The future shift-close ticket extends both the constraint and the identity together, not the constraint alone. | |
 | `period_start`, `period_end` | `timestamptz NOT NULL` each | half-open interval per Period semantics; `CHECK (period_start < period_end)` |
 | `scheduled_for` | `timestamptz` (nullable) | the scheduled slot this snapshot was generated for (per Scheduled-slot semantics above) — distinct from `generated_at`; null for non-wall-clock-triggered snapshots (future shift-close callers) |
-| `generated_at` | `timestamptz NOT NULL DEFAULT now()` | when generation actually ran — may lag `scheduled_for` if the job ran late |
+| `generated_at` | `timestamptz NOT NULL DEFAULT clock_timestamp()` | when generation actually ran, per-row — see the `clock_timestamp()` note below; may lag `scheduled_for` if the job ran late |
 | `report_schema_version` | `integer NOT NULL` | see schema-version compatibility rule below |
 | `report_data` | `jsonb NOT NULL` | the full computed `Report`/`ReportSection` JSON, matching 147A's existing contract exactly |
 
 Unique constraint: `(shop_id, report_type, period_start, period_end)`.
+
+**`generated_at` must use `clock_timestamp()`, not `now()`.** PostgreSQL's `now()`/`CURRENT_TIMESTAMP`
+returns the *transaction's* start time, not wall-clock time at the moment a given statement executes. Since
+`generate_scheduled_reports(cadence)` processes many (shop, report_type) items — potentially inside one
+outer transaction per the Failure isolation model above — a `DEFAULT now()` column would record the same
+timestamp (the resolver's transaction start) on every row in that run, even though item 200 actually
+finished minutes after item 1. That directly contradicts this column's stated meaning ("when generation
+actually ran"). `clock_timestamp()` returns the true current wall-clock time regardless of transaction
+state and must be used instead, either as the column default or assigned explicitly inside
+`generate_report_snapshot(...)` immediately before the insert.
 
 **Immutability is schema-enforced, not merely a code convention.** No application code path performs
 `UPDATE`/`DELETE` on this table in v1 by design (per the Data-finality policy above) — this must be backed
@@ -443,16 +477,46 @@ data. Follow the exact existing precedent already established for server-authori
 this new table gets the equivalent policy against `auth_shop_id()`, no client `INSERT`/`UPDATE`/`DELETE`
 grants (consistent with the Immutability rule above).
 
-**Security invariant (not merely an implementation detail):** the snapshot read path must not expose report
-data to a device/user not already authorized to view that report, **regardless of which mechanism delivers
-it.** RLS alone secures direct Supabase reads, but is not automatically the security boundary for what a
-device's local SQLite ends up holding: WAFI is an offline-first, PowerSync-synced architecture (per
-`CLAUDE.md`'s Sacred Rules), and PowerSync's own **sync rules** — not the underlying table's RLS policy —
-determine what gets materialized onto a given device. If PowerSync is selected as the delivery mechanism
-(the expected default, see below), its sync rules must independently enforce the same shop-scoped access
-`auth_shop_id()` provides at the RLS layer — RLS on the source table is necessary but not sufficient once
-data is being synced to devices, since a sync-rule misconfiguration could still ship shop B's snapshot to
-shop A's device even with correct RLS on the Postgres side.
+**Correction on what "147A's existing authorization model" actually is, checked directly against
+147A's design spec (`docs/superpowers/specs/2026-08-18-wafi147a-automatic-reports-design.md` §5):** an
+earlier draft of this section proposed reusing "147A's existing per-report authorization" as a stronger RLS
+predicate than plain shop scope. That characterization is wrong — 147A's own spec states explicitly that its
+`can_view_staff_performance` gating (Employee Summary whole-report gating; staff-ranking-section omission
+within Weekly Summary/Monthly Health; staff-cut-section omission within Discount/Returns Report) **"describes
+UI/report visibility, not a data-security boundary… it is not a new database/RLS boundary, and cannot be
+one: 147A introduces no new sync surface or server read path, only computation over data already present on
+the device."** 147A's authorization today is a client-side rendering filter over data every device in the
+shop already has synced (raw `sales`/`sale_line_items`/etc.), not a server-enforced per-user predicate this
+spec could reuse as a stronger RLS policy — there is no such predicate to reuse.
+
+**This matters more for 147B than it did for 147A, because 147B genuinely does introduce a new sync
+surface** (the snapshot table) — unlike 147A, which computed over data already present locally. Two of the
+12 in-scope reports (Weekly Summary, Monthly Business Health) are composite reports whose `report_data` JSON
+would, if generated and synced whole, embed a staff-ranking `DetailSection` that 147A's live-compute path
+deliberately omits at render time for a viewer without `can_view_staff_performance`. If 147B's snapshot
+syncs that section to every device in the shop regardless of the reading device's flag, a cashier's device
+would receive staff-ranking data it was never supposed to see — a regression `profit_cache`-style shop-only
+RLS does not, by itself, prevent, and one 147A never had to solve because it never synced this JSON at all.
+
+**Resolution — reuse 147A's existing filtering, don't invent new server-side authorization:** since the
+persisted `report_data` JSON has the exact same `Report`/`ReportSection` shape 147A's live-compute output
+already has, the Reports viewer must apply the **same existing section-level/whole-report gating logic**
+(`can_view_staff_performance` checks) to a snapshot-sourced report as it already applies to a live-computed
+one, before rendering — this is a reuse of existing UI-layer filtering code, not a new mechanism, and it is
+required implementation scope for the read path (see Read path below), not optional. Snapshot table
+`SELECT` RLS/sync scope itself remains plain shop-scope (`auth_shop_id()`), matching `profit_cache` and
+matching what 147A's own spec already establishes as this architecture's actual security boundary (shop
+membership — the offline-first architecture's existing accepted trade-off, not something 147B is introducing
+new risk into). This is a narrower, factually-grounded requirement than "same predicate at the RLS layer,"
+which does not exist in this codebase to reuse.
+
+**Notification recipient eligibility follows the same reasoning:** none of the 12 v1 wall-clock reports are
+whole-report-gated beyond `can_view_reports` (the existing `/reports` route permission) — Employee Summary,
+the one whole-report-gated case, is out of 147B's scope entirely. So for v1, "eligible recipient" for a
+"report ready" notification means holders of `can_view_reports` for that shop; no additional per-report
+recipient filtering is needed today, but if a future wall-clock report is added with whole-report gating
+(mirroring Employee Summary's), notification eligibility must be re-checked against that report's specific
+gate, not just shop membership.
 
 **Read mechanism decision required at implementation time:** decide, during implementation planning, whether
 snapshots are (a) added to `powersync.yaml`/`schema.ts` and synced to the client like `profit_cache`/`events`
@@ -460,10 +524,8 @@ already are (consistent with the existing pattern, works offline once synced —
 offline-first is one of the three non-negotiable Sacred Rules), or (b) read via a direct online-only Supabase
 query/RPC (simpler, but breaks the offline-first guarantee for this specific read, which per the Sacred
 Rules should not be done without an explicit, deliberate exception). Whichever is chosen, implementation must
-inspect 147A's existing authorization pattern and the current PowerSync sync-rule configuration before
-wiring this in, and verify the security invariant above holds for the chosen mechanism specifically — this
-spec states the requirement precisely so that verification is checkable, not a decision left informally
-open.
+confirm the shop-scope RLS/sync-rule policy is correctly applied, and that the viewer's existing
+section-gating logic is applied to snapshot-sourced reports exactly as described above.
 
 ### Observability
 
@@ -543,8 +605,10 @@ No broken or missing-report states are introduced. No migration is required for 
 
 **Implementation-scope note:** this is not migrations/SQL-only work. The existing Reports viewer (147A)
 needs a small, explicit client-side change to implement step 2 above — check for a matching snapshot before
-falling through to the existing `compute()` call. This must be listed as implementation scope, not assumed
-to happen incidentally.
+falling through to the existing `compute()` call, **and** apply 147A's existing `can_view_staff_performance`
+section-gating logic to the fetched snapshot JSON exactly as it already applies to live-computed output
+(per Read authorization above) — before rendering, not as a follow-up. This must be listed as implementation
+scope, not assumed to happen incidentally.
 
 **Period-boundary agreement is required for the lookup to ever match.** The viewer must derive
 `period_start`/`period_end` using the exact same cadence-specific half-open-interval rules defined in
@@ -581,14 +645,25 @@ not a shared code artifact.
   that, once `generate_scheduled_reports(cadence)` completes and its outer transaction commits, the
   successful items are present and the failed item is absent-and-logged for retry — per the Option A model
   (Failure isolation above), not a claim that each item commits independently of the others.
-- Idempotent-recovery test: simulate the outer transaction never committing (e.g. abort the top-level call
-  after several items succeeded); assert re-running the same scheduled slot afterward produces exactly the
-  missing snapshots with no duplicates for ones that — hypothetically — had already committed.
+- Idempotent-recovery test, modeled as two separate pgTAP transactions rather than attempting to literally
+  simulate a crashed connection from within one transaction: (1) in transaction A, generate several
+  snapshots for a slot, then `ROLLBACK` (standing in for "the outer transaction never committed"); (2) in a
+  fresh transaction B, invoke `generate_scheduled_reports(cadence, scheduled_for := <same slot>)` and assert
+  every expected snapshot for that slot now exists exactly once. Separately, test that invoking the same
+  slot twice *after* a successful commit produces no duplicates (the ordinary idempotency case, already
+  covered above but worth keeping distinct from the rollback-recovery case).
 - Scheduled-slot determinism test: invoking generation for an explicit past scheduled slot always resolves
   the same `period_start`/`period_end` regardless of the actual (possibly much later) execution time —
   proves the resolver isn't silently using `now()`.
 - `CHECK (period_start < period_end)` and the `report_type` value constraint are exercised directly (invalid
   inserts rejected at the database level, not only by application code discipline).
+- `generated_at` test: assert two snapshots generated by the same `generate_scheduled_reports` invocation,
+  with a deliberate delay injected between them, record different `generated_at` values — proves
+  `clock_timestamp()` is in use rather than the transaction-start-pinned `now()`.
+- Section-gating parity test: a snapshot-sourced Weekly Summary or Monthly Business Health report, rendered
+  for a viewer without `can_view_staff_performance`, omits the staff-ranking section exactly as the
+  live-computed equivalent already does for the same viewer — proving the viewer applies 147A's existing
+  gating to snapshot data, not only to live-computed data.
 - Cross-runtime period-parity tests: assert the PL/pgSQL and TypeScript/Vue period-boundary computations
   produce identical `(period_start, period_end)` for representative dates across daily/weekly/monthly
   cadences, including the weekly week-boundary case — this is the actual guarantee behind the read path's
