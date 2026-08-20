@@ -541,10 +541,9 @@ the main table's `report_data`. Instead:
 | `section_data` | `jsonb NOT NULL` | the gated `ReportSection`'s content only, same JSON shape as any other section |
 
 Unique constraint: `(generated_report_id)` (one gated-section row per main snapshot, when one exists — the
-other 7 v1 report types never get a row here at all). RLS: `shop_id = auth_shop_id() AND
-public.can('can_view_staff_performance')` — see Read authorization below for why `public.can(...)` (this
-codebase's existing single-call-site permission-check primitive) is the correct predicate here, not a raw
-role check or shop scope alone.
+other 7 v1 report types never get a row here at all). RLS: `shop_id = auth_shop_id() AND auth_role() =
+'owner'` — see Read authorization below for why this table deliberately uses a raw `auth_role()` check and
+*not* `public.can('can_view_staff_performance')`, unlike the main table's `public.can('can_view_reports')`.
 
 **Schema-version compatibility rule.** `report_schema_version = 1` for all v1 snapshots. The rule going
 forward: the Reports viewer must continue to correctly render every schema version it may encounter in
@@ -613,13 +612,26 @@ recipient must hold `can_view_reports` for that shop, not merely belong to it �
 "holders of `can_view_reports`" language for notifications was already correct; the gap was specifically in
 the table's own RLS policy not matching it.
 
-The staff-section table's RLS additionally requires `public.can('can_view_staff_performance')` rather than
-the raw `auth_role() = 'owner'` check an earlier draft proposed — `can()` already returns `true`
-unconditionally for `auth_role() = 'owner'` (so the two are equivalent in practice, since
-`can_view_staff_performance` is never grantable to a non-owner per 147A's spec), but routing through `can()`
-matches this codebase's own single-call-site convention for permission checks rather than hand-rolling an
-equivalent-but-parallel check, and stays correct automatically if that permission's grantability rule ever
-changes.
+**Correction — the staff-section table's RLS must use a raw `auth_role() = 'owner'` check, NOT
+`public.can('can_view_staff_performance')`, despite `can()` being this codebase's general single-call-site
+permission-check convention.** An earlier draft proposed `can()` here for consistency with the main table's
+`can_view_reports` check. That is unsafe for this specific flag, verified directly against
+`src/features/staff/staff.types.ts`'s `permissionsForRole()`: for a manager or cashier, it explicitly
+overrides `can_view_staff_performance` back to `false` **regardless of what the stored `permissions` jsonb
+blob contains**, with its own comment stating why — *"a cashier's stored custom permissions could in
+principle contain `can_view_staff_performance` (e.g. stale data, a future UI bug) — override it back to
+false... rather than trusting the spread."* `public.can(flag)` (`054_auth_role_helpers.sql`), by contrast,
+for a non-owner simply reads `auth_permissions() ->> flag` from that same stored blob with no such
+override — it is not aware of which flags are structurally locked. If a manager's stored permissions ever
+contained `can_view_staff_performance: true` (exactly the "stale data, a future UI bug" scenario the client
+code already anticipates and guards against), `public.can('can_view_staff_performance')` would trust it and
+leak the gated data server-side — reopening, through the RLS layer, precisely the vulnerability class this
+whole split-table design exists to close. `can_view_reports` does not have this problem — checked the same
+file: for a manager, it is `Boolean(custom?.can_view_reports)`, i.e. the client already trusts the raw
+stored blob for that flag, so `public.can('can_view_reports')` on the main table matches the client's own
+trust model exactly. The two tables therefore deliberately use different predicates, not for consistency's
+sake but because the flags themselves have different trust models in this codebase — `auth_role() =
+'owner'` for the structurally-locked flag, `public.can(...)` for the blob-trusted one.
 
 No client `INSERT`/`UPDATE`/`DELETE` grants on either table (consistent with the Immutability rule above).
 
@@ -664,9 +676,12 @@ Concretely, for the 5 composite reports with a gated section:
 - The gated section's content is persisted separately, in a second table (e.g. `generated_report_staff_sections`,
   FK to the main snapshot's `id`, with `shop_id` denormalized directly onto this table rather than requiring
   a join through the parent for authorization — see Persisted artifact below), with its own RLS policy:
-  `shop_id = auth_shop_id() AND public.can('can_view_staff_performance')` (per the correction above). If
-  this table is synced via PowerSync, its sync rule must independently enforce the same restriction — a
-  non-owner device never receives these rows to sync, not merely fails to render them.
+  `shop_id = auth_shop_id() AND auth_role() = 'owner'` — a raw role check, deliberately not
+  `public.can('can_view_staff_performance')` (per the correction in Read authorization below — the client's
+  own `permissionsForRole()` does not trust the stored permissions blob for this specific flag, so neither
+  should this RLS policy). If this table is synced via PowerSync, its sync rule must independently enforce
+  the same restriction — a non-owner device never receives these rows to sync, not merely fails to render
+  them.
 - The Reports viewer, for these 5 report types, fetches the main snapshot and (only when the reading
   device's own sync/RLS actually delivered one) the associated staff-section snapshot, and composes them —
   this still reuses 147A's existing section-level composition logic, just now backed by data that was never
