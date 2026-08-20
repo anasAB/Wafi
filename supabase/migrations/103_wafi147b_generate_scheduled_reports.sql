@@ -62,7 +62,12 @@ BEGIN
     END IF;
   END IF;
 
-  FOR v_shop IN SELECT id FROM public.shops WHERE is_active = true LOOP
+  -- Applicable shops: every shop, unconditionally (public.shops has no
+  -- is_active column -- there is currently no notion of a shop being
+  -- "inactive" for scheduling purposes). Per-shop opt-out of scheduled
+  -- reports is a real gap but is explicitly out of scope here; tracked as a
+  -- follow-up ticket, not silently invented via a nonexistent column.
+  FOR v_shop IN SELECT id FROM public.shops LOOP
     FOREACH v_report_type IN ARRAY v_report_types LOOP
       -- Failure isolation (design spec, Option A): one item's exception is
       -- caught here and does not abort the remaining items in this loop.
