@@ -12,11 +12,13 @@ WAFI-147 (Automatic Reports) was investigated 2026-08-18 and split into three in
 and 147C (automated WhatsApp delivery, blocked on a separate product/infra decision — WhatsApp Business API
 is not set up).
 
-The 13 reports specified in `WAFI_Event_Driven_Platform_Plan_v1.md:639-786` each name a wall-clock schedule
-(e.g. "generated at midnight," "every Sunday at 9 AM," "1st of month at 9 AM"). No mechanism in this codebase
-can execute anything independent of the app being open: WAFI-154's `local_deferred_jobs` queue is local-only,
-drained on app-foreground/PowerSync-reconnect. No `pg_cron`, no Supabase Edge Function, no server-side
-scheduled-job mechanism exists anywhere today. This is the gap WAFI-147B closes.
+The 13 reports specified in `WAFI_Event_Driven_Platform_Plan_v1.md:639-786` comprise **12 reports with a
+wall-clock schedule** (e.g. "generated at midnight," "every Sunday at 9 AM," "1st of month at 9 AM") and
+**one purely event-triggered report, Employee Summary**, generated per staff member at shift close with no
+wall-clock component at all (see Schedule scope below). No mechanism in this codebase can execute anything
+independent of the app being open: WAFI-154's `local_deferred_jobs` queue is local-only, drained on
+app-foreground/PowerSync-reconnect. No `pg_cron`, no Supabase Edge Function, no server-side scheduled-job
+mechanism exists anywhere today. This is the gap WAFI-147B closes, for the 12 wall-clock reports.
 
 147A's `compute()` functions are client-oriented (call Vue composables, PowerSync, Dexie-adjacent client code)
 and are not directly reusable server-side. WAFI-147B reimplements the needed primitives in SQL/plpgsql and
@@ -25,13 +27,15 @@ must match 147A's output contract, verified by contract tests — not by sharing
 ## Goals
 
 - Execute report generation at wall-clock times independent of whether any client app is open.
-- Produce a durable, versioned, self-describing report snapshot per shop/report/period that 147A's existing
-  Reports viewer can render with no new client-side computation.
+- Produce a durable, versioned, self-describing report snapshot for each v1 wall-clock-generated
+  shop/report/period (the 12 reports in Schedule scope below — not Employee Summary, which is out of scope
+  for this ticket) that 147A's existing Reports viewer can render with no new client-side computation.
 - Establish a producer boundary (persisted snapshot) that a future WAFI-147C delivery mechanism can consume
   without needing to understand accounting queries.
 - Make report generation safe under retries, manual re-runs, missed/delayed execution, and (later)
-  additional trigger paths — including one item's failure never corrupting or discarding others'
-  successful work in the same run.
+  additional trigger paths — including one item's own error never aborting other items' processing in the
+  same run (see Failure isolation below for the precise transactional guarantee this does and does not
+  provide).
 - State explicitly what a scheduled snapshot does and does not guarantee about data finality, so this isn't
   left as an unstated assumption for implementation to discover.
 
@@ -54,7 +58,7 @@ must match 147A's output contract, verified by contract tests — not by sharing
   tracked limitation: "midnight" in v1 means 00:00 UTC, not each shop's local midnight. **Follow-up ticket
   required**: establish/populate authoritative shop timezone and migrate schedule resolution to shop-local
   wall-clock time. Report-generation code must not bake in UTC assumptions, so that follow-up only touches
-  schedule resolution, not the 13 report-generation functions.
+  schedule resolution, not the 12 report-generation functions.
 - **WhatsApp/automated delivery.** Owned entirely by WAFI-147C, which is separately blocked on WhatsApp
   Business API setup (Meta approval, message templates, secrets, delivery tracking). This spec only ensures
   147C will have a clean artifact (the persisted snapshot) to consume when it's unblocked.
@@ -117,9 +121,12 @@ to call the same per-report generation function directly, bypassing the cadence 
 - **Generation primitive** — `generate_report_snapshot(shop_id, report_type, period_start, period_end,
   scheduled_for)`. Responsible for: computing the report, constructing the canonical `Report`/`ReportSection`
   JSON, inserting the snapshot and emitting its per-recipient notifications atomically (see Idempotency
-  below), and respecting the natural-key uniqueness constraint. This is the **only** function that ever
-  writes a snapshot row. `scheduled_for` is nullable/omittable for future non-wall-clock callers (e.g. the
-  deferred shift-close integration), which have no scheduled slot to record.
+  below), and respecting the natural-key uniqueness constraint. **Within WAFI-147B v1**, this is the only
+  function that ever writes a snapshot row — a future correction/regeneration ticket (see Data-finality
+  policy's follow-up) will necessarily introduce another server-side write path when it's built and
+  separately reviewed; this is a v1 scope statement, not a permanent architectural rule. `scheduled_for` is
+  nullable/omittable for future non-wall-clock callers (e.g. the deferred shift-close integration), which
+  have no scheduled slot to record.
 
 **Applicable shops (v1 definition):** a shop is eligible for scheduled generation if `shops.is_active = true`
 (`001_initial_schema.sql`; defaults to `true`, no separate soft-delete column exists on `shops` today — if
@@ -175,9 +182,12 @@ time, not a guarantee of final/settled data.** Concretely:
   yesterday that's already slightly stale by the time the owner reads it because a late return posted at
   00:07 UTC.
 
-This must be communicated as an explicit UI-level caveat if the Reports viewer doesn't already convey
-"as of" semantics for snapshot-backed reports (see Read path below) — an owner should not read a scheduled
-snapshot as a live, always-current figure.
+**Acceptance criterion:** snapshot-backed reports in the Reports viewer must display their `generated_at`
+(and, where meaningful, `scheduled_for`) timestamp so an owner can see this is an as-of figure, not a live,
+continuously-updated one — e.g. "Generated at 00:01 UTC" rather than presenting the numbers with no
+indication they're a point-in-time capture. This is required UI scope for 147B, not an optional polish
+item, precisely because Option A above accepts that a snapshot can silently drift from what live compute
+would now show.
 
 ### Scheduled-slot semantics and missed/delayed execution
 
@@ -200,11 +210,20 @@ period_start / period_end   (derived deterministically from the slot + cadence, 
 generate_report_snapshot(shop_id, report_type, period_start, period_end, scheduled_for := scheduled_slot)
 ```
 
-`generate_scheduled_reports(cadence)` accepts (or itself computes, pinned to the cadence's canonical
-trigger time rather than wall-clock `now()`) the scheduled slot it is running for, and derives
-`period_start`/`period_end` from that slot deterministically — never from `now()`. This makes "regenerate
-the missed Sunday 2026-08-23 09:00 slot" an explicit, well-defined operation distinct from "run the weekly
-resolver right now," which removes the ambiguity a bare manual re-invocation would otherwise have.
+**Precise rule (one rule, not two alternatives):** pg_cron does not hand its target function "the timestamp
+it was supposed to run at" — a job simply executes whenever pg_cron actually runs it, which may lag the
+intended time. For an actual cron-triggered invocation, `generate_scheduled_reports(cadence)` determines
+**the most recent canonical scheduled slot for that cadence at or before the actual execution time**, using
+the cadence's fixed UTC schedule (00:00 daily / Sunday 09:00 weekly / 1st 09:00 monthly), and derives
+`period_start`/`period_end` from that slot per Period semantics — never from execution `now()` directly.
+Examples: executing at Sunday 09:04 (a few minutes late) resolves to that same Sunday 09:00 slot; executing
+at Monday 14:00 (much later, e.g. after an outage) still resolves to the most recent Sunday 09:00 slot, not
+Monday's non-existent one; executing 8 days later still resolves to only the latest Sunday 09:00 slot —
+**older missed slots are not automatically caught up** (per the missed-slot policy below). Operator recovery
+never goes through this resolution — it always calls `generate_report_snapshot(...)` with an explicit,
+named period, which is what makes "regenerate the missed Sunday 2026-08-23 09:00 slot" well-defined and
+distinct from "run the weekly resolver right now" (which would resolve against whatever the *current* most
+recent slot is, not the one the operator actually means).
 
 **Missed-slot policy (v1): no automatic catch-up.** If a scheduled pg_cron execution is missed entirely
 (the job never ran for a given slot — as opposed to running but hitting a per-item failure, see Failure
@@ -226,38 +245,62 @@ the missed one.
 
 `generate_scheduled_reports(cadence)` invokes `generate_report_snapshot(...)` once per (shop, report_type)
 due for that cadence — potentially many shops × several report types in one cron firing. **A failure
-generating one (shop, report_type, period) must not roll back successful snapshots already committed for
-other shops/reports in the same cadence run.** Without an explicit rule here, an uncaught exception on item
-88 of 200 would propagate out of the resolver and roll back the entire enclosing transaction, silently
-discarding 87 already-successful snapshots (and their notifications) — a correctness bug, not merely an
-inefficiency.
+generating one (shop, report_type, period) must not abort processing of the other items in the same cadence
+run.** Without an explicit rule here, an uncaught exception on item 88 of 200 would propagate out of the
+resolver's loop and prevent items 89-200 from ever being attempted — a correctness bug, not merely an
+inefficiency. (See below for the precise, narrower-than-it-sounds transactional guarantee this actually
+provides once an exception is caught.)
 
-**Decision:** `generate_scheduled_reports(cadence)` must not run the whole cadence as one implicit
-transaction that a single failure can unwind. Each `generate_report_snapshot(...)` call is isolated per item
-— in PL/pgSQL terms, via a `BEGIN...EXCEPTION WHEN OTHERS` block (or equivalent subtransaction boundary)
-around each individual call inside the resolver's loop, so one item's exception is caught, logged (see
-Observability below), and the loop continues to the next item rather than propagating. `generate_report_
-snapshot(...)` itself still commits its own snapshot+notification insert atomically (per the Idempotency
-atomicity invariant) — the failure-isolation boundary and the snapshot/notification atomicity boundary are
-different, nested boundaries, not the same thing. Outcome per item is exactly one of: committed
-(snapshot exists) or failed-and-logged-for-retry (snapshot absent, no partial state) — never a third,
-ambiguous state.
+**Decision (Option A — accepted for v1, stated precisely rather than overclaimed):** each
+`generate_report_snapshot(...)` call is wrapped in a `BEGIN...EXCEPTION WHEN OTHERS` block inside the
+resolver's per-item loop. PL/pgSQL's exception block is a genuine subtransaction boundary — an exception in
+one item is caught there and does not abort the other items in the same top-level call — but PostgreSQL
+does not allow transaction control (`COMMIT`) inside such a block; that is only available from a top-level
+`CALL`/`DO` procedure context. **The actual guarantee this gives is narrower than "each item commits
+independently," and the spec must not claim otherwise:**
+
+- A failed item's exception is caught and does not abort the other items *within the same
+  `generate_scheduled_reports(cadence)` invocation* — its subtransaction rolls back, the loop continues.
+- All items processed in that invocation — the successful ones and the logged-and-skipped failed ones —
+  remain part of one outer transaction that commits together only when `generate_scheduled_reports(cadence)`
+  itself completes and its top-level call commits.
+- If the *overall* cron invocation crashes or is killed before that outer transaction commits (e.g. the
+  connection drops mid-run, not merely one item failing), everything processed so far in that run — including
+  otherwise-successful items — rolls back with it, uncommitted.
+- **Recovery from that catastrophic case relies on idempotent re-execution**, not on any per-item durability
+  guarantee: re-running `generate_scheduled_reports(cadence)` for the same scheduled slot safely regenerates
+  whatever didn't make it into a committed transaction, and no-ops on whatever did (per the Idempotency
+  natural key). This is why the Idempotency and Scheduled-slot mechanisms above are load-bearing here, not
+  optional hardening — they are literally what makes Option A's outer-transaction model recoverable.
+- **Option B (true per-item durability, each item committing independently regardless of the outer
+  invocation's fate) would require a different execution mechanism** — e.g. a top-level procedure issuing
+  explicit `COMMIT` per item, or invoking `generate_report_snapshot(...)` as separate top-level calls rather
+  than from within one resolver invocation — which is a larger architecture change not justified for v1
+  given how rare a mid-run crash actually is in practice, and given that idempotent re-execution already
+  covers it.
+
+What this construction *does* still guarantee, correctly: one item's own data/logic error (e.g. a malformed
+report computation for one shop) never prevents the other items in the same run from succeeding — that
+was, and remains, the real problem this section solves. What changed is only the honesty of the claim about
+the crash case.
 
 ### Schedule scope (v1)
 
-Fixed defaults per the original spec, applied to all shops, all in UTC. Period is the completed preceding
-window as of the trigger time — see "Period semantics" below for the exact boundary rule per cadence.
+Fixed defaults per the original spec, applied to all shops, all in UTC. Period is the preceding calendar
+reporting window as of the trigger time — see "Period semantics" below for the exact boundary rule per
+cadence. ("Preceding calendar window" describes wall-clock boundaries only; it does not imply the
+underlying data is finalized — see Data-finality policy below.)
 
 | Report | Cadence | Trigger (v1) | Period covered |
 |---|---|---|---|
 | Daily Closing | daily | 00:00 UTC (shift-close trigger deferred, see Non-goals) | previous UTC calendar day |
 | Cash Flow Report | daily | 00:00 UTC | previous UTC calendar day |
-| Weekly Summary | weekly | Sunday 09:00 UTC | preceding completed Mon–Sun UTC calendar week (the week that ended the day before, not the trigger day's own week) |
-| Inventory Health | weekly | Sunday 09:00 UTC | preceding completed Mon–Sun UTC calendar week |
-| Discount Report | weekly | Sunday 09:00 UTC | preceding completed Mon–Sun UTC calendar week |
-| Returns Report | weekly | Sunday 09:00 UTC | preceding completed Mon–Sun UTC calendar week |
-| Credit Report | weekly | Sunday 09:00 UTC | preceding completed Mon–Sun UTC calendar week |
-| Dead Stock Report | weekly | Sunday 09:00 UTC | preceding completed Mon–Sun UTC calendar week |
+| Weekly Summary | weekly | Sunday 09:00 UTC | preceding Mon–Sun UTC calendar week (the week that ended the day before, not the trigger day's own week) |
+| Inventory Health | weekly | Sunday 09:00 UTC | preceding Mon–Sun UTC calendar week |
+| Discount Report | weekly | Sunday 09:00 UTC | preceding Mon–Sun UTC calendar week |
+| Returns Report | weekly | Sunday 09:00 UTC | preceding Mon–Sun UTC calendar week |
+| Credit Report | weekly | Sunday 09:00 UTC | preceding Mon–Sun UTC calendar week |
+| Dead Stock Report | weekly | Sunday 09:00 UTC | preceding Mon–Sun UTC calendar week |
 | Monthly Business Health | monthly | 1st 09:00 UTC | previous calendar month (full 1st–last day) |
 | Profit Trend Report | monthly | 1st 09:00 UTC | previous calendar month |
 | Top Customers Report | monthly | 1st 09:00 UTC | previous calendar month |
@@ -280,10 +323,13 @@ No settings screen, no per-shop override, in v1.
 
 ### Period semantics
 
-Generation always covers a **completed** window as of the trigger time, never the in-progress current
-period. All periods are **half-open intervals**: `period_start <= timestamp < period_end`. This avoids any
-assumption about sub-second precision at a boundary (no `23:59:59.999999` reasoning) and composes cleanly
-in SQL (`WHERE ts >= period_start AND ts < period_end`).
+Generation always covers a **preceding calendar reporting window** as of the trigger time, never the
+in-progress current period — this is a statement about wall-clock boundaries, not about the underlying
+data being final (see Data-finality policy above; "completed window" is deliberately avoided as terminology
+here since it invites exactly that false inference). All periods are **half-open intervals**:
+`period_start <= timestamp < period_end`. This avoids any assumption about sub-second precision at a
+boundary (no `23:59:59.999999` reasoning) and composes cleanly in SQL
+(`WHERE ts >= period_start AND ts < period_end`).
 
 - **Daily** (00:00 UTC trigger): `[previous UTC calendar day 00:00:00, trigger day 00:00:00)`. E.g. a
   2026-08-20 00:00 UTC trigger covers `[2026-08-19 00:00:00, 2026-08-20 00:00:00)`. At the moment the cron
@@ -335,6 +381,14 @@ against `(snapshot_id, recipient_user_id)`. This is kept as defense-in-depth per
 primary correctness mechanism — the transaction boundary is — while still allowing the same snapshot to
 correctly notify multiple distinct users.
 
+**Explicit failure rule:** since snapshot insert, recipient resolution, and all per-recipient notification
+inserts happen in one transaction, a failure inserting *any* required recipient's notification rolls back
+the entire transaction, including the snapshot itself — v1 does not permit a snapshot to exist in a
+partially-notified state (e.g. 2 of 3 eligible recipients notified). This is a direct consequence of the
+atomicity invariant already chosen above, stated explicitly here so a future change doesn't casually decide
+"one malformed recipient shouldn't block report generation" without recognizing that would be a deliberate
+weakening of this invariant, not a bug fix.
+
 ### Persisted artifact
 
 New table (name TBD at migration-writing time, e.g. `generated_reports`):
@@ -343,7 +397,7 @@ New table (name TBD at migration-writing time, e.g. `generated_reports`):
 |---|---|---|
 | `id` | `uuid PRIMARY KEY DEFAULT gen_random_uuid()` | |
 | `shop_id` | `uuid NOT NULL REFERENCES shops(id)` | |
-| `report_type` | `text NOT NULL` — constrained to the 13 report identifiers already defined in 147A via a `CHECK` against a fixed list, or an actual Postgres `enum`, rather than arbitrary text (decide which at migration-writing time against how 147A's own report-type identifiers are already represented in the codebase — reuse that representation, don't invent a second) | |
+| `report_type` | `text NOT NULL` — constrained via a `CHECK` against a fixed list (or an actual Postgres `enum`; decide which at migration-writing time against how 147A's own report-type identifiers are already represented in the codebase, and reuse that representation rather than inventing a second) to **only the 12 wall-clock report identifiers this ticket implements** (the Schedule scope table below) — deliberately **not** all 13. Employee Summary must not be a valid value in the v1 constraint: its snapshot identity needs a `staff_id`/`shift_id` dimension this table doesn't have (see the schema caveat below), so allowing it as a value here would let a row be inserted that the natural key can't actually disambiguate. The future shift-close ticket extends both the constraint and the identity together, not the constraint alone. | |
 | `period_start`, `period_end` | `timestamptz NOT NULL` each | half-open interval per Period semantics; `CHECK (period_start < period_end)` |
 | `scheduled_for` | `timestamptz` (nullable) | the scheduled slot this snapshot was generated for (per Scheduled-slot semantics above) — distinct from `generated_at`; null for non-wall-clock-triggered snapshots (future shift-close callers) |
 | `generated_at` | `timestamptz NOT NULL DEFAULT now()` | when generation actually ran — may lag `scheduled_for` if the job ran late |
@@ -389,17 +443,27 @@ data. Follow the exact existing precedent already established for server-authori
 this new table gets the equivalent policy against `auth_shop_id()`, no client `INSERT`/`UPDATE`/`DELETE`
 grants (consistent with the Immutability rule above).
 
-**Read mechanism decision required at implementation time:** WAFI is an offline-first, PowerSync-synced
-architecture (per `CLAUDE.md`'s Sacred Rules), so "the viewer reads the snapshot" is not automatically "a
-direct Supabase query." Decide, during implementation planning, whether snapshots are (a) added to
-`powersync.yaml`/`schema.ts` and synced to the client like `profit_cache`/`events` already are (consistent
-with the existing pattern, works offline once synced), or (b) read via a direct online-only Supabase
-query/RPC (simpler, but breaks the offline-first guarantee for this specific read, which — per the Sacred
-Rules — should not be done without an explicit, deliberate exception). Given the offline-first invariant is
-one of the three non-negotiable Sacred Rules, the default expectation should be (a) unless a specific reason
-rules it out; this spec does not resolve which as a shortcut, because it is a real implementation-time
-decision with a strong existing-pattern default, not an open architecture question requiring another design
-round.
+**Security invariant (not merely an implementation detail):** the snapshot read path must not expose report
+data to a device/user not already authorized to view that report, **regardless of which mechanism delivers
+it.** RLS alone secures direct Supabase reads, but is not automatically the security boundary for what a
+device's local SQLite ends up holding: WAFI is an offline-first, PowerSync-synced architecture (per
+`CLAUDE.md`'s Sacred Rules), and PowerSync's own **sync rules** — not the underlying table's RLS policy —
+determine what gets materialized onto a given device. If PowerSync is selected as the delivery mechanism
+(the expected default, see below), its sync rules must independently enforce the same shop-scoped access
+`auth_shop_id()` provides at the RLS layer — RLS on the source table is necessary but not sufficient once
+data is being synced to devices, since a sync-rule misconfiguration could still ship shop B's snapshot to
+shop A's device even with correct RLS on the Postgres side.
+
+**Read mechanism decision required at implementation time:** decide, during implementation planning, whether
+snapshots are (a) added to `powersync.yaml`/`schema.ts` and synced to the client like `profit_cache`/`events`
+already are (consistent with the existing pattern, works offline once synced — the expected default, since
+offline-first is one of the three non-negotiable Sacred Rules), or (b) read via a direct online-only Supabase
+query/RPC (simpler, but breaks the offline-first guarantee for this specific read, which per the Sacred
+Rules should not be done without an explicit, deliberate exception). Whichever is chosen, implementation must
+inspect 147A's existing authorization pattern and the current PowerSync sync-rule configuration before
+wiring this in, and verify the security invariant above holds for the chosen mechanism specifically — this
+spec states the requirement precisely so that verification is checkable, not a decision left informally
+open.
 
 ### Observability
 
@@ -415,12 +479,18 @@ provided the logged context is enough to reconstruct the exact retry call.
 
 ### Runtime/performance budget
 
-A single cadence firing may generate up to 13 report types × every active shop. Supabase's own guidance
+A single cadence firing may generate up to 6 report types (the weekly cadence's count, the largest of the
+three) × every active shop. Supabase's own guidance
 keeps individual Cron job executions well under its resource/time limits (roughly a 10-minute practical
 ceiling, plus concurrent-job limits) — this is a real constraint the implementation must be benchmarked
-against, not assumed away. **Acceptance criterion:** before this ships, the scheduled job must be benchmarked
-against the expected production shop/report volume and confirmed to stay within the target Supabase
-project's Cron execution budget. This spec does not mandate batching now — the function-boundary design
+against, not assumed away. **Acceptance criterion:** before this ships, each cadence's job must be benchmarked separately against its
+own load profile, since they differ — daily (all active shops × 2 reports: Daily Closing, Cash Flow), weekly
+(all active shops × 6 reports: Weekly Summary, Inventory Health, Discount, Returns, Credit, Dead Stock), and
+monthly (all active shops × 4 reports: Monthly Business Health, Profit Trend, Top Customers, Top Products)
+— and each confirmed to stay within the target Supabase project's Cron execution budget (Supabase's own
+guidance: individual jobs under roughly 10 minutes, no more than ~8 concurrent jobs — the three cadences
+here don't overlap under normal fixed scheduling, so concurrency is not expected to be a concern, but the
+per-job runtime ceiling is). This spec does not mandate batching now — the function-boundary design
 (one `generate_report_snapshot(...)` call per item, failure-isolated) already supports batching being added
 later (e.g. splitting one cadence's work across multiple smaller cron-scheduled batches) without redesigning
 the generation primitive, if benchmarking shows a single firing is too large.
@@ -507,8 +577,13 @@ not a shared code artifact.
   `INSERT`/`UPDATE`/`DELETE` grants (immutability) and a working `SELECT`-only RLS policy scoped to
   `auth_shop_id()` (cross-shop read isolation — assert a shop A session cannot read shop B's snapshots).
 - Failure-isolation test: force one (shop, report_type) generation to fail mid-cadence-run alongside several
-  that succeed; assert the successful snapshots/notifications are still committed and only the failed item
-  is absent-and-logged, not that the whole run rolled back.
+  that succeed; assert the loop still processes every remaining item (the failure doesn't abort the run) and
+  that, once `generate_scheduled_reports(cadence)` completes and its outer transaction commits, the
+  successful items are present and the failed item is absent-and-logged for retry — per the Option A model
+  (Failure isolation above), not a claim that each item commits independently of the others.
+- Idempotent-recovery test: simulate the outer transaction never committing (e.g. abort the top-level call
+  after several items succeeded); assert re-running the same scheduled slot afterward produces exactly the
+  missing snapshots with no duplicates for ones that — hypothetically — had already committed.
 - Scheduled-slot determinism test: invoking generation for an explicit past scheduled slot always resolves
   the same `period_start`/`period_end` regardless of the actual (possibly much later) execution time —
   proves the resolver isn't silently using `now()`.
