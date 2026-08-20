@@ -75,6 +75,17 @@ export type Report = {
   dateRange: ReportDateRange
   generatedAt: string
   sections: ReportSection[]
+  /** WAFI-147B: set only when this Report came from a persisted snapshot
+   *  rather than 147A's live compute() path -- drives the "Generated at"
+   *  display. Undefined (not false) for a live-computed report, so a
+   *  strict `report.isSnapshot === true` check is the only place that
+   *  needs to know about this at all. */
+  isSnapshot?: boolean
+  /** The scheduled slot this snapshot was generated for, if it differs
+   *  meaningfully from generatedAt (e.g. a late-recovered report) --
+   *  undefined for live-computed reports and for snapshots with no
+   *  recorded scheduled_for. */
+  scheduledFor?: string
 }
 
 export function summarySection(args: { title: string; metrics: ReportMetric[]; visibility?: SectionVisibility }): SummarySection {

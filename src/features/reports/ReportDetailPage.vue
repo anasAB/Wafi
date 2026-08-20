@@ -13,6 +13,7 @@ import { useDeviceStore } from '@/store/device.store'
 import { useSessionStore } from '@/store/session.store'
 import { canUserDo } from '@/router/permissions'
 import { formatLocalDate, addCalendarDays } from './dateUtils'
+import { expectedPeriodUtc } from './snapshotLookup'
 import { REPORT_DEFINITIONS } from './index'
 import type { ReportId } from './index'
 import type { Report, ReportDateRange, ReportSection } from './report.types'
@@ -77,6 +78,53 @@ const isAuthorizedForThisReport = computed(() =>
   !needsStaffContext.value || canUserDo(session.activeStaff, 'can_view_staff_performance'),
 )
 
+// WAFI-147B: check for a persisted snapshot before falling back to 147A's
+// live compute() path. Snapshot lookup only applies to the 12 wall-clock
+// report types this ticket schedules -- Employee Summary
+// (contextRequirement === 'staff') has no wall-clock cadence and always
+// falls through to live compute.
+async function tryLoadSnapshot(): Promise<Report | null> {
+  if (needsStaffContext.value) return null
+
+  let periodStart: Date, periodEnd: Date
+  try {
+    // The viewer's own selected range's end-of-day (UTC) stands in for
+    // "the scheduled slot" here -- a real scheduled snapshot's period is
+    // looked up by its actual stored bounds, so this only needs to compute
+    // the SAME bounds a real scheduled run would have used for a period
+    // ending on the selected range's `to` date.
+    const asOfUtc = new Date(`${range.value.to}T00:00:00Z`)
+    ;({ periodStart, periodEnd } = expectedPeriodUtc(reportId.value, asOfUtc))
+  } catch {
+    return null // reportId has no wall-clock cadence (shouldn't happen given the guard above, defensive)
+  }
+
+  const { shopId } = useDeviceStore()
+  const snapshot = await db.getOptional<{ id: string; report_data: string; generated_at: string; scheduled_for: string | null }>(
+    `SELECT id, report_data, generated_at, scheduled_for FROM generated_reports
+     WHERE shop_id = ? AND report_type = ? AND period_start = ? AND period_end = ?`,
+    [shopId, reportId.value, periodStart.toISOString(), periodEnd.toISOString()],
+  )
+  if (!snapshot) return null
+
+  const parsed = JSON.parse(snapshot.report_data) as Report
+  const staffSection = await db.getOptional<{ section_data: string }>(
+    `SELECT section_data FROM generated_report_staff_sections WHERE generated_report_id = ?`,
+    [snapshot.id],
+  )
+  // A staff-section row is present here ONLY if this device's own sync/RLS
+  // actually delivered one (owner device) -- absence is a data-presence
+  // fact, not a permission decision this client re-derives (design spec
+  // "Read authorization"). The existing `visibleSections` filter below
+  // still applies afterward as an additional UI-layer safeguard, but the
+  // real security boundary already happened at the sync/RLS layer.
+  const sections = staffSection
+    ? [...parsed.sections, JSON.parse(staffSection.section_data)]
+    : parsed.sections
+
+  return { ...parsed, sections, isSnapshot: true, generatedAt: snapshot.generated_at, scheduledFor: snapshot.scheduled_for ?? undefined }
+}
+
 async function generate() {
   if (!definition.value) { error.value = 'التقرير غير موجود'; return }
   if (!isAuthorizedForThisReport.value) return // whole-report gate; UI never reaches the staff selector for this case either
@@ -98,7 +146,8 @@ async function generate() {
   try {
     const { shopId } = useDeviceStore()
     const context = selectedStaffId.value ? { staffId: selectedStaffId.value } : undefined
-    const result = await definition.value.compute(shopId, range.value, context)
+    const snapshotResult = await tryLoadSnapshot()
+    const result = snapshotResult ?? await definition.value.compute(shopId, range.value, context)
     // Only apply result if this call's token is still current (no newer call started)
     if (callToken === generationToken.value) {
       report.value = result
@@ -206,6 +255,9 @@ watch(() => route.params.reportId, async (newReportIdParam) => {
       <p v-if="loading" class="state-message">...جارٍ إنشاء التقرير</p>
       <p v-else-if="error" class="state-message state-message--error">{{ error }}</p>
       <template v-else-if="report">
+        <p v-if="report?.isSnapshot" data-testid="snapshot-generated-at" class="state-message">
+          تم إنشاء هذا التقرير في {{ report.generatedAt.slice(0, 10) }} -- {{ new Date(report.generatedAt).toLocaleString('ar') }}
+        </p>
         <template v-for="(s, i) in visibleSections" :key="i">
           <SummaryReportView v-if="s.type === 'summary'" :section="s" />
           <DetailReportView v-else :section="s" />
