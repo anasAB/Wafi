@@ -75,6 +75,13 @@ needs to leave Postgres. This mirrors the existing trust model already used for 
 (WAFI-151) and `execute_rule_action` (WAFI-156): a server-authoritative `SECURITY DEFINER` function, no
 direct client write path, `service_role`/cron-invoked only.
 
+**Implementation invariant — cron scheduler timezone.** pg_cron's default scheduler timezone is GMT and is
+configurable via `cron.timezone`; Supabase Cron is built directly on pg_cron. The cron scheduler's effective
+timezone must be explicitly verified (and set via `cron.timezone` if the target Supabase project's default
+differs) to be UTC before the cron expressions in the Schedule scope table below are scheduled — the SQL
+cron expressions (`0 0 * * *`, etc.) must not rely on an unverified/undocumented instance timezone matching
+UTC by coincidence. This is an operationally testable step during implementation, not an assumption.
+
 `generate_scheduled_reports(cadence)` is intentionally the **only** thing pg_cron calls. It is a thin
 resolver: given a cadence, find shops with a report of that cadence due, and invoke the shared per-report
 generation function for each. This keeps the door open for the shift-close trigger (or any future trigger)
@@ -173,7 +180,10 @@ authoritative duplicate-prevention mechanism — not the scheduler, not a run lo
 path, and this design explicitly forbids replacing an existing snapshot): if a snapshot already exists for
 that natural key, the call is a safe no-op, never a second snapshot and never a replacement. This makes safe
 by construction:
-- pg_cron retrying a failed/timed-out job
+- Scheduler re-runs or operational retries after a failed/timed-out execution (pg_cron records run status and
+  prevents overlapping concurrent executions of the same job, but does not itself provide an
+  application-level retry guarantee — the safety property here is that whatever re-runs the job, at whatever
+  layer, is always safe to do)
 - Manual re-invocation of `generate_scheduled_reports` for operational recovery
 - Future additional triggers (shift-close) racing or duplicating the midnight run for the same period
 
@@ -264,6 +274,15 @@ No broken or missing-report states are introduced. No migration is required for 
 needs a small, explicit client-side change to implement step 2 above — check for a matching snapshot before
 falling through to the existing `compute()` call. This must be listed as implementation scope, not assumed
 to happen incidentally.
+
+**Period-boundary agreement is required for the lookup to ever match.** The viewer must derive
+`period_start`/`period_end` using the exact same cadence-specific half-open-interval rules defined in
+"Period semantics" above before querying for a snapshot — not its own independent notion of "this week" or
+"this month." If the viewer computed, say, `[2026-08-10 00:00, 2026-08-16 23:59:59.999999]` while the
+snapshot was stored as `[2026-08-10 00:00:00, 2026-08-17 00:00:00)`, the natural-key lookup would never
+match and every report would silently always fall through to live compute, defeating the purpose of 147B
+without any visible error. Both sides must share one canonical period-boundary computation — implemented
+once and imported by both (a shared function/constant), not independently re-derived in each place.
 
 ## Testing
 
