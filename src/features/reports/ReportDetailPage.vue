@@ -86,26 +86,45 @@ const isAuthorizedForThisReport = computed(() =>
 async function tryLoadSnapshot(): Promise<Report | null> {
   if (needsStaffContext.value) return null
 
-  let periodStart: Date, periodEnd: Date
+  // Final-review C4, part 1: only attempt a snapshot lookup when the
+  // picker's CURRENT range actually equals the canonical "most recently
+  // completed period" for this report's cadence -- not for every range the
+  // picker happens to hold. defaultRangeForCadence's rolling windows will
+  // essentially never coincide with a real scheduled (calendar-aligned)
+  // period, and a user-picked custom range must always fall through to live
+  // compute rather than risk matching a period it didn't actually select.
+  let expectedStart: Date, expectedEnd: Date
   try {
-    // The viewer's own selected range's end-of-day (UTC) stands in for
-    // "the scheduled slot" here -- a real scheduled snapshot's period is
-    // looked up by its actual stored bounds, so this only needs to compute
-    // the SAME bounds a real scheduled run would have used for a period
-    // ending on the selected range's `to` date.
-    const asOfUtc = new Date(`${range.value.to}T00:00:00Z`)
-    ;({ periodStart, periodEnd } = expectedPeriodUtc(reportId.value, asOfUtc))
+    ;({ periodStart: expectedStart, periodEnd: expectedEnd } = expectedPeriodUtc(reportId.value, new Date()))
   } catch {
     return null // reportId has no wall-clock cadence (shouldn't happen given the guard above, defensive)
   }
+  const expectedFrom = formatLocalDate(expectedStart)
+  // periodEnd is EXCLUSIVE (the day after the period's last included day) in
+  // both the server's _wafi147b_expected_period and expectedPeriodUtc, while
+  // range.to is INCLUSIVE (device-local calendar date) -- subtract one day
+  // before comparing, or every cadence would be off-by-one against the picker.
+  const expectedTo = formatLocalDate(new Date(expectedEnd.getTime() - 24 * 60 * 60 * 1000))
+  if (range.value.from !== expectedFrom || range.value.to !== expectedTo) return null
 
   const { shopId } = useDeviceStore()
-  const snapshot = await db.getOptional<{ id: string; report_data: string; generated_at: string; scheduled_for: string | null }>(
-    `SELECT id, report_data, generated_at, scheduled_for FROM generated_reports
-     WHERE shop_id = ? AND report_type = ? AND period_start = ? AND period_end = ?`,
-    [shopId, reportId.value, periodStart.toISOString(), periodEnd.toISOString()],
+  // Final-review C4, part 2: query by shop_id + report_type only (no exact-
+  // string match against the synced timestamptz column -- fragile, and
+  // unprecedented elsewhere in this codebase), ordered by the most recent
+  // generation, then verify the returned row's OWN period against the
+  // locally-computed expected period as parsed Date objects, never as raw
+  // strings.
+  const snapshot = await db.getOptional<{
+    id: string; report_data: string; generated_at: string; scheduled_for: string | null
+    period_start: string; period_end: string
+  }>(
+    `SELECT id, report_data, generated_at, scheduled_for, period_start, period_end FROM generated_reports
+     WHERE shop_id = ? AND report_type = ? ORDER BY generated_at DESC LIMIT 1`,
+    [shopId, reportId.value],
   )
   if (!snapshot) return null
+  if (new Date(snapshot.period_start).getTime() !== expectedStart.getTime()) return null
+  if (new Date(snapshot.period_end).getTime() !== expectedEnd.getTime()) return null
 
   const parsed = JSON.parse(snapshot.report_data) as Report
   const staffSection = await db.getOptional<{ section_data: string }>(
@@ -122,7 +141,18 @@ async function tryLoadSnapshot(): Promise<Report | null> {
     ? [...parsed.sections, JSON.parse(staffSection.section_data)]
     : parsed.sections
 
-  return { ...parsed, sections, isSnapshot: true, generatedAt: snapshot.generated_at, scheduledFor: snapshot.scheduled_for ?? undefined }
+  return {
+    ...parsed,
+    sections,
+    isSnapshot: true,
+    generatedAt: snapshot.generated_at,
+    scheduledFor: snapshot.scheduled_for ?? undefined,
+    // The snapshot's OWN period, for the banner -- so a mismatch (should
+    // never happen given the check above, but a schema/timezone surprise
+    // is exactly the kind of thing that should be visually catchable, not
+    // silent) is visible instead of trusted blindly.
+    dateRange: { from: formatLocalDate(new Date(snapshot.period_start)), to: formatLocalDate(new Date(new Date(snapshot.period_end).getTime() - 24 * 60 * 60 * 1000)) },
+  }
 }
 
 async function generate() {
@@ -257,6 +287,8 @@ watch(() => route.params.reportId, async (newReportIdParam) => {
       <template v-else-if="report">
         <p v-if="report?.isSnapshot" data-testid="snapshot-generated-at" class="state-message">
           تم إنشاء هذا التقرير في {{ report.generatedAt.slice(0, 10) }} -- {{ new Date(report.generatedAt).toLocaleString('ar') }}
+          <br>
+          <span data-testid="snapshot-period">الفترة: {{ report.dateRange.from }} — {{ report.dateRange.to }}</span>
         </p>
         <template v-for="(s, i) in visibleSections" :key="i">
           <SummaryReportView v-if="s.type === 'summary'" :section="s" />
