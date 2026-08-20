@@ -109,7 +109,7 @@ streams:
       # auth.user_id()) before re-enabling this bucket.
       - SELECT gr.* FROM public.generated_reports gr
           JOIN public.shops sh ON sh.id = gr.shop_id AND sh.owner_user_id = auth.user_id()
-          JOIN public.staff st ON st.shop_id = gr.shop_id AND st.id = auth.parameters() ->> 'staff_id'
+          JOIN public.staff st ON st.shop_id = gr.shop_id AND st.id = (auth.parameters() ->> 'staff_id')::uuid
           WHERE st.role = 'owner' OR (st.permissions ->> 'can_view_reports')::boolean IS TRUE
 
       # WAFI-147B: generated_report_staff_sections -- owner-only, raw role check
@@ -124,7 +124,7 @@ streams:
       # before trusting this in production.
       - SELECT grs.* FROM public.generated_report_staff_sections grs
           JOIN public.shops sh ON sh.id = grs.shop_id AND sh.owner_user_id = auth.user_id()
-          JOIN public.staff st ON st.shop_id = grs.shop_id AND st.id = auth.parameters() ->> 'staff_id'
+          JOIN public.staff st ON st.shop_id = grs.shop_id AND st.id = (auth.parameters() ->> 'staff_id')::uuid
           WHERE st.role = 'owner'
 
       # WAFI-156: business_rules config, synced so RulesScreen.vue can list/edit.

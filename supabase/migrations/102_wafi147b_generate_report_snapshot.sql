@@ -98,6 +98,9 @@ BEGIN
   -- Compute the report. Task 4 wires cash-flow and weekly-summary; Task 6
   -- adds the remaining 10 report_type branches to this same CASE.
   IF p_report_type = 'cash-flow' THEN
+    -- profit_cache money columns are bigint CENTS (086_profit_cache_apply.sql:
+    -- "minor units (cents), never float") -- divide by 100 before emitting as
+    -- USD, matching readProfitCache.ts's cents-first-then-divide convention.
     SELECT jsonb_build_object(
       'id', 'cash-flow', 'name', 'Cash Flow Report',
       'periodStart', p_period_start, 'periodEnd', p_period_end,
@@ -106,11 +109,11 @@ BEGIN
         jsonb_build_object(
           'type', 'summary', 'title', 'Cash Flow', 'visibility', 'shop',
           'metrics', jsonb_build_array(
-            jsonb_build_object('label', 'Revenue', 'value', COALESCE(SUM(revenue_usd), 0), 'unit', 'USD'),
-            jsonb_build_object('label', 'Expenses', 'value', COALESCE(SUM(expenses_usd), 0), 'unit', 'USD'),
-            jsonb_build_object('label', 'Refunds', 'value', COALESCE(SUM(refunds_usd), 0), 'unit', 'USD'),
+            jsonb_build_object('label', 'Revenue', 'value', COALESCE(SUM(revenue_usd)::numeric / 100, 0), 'unit', 'USD'),
+            jsonb_build_object('label', 'Expenses', 'value', COALESCE(SUM(expenses_usd)::numeric / 100, 0), 'unit', 'USD'),
+            jsonb_build_object('label', 'Refunds', 'value', COALESCE(SUM(refunds_usd)::numeric / 100, 0), 'unit', 'USD'),
             jsonb_build_object('label', 'Net cash change', 'value',
-              COALESCE(SUM(revenue_usd) - SUM(expenses_usd) - SUM(refunds_usd), 0), 'unit', 'USD')
+              COALESCE((SUM(revenue_usd) - SUM(expenses_usd) - SUM(refunds_usd))::numeric / 100, 0), 'unit', 'USD')
           )
         )
       )
@@ -119,6 +122,11 @@ BEGIN
     WHERE shop_id = p_shop_id AND day >= p_period_start::date AND day < p_period_end::date;
 
   ELSIF p_report_type = 'weekly-summary' THEN
+    -- profit_cache money columns are cents -- divide by 100. 'Profit' uses the
+    -- complete formula (revenue - refunds) - (cogs - cogs_reversal) - expenses,
+    -- matching readProfitCache.ts's profitUsd and profit-trend's per-day
+    -- formula, not the incomplete revenue-cogs-only shape this branch
+    -- previously used (WAFI-147B final-review I6).
     SELECT jsonb_build_object(
       'id', 'weekly-summary', 'name', 'Weekly Summary',
       'periodStart', p_period_start, 'periodEnd', p_period_end,
@@ -127,15 +135,17 @@ BEGIN
         jsonb_build_object(
           'type', 'summary', 'title', 'Week over Week', 'visibility', 'shop',
           'metrics', jsonb_build_array(
-            jsonb_build_object('label', 'Revenue', 'value', COALESCE(pc.revenue, 0), 'unit', 'USD'),
-            jsonb_build_object('label', 'Profit', 'value', COALESCE(pc.revenue - pc.cogs, 0), 'unit', 'USD'),
-            jsonb_build_object('label', 'Expenses', 'value', COALESCE(pc.expenses, 0), 'unit', 'USD')
+            jsonb_build_object('label', 'Revenue', 'value', COALESCE(pc.revenue::numeric / 100, 0), 'unit', 'USD'),
+            jsonb_build_object('label', 'Profit', 'value',
+              COALESCE(((pc.revenue - pc.refunds) - (pc.cogs - pc.cogs_reversal))::numeric / 100, 0), 'unit', 'USD'),
+            jsonb_build_object('label', 'Expenses', 'value', COALESCE(pc.expenses::numeric / 100, 0), 'unit', 'USD')
           )
         )
       )
     ) INTO v_report_data
     FROM (
-      SELECT SUM(revenue_usd) AS revenue, SUM(cogs_usd) AS cogs, SUM(expenses_usd) AS expenses
+      SELECT SUM(revenue_usd) AS revenue, SUM(cogs_usd) AS cogs, SUM(expenses_usd) AS expenses,
+             SUM(refunds_usd) AS refunds, SUM(cogs_reversal_usd) AS cogs_reversal
       FROM public.profit_cache
       WHERE shop_id = p_shop_id AND day >= p_period_start::date AND day < p_period_end::date
     ) pc;
@@ -196,7 +206,7 @@ BEGIN
       'تقرير جديد جاهز', 'تم إنشاء تقرير ' || p_report_type,
       'generated_report', v_new_id::text, NULL
     )
-    ON CONFLICT ON CONSTRAINT notifications_report_ready_unique DO NOTHING;
+    ON CONFLICT (entity_id, recipient_staff_id) WHERE type = 'report_ready' DO NOTHING;
   END LOOP;
 
   RETURN v_new_id;

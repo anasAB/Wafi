@@ -67,6 +67,9 @@ BEGIN
 
   -- Compute the report.
   IF p_report_type = 'cash-flow' THEN
+    -- profit_cache money columns are bigint CENTS (086_profit_cache_apply.sql:
+    -- "minor units (cents), never float") -- divide by 100 before emitting as
+    -- USD, matching readProfitCache.ts's cents-first-then-divide convention.
     SELECT jsonb_build_object(
       'id', 'cash-flow', 'name', 'Cash Flow Report',
       'periodStart', p_period_start, 'periodEnd', p_period_end,
@@ -75,11 +78,11 @@ BEGIN
         jsonb_build_object(
           'type', 'summary', 'title', 'Cash Flow', 'visibility', 'shop',
           'metrics', jsonb_build_array(
-            jsonb_build_object('label', 'Revenue', 'value', COALESCE(SUM(revenue_usd), 0), 'unit', 'USD'),
-            jsonb_build_object('label', 'Expenses', 'value', COALESCE(SUM(expenses_usd), 0), 'unit', 'USD'),
-            jsonb_build_object('label', 'Refunds', 'value', COALESCE(SUM(refunds_usd), 0), 'unit', 'USD'),
+            jsonb_build_object('label', 'Revenue', 'value', COALESCE(SUM(revenue_usd)::numeric / 100, 0), 'unit', 'USD'),
+            jsonb_build_object('label', 'Expenses', 'value', COALESCE(SUM(expenses_usd)::numeric / 100, 0), 'unit', 'USD'),
+            jsonb_build_object('label', 'Refunds', 'value', COALESCE(SUM(refunds_usd)::numeric / 100, 0), 'unit', 'USD'),
             jsonb_build_object('label', 'Net cash change', 'value',
-              COALESCE(SUM(revenue_usd) - SUM(expenses_usd) - SUM(refunds_usd), 0), 'unit', 'USD')
+              COALESCE((SUM(revenue_usd) - SUM(expenses_usd) - SUM(refunds_usd))::numeric / 100, 0), 'unit', 'USD')
           )
         )
       )
@@ -88,6 +91,11 @@ BEGIN
     WHERE shop_id = p_shop_id AND day >= p_period_start::date AND day < p_period_end::date;
 
   ELSIF p_report_type = 'weekly-summary' THEN
+    -- profit_cache money columns are cents -- divide by 100. 'Profit' uses the
+    -- complete formula (revenue - refunds) - (cogs - cogs_reversal) - expenses,
+    -- matching readProfitCache.ts's profitUsd and profit-trend's per-day
+    -- formula, not the incomplete revenue-cogs-only shape this branch
+    -- previously used (WAFI-147B final-review I6).
     SELECT jsonb_build_object(
       'id', 'weekly-summary', 'name', 'Weekly Summary',
       'periodStart', p_period_start, 'periodEnd', p_period_end,
@@ -96,15 +104,17 @@ BEGIN
         jsonb_build_object(
           'type', 'summary', 'title', 'Week over Week', 'visibility', 'shop',
           'metrics', jsonb_build_array(
-            jsonb_build_object('label', 'Revenue', 'value', COALESCE(pc.revenue, 0), 'unit', 'USD'),
-            jsonb_build_object('label', 'Profit', 'value', COALESCE(pc.revenue - pc.cogs, 0), 'unit', 'USD'),
-            jsonb_build_object('label', 'Expenses', 'value', COALESCE(pc.expenses, 0), 'unit', 'USD')
+            jsonb_build_object('label', 'Revenue', 'value', COALESCE(pc.revenue::numeric / 100, 0), 'unit', 'USD'),
+            jsonb_build_object('label', 'Profit', 'value',
+              COALESCE(((pc.revenue - pc.refunds) - (pc.cogs - pc.cogs_reversal))::numeric / 100, 0), 'unit', 'USD'),
+            jsonb_build_object('label', 'Expenses', 'value', COALESCE(pc.expenses::numeric / 100, 0), 'unit', 'USD')
           )
         )
       )
     ) INTO v_report_data
     FROM (
-      SELECT SUM(revenue_usd) AS revenue, SUM(cogs_usd) AS cogs, SUM(expenses_usd) AS expenses
+      SELECT SUM(revenue_usd) AS revenue, SUM(cogs_usd) AS cogs, SUM(expenses_usd) AS expenses,
+             SUM(refunds_usd) AS refunds, SUM(cogs_reversal_usd) AS cogs_reversal
       FROM public.profit_cache
       WHERE shop_id = p_shop_id AND day >= p_period_start::date AND day < p_period_end::date
     ) pc;
@@ -132,6 +142,7 @@ BEGIN
   ELSIF p_report_type = 'daily-closing' THEN
     -- Parity ref: dailyClosing.ts. Sales Totals + Expenses from profit_cache
     -- (Sacred: readProfitCache's aggregate); gated Staff Performance section.
+    -- profit_cache money columns are cents -- divide by 100.
     SELECT jsonb_build_object(
       'id', 'daily-closing', 'name', 'Daily Closing Report',
       'periodStart', p_period_start, 'periodEnd', p_period_end,
@@ -140,14 +151,14 @@ BEGIN
         jsonb_build_object(
           'type', 'summary', 'title', 'Sales Totals', 'visibility', 'shop',
           'metrics', jsonb_build_array(
-            jsonb_build_object('label', 'Total sales', 'value', COALESCE(pc.revenue, 0), 'unit', 'USD'),
+            jsonb_build_object('label', 'Total sales', 'value', COALESCE(pc.revenue::numeric / 100, 0), 'unit', 'USD'),
             jsonb_build_object('label', 'Transactions', 'value', COALESCE(pc.invoice_count, 0))
           )
         ),
         jsonb_build_object(
           'type', 'summary', 'title', 'Expenses', 'visibility', 'shop',
           'metrics', jsonb_build_array(
-            jsonb_build_object('label', 'Expenses', 'value', COALESCE(pc.expenses, 0), 'unit', 'USD')
+            jsonb_build_object('label', 'Expenses', 'value', COALESCE(pc.expenses::numeric / 100, 0), 'unit', 'USD')
           )
         )
       )
@@ -216,6 +227,8 @@ BEGIN
   ELSIF p_report_type = 'discount-report' THEN
     -- Parity ref: discountReport.ts. Total Discounts from profit_cache; By
     -- Product from sale_line_items; gated By Staff section.
+    -- profit_cache's discount_usd is cents -- divide by 100 (sale_line_items'
+    -- discount_amount_usd below is already real dollars, no division).
     SELECT jsonb_build_object(
       'id', 'discount-report', 'name', 'Discount Report',
       'periodStart', p_period_start, 'periodEnd', p_period_end,
@@ -224,7 +237,7 @@ BEGIN
         jsonb_build_object(
           'type', 'summary', 'title', 'Total Discounts', 'visibility', 'shop',
           'metrics', jsonb_build_array(
-            jsonb_build_object('label', 'Total discount given', 'value', COALESCE(pc.discount, 0), 'unit', 'USD')
+            jsonb_build_object('label', 'Total discount given', 'value', COALESCE(pc.discount::numeric / 100, 0), 'unit', 'USD')
           )
         ),
         jsonb_build_object(
@@ -286,7 +299,7 @@ BEGIN
           'type', 'summary', 'title', 'Total Returns', 'visibility', 'shop',
           'metrics', jsonb_build_array(
             jsonb_build_object('label', 'Return count', 'value', COALESCE(pc.return_count, 0)),
-            jsonb_build_object('label', 'Return value', 'value', COALESCE(pc.refunds, 0), 'unit', 'USD')
+            jsonb_build_object('label', 'Return value', 'value', COALESCE(pc.refunds::numeric / 100, 0), 'unit', 'USD')
           )
         ),
         jsonb_build_object(
@@ -441,6 +454,10 @@ BEGIN
   ELSIF p_report_type = 'monthly-health' THEN
     -- Parity ref: monthlyHealth.ts. P&L summary from profit_cache; Top 10
     -- Products/Customers; gated Staff Performance Review section.
+    -- profit_cache money columns are cents -- divide by 100. 'Net profit'
+    -- uses the complete formula (revenue - refunds) - (cogs - cogs_reversal)
+    -- - expenses, matching readProfitCache.ts's profitUsd and profit-trend's
+    -- per-day formula (WAFI-147B final-review I6).
     SELECT jsonb_build_object(
       'id', 'monthly-health', 'name', 'Monthly Business Health',
       'periodStart', p_period_start, 'periodEnd', p_period_end,
@@ -449,11 +466,12 @@ BEGIN
         jsonb_build_object(
           'type', 'summary', 'title', 'P&L Summary', 'visibility', 'shop',
           'metrics', jsonb_build_array(
-            jsonb_build_object('label', 'Revenue', 'value', COALESCE(pc.revenue, 0), 'unit', 'USD'),
-            jsonb_build_object('label', 'COGS', 'value', COALESCE(pc.cogs, 0), 'unit', 'USD'),
-            jsonb_build_object('label', 'Gross profit', 'value', COALESCE(pc.revenue - pc.cogs, 0), 'unit', 'USD'),
-            jsonb_build_object('label', 'Expenses', 'value', COALESCE(pc.expenses, 0), 'unit', 'USD'),
-            jsonb_build_object('label', 'Net profit', 'value', COALESCE(pc.revenue - pc.cogs - pc.expenses - pc.refunds, 0), 'unit', 'USD')
+            jsonb_build_object('label', 'Revenue', 'value', COALESCE(pc.revenue::numeric / 100, 0), 'unit', 'USD'),
+            jsonb_build_object('label', 'COGS', 'value', COALESCE(pc.cogs::numeric / 100, 0), 'unit', 'USD'),
+            jsonb_build_object('label', 'Gross profit', 'value', COALESCE((pc.revenue - pc.cogs)::numeric / 100, 0), 'unit', 'USD'),
+            jsonb_build_object('label', 'Expenses', 'value', COALESCE(pc.expenses::numeric / 100, 0), 'unit', 'USD'),
+            jsonb_build_object('label', 'Net profit', 'value',
+              COALESCE(((pc.revenue - pc.refunds) - (pc.cogs - pc.cogs_reversal) - pc.expenses)::numeric / 100, 0), 'unit', 'USD')
           )
         ),
         jsonb_build_object(
@@ -497,7 +515,8 @@ BEGIN
       )
     ) INTO v_report_data
     FROM (
-      SELECT SUM(revenue_usd) AS revenue, SUM(cogs_usd) AS cogs, SUM(expenses_usd) AS expenses, SUM(refunds_usd) AS refunds
+      SELECT SUM(revenue_usd) AS revenue, SUM(cogs_usd) AS cogs, SUM(expenses_usd) AS expenses,
+             SUM(refunds_usd) AS refunds, SUM(cogs_reversal_usd) AS cogs_reversal
       FROM public.profit_cache
       WHERE shop_id = p_shop_id AND day >= p_period_start::date AND day < p_period_end::date
     ) pc,
@@ -527,11 +546,13 @@ BEGIN
     JOIN public.staff st ON st.id = ranked.staff_id;
 
   ELSIF p_report_type = 'profit-trend' THEN
-    -- Parity ref: profitTrend.ts. No gated section. Daily profit series
-    -- straight from profit_cache (bigint cents; matches profitTrend.ts's
-    -- own /100 convention -- here left as raw cents-typed sums since this
-    -- branch's consumer is the JSON snapshot, not a client display -- see
-    -- design spec's parity note: representative equivalent, not byte parity).
+    -- Parity ref: profitTrend.ts. No gated section. Daily profit series from
+    -- profit_cache -- money columns are bigint cents (086's own comment:
+    -- "never float"), so both revenueUsd and the profitUsd formula below
+    -- divide by 100 before emitting, matching readProfitCache.ts's
+    -- cents-first-then-divide convention and profitTrend.ts's own /100
+    -- (WAFI-147B final-review C3/I6: this is also the canonical complete
+    -- profit formula every other profit_cache-derived branch now matches).
     SELECT jsonb_build_object(
       'id', 'profit-trend', 'name', 'Profit Trend Report',
       'periodStart', p_period_start, 'periodEnd', p_period_end,
@@ -547,8 +568,8 @@ BEGIN
           'rows', COALESCE((
             SELECT jsonb_agg(jsonb_build_object(
               'day', pc.day,
-              'revenueUsd', pc.revenue_usd,
-              'profitUsd', (pc.revenue_usd - pc.refunds_usd) - (pc.cogs_usd - pc.cogs_reversal_usd) - pc.expenses_usd
+              'revenueUsd', pc.revenue_usd::numeric / 100,
+              'profitUsd', ((pc.revenue_usd - pc.refunds_usd) - (pc.cogs_usd - pc.cogs_reversal_usd) - pc.expenses_usd)::numeric / 100
             ) ORDER BY pc.day ASC)
             FROM public.profit_cache pc
             WHERE pc.shop_id = p_shop_id AND pc.day >= p_period_start::date AND pc.day < p_period_end::date
@@ -691,7 +712,7 @@ BEGIN
       'تقرير جديد جاهز', 'تم إنشاء تقرير ' || p_report_type,
       'generated_report', v_new_id::text, NULL
     )
-    ON CONFLICT ON CONSTRAINT notifications_report_ready_unique DO NOTHING;
+    ON CONFLICT (entity_id, recipient_staff_id) WHERE type = 'report_ready' DO NOTHING;
   END LOOP;
 
   RETURN v_new_id;
