@@ -33,7 +33,7 @@ SELECT throws_ok(
   $$ SELECT public.generate_report_snapshot(
        '11111111-1111-1111-1111-111111111111', 'weekly-summary',
        '2026-08-10 00:00:00+00', '2026-08-11 00:00:00+00', -- one day, not a week
-       '2026-08-17 09:00:00+00') $$,
+       '2026-08-23 09:00:00+00') $$,
   NULL, NULL,
   'period not matching (report_type, scheduled_for) is rejected'
 );
@@ -75,7 +75,7 @@ SELECT is(
 SELECT lives_ok(
   $$ SELECT public.generate_report_snapshot(
        '11111111-1111-1111-1111-111111111111', 'weekly-summary',
-       '2026-08-10 00:00:00+00', '2026-08-17 00:00:00+00', '2026-08-17 09:00:00+00') $$,
+       '2026-08-10 00:00:00+00', '2026-08-17 00:00:00+00', '2026-08-23 09:00:00+00') $$,
   'weekly-summary generation succeeds'
 );
 SELECT is(

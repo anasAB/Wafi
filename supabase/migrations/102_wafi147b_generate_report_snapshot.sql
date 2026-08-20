@@ -36,12 +36,14 @@ BEGIN
       p_scheduled_for::timestamptz;
   ELSIF v_cadence = 'weekly' THEN
     -- scheduled_for is always a Sunday 09:00 UTC slot (validated by the
-    -- caller/resolver); the reporting week is the preceding Mon 00:00 to
-    -- the following Mon 00:00 (i.e. 7 days before the Sunday's own
-    -- midnight, per the design spec's worked example).
+    -- caller/resolver); the reporting week is the COMPLETED week that
+    -- ended the day before the trigger day -- 13 days before the
+    -- trigger's own midnight through 6 days before it (Mon 00:00 to the
+    -- following Mon 00:00, per the design spec's worked example: for
+    -- scheduled_for = 2026-08-23, the period is [2026-08-10, 2026-08-17)).
     RETURN QUERY SELECT
-      (date_trunc('day', p_scheduled_for) - interval '6 days')::timestamptz,
-      (date_trunc('day', p_scheduled_for) + interval '1 day')::timestamptz;
+      (date_trunc('day', p_scheduled_for) - interval '13 days')::timestamptz,
+      (date_trunc('day', p_scheduled_for) - interval '6 days')::timestamptz;
   ELSE -- monthly
     RETURN QUERY SELECT
       (date_trunc('month', p_scheduled_for) - interval '1 month')::timestamptz,
