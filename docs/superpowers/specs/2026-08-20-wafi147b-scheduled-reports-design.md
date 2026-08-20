@@ -117,12 +117,12 @@ window as of the trigger time — see "Period semantics" below for the exact bou
 |---|---|---|---|
 | Daily Closing | daily | 00:00 UTC (shift-close trigger deferred, see Non-goals) | previous UTC calendar day |
 | Cash Flow Report | daily | 00:00 UTC | previous UTC calendar day |
-| Weekly Summary | weekly | Sunday 09:00 UTC | preceding Mon 00:00 – Sun 23:59:59 UTC (the week that just ended) |
-| Inventory Health | weekly | Sunday 09:00 UTC | preceding Mon 00:00 – Sun 23:59:59 UTC |
-| Discount Report | weekly | Sunday 09:00 UTC | preceding Mon 00:00 – Sun 23:59:59 UTC |
-| Returns Report | weekly | Sunday 09:00 UTC | preceding Mon 00:00 – Sun 23:59:59 UTC |
-| Credit Report | weekly | Sunday 09:00 UTC | preceding Mon 00:00 – Sun 23:59:59 UTC |
-| Dead Stock Report | weekly | Sunday 09:00 UTC | preceding Mon 00:00 – Sun 23:59:59 UTC |
+| Weekly Summary | weekly | Sunday 09:00 UTC | preceding completed Mon–Sun UTC calendar week (the week that ended the day before, not the trigger day's own week) |
+| Inventory Health | weekly | Sunday 09:00 UTC | preceding completed Mon–Sun UTC calendar week |
+| Discount Report | weekly | Sunday 09:00 UTC | preceding completed Mon–Sun UTC calendar week |
+| Returns Report | weekly | Sunday 09:00 UTC | preceding completed Mon–Sun UTC calendar week |
+| Credit Report | weekly | Sunday 09:00 UTC | preceding completed Mon–Sun UTC calendar week |
+| Dead Stock Report | weekly | Sunday 09:00 UTC | preceding completed Mon–Sun UTC calendar week |
 | Monthly Business Health | monthly | 1st 09:00 UTC | previous calendar month (full 1st–last day) |
 | Profit Trend Report | monthly | 1st 09:00 UTC | previous calendar month |
 | Top Customers Report | monthly | 1st 09:00 UTC | previous calendar month |
@@ -132,34 +132,47 @@ window as of the trigger time — see "Period semantics" below for the exact bou
 (`WAFI_Event_Driven_Platform_Plan_v1.md:679`) defines it as "generated per staff at shift close" — it has no
 wall-clock cadence at all; it is purely event-triggered, once per staff member, at shift close. It is not an
 unresolved gap in this table — it simply does not belong in a wall-clock schedule, and is deferred alongside
-Daily Closing's shift-close trigger (see Non-goals) to the same later event-driven integration ticket. The
-`generate_report_snapshot(...)` primitive defined below is designed so that ticket can call it directly with
-`report_type = 'employee_summary'` and a per-shift period, without going through the cadence resolver.
+Daily Closing's shift-close trigger (see Non-goals) to the same later event-driven integration ticket.
+
+**Schema caveat for that future ticket:** the v1 natural key `(shop_id, report_type, period_start,
+period_end)` cannot uniquely identify an Employee Summary snapshot, because Employee Summary is per staff
+member per shift — two different staff members' reports for the same shop and the same shift window would
+collide on this key. This key is sufficient for v1's wall-clock-generated reports only; the future
+shift-close integration ticket must extend the snapshot identity (e.g. adding a `staff_id`/`shift_id`
+dimension) rather than assume the v1 key generalizes as-is.
 
 No settings screen, no per-shop override, in v1.
 
 ### Period semantics
 
-Generation always covers a **completed** window as of the trigger time, never the in-progress
-current period:
+Generation always covers a **completed** window as of the trigger time, never the in-progress current
+period. All periods are **half-open intervals**: `period_start <= timestamp < period_end`. This avoids any
+assumption about sub-second precision at a boundary (no `23:59:59.999999` reasoning) and composes cleanly
+in SQL (`WHERE ts >= period_start AND ts < period_end`).
 
-- **Daily** (00:00 UTC trigger): `period_start`/`period_end` = the full previous UTC calendar day
-  (`[yesterday 00:00:00, yesterday 23:59:59.999999]` UTC). At the moment the 00:00 UTC cron fires, "today"
-  has zero elapsed data, so the report must describe the day that just ended, not the one just starting.
-- **Weekly** (Sunday 09:00 UTC trigger): the preceding Monday 00:00:00 UTC through that same Sunday
-  23:59:59.999999 UTC — i.e. the 7-day week that ended earlier that same day, 9 hours before generation.
-- **Monthly** (1st 09:00 UTC trigger): the full previous calendar month, first day 00:00:00 UTC through last
-  day 23:59:59.999999 UTC.
+- **Daily** (00:00 UTC trigger): `[previous UTC calendar day 00:00:00, trigger day 00:00:00)`. E.g. a
+  2026-08-20 00:00 UTC trigger covers `[2026-08-19 00:00:00, 2026-08-20 00:00:00)`. At the moment the cron
+  fires, "today" has zero elapsed data, so the report describes the day that just ended.
+- **Weekly** (Sunday 09:00 UTC trigger): `[preceding Monday 00:00:00, following Monday 00:00:00)` — the
+  Mon–Sun week that ended the day *before* the trigger day, not the trigger day's own week (at Sunday 09:00,
+  that day's own week has only had 9 hours elapsed — using it would include ~15 hours of the future). E.g. a
+  trigger on Sunday 2026-08-23 09:00 UTC covers `[2026-08-10 00:00:00, 2026-08-17 00:00:00)` — the week of
+  Mon 2026-08-10 through Sun 2026-08-16.
+- **Monthly** (1st 09:00 UTC trigger): `[first day of previous calendar month 00:00:00, first day of current
+  calendar month 00:00:00)`.
 
 This is a formal rule the generation function enforces, not something left to be inferred from the cron
-expression — pgTAP boundary tests assert exact `period_start`/`period_end` values per cadence.
+expression — pgTAP boundary tests assert exact `period_start`/`period_end` values per cadence, including the
+weekly off-by-one-week case above.
 
 ### Idempotency
 
 A unique constraint on `(shop_id, report_type, period_start, period_end)` on the snapshot table is the
-authoritative duplicate-prevention mechanism — not the scheduler, not a run log. Generation is an
-upsert-that-no-ops-on-conflict: if a snapshot already exists for that natural key, the call is a safe no-op,
-never a second snapshot and never a replacement. This makes safe by construction:
+authoritative duplicate-prevention mechanism — not the scheduler, not a run log. Generation is
+**insert-if-absent, no-op-on-conflict** (deliberately not called an "upsert" — that term implies an update
+path, and this design explicitly forbids replacing an existing snapshot): if a snapshot already exists for
+that natural key, the call is a safe no-op, never a second snapshot and never a replacement. This makes safe
+by construction:
 - pg_cron retrying a failed/timed-out job
 - Manual re-invocation of `generate_scheduled_reports` for operational recovery
 - Future additional triggers (shift-close) racing or duplicating the midnight run for the same period
@@ -208,10 +221,18 @@ no data renders the same "nothing to show" state either way).
 ### In-app notification
 
 On successful generation (new snapshot row actually inserted, not a no-op), emit a lightweight in-app
-signal — e.g. a row in an existing/new notifications mechanism — informing the owner a given report is
-ready. This is a downstream consumer of a successful snapshot, not the scheduler's core responsibility.
-Exact mechanism (dedicated table vs. reuse of an existing notification system, if one exists) to be
-determined during implementation planning by checking current notification infrastructure in the codebase.
+signal — e.g. a row in an existing/new notifications mechanism — indicating a given report is ready. This is
+a downstream consumer of a successful snapshot, not the scheduler's core responsibility. Exact mechanism
+(dedicated table vs. reuse of an existing notification system, if one exists) to be determined during
+implementation planning by checking current notification infrastructure in the codebase.
+
+**Recipient resolution is decoupled from the snapshot.** The snapshot itself has no dependency on who gets
+notified — it is keyed only by shop/report/period. Notification delivery separately resolves which
+authorized users (owner, and potentially manager/staff depending on the shop's existing
+authorization/notification model) are eligible recipients for that shop's "report ready" signal at the time
+the notification is created. Keeping the artifact recipient-agnostic is deliberate: it is what lets WAFI-147C
+later attach a different delivery audience/channel (WhatsApp) to the same snapshot without touching how the
+snapshot itself is produced.
 
 This also defines the producer boundary WAFI-147C will need later:
 
@@ -250,7 +271,8 @@ to happen incidentally.
   and `generate_report_snapshot` (idempotency — calling twice for the same natural key produces exactly one
   row and one notification; the snapshot+notification atomicity invariant — a forced failure after the
   snapshot insert rolls back the snapshot too, so a retry can safely redo both; and exact period-boundary
-  values per cadence, per the Period semantics table above).
+  values per cadence, per the Period semantics section above — including the weekly case explicitly, since
+  it is the one most likely to regress to an off-by-one-week error).
 - Security tests: confirm neither function is `EXECUTE`-granted to `authenticated`/`anon`, and that
   `search_path` is fixed on both function definitions.
 - Contract tests comparing server-generated `Report`/`ReportSection` JSON against 147A's existing
