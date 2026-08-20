@@ -1,7 +1,7 @@
 # WAFI Unified Architecture Roadmap V3.0
 ## Production Readiness + Event-Driven Platform + Enterprise Architecture
 ### Version: 3.0 | Date: 2026-07-21 | Status: STAFF ENGINEER REVIEWED
-### Last implementation update: 2026-08-19 (WAFI-032 shipped — KPI Ownership Per Feature, docs-only; WAFI-147A shipped — report generation + on-demand viewer, all 13 reports, merged to main `fb283ea`; WAFI-020 status corrected — Phase 1 shipped on main, Phase 2 built but unmerged/paused; WAFI-156 shipped 2026-08-18; WAFI-026 investigated and deferred/re-scoped; WAFI-155 independently re-verified as framework-shipped-no-adopters; WAFI-147 investigated and split into 147A/147B/147C)
+### Last implementation update: 2026-08-20 (WAFI-147B shipped — server-side scheduled report generation, merged to main `d1a887e`; per-row status table audited against actual git history and corrected — WAFI-140/142/143/144/145/146/150/153/157 were all already fully shipped/merged but their table rows still read as plain unshipped P0/P1/P2 entries, contradicting the Macro-Phase 3 status row above which had already said this; only genuinely open items from that batch are WAFI-147C, WAFI-148, WAFI-149, WAFI-033, none started, no specs). Prior update 2026-08-19 (WAFI-032 shipped — KPI Ownership Per Feature, docs-only; WAFI-147A shipped — report generation + on-demand viewer, all 13 reports, merged to main `fb283ea`; WAFI-020 status corrected — Phase 1 shipped on main, Phase 2 built but unmerged/paused; WAFI-156 shipped 2026-08-18; WAFI-026 investigated and deferred/re-scoped; WAFI-155 independently re-verified as framework-shipped-no-adopters; WAFI-147 investigated and split into 147A/147B/147C)
 
 ---
 
@@ -182,7 +182,7 @@ Every extraction preserved its composable's existing test suite unchanged (zero 
 
 | Ticket | Title | Priority | Effort | What It Builds |
 |---|---|---|---|---|
-| WAFI-140 | Business Event & Automation Platform | P0 | 3 sprints | Event bus, 26+ canonical events, subscribers, idempotency, offline replay, security |
+| WAFI-140 | Business Event & Automation Platform | P0 | 3 sprints | Event bus, 26+ canonical events, subscribers, idempotency, offline replay, security. **Status: ✅ Fully shipped, all 3 sprints, merged to main** — verified 2026-08-20 (spec + plan + implementation commits all confirmed on main). |
 
 **Architecture Principle:**
 ```
@@ -242,12 +242,12 @@ board Stats  Alert    Reports   (POS Brain)
 
 | Ticket | Title | Priority | Effort | What It Builds |
 |---|---|---|---|---|
-| WAFI-150 | Automatic Audit Coverage | P1 | 1 sprint | Every business event → automatic audit entry, 100% coverage |
-| WAFI-143 | Cross-Feature Automation | P1 | 2 sprints | Sale finishes → Dashboard → Staff → Profit → Notifications → Audit → Daily Summary (all automatic) |
-| WAFI-144 | Automatic Insights | P1 | 2 sprints | "Sales are 18% lower than last Tuesday" — conclusions, not numbers |
-| WAFI-145 | Owner Notification Center | P1 | 1.5 sprints | Important only: "Ahmed applied 30% discount", "Drawer variance $15". Deduplication + matrix configuration |
-| WAFI-146 | Dashboard 2.0 | P1 | 2 sprints | "Why is revenue lower?" → 18 fewer transactions, Returns +7, Ahmed offline 45min |
-| WAFI-142 | Business Event Registry | P1 | 0.5 sprint | Living documentation: Event | Producer | Consumers | Version | Schema. Includes auto-generated dependency graph (Phase 2) |
+| WAFI-150 | Automatic Audit Coverage | P1 | 1 sprint | Every business event → automatic audit entry, 100% coverage. **Status: ✅ Fully shipped, merged to main** — verified 2026-08-20. |
+| WAFI-143 | Cross-Feature Automation | P1 | 2 sprints | Sale finishes → Dashboard → Staff → Profit → Notifications → Audit → Daily Summary (all automatic). **Status: ✅ Fully shipped, merged to main** — verified 2026-08-20. |
+| WAFI-144 | Automatic Insights | P1 | 2 sprints | "Sales are 18% lower than last Tuesday" — conclusions, not numbers. **Status: ✅ Fully shipped (InsightBanner on Home + Reports), merged to main** — verified 2026-08-20. |
+| WAFI-145 | Owner Notification Center | P1 | 1.5 sprints | Important only: "Ahmed applied 30% discount", "Drawer variance $15". Deduplication + matrix configuration. **Status: ✅ Fully shipped (Notification Center + Settings), merged to main** — verified 2026-08-20. |
+| WAFI-146 | Dashboard 2.0 | P1 | 2 sprints | "Why is revenue lower?" → 18 fewer transactions, Returns +7, Ahmed offline 45min. **Status: ✅ Shipped, merged to main** — verified 2026-08-20; ships with an explicit, documented descope (notifications strip, pull-to-refresh), not a silent gap. |
+| WAFI-142 | Business Event Registry | P1 | 0.5 sprint | Living documentation: Event | Producer | Consumers | Version | Schema. Includes auto-generated dependency graph (Phase 2). **Status: ✅ Fully shipped (docs-only, `SIGNALS.md`), merged to main** — verified 2026-08-20. |
 
 **Key Dependencies:**
 - WAFI-150 depends on WAFI-140 (event bus must exist)
@@ -262,12 +262,12 @@ board Stats  Alert    Reports   (POS Brain)
 | Ticket | Title | Priority | Effort | What It Builds |
 |---|---|---|---|---|
 | WAFI-151 | Projection Rebuild & Event Recovery | P1 | ~~1 sprint~~ **stale — see Macro-Phase 3 status row above; shipped as Plan 1 + Plan 2, both merged** | `Rebuild Dashboard` → Replay Events → Recreate Read Models. Corruption recovery command |
-| WAFI-153 | Read Models / CQRS Optimization | P1 | 1.5 sprints | `dashboard_metrics`, `profit_cache`, `inventory_summary`, `customer_summary`, `staff_summary`. Maintained by subscribers, not queried ad-hoc |
+| WAFI-153 | Read Models / CQRS Optimization | P1 | 1.5 sprints | `dashboard_metrics`, `profit_cache`, `inventory_summary`, `customer_summary`, `staff_summary`. Maintained by subscribers, not queried ad-hoc. **Status: ✅ Shipped/closed, merged to main** — verified 2026-08-20; `profit_cache` adopted, the other four read models were explicitly evaluated and declined (documented decision, not a silent gap). |
 | WAFI-154 | Background Job & Worker Framework | P2 | ~~1.5 sprints~~ **stale — see Macro-Phase 3 status row above; framework shipped 2026-08-12/13, no adopters yet** | Immediate → Queue → Worker. PDF generation, daily summaries, batch reports don't block checkout |
 | WAFI-155 | Feature Flag Framework | P2 | ~~0.5 sprint~~ **shipped, zero adopters — see Macro-Phase 3 status row above** | `feature.dashboard_v2`, `feature.pos_brain`, `feature.insights`. Gradual rollout, not hard replace |
 | WAFI-156 | Business Rules Engine | P2 | 2 sprints | `WHEN discount > 30% THEN owner_notification`. `WHEN customer_debt > 500 THEN block_credit`. Configurable, not hardcoded |
-| WAFI-157 | Event Contract Testing | P2 | 0.5 sprint | Changing `sale.completed` payload → auto-verify all subscribers still deserialize correctly |
-| WAFI-147 | Automatic Reports | P2 → **split 2026-08-18, 147A ✅ shipped 2026-08-19** | ~~1.5 sprints~~ **split into 147A (data/on-demand, ✅ shipped, merged `fb283ea`) / 147B (scheduling infra, undecided) / 147C (WhatsApp Business API delivery, undecided) — see Macro-Phase 3 status row above** | 13 reports fully generatable on-demand in-app (147A). Scheduling ("on schedule") and automated delivery (147B/147C) are the parts that still don't exist |
+| WAFI-157 | Event Contract Testing | P2 | 0.5 sprint | Changing `sale.completed` payload → auto-verify all subscribers still deserialize correctly. **Status: ✅ Shipped, merged to main** — verified 2026-08-20, but landed as one commit bundled into a WAFI-153 chore with no dedicated spec/plan; consider a short follow-up to document it as its own deliverable if that matters later. |
+| WAFI-147 | Automatic Reports | P2 → **split 2026-08-18, 147A+147B ✅ shipped** | ~~1.5 sprints~~ **split into 147A (data/on-demand, ✅ shipped, merged `fb283ea`) / 147B (server-side scheduled generation, ✅ shipped, merged `d1a887e` 2026-08-20 — pg_cron live-project verification and PowerSync device sync still need manual verification against a real Supabase project) / 147C (WhatsApp Business API delivery, not started, no spec) — see Macro-Phase 3 status row above** | 13 reports fully generatable on-demand in-app (147A) and now server-scheduled with durable snapshots (147B). Automated WhatsApp delivery (147C) is the remaining piece that doesn't exist |
 | WAFI-148 | Internal Health Monitoring | P2 | 1 sprint | 10 metrics: sync failures, offline duration, printer errors, drawer mismatches. Owner-facing + team-facing |
 | WAFI-149 | POS Brain | P2 | 2 sprints | "Revenue up 14% because drinks grew 32%" — causal explanations, not just correlational. Good product design, not AI |
 | WAFI-026 | Sale Lifecycle State Machine | P1 → **deferred/re-scoped 2026-08-18** | ~~1.5 sprints~~ **investigated, not built — see Macro-Phase 3 status row above** | `draft → items_added → discounted → payment_started → completed → printed → returned → voided → archived`. Explicit transitions, event per transition — original scope; deferred pending a concrete demonstrated need |
