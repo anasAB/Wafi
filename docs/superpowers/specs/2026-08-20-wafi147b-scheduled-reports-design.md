@@ -370,6 +370,12 @@ reporting window as of the trigger time — see "Period semantics" below for the
 cadence. ("Preceding calendar window" describes wall-clock boundaries only; it does not imply the
 underlying data is finalized — see Data-finality policy below.)
 
+**147B v1 implements exactly 12 generation types: 2 daily + 6 weekly + 4 monthly** (the rows below).
+Employee Summary is the 13th report named in the original source spec overall, but it is event-triggered
+with no wall-clock cadence and is excluded from 147B entirely (see above) — so "12" and "13" are both
+correct depending on which count is being referenced, and this spec uses "12" for anything scoped to what
+147B actually generates.
+
 | Report | Cadence | Trigger (v1) | Period covered |
 |---|---|---|---|
 | Daily Closing | daily | 00:00 UTC (shift-close trigger deferred, see Non-goals) | previous UTC calendar day |
@@ -445,10 +451,18 @@ by construction:
 Regenerating a snapshot because its source data was corrected is a distinct, explicit future operation
 (not built in v1) — not a side effect of retry logic.
 
-**Atomicity invariant:** the snapshot insert and its corresponding "report ready" notification insert must
-occur in the same PostgreSQL transaction, inside `generate_report_snapshot(...)`. The notification is
-created only when the snapshot insert actually creates a new row (not on a no-op conflict). If either insert
-fails, the whole transaction rolls back and a retry safely re-attempts both together. Without this rule, a
+**Atomicity invariant (extended to cover the staff-section table, not just the main snapshot):** for the 4
+composite report types, the artifact is now three parts — the main snapshot, its associated
+`generated_report_staff_sections` row, and all "report ready" notification rows — and all three must be
+inserted in the same PostgreSQL transaction inside `generate_report_snapshot(...)`. For the other 8 report
+types, it's just the main snapshot + notifications, as before. The notification(s) are created only when the
+main snapshot insert actually creates a new row (not on a no-op conflict). If any required insert fails —
+the main snapshot, the staff-section row (when applicable), or any recipient's notification — the whole
+transaction rolls back and a retry safely re-attempts all of it together. Without this extension, an
+implementation could produce `main snapshot ✓, staff-section row ✗, notifications ✓, COMMIT` — a committed
+snapshot whose associated gated data silently never got created, which the natural-key idempotency check
+alone would not catch (the main snapshot already "exists," so a retry would no-op on it while the missing
+staff section stays missing forever). Without this rule, a
 snapshot committed in one transaction followed by a notification insert that fails separately would leave a
 permanently notification-less snapshot — a later retry would see the snapshot already exists, no-op, and
 never emit the notification. Each recipient notification is independently idempotent on
@@ -467,6 +481,17 @@ partially-notified state (e.g. 2 of 3 eligible recipients notified). This is a d
 atomicity invariant already chosen above, stated explicitly here so a future change doesn't casually decide
 "one malformed recipient shouldn't block report generation" without recognizing that would be a deliberate
 weakening of this invariant, not a bug fix.
+
+**Explicit distinction — creating a missing snapshot vs. correcting an existing one:** `generate_report_
+snapshot(...)`'s insert-if-absent behavior is only ever valid for the first case. "A scheduled/missed slot
+has no snapshot yet" (the resolver's normal case, and operator recovery's case) → calling
+`generate_report_snapshot(...)` is the correct, allowed operation, and it succeeds by creating the row.
+"A snapshot already exists but its underlying data needs correcting" (e.g. late-arriving data per the
+Data-finality policy, or any other reason an existing snapshot might be considered stale/wrong) →
+`generate_report_snapshot(...)` is **not** the right tool for this and will only ever no-op against it,
+never modify it — correction requires the distinct future operation named in the Data-finality policy's
+follow-up ticket, not a workaround built out of the v1 primitive. An operator should not attempt to "recover"
+an existing-but-stale snapshot by calling `generate_report_snapshot(...)` expecting it to update anything.
 
 ### Persisted artifact
 
@@ -512,13 +537,14 @@ the main table's `report_data`. Instead:
 |---|---|---|
 | `id` | `uuid PRIMARY KEY DEFAULT gen_random_uuid()` | |
 | `generated_report_id` | `uuid NOT NULL REFERENCES generated_reports(id)` | the main snapshot this section belongs to; one-to-one |
+| `shop_id` | `uuid NOT NULL REFERENCES shops(id)` | denormalized from the parent row rather than requiring a join purely to evaluate RLS/sync-rule scope — must always equal the parent `generated_reports.shop_id` for the same `generated_report_id` (enforce via the same transaction that inserts both, per Atomicity below; a mismatch would be a bug, not a legitimate state) |
 | `section_data` | `jsonb NOT NULL` | the gated `ReportSection`'s content only, same JSON shape as any other section |
 
 Unique constraint: `(generated_report_id)` (one gated-section row per main snapshot, when one exists — the
-other 8 v1 report types never get a row here at all). RLS: `shop_id = auth_shop_id() AND auth_role() =
-'owner'` (joining to the parent row for `shop_id`, or denormalizing `shop_id` onto this table directly for a
-simpler policy — decide at migration-writing time) — see Read authorization below for why `auth_role()` is
-the correct predicate here, not merely shop scope.
+other 8 v1 report types never get a row here at all). RLS: `shop_id = auth_shop_id() AND
+public.can('can_view_staff_performance')` — see Read authorization below for why `public.can(...)` (this
+codebase's existing single-call-site permission-check primitive) is the correct predicate here, not a raw
+role check or shop scope alone.
 
 **Schema-version compatibility rule.** `report_schema_version = 1` for all v1 snapshots. The rule going
 forward: the Reports viewer must continue to correctly render every schema version it may encounter in
@@ -532,22 +558,70 @@ same `Report`/`ReportSection` JSON shape 147A's client-side `compute()` function
 parity requirement, not a code-sharing one — verify via contract tests comparing server-generated JSON
 against 147A's live-computed JSON for equivalent inputs, per report type, during implementation.
 
-**What "parity" means, precisely:** given equivalent fixture data and identical reporting period boundaries,
-the server-generated snapshot must be structurally and semantically equivalent to 147A's live
-`Report`/`ReportSection` output — not necessarily byte-for-byte identical JSON (property ordering or
-serialization details that aren't part of the UI contract don't need to match). Contract tests assert:
-same sections present, same fields per section, same values, same row/column ordering where ordering is
-part of what the UI renders, same totals/calculations, and same empty-state behavior (e.g. a section with
-no data renders the same "nothing to show" state either way).
+**What "parity" means, precisely — and why it must be defined per report type given the split-table design:**
+an earlier draft defined parity as one blanket rule ("the server-generated snapshot must be structurally
+and semantically equivalent to 147A's live output"), which is no longer true as stated once the 4 composite
+reports' gated section lives in a separate table — the main snapshot alone is *by design* missing a section
+147A's live output includes for an owner. The rule must distinguish **storage-representation parity**
+(what's persisted) from **rendered-report parity** (what a given viewer ends up seeing), and state each
+precisely:
+
+- **The 8 v1 report types with no gated section:** storage-representation parity is the whole story —
+  `generated_reports.report_data` alone must be structurally and semantically equivalent to 147A's live
+  `Report`/`ReportSection` output for the same period, for any viewer (there's nothing to vary by viewer).
+- **The 4 composite report types with a gated section (Weekly Summary, Monthly Business Health, Discount
+  Report, Returns Report):** parity is defined per viewer authorization state, not as one artifact:
+  - For a viewer **with** `can_view_staff_performance`: the *composition* of
+    `generated_reports.report_data` + the (authorized) `generated_report_staff_sections.section_data` must
+    be equivalent to 147A's live output for an owner-equivalent viewer.
+  - For a viewer **without** `can_view_staff_performance`: `generated_reports.report_data` **alone** must be
+    equivalent to 147A's live output for that same restricted viewer (i.e. 147A's own section-omitted
+    output, not the full one).
+  - `generated_reports.report_data` is therefore never expected to equal 147A's *full* live output for
+    these 4 report types on its own — that is by design, not a parity gap.
+
+In both cases, "equivalent" means structurally and semantically equivalent — not necessarily byte-for-byte
+identical JSON (property ordering or serialization details outside the UI contract don't need to match).
+Contract tests assert: same sections present (for the applicable viewer state), same fields per section,
+same values, same row/column ordering where ordering is part of what the UI renders, same
+totals/calculations, and same empty-state behavior.
 
 ### Read authorization (RLS) and sync/read mechanism
 
 The snapshot table must not be readable across shop boundaries — it holds precomputed financial/reporting
-data. Follow the exact existing precedent already established for server-authoritative shop-scoped data:
-`profit_cache` (`086_profit_cache_apply.sql`) enables RLS with a single `SELECT`-only policy,
-`profit_cache_select_own_shop ON public.profit_cache FOR SELECT USING (shop_id = public.auth_shop_id())` —
-this new table gets the equivalent policy against `auth_shop_id()`, no client `INSERT`/`UPDATE`/`DELETE`
-grants (consistent with the Immutability rule above).
+data. `profit_cache` (`086_profit_cache_apply.sql`) is the precedent for the *shop-scope* half of this
+(`profit_cache_select_own_shop ON public.profit_cache FOR SELECT USING (shop_id = public.auth_shop_id())`),
+but that precedent is not sufficient here on its own — see below.
+
+**Mandatory correction — the main snapshot table must also enforce `can_view_reports`, not shop membership
+alone.** An earlier draft of this spec left `generated_reports`' RLS at plain `shop_id = auth_shop_id()`.
+That is inconsistent with the feature this data belongs to: the existing `/reports` route itself requires
+`meta: { permission: 'can_view_reports', feature: 'reporting_pack' }` (147A's spec, §5) — a shop member
+without that permission cannot open the Reports UI at all, yet plain shop-scope RLS would still let that
+same user's device query or sync the underlying `generated_reports` rows directly. A route guard is a
+client-side check on how the UI is reached; it says nothing about what a table's RLS policy or PowerSync
+sync rule independently allows. This codebase already has the exact primitive needed to close this
+correctly: `public.can(flag text)` (`054_auth_role_helpers.sql`) — documented there as *"the single call
+site for every permission-flag check in RLS policies… fail-closed, never errors open"* — is precisely the
+mechanism `can_view_reports` (a per-staff-grantable custom permission, not a structurally-fixed role) needs
+to be checked through in RLS, exactly as it's already the pattern for every other permission-gated RLS
+policy in this codebase. `generated_reports`' RLS policy is therefore:
+`shop_id = auth_shop_id() AND public.can('can_view_reports')` — both conditions required, matching the
+existing UI gate at the data layer rather than only at the route layer. Same rule applies wherever
+"eligible recipient" is resolved for the co-transactional notification (In-app notification below): a
+recipient must hold `can_view_reports` for that shop, not merely belong to it — the earlier draft's
+"holders of `can_view_reports`" language for notifications was already correct; the gap was specifically in
+the table's own RLS policy not matching it.
+
+The staff-section table's RLS additionally requires `public.can('can_view_staff_performance')` rather than
+the raw `auth_role() = 'owner'` check an earlier draft proposed — `can()` already returns `true`
+unconditionally for `auth_role() = 'owner'` (so the two are equivalent in practice, since
+`can_view_staff_performance` is never grantable to a non-owner per 147A's spec), but routing through `can()`
+matches this codebase's own single-call-site convention for permission checks rather than hand-rolling an
+equivalent-but-parallel check, and stays correct automatically if that permission's grantability rule ever
+changes.
+
+No client `INSERT`/`UPDATE`/`DELETE` grants on either table (consistent with the Immutability rule above).
 
 **Correction on what "147A's existing authorization model" actually is, checked directly against
 147A's design spec (`docs/superpowers/specs/2026-08-18-wafi147a-automatic-reports-design.md` §5):** an
@@ -588,11 +662,11 @@ Concretely, for the 4 composite reports with a gated section:
   **never includes the staff-ranking/staff-cut section's content at all** — it is generated without that
   section, not generated-then-hidden.
 - The gated section's content is persisted separately, in a second table (e.g. `generated_report_staff_sections`,
-  FK to the main snapshot's `id`), with its own RLS policy: `auth_role() = 'owner'` (matching the existing
-  precedent exactly, since the underlying permission is structurally owner-only) in addition to the same
-  shop-scope check. If this table is synced via PowerSync, its sync rule must independently enforce the same
-  `auth_role() = 'owner'` restriction — a non-owner device never receives these rows to sync, not merely
-  fails to render them.
+  FK to the main snapshot's `id`, with `shop_id` denormalized directly onto this table rather than requiring
+  a join through the parent for authorization — see Persisted artifact below), with its own RLS policy:
+  `shop_id = auth_shop_id() AND public.can('can_view_staff_performance')` (per the correction above). If
+  this table is synced via PowerSync, its sync rule must independently enforce the same restriction — a
+  non-owner device never receives these rows to sync, not merely fails to render them.
 - The Reports viewer, for these 4 report types, fetches the main snapshot and (only when the reading
   device's own sync/RLS actually delivered one) the associated staff-section snapshot, and composes them —
   this still reuses 147A's existing section-level composition logic, just now backed by data that was never
@@ -771,22 +845,33 @@ not a shared code artifact.
   scheduled_for := <a real Sunday 09:00>)` is rejected because the period doesn't match what that
   `scheduled_for` derives for that report type — proves the primitive cross-checks rather than trusting a
   caller-supplied period unconditionally.
+- Extended-atomicity test (composite report types only): force the staff-section insert to fail after the
+  main snapshot insert succeeds within the same call; assert neither the main snapshot nor any notification
+  row exists afterward — proves the three-part artifact is genuinely all-or-nothing, not just the
+  two-part (snapshot + notification) case already covered for the 8 non-composite report types.
 - `CHECK (period_start < period_end)` and the `report_type` value constraint are exercised directly (invalid
   inserts rejected at the database level, not only by application code discipline).
 - `generated_at` test: assert two snapshots generated by the same `generate_scheduled_reports` invocation,
   with a deliberate delay injected between them, record different `generated_at` values — proves
   `clock_timestamp()` is in use rather than the transaction-start-pinned `now()`.
-- Staff-section data-exposure test (the important one, stronger than a rendering test): as a non-owner
-  session, query/attempt to sync the staff-section table directly for a shop's Weekly Summary/Monthly
-  Business Health/Discount/Returns snapshot and assert **zero rows are returned or synced** — not that the
-  UI hides them. This proves the data itself never reaches an unauthorized device, which is the actual
-  security property this design commits to; a rendering-only test would pass even if the underlying data
-  leak still existed.
-- Section-gating parity test: for an owner session (who does receive the staff-section row), assert the
-  composed snapshot-backed report renders equivalently to 147A's live-computed output for the same period —
-  same sections, same values, same ordering — extended across every authorization state 147A itself
-  supports (owner with the section, non-owner without it), not just the raw-JSON parity already covered
-  above.
+- `can_view_reports` access-matrix test on `generated_reports`: shop A + `can_view_reports` → snapshot
+  visible; shop A without `can_view_reports` → invisible; shop B + `can_view_reports` → invisible (proves
+  the policy is `AND`, not `OR`, between shop-scope and the permission check).
+- `can_view_staff_performance` access-matrix test on `generated_report_staff_sections`: shop A owner →
+  staff-section row visible; shop A manager/cashier (shop-scope satisfied, permission not) → invisible.
+- Staff-section data-exposure test (the important one, stronger than a rendering test): as a
+  non-`can_view_staff_performance` session, query/attempt to sync the staff-section table directly for a
+  shop's Weekly Summary/Monthly Business Health/Discount/Returns snapshot and assert **zero rows are
+  returned or synced** — not that the UI hides them. This proves the data itself never reaches an
+  unauthorized device, which is the actual security property this design commits to; a rendering-only test
+  would pass even if the underlying data leak still existed.
+- Two-tier parity tests, matching the corrected contract above: for the 8 non-composite report types,
+  `report_data` alone parity-tested against 147A's live output (one case). For the 4 composite report
+  types, two separate cases: (a) `report_data` + the authorized `section_data` composed together,
+  parity-tested against 147A's live output for an owner; (b) `report_data` alone, parity-tested against
+  147A's live output for a viewer without `can_view_staff_performance` (147A's own section-omitted output,
+  not the full one). Case (b) failing while (a) passes would indicate the main snapshot accidentally still
+  contains gated content; case (a) failing while (b) passes would indicate the split composition is broken.
 - Cross-runtime period-parity tests: assert the PL/pgSQL and TypeScript/Vue period-boundary computations
   produce identical `(period_start, period_end)` for representative dates across daily/weekly/monthly
   cadences, including the weekly week-boundary case — this is the actual guarantee behind the read path's
