@@ -87,6 +87,46 @@ streams:
       # WAFI-153: profit_cache, same pattern as daily_event_counts above.
       - SELECT * FROM public.profit_cache         WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())
 
+      # WAFI-147B: generated_reports, additionally filtered by can_view_reports --
+      # unlike every other bucket in this file, which is shop-scope only. This is
+      # the first permission-filtered sync rule in this codebase.
+      #
+      # ** UNVERIFIED / HIGH RISK **: this uses `auth.parameters() ->> 'staff_id'`
+      # to resolve the requesting device's staff identity. The WAFI-122 STATUS note
+      # at the top of this file documents that this project's `subscription.parameter(...)`
+      # / stream `parameters:` mechanism -- the client-supplied-parameter mechanism,
+      # of which auth.parameters() is the same family -- was tried live on this
+      # exact hosted PowerSync project and returned ZERO rows for every table that
+      # used it (staff/products/devices), even for the simplest case (only shop_id
+      # resolved this way). That attempt was reverted; the root cause was never
+      # diagnosed (see ADR-009's Design Correction section). This bucket has NOT
+      # been re-tested against a live device/session in this task -- do not trust
+      # it in production until it is. If it reproduces the WAFI-122 zero-row
+      # failure, the fallback is NOT to sync this table unbranched (full data to
+      # every role) -- that would leak permission-gated report data at the sync
+      # layer -- fall back instead to resolving staff identity a different way
+      # (e.g. a server-side staff-session table keyed by device, joined only on
+      # auth.user_id()) before re-enabling this bucket.
+      - SELECT gr.* FROM public.generated_reports gr
+          JOIN public.shops sh ON sh.id = gr.shop_id AND sh.owner_user_id = auth.user_id()
+          JOIN public.staff st ON st.shop_id = gr.shop_id AND st.id = (auth.parameters() ->> 'staff_id')::uuid
+          WHERE st.role = 'owner' OR (st.permissions ->> 'can_view_reports')::boolean IS TRUE
+
+      # WAFI-147B: generated_report_staff_sections -- owner-only, raw role check
+      # (NOT the can_view_reports flag above). See design spec's explicit
+      # correction: permissionsForRole() does not trust the stored permissions
+      # blob for can_view_staff_performance on non-owners, so this sync rule
+      # must not either -- hence a role check, not a permissions-blob read.
+      # Same UNVERIFIED auth.parameters() risk as generated_reports above --
+      # this table holds staff performance data, so it is MORE sensitive than
+      # generated_reports if the parameter mechanism fails open instead of
+      # closed. Verify zero-row-vs-full-row failure mode against a live device
+      # before trusting this in production.
+      - SELECT grs.* FROM public.generated_report_staff_sections grs
+          JOIN public.shops sh ON sh.id = grs.shop_id AND sh.owner_user_id = auth.user_id()
+          JOIN public.staff st ON st.shop_id = grs.shop_id AND st.id = (auth.parameters() ->> 'staff_id')::uuid
+          WHERE st.role = 'owner'
+
       # WAFI-156: business_rules config, synced so RulesScreen.vue can list/edit.
       # rule_action_log is deliberately NOT synced -- server-only execution ledger.
       - SELECT * FROM public.business_rules       WHERE shop_id IN (SELECT id FROM public.shops WHERE owner_user_id = auth.user_id())

@@ -598,6 +598,29 @@ const business_rules = new Table({
   updated_at: column.text,
 })
 
+// WAFI-147B -- server-generated scheduled report snapshots (Task 8's cron jobs).
+// Synced with a permission-filtered bucket (see powersync.yaml) -- unlike every
+// other synced table, this one is NOT shop-scope-only at the sync layer.
+const generated_reports = new Table({
+  shop_id:                 column.text,
+  report_type:             column.text,
+  period_start:            column.text,
+  period_end:              column.text,
+  scheduled_for:           column.text,
+  generated_at:            column.text,
+  report_schema_version:   column.integer,
+  report_data:             column.text,  // jsonb arrives as a JSON string; JSON.parse at the read site
+})
+
+// WAFI-147B -- owner-only staff performance sections split out of generated_reports
+// so the permission split can be enforced by the sync layer itself (see
+// powersync.yaml's raw role check, not a can_view_reports flag read).
+const generated_report_staff_sections = new Table({
+  generated_report_id: column.text,
+  shop_id:              column.text,
+  section_data:         column.text,  // jsonb arrives as a JSON string; JSON.parse at the read site
+})
+
 export const AppSchema = new Schema({
   products,
   stock_adjustments,
@@ -643,4 +666,6 @@ export const AppSchema = new Schema({
   subcategories,
   shops,
   denomination_configs,
+  generated_reports,
+  generated_report_staff_sections,
 })

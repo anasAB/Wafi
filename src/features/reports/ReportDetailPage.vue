@@ -13,6 +13,7 @@ import { useDeviceStore } from '@/store/device.store'
 import { useSessionStore } from '@/store/session.store'
 import { canUserDo } from '@/router/permissions'
 import { formatLocalDate, addCalendarDays } from './dateUtils'
+import { expectedPeriodUtc } from './snapshotLookup'
 import { REPORT_DEFINITIONS } from './index'
 import type { ReportId } from './index'
 import type { Report, ReportDateRange, ReportSection } from './report.types'
@@ -77,6 +78,83 @@ const isAuthorizedForThisReport = computed(() =>
   !needsStaffContext.value || canUserDo(session.activeStaff, 'can_view_staff_performance'),
 )
 
+// WAFI-147B: check for a persisted snapshot before falling back to 147A's
+// live compute() path. Snapshot lookup only applies to the 12 wall-clock
+// report types this ticket schedules -- Employee Summary
+// (contextRequirement === 'staff') has no wall-clock cadence and always
+// falls through to live compute.
+async function tryLoadSnapshot(): Promise<Report | null> {
+  if (needsStaffContext.value) return null
+
+  // Final-review C4, part 1: only attempt a snapshot lookup when the
+  // picker's CURRENT range actually equals the canonical "most recently
+  // completed period" for this report's cadence -- not for every range the
+  // picker happens to hold. defaultRangeForCadence's rolling windows will
+  // essentially never coincide with a real scheduled (calendar-aligned)
+  // period, and a user-picked custom range must always fall through to live
+  // compute rather than risk matching a period it didn't actually select.
+  let expectedStart: Date, expectedEnd: Date
+  try {
+    ;({ periodStart: expectedStart, periodEnd: expectedEnd } = expectedPeriodUtc(reportId.value, new Date()))
+  } catch {
+    return null // reportId has no wall-clock cadence (shouldn't happen given the guard above, defensive)
+  }
+  const expectedFrom = formatLocalDate(expectedStart)
+  // periodEnd is EXCLUSIVE (the day after the period's last included day) in
+  // both the server's _wafi147b_expected_period and expectedPeriodUtc, while
+  // range.to is INCLUSIVE (device-local calendar date) -- subtract one day
+  // before comparing, or every cadence would be off-by-one against the picker.
+  const expectedTo = formatLocalDate(new Date(expectedEnd.getTime() - 24 * 60 * 60 * 1000))
+  if (range.value.from !== expectedFrom || range.value.to !== expectedTo) return null
+
+  const { shopId } = useDeviceStore()
+  // Final-review C4, part 2: query by shop_id + report_type only (no exact-
+  // string match against the synced timestamptz column -- fragile, and
+  // unprecedented elsewhere in this codebase), ordered by the most recent
+  // generation, then verify the returned row's OWN period against the
+  // locally-computed expected period as parsed Date objects, never as raw
+  // strings.
+  const snapshot = await db.getOptional<{
+    id: string; report_data: string; generated_at: string; scheduled_for: string | null
+    period_start: string; period_end: string
+  }>(
+    `SELECT id, report_data, generated_at, scheduled_for, period_start, period_end FROM generated_reports
+     WHERE shop_id = ? AND report_type = ? ORDER BY generated_at DESC LIMIT 1`,
+    [shopId, reportId.value],
+  )
+  if (!snapshot) return null
+  if (new Date(snapshot.period_start).getTime() !== expectedStart.getTime()) return null
+  if (new Date(snapshot.period_end).getTime() !== expectedEnd.getTime()) return null
+
+  const parsed = JSON.parse(snapshot.report_data) as Report
+  const staffSection = await db.getOptional<{ section_data: string }>(
+    `SELECT section_data FROM generated_report_staff_sections WHERE generated_report_id = ?`,
+    [snapshot.id],
+  )
+  // A staff-section row is present here ONLY if this device's own sync/RLS
+  // actually delivered one (owner device) -- absence is a data-presence
+  // fact, not a permission decision this client re-derives (design spec
+  // "Read authorization"). The existing `visibleSections` filter below
+  // still applies afterward as an additional UI-layer safeguard, but the
+  // real security boundary already happened at the sync/RLS layer.
+  const sections = staffSection
+    ? [...parsed.sections, JSON.parse(staffSection.section_data)]
+    : parsed.sections
+
+  return {
+    ...parsed,
+    sections,
+    isSnapshot: true,
+    generatedAt: snapshot.generated_at,
+    scheduledFor: snapshot.scheduled_for ?? undefined,
+    // The snapshot's OWN period, for the banner -- so a mismatch (should
+    // never happen given the check above, but a schema/timezone surprise
+    // is exactly the kind of thing that should be visually catchable, not
+    // silent) is visible instead of trusted blindly.
+    dateRange: { from: formatLocalDate(new Date(snapshot.period_start)), to: formatLocalDate(new Date(new Date(snapshot.period_end).getTime() - 24 * 60 * 60 * 1000)) },
+  }
+}
+
 async function generate() {
   if (!definition.value) { error.value = 'التقرير غير موجود'; return }
   if (!isAuthorizedForThisReport.value) return // whole-report gate; UI never reaches the staff selector for this case either
@@ -98,7 +176,8 @@ async function generate() {
   try {
     const { shopId } = useDeviceStore()
     const context = selectedStaffId.value ? { staffId: selectedStaffId.value } : undefined
-    const result = await definition.value.compute(shopId, range.value, context)
+    const snapshotResult = await tryLoadSnapshot()
+    const result = snapshotResult ?? await definition.value.compute(shopId, range.value, context)
     // Only apply result if this call's token is still current (no newer call started)
     if (callToken === generationToken.value) {
       report.value = result
@@ -206,6 +285,11 @@ watch(() => route.params.reportId, async (newReportIdParam) => {
       <p v-if="loading" class="state-message">...جارٍ إنشاء التقرير</p>
       <p v-else-if="error" class="state-message state-message--error">{{ error }}</p>
       <template v-else-if="report">
+        <p v-if="report?.isSnapshot" data-testid="snapshot-generated-at" class="state-message">
+          تم إنشاء هذا التقرير في {{ report.generatedAt.slice(0, 10) }} -- {{ new Date(report.generatedAt).toLocaleString('ar') }}
+          <br>
+          <span data-testid="snapshot-period">الفترة: {{ report.dateRange.from }} — {{ report.dateRange.to }}</span>
+        </p>
         <template v-for="(s, i) in visibleSections" :key="i">
           <SummaryReportView v-if="s.type === 'summary'" :section="s" />
           <DetailReportView v-else :section="s" />

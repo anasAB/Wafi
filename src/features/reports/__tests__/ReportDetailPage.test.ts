@@ -11,7 +11,12 @@ vi.mock('@/store/device.store', () => ({ useDeviceStore: () => ({ shopId: 'shop1
 vi.mock('vue-router', async (orig) => ({ ...(await orig<any>()), useRoute: vi.fn(() => ({ params: { reportId: 'daily-closing' } })) }))
 
 const mockGetAll = vi.fn().mockResolvedValue([])
-vi.mock('@/data/powersync/db', () => ({ db: { getAll: (...a: unknown[]) => mockGetAll(...a) } }))
+// WAFI-147B: ReportDetailPage's generate() now checks for a persisted
+// snapshot via db.getOptional() before calling compute() -- returning
+// undefined here preserves this suite's pre-147B behavior (always falls
+// through to the live compute() path being tested).
+const mockGetOptional = vi.fn().mockResolvedValue(undefined)
+vi.mock('@/data/powersync/db', () => ({ db: { getAll: (...a: unknown[]) => mockGetAll(...a), getOptional: (...a: unknown[]) => mockGetOptional(...a) } }))
 
 import ReportDetailPage from '../ReportDetailPage.vue'
 import { REPORT_DEFINITIONS } from '../index'
@@ -28,6 +33,8 @@ describe('ReportDetailPage', () => {
     setActivePinia(createPinia())
     mockGetAll.mockClear()
     mockGetAll.mockResolvedValue([])
+    mockGetOptional.mockClear()
+    mockGetOptional.mockResolvedValue(undefined)
   })
 
   it('calls compute() exactly once for the selected report, with a local-calendar-date range, and renders its sections', async () => {
