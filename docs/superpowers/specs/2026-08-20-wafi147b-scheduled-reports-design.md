@@ -466,11 +466,11 @@ staff section stays missing forever). Without this rule, a
 snapshot committed in one transaction followed by a notification insert that fails separately would leave a
 permanently notification-less snapshot — a later retry would see the snapshot already exists, no-op, and
 never emit the notification. Each recipient notification is independently idempotent on
-`(snapshot_id, recipient_user_id)` — not on the snapshot alone. A single snapshot can have multiple eligible
+`entity_id, recipient_staff_id` — not on the snapshot alone. A single snapshot can have multiple eligible
 recipients (owner, and potentially manager/staff per the shop's authorization model — see In-app
 notification below), so the natural key must include the recipient: `generate_report_snapshot(...)` resolves
 eligible recipients and inserts one notification row per recipient, each independently no-op-on-conflict
-against `(snapshot_id, recipient_user_id)`. This is kept as defense-in-depth per recipient, not as the
+against `entity_id, recipient_staff_id`. This is kept as defense-in-depth per recipient, not as the
 primary correctness mechanism — the transaction boundary is — while still allowing the same snapshot to
 correctly notify multiple distinct users.
 
@@ -684,16 +684,26 @@ recipient filtering is needed today, but if a future wall-clock report is added 
 (mirroring Employee Summary's), notification eligibility must be re-checked against that report's specific
 gate, not just shop membership.
 
-**Read mechanism decision required at implementation time:** decide, during implementation planning, whether
-snapshots (both the main table and, where applicable, the staff-section table above) are (a) added to
-`powersync.yaml`/`schema.ts` and synced to the client like `profit_cache`/`events` already are (consistent
-with the existing pattern, works offline once synced — the expected default, since offline-first is one of
-the three non-negotiable Sacred Rules), or (b) read via a direct online-only Supabase query/RPC (simpler,
-but breaks the offline-first guarantee for this specific read, which per the Sacred Rules should not be done
-without an explicit, deliberate exception). Whichever is chosen, implementation must confirm the shop-scope
-RLS/sync-rule policy on the main table, and the additional `auth_role() = 'owner'` restriction on the
-staff-section table, are both correctly enforced at the mechanism actually chosen — RLS alone if (b), RLS
-*and* matching PowerSync sync rules if (a), per the security invariant above.
+**Read mechanism decision required at implementation time — verified against the actual `powersync.yaml`,
+this is not simply "the same pattern as `profit_cache`":** checked the live sync-rule config directly —
+every existing bucket (`daily_event_counts`, `profit_cache`, `business_rules`, etc.) filters *only* by
+`shop_id IN (SELECT id FROM shops WHERE owner_user_id = auth.user_id())`. **There is no existing
+permission-filtered sync bucket anywhere in this codebase today** — a sync rule that additionally checks
+`can_view_reports` or `can_view_staff_performance` (reading a staff member's permissions/role from within
+the sync-rule SQL) would be a genuine first for this codebase, not a copy of an established pattern. This
+must be scoped and verified as real, non-trivial implementation work if PowerSync is chosen — an earlier
+draft of this spec understated this by analogy to `profit_cache`, which is shop-scoped only and does not
+demonstrate permission-filtered sync.
+
+Given that, decide during implementation planning whether snapshots (both the main table and, where
+applicable, the staff-section table above) are (a) added to `powersync.yaml`/`schema.ts` with a genuinely
+new permission-filtered sync rule (works offline once synced — the expected default, since offline-first is
+one of the three non-negotiable Sacred Rules, but carries the first-of-its-kind implementation risk just
+described), or (b) read via a direct online-only Supabase query/RPC (mechanically simpler, and RLS alone is
+proven sufficient via the existing `public.can(...)` precedent, but breaks the offline-first guarantee for
+this specific read, which per the Sacred Rules should not be done without an explicit, deliberate exception).
+Whichever is chosen, implementation must confirm the enforcement mechanism actually works end-to-end for the
+chosen path — RLS alone if (b), RLS *and* a newly-built, newly-tested PowerSync sync rule if (a).
 
 ### Observability
 
@@ -738,20 +748,46 @@ the generation primitive, if benchmarking shows a single firing is too large.
 ### In-app notification
 
 On successful generation (new snapshot row actually inserted, not a no-op), emit a lightweight in-app
-signal per eligible recipient — e.g. a row in an existing/new notifications mechanism, one per recipient —
-indicating a given report is ready. This is a **co-transactional side effect** of successful generation
-(committed atomically alongside the snapshot, per Idempotency above) — not an asynchronous "consumer" in the
-sense WAFI-147C's future WhatsApp delivery will be. "Consumer" is reserved below for genuinely decoupled,
-out-of-transaction future delivery. Exact mechanism (dedicated table vs. reuse of an existing notification
-system, if one exists) to be determined during implementation planning by checking current notification
-infrastructure in the codebase.
+signal per eligible recipient — one row per recipient — indicating a given report is ready. This is a
+**co-transactional side effect** of successful generation (committed atomically alongside the snapshot, per
+Idempotency above) — not an asynchronous "consumer" in the sense WAFI-147C's future WhatsApp delivery will
+be. "Consumer" is reserved below for genuinely decoupled, out-of-transaction future delivery.
+
+**Verified against the actual codebase — reuse the existing `public.notifications` table
+(`079_notifications.sql`/`080_notification_center.sql`/`082`/`091`), do not build a new one.** It already
+has exactly the targeting model this design needs: `recipient_staff_id` (one specific staff member) and
+`recipient_role` (a whole role), nullable/not-mutually-exclusive by design. Since `can_view_reports` is a
+per-staff-grantable custom permission (confirmed via `src/router/permissions.ts` — owner *and* any manager
+specifically granted it, not a fixed role), targeting must use `recipient_staff_id`, one row per eligible
+staff member — `recipient_role` alone (e.g. `'owner'`) cannot express "everyone currently holding this
+permission." Map fields as: `entity_type = 'generated_report'`, `entity_id = <the snapshot's id>`,
+`type = 'report_ready'`, `source_event_id = NULL` (already an established pattern for non-event-derived
+rows — e.g. Low Stock notifications, per `091`'s own comment — not a schema change).
+
+**Real gap found, requires a small new migration:** the table's only existing unique index is on
+`source_event_id` alone, which is nullable and therefore provides no duplicate protection for
+`source_event_id = NULL` rows — every NULL is distinct from every other NULL under a plain unique index.
+That means reusing this table as-is would not give the `(snapshot, recipient)` idempotency this design
+already requires. A new **partial** unique index is needed, scoped only to this notification type so it
+doesn't disturb the table's existing rows/behavior for other types:
+`CREATE UNIQUE INDEX ... ON public.notifications (entity_id, recipient_staff_id) WHERE type =
+'report_ready'` (mirroring this codebase's own existing partial-index precedent for exactly this kind of
+scoped uniqueness, per `091`'s comment referencing `audit_log`'s prior fix). This index is what
+`generate_report_snapshot(...)`'s per-recipient insert conflicts against for its no-op-on-conflict behavior.
+The table's existing `notifications_insert_all` RLS policy (`shop_id = auth_shop_id()`) governs
+*client*-originated inserts (e.g. `ops.ts`'s PowerSync upload path for event-derived notifications);
+`generate_report_snapshot(...)`'s insert runs as the dedicated trusted role via a `SECURITY DEFINER`
+function, which does not evaluate RLS against the *caller's* JWT context — confirm at implementation time
+that this insert path is not blocked by anything RLS-adjacent for a non-authenticated cron context, since
+that context has no `auth_shop_id()`/`auth.uid()` to satisfy the existing policy even if it somehow were
+evaluated.
 
 **Recipient resolution is decoupled from the snapshot.** The snapshot itself has no dependency on who gets
 notified — it is keyed only by shop/report/period. Notification delivery separately resolves which
 authorized users (owner, and potentially manager/staff depending on the shop's existing
 authorization/notification model) are eligible recipients for that shop's "report ready" signal, then
 inserts one notification row per eligible recipient (see the atomicity/idempotency rule in Idempotency
-above — keyed on `(snapshot_id, recipient_user_id)`, not on the snapshot alone). Keeping the artifact itself
+above — keyed on `entity_id, recipient_staff_id`, not on the snapshot alone). Keeping the artifact itself
 recipient-agnostic is deliberate: it is what lets WAFI-147C later attach a different delivery audience/
 channel (WhatsApp) to the same snapshot without touching how the snapshot itself is produced.
 
@@ -810,7 +846,7 @@ not a shared code artifact.
 - pgTAP coverage for `generate_scheduled_reports` (correct shops/report-types/period resolved per cadence)
   and `generate_report_snapshot` (idempotency — calling twice for the same natural key produces exactly one
   snapshot row; multi-recipient notification fan-out — a shop with N eligible recipients produces exactly N
-  notification rows, one per `(snapshot_id, recipient_user_id)`, and calling twice never duplicates any of
+  notification rows, one per `entity_id, recipient_staff_id`, and calling twice never duplicates any of
   them; the snapshot+notification atomicity invariant — a forced failure after the snapshot insert rolls
   back the snapshot too, so a retry can safely redo both; and exact period-boundary values per cadence, per
   the Period semantics section above — including the weekly case explicitly, since it is the one most likely
