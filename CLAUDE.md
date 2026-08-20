@@ -11,6 +11,8 @@ Before implementing any new feature, reviewing any PR, or testing/evaluating any
 
 **Cross-epic edge-case review is mandatory, not implicit (WAFI-014):** every design spec must include the filled `Cross-Epic Edge-Case Checklist (design time)` block, consulting the `DOMAIN INTERACTION MATRIX` in `AI_PRINCIPAL_ENGINEER_REVIEW.md`; every final whole-branch review must include the filled `Cross-Epic Edge-Case Checklist (final review)` block. A design or review write-up missing its checklist block is incomplete.
 
+**KPI ownership is mandatory for qualifying features, not optional (WAFI-032):** every new or materially modified user-facing/product-significant feature must define a Primary KPI, target, and measurement source in `docs/architecture/KPI_OWNERSHIP.md` (using the `KPI Ownership Checklist` in `AI_PRINCIPAL_ENGINEER_REVIEW.md`) before the work is considered complete. Purely technical/infrastructure changes are `Not applicable` — don't invent a KPI to satisfy the checklist. Existing features without a KPI are tracked there as explicit `Backfill needed` debt, not silently skipped.
+
 ---
 
 ## What We Are Building

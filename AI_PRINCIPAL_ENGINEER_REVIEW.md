@@ -373,6 +373,46 @@ gap is visible rather than silently patched.
 
 ---
 
+# KPI OWNERSHIP CHECKLIST
+
+Required for every new or materially modified user-facing/
+product-significant feature (WAFI-032) — once at design time, once at
+final review, as a filled-in artifact. Purely technical/infrastructure
+work is exempt (`Not applicable`) — don't invent a KPI to satisfy this
+checklist. The canonical register lives at
+`docs/architecture/KPI_OWNERSHIP.md`.
+
+## Design-Time Checklist
+
+Copy this block into the feature's design spec:
+
+```
+## KPI Ownership Checklist (design time)
+Qualifies for a KPI: [yes / no — technical/infra change]
+Primary KPI: [one metric, or "n/a"]
+Target: [measurable threshold, or "n/a"]
+Measurement source: [existing signal, or "needs new instrumentation: ..."]
+KPI_OWNERSHIP.md updated: [yes / not yet — will update at final review]
+```
+
+## Final-Review Checklist
+
+Copy this block into the feature's final whole-branch review write-up:
+
+```
+## KPI Ownership Checklist (final review)
+Feature measurable as specified: [yes / no — explain gap]
+Required tracking signals present: [yes / no — list what's missing]
+KPI_OWNERSHIP.md entry status: [Defined / Backfill needed / Not applicable]
+```
+
+If final review finds the feature isn't actually measurable as
+designed (e.g., the planned instrumentation was never built), that is
+a real gap — record it as `Backfill needed` rather than mark the
+checklist complete on the strength of intent alone.
+
+---
+
 # RIPPLE EFFECT REVIEW
 
 For every action identify:
