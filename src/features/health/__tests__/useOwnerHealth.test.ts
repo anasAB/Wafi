@@ -11,6 +11,7 @@ vi.mock('@/store/device.store', () => ({ useDeviceStore: () => ({ shopId: 'test-
 import {
   computeOwnerHealthStatus,
   computeStaleDeviceCount,
+  mergeStaleDeviceStatus,
   STALE_DEVICE_THRESHOLD_MS,
 } from '../composables/useOwnerHealth'
 
@@ -194,5 +195,39 @@ describe('WAFI-148 computeStaleDeviceCount', () => {
       [{ is_active: true, last_seen_at: null }], STALE_DEVICE_THRESHOLD_MS,
     )
     expect(count).toBe(1)
+  })
+})
+
+describe('WAFI-148 mergeStaleDeviceStatus', () => {
+  it('resolves a no-data base status to healthy when a registered device is non-stale', () => {
+    // A quiet/new shop: no historical health_metrics rows yet (base = no-data),
+    // but at least one connected, non-stale device -- metric 7 alone is real,
+    // current, non-unhealthy data, so the shop must read Healthy, not stay
+    // stuck at "No recent health data" forever.
+    const result = mergeStaleDeviceStatus({ status: 'no-data', messages: [] }, 0, true)
+    expect(result.status).toBe('healthy')
+    expect(result.messages).toEqual(['Everything is working normally.'])
+  })
+
+  it('stays no-data when there are zero registered devices at all', () => {
+    const result = mergeStaleDeviceStatus({ status: 'no-data', messages: [] }, 0, false)
+    expect(result.status).toBe('no-data')
+  })
+
+  it('upgrades a healthy base status to attention when a device is stale', () => {
+    const result = mergeStaleDeviceStatus({ status: 'healthy', messages: ['Everything is working normally.'] }, 1, true)
+    expect(result.status).toBe('attention')
+    expect(result.messages).toContain('One of your devices is currently unreachable.')
+  })
+
+  it('never downgrades an existing issue status when a device is stale', () => {
+    const result = mergeStaleDeviceStatus({ status: 'issue', messages: ['One shift required automatic closing yesterday.'] }, 2, true)
+    expect(result.status).toBe('issue')
+    expect(result.messages).toContain('2 of your devices are currently unreachable.')
+  })
+
+  it('leaves a no-data base status alone when a device IS stale (attention takes over, not healthy)', () => {
+    const result = mergeStaleDeviceStatus({ status: 'no-data', messages: [] }, 1, true)
+    expect(result.status).toBe('attention')
   })
 })

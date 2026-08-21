@@ -154,6 +154,58 @@ export function computeStaleDeviceCount(
   }).length
 }
 
+/**
+ * Folds metric 7's live stale-device reading into computeOwnerHealthStatus's
+ * output, preserving issue > attention > healthy > no-data precedence.
+ *
+ * `hasRegisteredDevices` is whether there's at least one device row to query
+ * in the first place -- a shop with zero registered devices has nothing for
+ * metric 7 to report on, so it must not manufacture a "healthy" reading out
+ * of nothing (that would be the same false-healthy mistake the base
+ * function's no-data rule exists to prevent).
+ *
+ * A non-stale reading (`staleCount === 0`, with at least one registered
+ * device) IS itself usable, non-unhealthy data for metric 7 -- per the
+ * spec's precedence rule ("at least one applicable metric has usable data
+ * and none are unhealthy -> Healthy"), this alone must be able to resolve a
+ * base `no-data` status into `healthy`, not merely upgrade toward Attention.
+ */
+export function mergeStaleDeviceStatus(
+  base: OwnerHealthResult,
+  staleCount: number,
+  hasRegisteredDevices: boolean,
+): OwnerHealthResult {
+  const messages = [...base.messages]
+  let status = base.status
+
+  if (staleCount > 0) {
+    // Multi-device shops: contextualize around affected device count, never
+    // phrased as if the whole shop is unhealthy.
+    messages.push(
+      staleCount === 1
+        ? 'One of your devices is currently unreachable.'
+        : `${staleCount} of your devices are currently unreachable.`,
+    )
+    // Stale devices never downgrade an existing Issue/Attention status, and
+    // never get overridden by the no-data fallthrough -- they always push
+    // the status to at least Attention.
+    if (status === 'no-data' || status === 'healthy') {
+      status = 'attention'
+    }
+  } else if (hasRegisteredDevices && status === 'no-data') {
+    // A quiet/new shop with no historical health_metrics rows yet, but at
+    // least one connected, non-stale device -- metric 7 has a real, current,
+    // healthy reading, so the shop is Healthy, not stuck at "No recent
+    // health data" forever.
+    status = 'healthy'
+    if (messages.length === 0) {
+      messages.push('Everything is working normally.')
+    }
+  }
+
+  return { status, messages }
+}
+
 function shopLocalDateString(timezone: string, now: Date): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(now) // en-CA -> YYYY-MM-DD
 }
@@ -228,27 +280,11 @@ export function useOwnerHealth() {
     )
     const devices = deviceRows.map((d) => ({ is_active: rowIsActive(d.is_active), last_seen_at: d.last_seen_at }))
     const staleCount = computeStaleDeviceCount(devices)
+    const hasRegisteredDevices = devices.some((d) => d.is_active)
 
-    const messages = [...base.messages]
-    let status = base.status
+    const merged = mergeStaleDeviceStatus(base, staleCount, hasRegisteredDevices)
 
-    if (staleCount > 0) {
-      // Multi-device shops: contextualize around affected device count, never
-      // phrased as if the whole shop is unhealthy.
-      messages.push(
-        staleCount === 1
-          ? 'One of your devices is currently unreachable.'
-          : `${staleCount} of your devices are currently unreachable.`,
-      )
-      // Stale devices never downgrade an existing Issue/Attention status, and
-      // never get overridden by the no-data fallthrough -- they always push
-      // the status to at least Attention.
-      if (status === 'no-data' || status === 'healthy') {
-        status = 'attention'
-      }
-    }
-
-    state.value = { status, messages, loading: false }
+    state.value = { status: merged.status, messages: merged.messages, loading: false }
   }
 
   return { state, load }
