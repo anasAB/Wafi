@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(9);
+SELECT plan(9 + 1);
 
 -- auth_shop_id() (migration 015) resolves via shops.owner_user_id = auth.uid(),
 -- reading the JWT's `sub` claim -- not a shop_id claim (established pattern per
@@ -149,6 +149,36 @@ SELECT is(
 SELECT ok(
   (SELECT last_seen_at FROM public.devices WHERE id = '44444444-4444-4444-4444-444444444444') IS NOT NULL,
   'last_seen_at is updated as a side effect of a successful call'
+);
+
+-- 10. Two devices, deliberately different volumes, proving a shop-level rate
+-- must be computed as SUM(numerators)/SUM(denominators), never
+-- AVG(device_rate) -- device A: 1/10 = 10%, device B: 1/1000 = 0.1%,
+-- shop-level correct answer is 2/1010 ~= 0.198%, NOT (10%+0.1%)/2 = 5.05%.
+SET LOCAL role postgres;
+INSERT INTO public.devices (id, shop_id, code, is_active) VALUES
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '33333333-3333-3333-3333-333333333333', 'DEV3', true),
+  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', '33333333-3333-3333-3333-333333333333', 'DEV4', true);
+
+INSERT INTO public.health_metrics (shop_id, device_id, metric_key, period_start, value) VALUES
+  ('33333333-3333-3333-3333-333333333333', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'sync_failure_terminal', '2026-08-20', 1),
+  ('33333333-3333-3333-3333-333333333333', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'sync_terminal_total',    '2026-08-20', 10),
+  ('33333333-3333-3333-3333-333333333333', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'sync_failure_terminal', '2026-08-20', 1),
+  ('33333333-3333-3333-3333-333333333333', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'sync_terminal_total',    '2026-08-20', 1000);
+
+SELECT is(
+  round(
+    (SELECT sum(value) FROM public.health_metrics
+       WHERE shop_id = '33333333-3333-3333-3333-333333333333'
+         AND metric_key = 'sync_failure_terminal' AND period_start = '2026-08-20')::numeric
+    /
+    (SELECT sum(value) FROM public.health_metrics
+       WHERE shop_id = '33333333-3333-3333-3333-333333333333'
+         AND metric_key = 'sync_terminal_total' AND period_start = '2026-08-20')::numeric
+    * 100, 3
+  ),
+  round(2.0 / 1010.0 * 100, 3),
+  'shop-level rate is sum(numerators)/sum(denominators), not an average of device rates (would wrongly be ~5.05%)'
 );
 
 SELECT * FROM finish();
