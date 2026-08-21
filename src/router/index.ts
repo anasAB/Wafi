@@ -103,6 +103,11 @@ const router = createRouter({
     // WAFI-155: platform-admin-only feature-flag rollout console. Not part
     // of the shop staff/role model -- gated in beforeEach below.
     { path: '/admin/rollouts',  component: () => import('@/features/admin/RolloutAdminScreen.vue'), meta: { requiresPlatformAdmin: true } },
+    // WAFI-148: founder-facing cross-shop team health dashboard. Structurally
+    // separate from /health's can_view_health_metrics (owner-grantable,
+    // per-shop) -- gated the same way as /admin/rollouts, via
+    // requiresPlatformAdmin below, NOT a permission flag.
+    { path: '/team-health',    component: () => import('@/features/health/TeamHealthPage.vue'), meta: { requiresPlatformAdmin: true } },
     { path: '/shifts/history',  component: () => import('@/features/shifts/components/ShiftHistoryScreen.vue') },
     { path: '/shifts/:id',      component: () => import('@/features/shifts/components/ShiftDetailScreen.vue') },
     { path: '/setup-owner',     component: () => import('@/features/shifts/components/OwnerSetupScreen.vue') },
