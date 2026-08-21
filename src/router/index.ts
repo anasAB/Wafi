@@ -7,6 +7,9 @@ import type { FlagKey } from '@/features/flags/flagRegistry'
 import type { StaffPermissions } from '@/features/staff/staff.types'
 import { supabase } from '@/data/supabase/client'
 import { usePlatformAdminStore } from '@/features/admin/platformAdmin.store'
+import { db } from '@/data/powersync/db'
+import { useDeviceStore } from '@/store/device.store'
+import { markDeviceActiveForDay } from '@/features/health/composables/useDeviceActivity'
 
 const SHIFT_OPEN_REDIRECT = '/shifts/history'
 
@@ -182,6 +185,30 @@ router.beforeEach(async (to) => {
   }
 
   return true
+})
+
+// WAFI-148: a real router navigation is genuine foreground device usage --
+// exactly the qualifying signal markDeviceActiveForDay()'s contract requires
+// (never a background timer, the health-reporting tick, a connectivity
+// callback, or a server response). Reads the current shop's timezone via
+// the same device.store.ts shopId -> synced `shops` local-table lookup
+// every other shop-scoped composable in this codebase uses (see
+// src/composables/insights/shopCreatedAt.ts for the precedent). Best-effort:
+// a missing/unsynced shop row or a write failure must never block navigation.
+router.afterEach(async () => {
+  try {
+    const device = useDeviceStore()
+    if (!device.shopId) return
+    const shop = await db.getOptional<{ timezone: string | null }>(
+      `SELECT timezone FROM shops WHERE id = ?`,
+      [device.shopId],
+    )
+    if (shop?.timezone) {
+      await markDeviceActiveForDay(shop.timezone)
+    }
+  } catch (err) {
+    console.warn('[WAFI-148] markDeviceActiveForDay failed (non-blocking):', err)
+  }
 })
 
 export default router
