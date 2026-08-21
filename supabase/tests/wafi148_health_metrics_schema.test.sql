@@ -4,7 +4,7 @@ BEGIN;
 -- total), but only 7 new assertions are actually listed below -- 3+10 does not match
 -- 3+7. Using the count that matches the actual assertions run, or pgTAP fails with a
 -- planned-vs-run mismatch regardless of whether every individual assertion passes.
-SELECT plan(3 + 7);
+SELECT plan(3 + 7 + 2);
 
 SELECT has_column('public', 'shops', 'timezone', 'shops.timezone exists');
 SELECT col_type_is('public', 'shops', 'timezone', 'text', 'shops.timezone is text');
@@ -54,6 +54,25 @@ SELECT is(
   (SELECT count(*)::int FROM public.health_metrics WHERE shop_id = '11111111-1111-1111-1111-111111111111'),
   0,
   'shop B cannot read shop A health_metrics rows via RLS'
+);
+
+-- Task 6: can_view_health_metrics permission flag
+SET LOCAL role postgres;
+INSERT INTO public.staff (id, shop_id, role, permissions, is_active)
+VALUES (
+  gen_random_uuid(), '33333333-3333-3333-3333-333333333333', 'manager', '{}'::jsonb, true
+);
+
+SELECT is(
+  (SELECT (permissions ->> 'can_view_health_metrics')::boolean
+     FROM public.staff WHERE role = 'manager' AND shop_id = '33333333-3333-3333-3333-333333333333'
+     ORDER BY id DESC LIMIT 1),
+  NULL,
+  'can_view_health_metrics is not force-set on an existing manager row (owner grants explicitly)'
+);
+SELECT ok(
+  public.can('can_view_health_metrics') IS NOT NULL,
+  'public.can(''can_view_health_metrics'') is a recognized, callable flag'
 );
 
 SELECT * FROM finish();
