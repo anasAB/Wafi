@@ -398,6 +398,29 @@ const local_deferred_jobs = new Table({
   finished_at:       column.text,     // ISO string, nullable
 }, { localOnly: true })
 
+// WAFI-148 -- client-side health metrics cache. Never synced (localOnly: true);
+// written by health monitoring tasks, read by dashboard display logic.
+const local_health_metrics = new Table(
+  {
+    metric_key:   column.text,
+    period_start: column.text,
+    value:        column.integer,
+    updated_at:   column.text,
+  },
+  { localOnly: true },
+)
+
+// WAFI-148 -- client-side health gauges (point-in-time snapshots). Never synced (localOnly: true);
+// written by health monitoring tasks, read by dashboard display logic.
+const local_health_gauges = new Table(
+  {
+    gauge_key:   column.text,
+    value:       column.integer,
+    observed_at: column.text,
+  },
+  { localOnly: true },
+)
+
 const events = new Table({
   type:                column.text,
   entity_id:           column.text,
@@ -645,6 +668,8 @@ export const AppSchema = new Schema({
   local_event_processing_retries,
   local_subscriber_processed_events,
   local_deferred_jobs,
+  local_health_metrics,
+  local_health_gauges,
   audit_log,
   events,
   daily_event_counts,
