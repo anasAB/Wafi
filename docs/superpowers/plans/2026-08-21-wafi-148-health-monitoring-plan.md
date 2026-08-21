@@ -202,15 +202,22 @@ SELECT col_not_null('public', 'health_metrics', 'value', 'health_metrics.value i
 SELECT col_not_null('public', 'health_gauges', 'observed_at', 'health_gauges.observed_at is NOT NULL');
 
 -- RLS smoke test: two shops, cross-shop read must return 0 rows.
+-- auth_shop_id() (migration 015) resolves via shops.owner_user_id = auth.uid(),
+-- reading the JWT's `sub` claim -- NOT a shop_id claim (there is no such claim
+-- anywhere in this codebase's auth model). Established pattern per
+-- supabase/tests/wafi156_execute_rule_action.test.sql: give the shop a known
+-- owner_user_id, then set_config('request.jwt.claims', '{"sub":"<same uuid>",...}').
 SET LOCAL role postgres;
-INSERT INTO public.shops (id, name) VALUES ('11111111-1111-1111-1111-111111111111', 'Shop A')
+INSERT INTO public.shops (id, name, owner_user_id) VALUES
+  ('11111111-1111-1111-1111-111111111111', 'Shop A', 'e0000000-0000-0000-0000-000000000001')
   ON CONFLICT (id) DO NOTHING;
-INSERT INTO public.shops (id, name) VALUES ('22222222-2222-2222-2222-222222222222', 'Shop B')
+INSERT INTO public.shops (id, name, owner_user_id) VALUES
+  ('22222222-2222-2222-2222-222222222222', 'Shop B', 'e0000000-0000-0000-0000-000000000002')
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.health_metrics (shop_id, device_id, metric_key, period_start, value)
 VALUES ('11111111-1111-1111-1111-111111111111', gen_random_uuid(), 'app_error_count', '2026-08-21', 3);
 
-SET LOCAL request.jwt.claims = '{"shop_id":"22222222-2222-2222-2222-222222222222"}';
+SELECT set_config('request.jwt.claims', '{"sub":"e0000000-0000-0000-0000-000000000002","active_role":"owner"}', true);
 SET LOCAL role authenticated;
 SELECT is(
   (SELECT count(*)::int FROM public.health_metrics WHERE shop_id = '11111111-1111-1111-1111-111111111111'),
@@ -325,13 +332,16 @@ git commit -m "feat(WAFI-148): add health_metrics/health_gauges read models with
 BEGIN;
 SELECT plan(9);
 
+-- auth_shop_id() (migration 015) resolves via shops.owner_user_id = auth.uid(),
+-- reading the JWT's `sub` claim -- not a shop_id claim (established pattern per
+-- supabase/tests/wafi156_execute_rule_action.test.sql).
 SET LOCAL role postgres;
-INSERT INTO public.shops (id, name, timezone) VALUES
-  ('33333333-3333-3333-3333-333333333333', 'Shop C', 'Asia/Damascus');
+INSERT INTO public.shops (id, name, timezone, owner_user_id) VALUES
+  ('33333333-3333-3333-3333-333333333333', 'Shop C', 'Asia/Damascus', 'e0000000-0000-0000-0000-000000000003');
 INSERT INTO public.devices (id, shop_id, code, is_active) VALUES
   ('44444444-4444-4444-4444-444444444444', '33333333-3333-3333-3333-333333333333', 'DEV1', true);
 
-SET LOCAL request.jwt.claims = '{"shop_id":"33333333-3333-3333-3333-333333333333"}';
+SELECT set_config('request.jwt.claims', '{"sub":"e0000000-0000-0000-0000-000000000003","active_role":"owner"}', true);
 SET LOCAL role authenticated;
 
 -- 1. Client-allowed counter is accepted and GREATEST()-merged.
@@ -425,12 +435,12 @@ SELECT throws_ok(
 );
 
 -- 7. A device belonging to a different shop cannot be reported against.
-INSERT INTO public.shops (id, name, timezone) VALUES
-  ('55555555-5555-5555-5555-555555555555', 'Shop D', 'Asia/Damascus');
 SET LOCAL role postgres;
+INSERT INTO public.shops (id, name, timezone, owner_user_id) VALUES
+  ('55555555-5555-5555-5555-555555555555', 'Shop D', 'Asia/Damascus', 'e0000000-0000-0000-0000-000000000004');
 INSERT INTO public.devices (id, shop_id, code, is_active) VALUES
   ('66666666-6666-6666-6666-666666666666', '55555555-5555-5555-5555-555555555555', 'DEV2', true);
-SET LOCAL request.jwt.claims = '{"shop_id":"33333333-3333-3333-3333-333333333333"}';
+SELECT set_config('request.jwt.claims', '{"sub":"e0000000-0000-0000-0000-000000000003","active_role":"owner"}', true);
 SET LOCAL role authenticated;
 SELECT throws_ok(
   $$ SELECT public.report_health_metrics(
@@ -1945,15 +1955,18 @@ git commit -m "feat(WAFI-148): add owner health dashboard, gated by can_view_hea
 BEGIN;
 SELECT plan(2);
 
+-- list_health_for_admin checks platform_admins via auth.uid() directly (no
+-- auth_shop_id()/shop_id claim involved) -- the "ordinary session" here just
+-- needs a sub claim for a real, non-admin user.
 SET LOCAL role postgres;
-INSERT INTO public.shops (id, name, timezone) VALUES
-  ('99999999-9999-9999-9999-999999999999', 'Shop G', 'Asia/Damascus');
+INSERT INTO public.shops (id, name, timezone, owner_user_id) VALUES
+  ('99999999-9999-9999-9999-999999999999', 'Shop G', 'Asia/Damascus', 'e0000000-0000-0000-0000-000000000005');
 INSERT INTO public.health_metrics (shop_id, device_id, metric_key, period_start, value)
 VALUES ('99999999-9999-9999-9999-999999999999', '00000000-0000-0000-0000-000000000000',
         'drawer_mismatch_count', current_date, 2);
 
--- Ordinary authenticated shop session (not a platform admin) must be rejected.
-SET LOCAL request.jwt.claims = '{"shop_id":"99999999-9999-9999-9999-999999999999"}';
+-- Ordinary authenticated shop owner (not a platform admin) must be rejected.
+SELECT set_config('request.jwt.claims', '{"sub":"e0000000-0000-0000-0000-000000000005","active_role":"owner"}', true);
 SET LOCAL role authenticated;
 SELECT throws_ok(
   $$ SELECT * FROM public.list_health_for_admin(NULL) $$,
@@ -2158,15 +2171,15 @@ BEGIN;
 SELECT plan(4);
 
 SET LOCAL role postgres;
-INSERT INTO public.shops (id, name, timezone) VALUES
-  ('cccccccc-cccc-cccc-cccc-cccccccccccc', 'Shop H', 'Asia/Damascus'),
-  ('dddddddd-dddd-dddd-dddd-dddddddddddd', 'Shop I', 'Asia/Damascus');
+INSERT INTO public.shops (id, name, timezone, owner_user_id) VALUES
+  ('cccccccc-cccc-cccc-cccc-cccccccccccc', 'Shop H', 'Asia/Damascus', 'e0000000-0000-0000-0000-000000000006'),
+  ('dddddddd-dddd-dddd-dddd-dddddddddddd', 'Shop I', 'Asia/Damascus', 'e0000000-0000-0000-0000-000000000007');
 INSERT INTO public.health_metrics (shop_id, device_id, metric_key, period_start, value)
 VALUES ('cccccccc-cccc-cccc-cccc-cccccccccccc', gen_random_uuid(), 'app_error_count', current_date, 1);
 INSERT INTO public.health_gauges (shop_id, device_id, gauge_key, value, observed_at)
 VALUES ('cccccccc-cccc-cccc-cccc-cccccccccccc', gen_random_uuid(), 'dead_letter_count', 1, now());
 
-SET LOCAL request.jwt.claims = '{"shop_id":"dddddddd-dddd-dddd-dddd-dddddddddddd"}';
+SELECT set_config('request.jwt.claims', '{"sub":"e0000000-0000-0000-0000-000000000007","active_role":"owner"}', true);
 SET LOCAL role authenticated;
 
 SELECT is(
