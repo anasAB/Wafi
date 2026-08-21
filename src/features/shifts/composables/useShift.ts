@@ -20,7 +20,10 @@ function parseBreakdown(raw: unknown): CurrencyBreakdown {
 }
 import { useAuditLog } from '@/features/audit/composables/useAuditLog'
 import { establishOperatorIdentity } from '@/features/staff/composables/useOperatorSwitch'
-import { openShift as openShiftService, closeShift as closeShiftService } from '@/services/staff.service'
+import {
+  openShift as openShiftService, closeShift as closeShiftService,
+  forceCloseShift as forceCloseShiftService,
+} from '@/services/staff.service'
 
 /** Parse the stored Z-report JSON snapshot. Never throws — a corrupt/absent blob
  *  yields null so the UI falls back gracefully (live preview for an open shift).
@@ -236,41 +239,6 @@ export function useShift() {
     return { status: 'opened', shiftId }
   }
 
-  /** The single close write, shared by the normal close (WAFI-060) and the owner
-   *  force-close (WAFI-065): both mark the shift closed and persist the same
-   *  immutable evidence (counted cash, variance, note, force_closed_by, Z-report
-   *  snapshot). Identity teardown + audit are the caller's job — they differ. */
-  async function writeShiftClose(shiftId: string, e: {
-    closingCashUsd: number
-    closingCashSyp: number
-    varianceUsd:    number | null
-    varianceSyp:    number | null
-    closeNote:      string | null
-    forceClosedBy:  string | null
-    zReport:        ZReportMetrics | null
-    closingBreakdown?: CurrencyBreakdown
-  }): Promise<void> {
-    await db.execute(
-      `UPDATE cashier_shifts
-       SET status = 'closed', closed_at = ?, closing_cash_usd = ?, closing_cash_syp = ?,
-           variance_usd = ?, variance_syp = ?, close_note = ?, force_closed_by = ?,
-           z_report_data = ?, closing_breakdown = ?
-       WHERE id = ?`,
-      [
-        new Date().toISOString(),
-        e.closingCashUsd,
-        e.closingCashSyp,
-        e.varianceUsd,
-        e.varianceSyp,
-        e.closeNote,
-        e.forceClosedBy,
-        e.zReport ? JSON.stringify(e.zReport) : null,
-        e.closingBreakdown ? JSON.stringify(e.closingBreakdown) : null,
-        shiftId,
-      ]
-    )
-  }
-
   /**
    * Owner force-close of an abandoned shift (WAFI-065 Part 2). Closes a SPECIFIC
    * shift by id with the same immutable evidence a normal close writes (variance +
@@ -281,25 +249,35 @@ export function useShift() {
    * Crucially this does NOT clear the live session unless the shift being forced is
    * THIS device's active one — the owner force-closing a different/zombie shift must
    * keep their own session intact.
+   *
+   * WAFI-148 Task 5b: the write + audit + event publish now delegate to
+   * StaffService.forceCloseShift (mirroring closeShift's delegation to
+   * closeShiftService below), so a force-close finally publishes a real
+   * shift.closed event carrying forceClosedBy — previously this path never
+   * published any event at all, leaving Task 5's never_closed_shift_count
+   * metric permanently unreachable in production.
    */
   async function forceCloseShift(input: ForceCloseInput): Promise<void> {
-    await writeShiftClose(input.shiftId, {
-      closingCashUsd: input.closingCashUsd,
-      closingCashSyp: input.closingCashSyp,
-      varianceUsd:    input.varianceUsd,
-      varianceSyp:    input.varianceSyp,
-      closeNote:      input.closeNote,
-      forceClosedBy:  input.forcedBy.id,
-      zReport:        input.zReport,
-    })
+    await forceCloseShiftService(
+      device.shopId, input.shiftId, input.forcedBy.id,
+      {
+        closingCashUsd: input.closingCashUsd,
+        closingCashSyp: input.closingCashSyp,
+        varianceUsd:    input.varianceUsd,
+        varianceSyp:    input.varianceSyp,
+        closeNote:      input.closeNote,
+        zReport:        input.zReport,
+        closingBreakdown: null,
+        forcedByStaffId: input.forcedBy.id,
+      },
+      { logShiftForceClosed: (shiftId: string) => logShiftForceClosed(shiftId, input.forcedBy, input.closeNote) },
+    )
     // Only tear down local identity if we just closed the shift this device is
     // actively running; otherwise leave the current operator untouched.
     if (shiftStore.activeShiftId === input.shiftId) {
       shiftStore.closeShift()
       session.clearSession()
     }
-    // Accountability event — surface a failed write (force-close IS the audit trail).
-    await logShiftForceClosed(input.shiftId, input.forcedBy, input.closeNote)
   }
 
   async function closeShift(input: CloseShiftInput): Promise<void> {
@@ -311,7 +289,8 @@ export function useShift() {
     // and never recompute, so a later product/price/exchange-rate edit can't rewrite
     // a historical Z-report (WAFI-060). WAFI-152: StaffService.closeShift is the
     // narrow normal-close path only (force_closed_by always null) — see its module
-    // comment; forceCloseShift below stays on its own writeShiftClose call.
+    // comment; forceCloseShift above delegates to StaffService.forceCloseShift
+    // instead (WAFI-148 Task 5b).
     await closeShiftService(
       device.shopId, shiftId, staffId,
       {

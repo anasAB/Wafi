@@ -2,10 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
 vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
+vi.mock('@/services/events/publishEvent', () => ({ publishEvent: vi.fn().mockResolvedValue(undefined) }))
 
 import { useShift } from '../useShift'
 import { db } from '@/data/powersync/db'
 import type { ZReportMetrics } from '../../shift.types'
+import type { Staff } from '@/features/staff/staff.types'
 
 function sqlOf(call: any[]): string { return call[0] as string }
 function paramsOf(call: any[]): unknown[] { return call[1] as unknown[] }
@@ -90,5 +92,53 @@ describe('useShift — WAFI-060 immutable close evidence', () => {
     const { loadShiftById } = useShift()
     const shift = await loadShiftById('shift-7')
     expect(shift?.zReportData?.totalRevenueUsd).toBe(200)
+  })
+})
+
+describe('useShift — WAFI-148 Task 5b: forceCloseShift publishes shift.closed', () => {
+  const owner: Staff = {
+    id: 'owner-staff-id', shopId: 'shop1', name: 'المالك', pinHash: 'x', pinSalt: null,
+    role: 'owner', permissions: {} as any, isActive: true, createdAt: '2026-01-01T00:00:00Z',
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    vi.mocked(db.execute).mockResolvedValue({ rows: { _array: [] } } as any)
+  })
+
+  it('still writes force_closed_by to the cashier_shifts row', async () => {
+    const { forceCloseShift } = useShift()
+    await forceCloseShift({
+      shiftId: 'shift-9', forcedBy: owner,
+      closingCashUsd: 100, closingCashSyp: 0,
+      varianceUsd: -20, varianceSyp: 0,
+      closeNote: 'owner force-close', zReport: snapshot,
+    })
+
+    const update = vi.mocked(db.execute).mock.calls.find(c =>
+      /UPDATE cashier_shifts/.test(sqlOf(c)) && /force_closed_by/.test(sqlOf(c))
+    )
+    expect(update).toBeDefined()
+    const params = paramsOf(update!)
+    expect(params).toContain('owner-staff-id')
+  })
+
+  it('publishes a shift.closed event with forceClosedBy set to the forcing staff id', async () => {
+    const { publishEvent } = await import('@/services/events/publishEvent')
+    const { forceCloseShift } = useShift()
+    await forceCloseShift({
+      shiftId: 'shift-9', forcedBy: owner,
+      closingCashUsd: 100, closingCashSyp: 0,
+      varianceUsd: -20, varianceSyp: 0,
+      closeNote: 'owner force-close', zReport: snapshot,
+    })
+
+    expect(publishEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'shift.closed',
+        payload: expect.objectContaining({ shiftId: 'shift-9', forceClosedBy: 'owner-staff-id' }),
+      }),
+    )
   })
 })
