@@ -71,6 +71,10 @@ const router = createRouter({
         { path: 'denominations', component: () => import('@/features/settings/screens/DenominationSettingsScreen.vue') },
         { path: 'discount-caps', component: () => import('@/features/pos/DiscountCapsSettingsScreen.vue') },
         { path: 'notifications', component: () => import('@/features/settings/screens/NotificationSettingsScreen.vue') },
+        // WAFI-148: first shop-level (not per-staff/device) settings screen.
+        // Any staff with can_manage_settings can open it; confirm_shop_timezone()
+        // itself enforces owner-only server-side regardless of this route guard.
+        { path: 'shop', component: () => import('@/features/settings/screens/ShopSettingsScreen.vue') },
         // WAFI-156: structurally owner-only, same reuse of can_view_staff_performance
         // as WAFI-018's /reports/staff below (it's never granted to a manager/cashier,
         // see permissionsForRole) -- overrides the parent's can_manage_settings, which
@@ -209,11 +213,13 @@ router.afterEach(async () => {
   try {
     const device = useDeviceStore()
     if (!device.shopId) return
-    const shop = await db.getOptional<{ timezone: string | null }>(
-      `SELECT timezone FROM shops WHERE id = ?`,
+    const shop = await db.getOptional<{ timezone: string | null; timezone_confirmed_at: string | null }>(
+      `SELECT timezone, timezone_confirmed_at FROM shops WHERE id = ?`,
       [device.shopId],
     )
-    if (shop?.timezone) {
+    // shops.timezone is NEVER null (NOT NULL DEFAULT 'UTC' server-side) --
+    // timezone_confirmed_at IS NOT NULL is the sole readiness predicate.
+    if (shop?.timezone && shop.timezone_confirmed_at) {
       await markDeviceActiveForDay(shop.timezone)
     }
   } catch (err) {

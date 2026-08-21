@@ -3,18 +3,49 @@ import { ref }         from 'vue'
 import { useRouter }   from 'vue-router'
 import StaffForm       from '@/features/staff/components/StaffForm.vue'
 import ExchangeRateEditor from '@/features/exchange-rate/ExchangeRateEditor.vue'
+import TimezoneConfirmForm from '@/features/staff/components/TimezoneConfirmForm.vue'
 import { useDemoDataSeed } from '@/features/onboarding/composables/useDemoDataSeed'
 import { useOwnerBootstrap } from '@/features/staff/composables/useOwnerBootstrap'
+import { useShopTimezone, suggestedTimezoneForCountry } from '@/features/staff/composables/useShopTimezone'
 import { store } from '@/store'
 
 const router = useRouter()
 const { seedDemoProducts } = useDemoDataSeed()
 const { bootstrapOwner, resumePendingBootstrap } = useOwnerBootstrap()
+const { confirmTimezone } = useShopTimezone()
 
 const pinDone   = ref(false)
 const bootstrapping = ref(false)
 const timedOut  = ref(false)
 const bootstrapError = ref('')
+
+// WAFI-148: prompted once during bootstrap, but never a hard gate on
+// finishing setup -- the owner can skip and confirm later from Shop
+// Settings. Health-monitoring computation stays inactive until confirmed;
+// nothing about POS onboarding itself depends on this step.
+const exchangeRateDone = ref(false)
+const timezoneStepDone = ref(false)
+const confirmingTimezone = ref(false)
+
+function handleExchangeRateClose() {
+  exchangeRateDone.value = true
+}
+
+async function handleTimezoneConfirm(timezone: string) {
+  confirmingTimezone.value = true
+  try {
+    await confirmTimezone(timezone)
+  } finally {
+    confirmingTimezone.value = false
+    timezoneStepDone.value = true
+    await proceedToGoal()
+  }
+}
+
+function handleTimezoneSkip() {
+  timezoneStepDone.value = true
+  void proceedToGoal()
+}
 
 // Design doc §"Client-side change": the very first owner's staff row is
 // created server-side via bootstrap_owner_identity(), not through
@@ -97,9 +128,18 @@ async function proceedToGoal() {
       </div>
     </div>
     <ExchangeRateEditor
-      v-if="pinDone"
-      @close="proceedToGoal"
+      v-if="pinDone && !exchangeRateDone"
+      @close="handleExchangeRateClose"
     />
+    <div v-if="pinDone && exchangeRateDone && !timezoneStepDone" class="lock-card">
+      <TimezoneConfirmForm
+        :initial-timezone="suggestedTimezoneForCountry(store.country)"
+        :confirming="confirmingTimezone"
+        :skippable="true"
+        @confirm="handleTimezoneConfirm"
+        @skip="handleTimezoneSkip"
+      />
+    </div>
   </div>
 </template>
 

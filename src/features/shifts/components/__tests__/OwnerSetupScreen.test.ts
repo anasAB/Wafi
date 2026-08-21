@@ -20,6 +20,16 @@ vi.mock('@/features/exchange-rate/ExchangeRateEditor.vue', () => ({
   default: { template: '<div class="stub-rate-editor" @click="$emit(\'close\')"></div>' },
 }))
 
+// WAFI-148: mock the composable itself (not the shared Supabase client,
+// which other unrelated code in this component tree -- e.g. device.store.ts's
+// auth listener -- depends on for its full shape). Matches how
+// useOwnerBootstrap is already mocked below.
+const confirmTimezoneMock = vi.hoisted(() => vi.fn(async () => 'ok'))
+vi.mock('@/features/staff/composables/useShopTimezone', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/features/staff/composables/useShopTimezone')>()
+  return { ...actual, useShopTimezone: () => ({ confirmTimezone: confirmTimezoneMock }) }
+})
+
 // Added for the bootstrap-RPC rewiring (design doc 2026-07-26).
 const bootstrapOwnerMock = vi.fn()
 vi.mock('@/features/staff/composables/useOwnerBootstrap', () => ({
@@ -51,6 +61,7 @@ describe('OwnerSetupScreen', () => {
     expect(pushMock).not.toHaveBeenCalled()  // not yet -- rate prompt still showing
 
     await wrapper.find('.stub-rate-editor').trigger('click')  // emits 'close' (skip)
+    await wrapper.find('.timezone-confirm__skip-btn').trigger('click')  // WAFI-148: skip timezone step
     expect(pushMock).toHaveBeenCalledWith('/pos')
   })
 
@@ -59,6 +70,7 @@ describe('OwnerSetupScreen', () => {
     const wrapper = mount(OwnerSetupScreen)
     await wrapper.find('button').trigger('click')
     await wrapper.find('.stub-rate-editor').trigger('click')
+    await wrapper.find('.timezone-confirm__skip-btn').trigger('click')
     expect(pushMock).toHaveBeenCalledWith('/products/add')
   })
 
@@ -67,6 +79,7 @@ describe('OwnerSetupScreen', () => {
     const wrapper = mount(OwnerSetupScreen)
     await wrapper.find('button').trigger('click')
     await wrapper.find('.stub-rate-editor').trigger('click')
+    await wrapper.find('.timezone-confirm__skip-btn').trigger('click')
 
     expect(seedDemoProducts).toHaveBeenCalledTimes(1)
     expect(pushMock).toHaveBeenCalledWith('/onboarding')
@@ -77,6 +90,7 @@ describe('OwnerSetupScreen', () => {
     const wrapper = mount(OwnerSetupScreen)
     await wrapper.find('button').trigger('click')
     await wrapper.find('.stub-rate-editor').trigger('click')
+    await wrapper.find('.timezone-confirm__skip-btn').trigger('click')
     expect(pushMock).toHaveBeenCalledWith('/')
     expect(seedDemoProducts).not.toHaveBeenCalled()
   })
@@ -94,9 +108,22 @@ describe('OwnerSetupScreen', () => {
     })
     await wrapper.find('button').trigger('click')  // StaffForm stub emits 'done'
     await wrapper.find('.stub-rate-editor').trigger('click')  // emits 'saved' then 'close', mirroring real save
+    await wrapper.find('.timezone-confirm__skip-btn').trigger('click')
 
     expect(seedDemoProducts).toHaveBeenCalledTimes(1)
     expect(pushMock).toHaveBeenCalledWith('/onboarding')
+  })
+
+  it('confirms the timezone via the RPC (not just skip) before proceeding', async () => {
+    store.startGoal = 'sell'
+    const wrapper = mount(OwnerSetupScreen)
+    await wrapper.find('button').trigger('click')
+    await wrapper.find('.stub-rate-editor').trigger('click')
+
+    await wrapper.find('.timezone-confirm__confirm-btn').trigger('click')
+
+    expect(confirmTimezoneMock).toHaveBeenCalledWith(expect.any(String))
+    expect(pushMock).toHaveBeenCalledWith('/pos')
   })
 })
 

@@ -17,7 +17,9 @@ const { rows, mockDb } = vi.hoisted(() => {
     getOptional: vi.fn(async (sql: string, params: unknown[]) => {
       if (sql.includes('shops')) {
         const shopId = params[0]
-        return shopId === 'shop-with-tz' ? { timezone: 'Asia/Damascus' } : { timezone: null }
+        return shopId === 'shop-with-tz'
+          ? { timezone: 'Asia/Damascus', timezone_confirmed_at: '2026-08-21T10:00:00Z' }
+          : { timezone: 'UTC', timezone_confirmed_at: null }
       }
       const key = `${params[0]}|${params[1]}`
       return rows.get(key) ?? null

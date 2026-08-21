@@ -46,16 +46,19 @@ export function shopLocalDateString(timezone: string, now: Date = new Date()): s
 
 // Resolves "today" as a shop-local calendar date for the given shop, reading
 // its timezone from the locally-synced `shops` table. Returns null when the
-// shop row hasn't synced yet or its timezone is unset -- per the spec, health
-// metrics don't compute until a timezone is configured, so a call site with
-// no resolvable timezone must skip the write entirely rather than falling
-// back to UTC (matching the server's own report_health_metrics behavior,
-// which rejects writes for a shop with no timezone configured).
+// shop row hasn't synced yet or its timezone isn't confirmed -- shops.timezone
+// itself is NEVER null (NOT NULL DEFAULT 'UTC' server-side, since migration
+// 084), so it cannot be used as the readiness signal; timezone_confirmed_at
+// IS NOT NULL is the sole canonical predicate for "ready to compute health
+// metrics," everywhere, client and server. A call site with no confirmed
+// timezone must skip the write entirely rather than falling back to the
+// (possibly wrong, unconfirmed) 'UTC' default -- matching the server's own
+// report_health_metrics behavior, which rejects writes for an unconfirmed shop.
 export async function getShopLocalToday(shopId: string): Promise<string | null> {
-  const shop = await db.getOptional<{ timezone: string | null }>(
-    `SELECT timezone FROM shops WHERE id = ?`,
+  const shop = await db.getOptional<{ timezone: string | null; timezone_confirmed_at: string | null }>(
+    `SELECT timezone, timezone_confirmed_at FROM shops WHERE id = ?`,
     [shopId],
   )
-  if (!shop?.timezone) return null
+  if (!shop?.timezone_confirmed_at) return null
   return shopLocalDateString(shop.timezone)
 }

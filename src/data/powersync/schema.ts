@@ -593,7 +593,9 @@ const shops = new Table({
   open_time:                   column.text,    // WAFI-145: 'HH:MM', NULL = no operating-hours checks
   close_time:                  column.text,    // WAFI-145
   is_24_7:                     column.integer, // WAFI-145: 0/1
-  timezone:                    column.text,    // WAFI-148: IANA name (e.g. Asia/Damascus), NULL until owner configures it
+  timezone:                    column.text,    // WAFI-148: IANA name, NOT NULL DEFAULT 'UTC' server-side --
+                                                // health-metric readiness is timezone_confirmed_at, not this column's nullness
+  timezone_confirmed_at:       column.text,    // WAFI-148: set only once the owner has explicitly confirmed/chosen `timezone`
 })
 
 const notification_settings = new Table({

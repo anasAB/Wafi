@@ -235,13 +235,16 @@ export function useOwnerHealth() {
     state.value = { ...state.value, loading: true }
     const device = useDeviceStore()
 
-    const shop = await db.getOptional<{ timezone: string | null }>(
-      'SELECT timezone FROM shops WHERE id = ?',
+    // shops.timezone is NEVER null (NOT NULL DEFAULT 'UTC' server-side, since
+    // migration 084) -- timezone_confirmed_at IS NOT NULL is the sole
+    // readiness predicate, everywhere, client and server.
+    const shop = await db.getOptional<{ timezone: string | null; timezone_confirmed_at: string | null }>(
+      'SELECT timezone, timezone_confirmed_at FROM shops WHERE id = ?',
       [device.shopId],
     )
     const shopTimezone = shop?.timezone ?? null
 
-    if (!shopTimezone) {
+    if (!shop?.timezone_confirmed_at || !shopTimezone) {
       state.value = { status: 'timezone-not-configured', messages: [], loading: false }
       return
     }
