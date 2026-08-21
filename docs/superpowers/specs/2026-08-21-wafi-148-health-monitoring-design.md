@@ -1,7 +1,7 @@
 # WAFI-148: Internal Health Monitoring — Design
 
 **Date:** 2026-08-21
-**Status:** Implementation-ready — self-review round 3 applied 2026-08-21
+**Status:** Implementation-ready — self-review round 4 (final) applied 2026-08-21
 
 ## Prerequisite: shop timezone does not currently exist
 
@@ -236,13 +236,33 @@ its allowed metric set:
   (drawer mismatch, stale device, never-closed shifts) — those are server-owned and
   server-computed only; no code path should let a client-supplied `metric_key` of
   `drawer_mismatch_count` (etc.) reach a write.
+- **`metric_key`/`gauge_key` are an explicit allowlist (enum), not arbitrary text.** Only
+  the exact keys named in this spec (`sync_failure_terminal`, `sync_terminal_total`,
+  `offline_duration_seconds`, `deferred_job_failure_terminal`,
+  `deferred_job_terminal_total`, `app_error_count`, `active_device_day` for counters;
+  `dead_letter_count` for the gauge) are accepted — any other key is rejected outright.
+  This is what actually enforces "the client can only write its class-C/G metrics": the
+  allowlist itself must never contain a class-S key (`drawer_mismatch_count`,
+  `stale_device_count`, `never_closed_shift_count`), so there is no payload shape that
+  could ever write a server-authoritative metric, not merely a convention that clients
+  are expected to follow.
 - `period_start` must be validated against the server's own shop-local calendar (see
-  timezone section below) — not accepted as an arbitrary client-supplied date.
+  timezone section below) — not accepted as an arbitrary client-supplied date — **and
+  must fall within the allowed reporting window**: today's shop-local day, or any of the
+  6 preceding shop-local days (mirroring the client's own 7-day local retention), so a
+  device reporting a closed historical period after being offline for several days is
+  still accepted, while an arbitrarily old or future date is rejected.
 - `value` must be validated non-negative before being applied to `GREATEST()`/overwrite.
 
 Every metric definition must identify its single source of truth and exactly one write
 path — this is what prevents future accidental dual-writing of a server-authoritative
 metric from client data.
+
+**`last_seen_at` is updated only after authentication and device-ownership validation
+succeed** — never before, and never for an arbitrary payload-supplied `device_id`. The
+update is a side effect of a successfully authorized RPC call, not something that
+happens independent of (or prior to) the identity checks above; an unauthenticated or
+mis-bound request must not be able to bump another device's freshness state.
 
 ### Period boundaries and timezone
 
@@ -285,13 +305,18 @@ a separate flag.
 
 **Daily granularity, not hourly, for v1** — a deliberate scope-narrowing choice, not a
 neutral default. The dashboard's operational-visibility purpose doesn't need
-hour-level resolution, and daily buckets keep the local table tiny — only **4 metrics
-are client-cumulative** (sync failure rate and deferred-job failure rate each need a
-terminal-failure counter *and* a terminal-total counter to compute a rate; offline
-duration, app-error count, and `active_device_day` are single counters each), so worst
-case is roughly `(2+2+1+1+1) metrics × 7 open days = 49 rows/device`, plus 1 gauge row,
-plus the telemetry-drop meta-counter — never per-event row explosion, no hourly→daily
-compaction machinery needed. Hourly granularity is explicitly out of scope for v1.
+hour-level resolution, and daily buckets keep the local table tiny — only **4 logical
+metrics are client-cumulative** (sync upload failure rate and deferred-job failure rate
+each need a terminal-failure counter *and* a terminal-total counter to compute a rate;
+offline duration and unhandled-app-errors each need one raw counter plus, for app
+errors, the additional `active_device_day` denominator counter) — these 4 logical
+metrics occupy **7 physical counter rows per shop-local day**
+(`sync_failure_terminal`, `sync_terminal_total`, `offline_duration_seconds`,
+`deferred_job_failure_terminal`, `deferred_job_terminal_total`, `app_error_count`,
+`active_device_day`), so worst case is `7 rows/day × 7 open days = 49 rows/device`, plus
+1 gauge row, plus the telemetry-drop meta-counter — never per-event row explosion, no
+hourly→daily compaction machinery needed. Hourly granularity is explicitly out of scope
+for v1.
 
 **Retention/overflow**: local rows are retained for **the current shop-local day plus
 the six immediately preceding shop-local days** (an actual 7-calendar-day maximum, not
@@ -369,7 +394,7 @@ server-authoritative · **G** = client-authoritative current-state gauge
 | 3 | Dead-Letter Count | G | `COUNT(*)` of currently-unresolved rows in local `sync_dead_letter`, sampled at `observed_at` | Current-state only, no history |
 | 4 | Drawer Mismatch Count | S (event-derived, rebuildable) | `COUNT(shift.closed events)` where `abs(variance) > 15` (threshold owned by the existing drawer/reconciliation rule — **WAFI-148 does not redefine it**) | 90d, rebuildable from source events |
 | 5 | Deferred Job Failure Rate | C | `terminal_dead_jobs / (terminal_dead_jobs + terminal_completed_jobs)`, device/day | 90d server / 7d local |
-| 6 | Unhandled App Error Count | C | **Two raw client-cumulative counters**, not one: `app_error_count` (authoritative from the app-side error signal — Sentry is a parallel diagnostic sink, never the source of truth, must not disappear if Sentry is unconfigured) and `active_device_day` (see locked definition below). Displayed rate = `SUM(app_error_count) / SUM(active_device_day)`, computed at query time, never stored as a rate | Both raw counters retained 90d server / 7d local — the rate is never stored on its own, since a rate without its components can't be re-aggregated at the shop level |
+| 6 | Unhandled App Errors (count + derived rate) | C | **Two raw client-cumulative counters**, not one: `app_error_count` (authoritative from the app-side error signal — Sentry is a parallel diagnostic sink, never the source of truth, must not disappear if Sentry is unconfigured) and `active_device_day` (see locked definition below). Displayed rate = `SUM(app_error_count) / SUM(active_device_day)`, computed at query time, never stored as a rate | Both raw counters retained 90d server / 7d local — the rate is never stored on its own, since a rate without its components can't be re-aggregated at the shop level |
 | 7 | Stale Device Count | S (current-state query, **not** event-sourced) | `COUNT(devices)` **where `devices.is_active = true`** and `now() - last_seen_at > STALE_DEVICE_THRESHOLD` (threshold is **policy/configuration**, not part of the metric formula — v1 candidate value chosen and documented during implementation) | Current-state only |
 | 8 | Never-Closed Shift Count | S (event-derived, rebuildable) | `COUNT(*)` of shifts force-closed via the existing WAFI-065 zombie-shift guard — explicitly **not** the same as a merely-late close | 90d, rebuildable |
 
@@ -435,10 +460,20 @@ owned, not just here.
   signal, not a general app-usage signal; a device used all day without a single
   operator switch would wrongly show zero activity. Instead: **`active_device_day` is
   set to `1` (idempotently — not incremented per interaction) the first time the app
-  registers qualifying local foreground activity on a given shop-local day** (the exact
-  interaction list — e.g. any POS screen navigation, any business operation — is an
-  implementation detail, but it must be genuine foreground usage, not a passive
-  background timer or the health RPC's own tick). This is a shop-wide denominator once
+  registers qualifying local foreground activity on a given shop-local day.** The
+  contract, locked here rather than deferred: *`active_device_day = 1` when the app
+  observes at least one qualifying foreground user-interaction event during that
+  shop-local calendar day. The qualifying event must originate from the app's real
+  foreground interaction lifecycle — never a background timer, the health-reporting
+  tick itself, a connectivity callback, or a server response.* The concrete
+  implementation should be a single explicit function (e.g. `markDeviceActiveForDay()`)
+  called from a genuine foreground/user-interaction boundary, idempotently setting the
+  counter — this keeps the signal independent of any unrelated session/auth mechanism.
+  The exact call site(s) (POS screen navigation, operator activation, a real business
+  operation) are chosen and documented in the implementation plan, with test coverage
+  confirming the signal fires from real usage and not from passive/background activity —
+  but the qualifying-event contract above is locked now, not left open. This is a
+  shop-wide denominator once
   aggregated (`SUM(active_device_day)` across devices); per-device error counts and the
   shop-level rate are reported as separate dimensions, not conflated. **Both raw
   counters (`app_error_count`, `active_device_day`) are retained for the full 90-day
@@ -476,6 +511,14 @@ that day is no-data (e.g. a device that never reported at all) or current-state 
 are themselves stale, the dashboard must show an explicit **"No recent health data"**
 state rather than defaulting to a false "Healthy," which would otherwise silently
 contradict the no-data rule.
+
+**"No recent health data" is distinct from "timezone not configured."** Since health
+metrics simply don't compute for a shop until `shops.timezone` is set (see Prerequisite
+above), a brand-new shop's dashboard must show an explicit **"Health monitoring isn't
+set up yet — configure your shop's timezone"** state, not "No recent health data" —
+the latter would wrongly imply monitoring is active but has nothing to report, when the
+real reason is that monitoring hasn't started at all. This is a one-time configuration
+state, not a health metric.
 
 When healthy, the owner sees an explicit positive confirmation — **"Everything is working
 normally"** — never a blank screen with no signal that monitoring is even active. When
@@ -593,10 +636,22 @@ notification — as its own properly-scoped design, rather than smuggled into th
   metrics, live state for current-state metrics; an explicit "No recent health data"
   state exists so all-no-data can never silently render as "Healthy."
 - `active_device_day` is a **dedicated client-side counter** (idempotent, set to 1 on
-  first qualifying foreground activity per shop-local day) — `device_sessions.updated_at`
-  was investigated and rejected as an auth-lifecycle signal, not a general-usage one.
-  Both `app_error_count` and `active_device_day` are retained as raw components for the
-  full 90-day history; the rate is always computed at query time, never stored.
+  the first qualifying foreground user-interaction event per shop-local day — never a
+  background timer, health-RPC tick, connectivity callback, or server response; a real
+  implementation via a `markDeviceActiveForDay()`-style call is expected) —
+  `device_sessions.updated_at` was investigated and rejected as an auth-lifecycle
+  signal, not a general-usage one. Both `app_error_count` and `active_device_day` are
+  retained as raw components for the full 90-day history; the rate is always computed
+  at query time, never stored. Metric 6 is named **"Unhandled App Errors"**
+  (count + derived rate), not "Count," since it's exposed both ways.
+- The RPC's `metric_key`/`gauge_key` values are an explicit allowlist (enum) enforced
+  server-side — no class-S key ever appears in that allowlist, which is what actually
+  prevents a client payload from ever writing a server-authoritative metric.
+  `period_start` must additionally fall within the 7-day reporting window. `last_seen_at`
+  is updated only after authentication/device-ownership succeeds, never before.
+- A shop with no `shops.timezone` set shows an explicit **"health monitoring isn't set
+  up yet"** configuration state — distinct from "No recent health data," which implies
+  monitoring is active but quiet.
 - Server-authoritative metrics split three ways: **4 and 8** are server-owned
   event-sourced aggregates/projections (client cannot cause or modify them); **7** is a
   server-owned *live derived query* with no stored value and no event history at all —
