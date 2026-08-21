@@ -1592,15 +1592,31 @@ function shopLocalDateString(timezone: string, now: Date): string {
 // the health-reporting tick itself, a connectivity callback, or a server
 // response. Idempotent: repeated calls on the same shop-local day are a
 // no-op overwrite of the same value, never an increment.
+//
+// Read-then-insert-or-update, NOT an upsert: local_health_metrics is a
+// PowerSync localOnly table -- a SQLite view backed by CRUD-queue triggers --
+// and SQLite rejects ON CONFLICT against a view (no local unique-index
+// conflict target exists client-side even though the server table has one).
+// Same established pattern as dailyEventCountsProjection.ts/profitCacheProjection.ts.
 export async function markDeviceActiveForDay(shopTimezone: string, now: Date = new Date()): Promise<void> {
   const periodStart = shopLocalDateString(shopTimezone, now)
 
-  await db.execute(
-    `INSERT INTO local_health_metrics (metric_key, period_start, value, updated_at)
-     VALUES (?, ?, 1, ?)
-     ON CONFLICT (metric_key, period_start) DO UPDATE SET updated_at = excluded.updated_at`,
-    ['active_device_day', periodStart, now.toISOString()],
+  const existing = await db.getOptional<{ id: string }>(
+    `SELECT id FROM local_health_metrics WHERE metric_key = ? AND period_start = ?`,
+    ['active_device_day', periodStart],
   )
+
+  if (existing) {
+    await db.execute(
+      `UPDATE local_health_metrics SET updated_at = ? WHERE id = ?`,
+      [now.toISOString(), existing.id],
+    )
+  } else {
+    await db.execute(
+      `INSERT INTO local_health_metrics (id, metric_key, period_start, value, updated_at) VALUES (?, ?, ?, 1, ?)`,
+      [crypto.randomUUID(), 'active_device_day', periodStart, now.toISOString()],
+    )
+  }
 }
 ```
 
@@ -1656,23 +1672,53 @@ git commit -m "feat(WAFI-148): add markDeviceActiveForDay, wired to real navigat
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { incrementLocalHealthCounter } from '../healthCounters'
 
-const executed: Array<{ sql: string; params: unknown[] }> = []
+// local_health_metrics is a PowerSync localOnly table (SQLite view backed by
+// CRUD-queue triggers) -- ON CONFLICT against it fails at runtime (no local
+// unique-index conflict target), per the established read-then-insert-or-update
+// pattern in dailyEventCountsProjection.ts/profitCacheProjection.ts. This mock
+// models that: getOptional returns existing rows by (metric_key, period_start).
+const rows = new Map<string, { id: string; value: number }>()
 const mockDb = {
-  execute: vi.fn(async (sql: string, params: unknown[] = []) => {
-    executed.push({ sql, params })
+  getOptional: vi.fn(async (_sql: string, params: unknown[]) => {
+    const key = `${params[0]}|${params[1]}`
+    return rows.get(key) ?? null
+  }),
+  execute: vi.fn(async (sql: string, params: unknown[]) => {
+    if (sql.includes('INSERT')) {
+      const [id, metricKey, periodStart, value] = params as [string, string, string, number]
+      rows.set(`${metricKey}|${periodStart}`, { id, value })
+    } else if (sql.includes('UPDATE')) {
+      const [value, id] = params as [number, string]
+      for (const row of rows.values()) if (row.id === id) row.value = value
+    }
   }),
 }
 vi.mock('@/data/powersync/db', () => ({ db: mockDb }))
 
 describe('WAFI-148 incrementLocalHealthCounter', () => {
   beforeEach(() => {
-    executed.length = 0
+    rows.clear()
+    mockDb.execute.mockClear()
+    mockDb.getOptional.mockClear()
   })
 
-  it('additively increments a counter for the given metric/period', async () => {
+  it('inserts a new row with the given amount when none exists yet', async () => {
     await incrementLocalHealthCounter('sync_failure_terminal', '2026-08-21')
-    expect(executed[0].sql).toMatch(/value\s*\+\s*1|value\s*=\s*.*\+\s*1/)
-    expect(executed[0].params).toEqual(expect.arrayContaining(['sync_failure_terminal', '2026-08-21']))
+    expect(rows.get('sync_failure_terminal|2026-08-21')?.value).toBe(1)
+  })
+
+  it('additively increments an existing row rather than overwriting it', async () => {
+    await incrementLocalHealthCounter('sync_failure_terminal', '2026-08-21')
+    await incrementLocalHealthCounter('sync_failure_terminal', '2026-08-21')
+    await incrementLocalHealthCounter('sync_failure_terminal', '2026-08-21', 3)
+    expect(rows.get('sync_failure_terminal|2026-08-21')?.value).toBe(5) // 1 + 1 + 3
+  })
+
+  it('never issues an ON CONFLICT statement against local_health_metrics', async () => {
+    await incrementLocalHealthCounter('sync_failure_terminal', '2026-08-21')
+    for (const call of mockDb.execute.mock.calls) {
+      expect(call[0]).not.toMatch(/ON CONFLICT/i)
+    }
   })
 })
 ```
@@ -1694,18 +1740,33 @@ import type { HealthMetricKey } from '@/features/health/health.types'
 // sync_failure_terminal, sync_terminal_total, offline_duration_seconds
 // (added as a duration, not +1), deferred_job_failure_terminal,
 // deferred_job_terminal_total, app_error_count.
+//
+// Read-then-insert-or-update, NOT an upsert: local_health_metrics is a
+// PowerSync localOnly table (a SQLite view backed by CRUD-queue triggers) --
+// ON CONFLICT against it fails at runtime, since there's no local unique-index
+// conflict target. Same established pattern as
+// dailyEventCountsProjection.ts/profitCacheProjection.ts.
 export async function incrementLocalHealthCounter(
   metricKey: HealthMetricKey,
   periodStart: string,
   amount = 1,
 ): Promise<void> {
-  await db.execute(
-    `INSERT INTO local_health_metrics (metric_key, period_start, value, updated_at)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT (metric_key, period_start)
-     DO UPDATE SET value = local_health_metrics.value + ?, updated_at = excluded.updated_at`,
-    [metricKey, periodStart, amount, new Date().toISOString(), amount],
+  const existing = await db.getOptional<{ id: string; value: number }>(
+    `SELECT id, value FROM local_health_metrics WHERE metric_key = ? AND period_start = ?`,
+    [metricKey, periodStart],
   )
+
+  if (existing) {
+    await db.execute(
+      `UPDATE local_health_metrics SET value = ?, updated_at = ? WHERE id = ?`,
+      [existing.value + amount, new Date().toISOString(), existing.id],
+    )
+  } else {
+    await db.execute(
+      `INSERT INTO local_health_metrics (id, metric_key, period_start, value, updated_at) VALUES (?, ?, ?, ?, ?)`,
+      [crypto.randomUUID(), metricKey, periodStart, amount, new Date().toISOString()],
+    )
+  }
 }
 ```
 
@@ -1764,7 +1825,10 @@ git commit -m "feat(WAFI-148): wire terminal-outcome health counters into sync, 
 **Interfaces:**
 - Consumes: `local_health_metrics`/`local_health_gauges` (Task 7),
   `countDeadLetter()` (existing, `dead-letter.ts`), `report_health_metrics` RPC (Task 3,
-  via the existing raw Supabase client, same pattern as `register_device`).
+  via the existing raw Supabase client, same pattern as `register_device`),
+  `incrementLocalHealthCounter` (Task 10, reused directly for the
+  `telemetry_periods_dropped` write rather than duplicating its
+  read-then-insert-or-update logic).
 - Produces: `startHealthReporting(): void` (idempotent — safe to call once at boot),
   `runHealthReportingTick(): Promise<void>` (exported separately for direct testing).
 
@@ -1777,6 +1841,8 @@ import { runHealthReportingTick } from '../composables/useHealthReporting'
 
 const mockDb = {
   getAll: vi.fn(),
+  getOptional: vi.fn(async () => null), // used internally by incrementLocalHealthCounter
+                                          // (Task 10) for the telemetry_periods_dropped path
   execute: vi.fn(async () => {}),
 }
 vi.mock('@/data/powersync/db', () => ({ db: mockDb }))
@@ -1843,6 +1909,7 @@ Expected: FAIL — module doesn't exist.
 import { db } from '@/data/powersync/db'
 import { supabase } from '@/data/supabase/client'
 import { countDeadLetter } from '@/data/powersync/dead-letter'
+import { incrementLocalHealthCounter } from '@/data/powersync/healthCounters'
 import type { HealthCounterReport, HealthGaugeReport } from '@/features/health/health.types'
 
 const RETENTION_DAYS = 7
@@ -1912,13 +1979,10 @@ export async function runHealthReportingTick(ctx: TickContext): Promise<void> {
   const staleRows = localRows.filter((row) => row.period_start < windowStartStr)
   if (staleRows.length > 0) {
     await db.execute(`DELETE FROM local_health_metrics WHERE period_start < ?`, [windowStartStr])
-    await db.execute(
-      `INSERT INTO local_health_metrics (metric_key, period_start, value, updated_at)
-       VALUES ('telemetry_periods_dropped', ?, ?, ?)
-       ON CONFLICT (metric_key, period_start)
-       DO UPDATE SET value = local_health_metrics.value + ?, updated_at = excluded.updated_at`,
-      [ctx.today, staleRows.length, new Date().toISOString(), staleRows.length],
-    )
+    // Read-then-insert-or-update, NOT an upsert -- same PowerSync localOnly-table
+    // constraint as incrementLocalHealthCounter (Task 10); reuse it directly
+    // rather than duplicating the pattern here.
+    await incrementLocalHealthCounter('telemetry_periods_dropped', ctx.today, staleRows.length)
   }
 }
 
