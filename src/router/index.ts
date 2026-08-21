@@ -92,6 +92,11 @@ const router = createRouter({
     // WAFI-018: structurally owner-only — can_view_staff_performance is never
     // granted to a manager (see permissionsForRole), unlike can_view_reports.
     { path: '/reports/staff',   component: () => import('@/features/dashboard/components/StaffPerformancePage.vue'), meta: { permission: 'can_view_staff_performance', feature: 'reporting_pack' } },
+
+    // WAFI-148: owner-facing health dashboard, gated by can_view_health_metrics
+    // (owner-grantable, defaults off) -- same mechanism as every permission
+    // gate above, not a new one.
+    { path: '/health',         component: () => import('@/features/health/OwnerHealthPage.vue'), meta: { permission: 'can_view_health_metrics' } },
     // WAFI-131: upgrade teaser for pack-gated features
     { path: '/feature-locked',  component: () => import('@/features/flags/FeatureLockedScreen.vue') },
     { path: '/onboarding',      component: () => import('@/pages/OnboardingPage.vue') },
