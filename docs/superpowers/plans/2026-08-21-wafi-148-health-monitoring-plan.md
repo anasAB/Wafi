@@ -659,15 +659,20 @@ INSERT INTO public.shops (id, name, timezone) VALUES
   ('77777777-7777-7777-7777-777777777777', 'Shop E', 'Asia/Damascus');
 
 -- Simulate a shift.closed event with a mismatch over the existing $15 threshold.
-INSERT INTO public.events (id, shop_id, event_type, occurred_at, payload)
+-- public.events' event-kind column is `type` (migration 074), not `event_type`,
+-- and `payload` is stored as TEXT (JSON.stringify'd by the client), not JSONB --
+-- see 074_events_bus_core.sql and 086_profit_cache_apply.sql for the precedent
+-- of casting with `payload::jsonb` before `->>`.
+INSERT INTO public.events (id, shop_id, type, entity_id, payload, staff_id, occurred_at)
 VALUES (
-  gen_random_uuid(), '77777777-7777-7777-7777-777777777777', 'shift.closed', now(),
-  jsonb_build_object('variance', 20.00)
+  gen_random_uuid(), '77777777-7777-7777-7777-777777777777', 'shift.closed',
+  '77777777-7777-7777-7777-777777777777', jsonb_build_object('variance', 20.00)::text,
+  '00000000-0000-0000-0000-000000000000', now()
 );
 
 SELECT public._apply_health_drawer_mismatch(
   (SELECT id FROM public.events WHERE shop_id = '77777777-7777-7777-7777-777777777777'
-     AND event_type = 'shift.closed' ORDER BY occurred_at DESC LIMIT 1)
+     AND type = 'shift.closed' ORDER BY occurred_at DESC LIMIT 1)
 );
 
 SELECT is(
@@ -679,14 +684,15 @@ SELECT is(
 );
 
 -- A within-threshold variance must NOT increment the count.
-INSERT INTO public.events (id, shop_id, event_type, occurred_at, payload)
+INSERT INTO public.events (id, shop_id, type, entity_id, payload, staff_id, occurred_at)
 VALUES (
-  gen_random_uuid(), '77777777-7777-7777-7777-777777777777', 'shift.closed', now(),
-  jsonb_build_object('variance', 5.00)
+  gen_random_uuid(), '77777777-7777-7777-7777-777777777777', 'shift.closed',
+  '77777777-7777-7777-7777-777777777777', jsonb_build_object('variance', 5.00)::text,
+  '00000000-0000-0000-0000-000000000000', now()
 );
 SELECT public._apply_health_drawer_mismatch(
   (SELECT id FROM public.events WHERE shop_id = '77777777-7777-7777-7777-777777777777'
-     AND event_type = 'shift.closed' ORDER BY occurred_at DESC LIMIT 1)
+     AND type = 'shift.closed' ORDER BY occurred_at DESC LIMIT 1)
 );
 SELECT is(
   (SELECT value FROM public.health_metrics
@@ -726,6 +732,10 @@ Expected: FAIL — functions don't exist.
 -- this projection does NOT redefine that threshold, it only counts occurrences.
 -- device_id is a fixed sentinel (all-zeros) since this is a shop-level, not
 -- per-device, metric.
+--
+-- events.type (not event_type) and events.payload is TEXT requiring an
+-- explicit ::jsonb cast before ->> (migration 074_events_bus_core.sql; matches
+-- the established precedent in 086_profit_cache_apply.sql).
 
 CREATE OR REPLACE FUNCTION public._apply_health_drawer_mismatch(p_event_id uuid)
 RETURNS void
@@ -740,11 +750,11 @@ DECLARE
   v_timezone text;
 BEGIN
   SELECT * INTO v_event FROM public.events WHERE id = p_event_id;
-  IF NOT FOUND OR v_event.event_type != 'shift.closed' THEN
+  IF NOT FOUND OR v_event.type != 'shift.closed' THEN
     RETURN;
   END IF;
 
-  v_variance := (v_event.payload ->> 'variance')::numeric;
+  v_variance := (v_event.payload::jsonb ->> 'variance')::numeric;
   IF v_variance IS NULL OR abs(v_variance) <= 15 THEN
     RETURN;
   END IF;
@@ -774,7 +784,7 @@ BEGIN
 
   PERFORM public._apply_health_drawer_mismatch(id)
     FROM public.events
-   WHERE event_type = 'shift.closed'
+   WHERE type = 'shift.closed'
    ORDER BY occurred_at ASC;
 END;
 $$;
@@ -816,19 +826,24 @@ git commit -m "feat(WAFI-148): add event-sourced drawer_mismatch_count projectio
 BEGIN;
 SELECT plan(3);
 
+-- events.type (not event_type) and events.payload is TEXT requiring an
+-- explicit ::jsonb cast to read fields from it (migration 074_events_bus_core.sql;
+-- same correction already applied in Task 4's migration 109/test, matched here
+-- exactly: sentinel staff_id, entity_id = the shop id as text).
 SET LOCAL role postgres;
 INSERT INTO public.shops (id, name, timezone) VALUES
   ('88888888-8888-8888-8888-888888888888', 'Shop F', 'Asia/Damascus');
 
 -- A force-closed (zombie) shift.closed event.
-INSERT INTO public.events (id, shop_id, event_type, occurred_at, payload)
+INSERT INTO public.events (id, shop_id, type, entity_id, payload, staff_id, occurred_at)
 VALUES (
-  gen_random_uuid(), '88888888-8888-8888-8888-888888888888', 'shift.closed', now(),
-  jsonb_build_object('force_closed_by', gen_random_uuid())
+  gen_random_uuid(), '88888888-8888-8888-8888-888888888888', 'shift.closed',
+  '88888888-8888-8888-8888-888888888888', jsonb_build_object('force_closed_by', gen_random_uuid())::text,
+  '00000000-0000-0000-0000-000000000000', now()
 );
 SELECT public._apply_health_never_closed_shift(
   (SELECT id FROM public.events WHERE shop_id = '88888888-8888-8888-8888-888888888888'
-     AND event_type = 'shift.closed' ORDER BY occurred_at DESC LIMIT 1)
+     AND type = 'shift.closed' ORDER BY occurred_at DESC LIMIT 1)
 );
 SELECT is(
   (SELECT value FROM public.health_metrics
@@ -840,14 +855,15 @@ SELECT is(
 
 -- A normal (non-force-closed) shift.closed event must NOT increment it --
 -- a merely-late close is not the same signal as a zombie force-close.
-INSERT INTO public.events (id, shop_id, event_type, occurred_at, payload)
+INSERT INTO public.events (id, shop_id, type, entity_id, payload, staff_id, occurred_at)
 VALUES (
-  gen_random_uuid(), '88888888-8888-8888-8888-888888888888', 'shift.closed', now(),
-  jsonb_build_object('force_closed_by', NULL)
+  gen_random_uuid(), '88888888-8888-8888-8888-888888888888', 'shift.closed',
+  '88888888-8888-8888-8888-888888888888', jsonb_build_object('force_closed_by', NULL)::text,
+  '00000000-0000-0000-0000-000000000000', now()
 );
 SELECT public._apply_health_never_closed_shift(
   (SELECT id FROM public.events WHERE shop_id = '88888888-8888-8888-8888-888888888888'
-     AND event_type = 'shift.closed' ORDER BY occurred_at DESC LIMIT 1)
+     AND type = 'shift.closed' ORDER BY occurred_at DESC LIMIT 1)
 );
 SELECT is(
   (SELECT value FROM public.health_metrics
@@ -885,6 +901,10 @@ Expected: FAIL — functions don't exist.
 -- event-sourced. Distinct from a merely-late close: only shift.closed events
 -- carrying force_closed_by (WAFI-065's zombie force-close guard, migration
 -- 025/026) count here.
+--
+-- events.type (not event_type) and events.payload is TEXT requiring an
+-- explicit ::jsonb cast before ->> (migration 074_events_bus_core.sql; same
+-- correction already applied in Task 4's migration 109).
 
 CREATE OR REPLACE FUNCTION public._apply_health_never_closed_shift(p_event_id uuid)
 RETURNS void
@@ -898,11 +918,11 @@ DECLARE
   v_timezone text;
 BEGIN
   SELECT * INTO v_event FROM public.events WHERE id = p_event_id;
-  IF NOT FOUND OR v_event.event_type != 'shift.closed' THEN
+  IF NOT FOUND OR v_event.type != 'shift.closed' THEN
     RETURN;
   END IF;
 
-  IF v_event.payload ->> 'force_closed_by' IS NULL THEN
+  IF v_event.payload::jsonb ->> 'force_closed_by' IS NULL THEN
     RETURN; -- a normal close, not a zombie force-close
   END IF;
 
@@ -931,7 +951,7 @@ BEGIN
 
   PERFORM public._apply_health_never_closed_shift(id)
     FROM public.events
-   WHERE event_type = 'shift.closed'
+   WHERE type = 'shift.closed'
    ORDER BY occurred_at ASC;
 END;
 $$;
