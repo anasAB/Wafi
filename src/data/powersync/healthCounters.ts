@@ -35,18 +35,27 @@ export async function incrementLocalHealthCounter(
   }
 }
 
-// WAFI-148: "today" for local health counters, matching the same device-UTC
-// convention already established in localTodayRevenueRebuild.ts's
-// getShopLocalToday -- shops.timezone (migration 084) defaults to 'UTC' and
-// nothing in this codebase sets it to anything else today, so device-UTC and
-// shop-local are identical. useDeviceActivity.ts's shopLocalDateString takes a
-// real IANA timezone and is used from a Vue composable with store access to
-// shop.timezone; the four call sites here (ops/dead-letter/drainDeferredJobs/
-// useSync/main) have no such access, so this is a deliberately separate,
-// parameterless helper rather than a duplicate of that timezone-aware logic.
-// If shops.timezone ever becomes client-configurable, this must move to
-// shop-local day together with getShopLocalToday and useDeviceActivity's
-// caller, per that function's own review note.
-export function shopLocalToday(): string {
-  return new Date().toISOString().slice(0, 10)
+// Shared shop-local calendar-date formatter (WAFI-148 final-review fix).
+// Every period_start the client writes must be a shop-local calendar date,
+// per the design spec's "Period boundaries and timezone" rule -- never a UTC
+// date. Single source of truth, reused by useDeviceActivity.ts instead of
+// each keeping its own copy.
+export function shopLocalDateString(timezone: string, now: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(now) // en-CA -> YYYY-MM-DD
+}
+
+// Resolves "today" as a shop-local calendar date for the given shop, reading
+// its timezone from the locally-synced `shops` table. Returns null when the
+// shop row hasn't synced yet or its timezone is unset -- per the spec, health
+// metrics don't compute until a timezone is configured, so a call site with
+// no resolvable timezone must skip the write entirely rather than falling
+// back to UTC (matching the server's own report_health_metrics behavior,
+// which rejects writes for a shop with no timezone configured).
+export async function getShopLocalToday(shopId: string): Promise<string | null> {
+  const shop = await db.getOptional<{ timezone: string | null }>(
+    `SELECT timezone FROM shops WHERE id = ?`,
+    [shopId],
+  )
+  if (!shop?.timezone) return null
+  return shopLocalDateString(shop.timezone)
 }

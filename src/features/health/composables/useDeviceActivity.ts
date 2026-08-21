@@ -1,8 +1,5 @@
 import { db } from '@/data/powersync/db'
-
-function shopLocalDateString(timezone: string, now: Date): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(now) // en-CA -> YYYY-MM-DD
-}
+import { shopLocalDateString } from '@/data/powersync/healthCounters'
 
 // The qualifying-event contract (per the design spec): this must be called
 // ONLY from a genuine foreground user-interaction boundary -- a real

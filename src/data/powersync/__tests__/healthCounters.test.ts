@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { incrementLocalHealthCounter } from '../healthCounters'
+import { incrementLocalHealthCounter, shopLocalDateString, getShopLocalToday } from '../healthCounters'
 
 // local_health_metrics is a PowerSync localOnly table (SQLite view backed by
 // CRUD-queue triggers) -- ON CONFLICT against it fails at runtime (no local
@@ -14,7 +14,11 @@ import { incrementLocalHealthCounter } from '../healthCounters'
 const { rows, mockDb } = vi.hoisted(() => {
   const rows = new Map<string, { id: string; value: number }>()
   const mockDb = {
-    getOptional: vi.fn(async (_sql: string, params: unknown[]) => {
+    getOptional: vi.fn(async (sql: string, params: unknown[]) => {
+      if (sql.includes('shops')) {
+        const shopId = params[0]
+        return shopId === 'shop-with-tz' ? { timezone: 'Asia/Damascus' } : { timezone: null }
+      }
       const key = `${params[0]}|${params[1]}`
       return rows.get(key) ?? null
     }),
@@ -59,5 +63,26 @@ describe('WAFI-148 incrementLocalHealthCounter', () => {
     for (const call of mockDb.execute.mock.calls) {
       expect(call[0]).not.toMatch(/ON CONFLICT/i)
     }
+  })
+})
+
+describe('WAFI-148 shopLocalDateString', () => {
+  it('formats a shop-local calendar date, not the UTC date', () => {
+    // 2026-08-21T22:00:00Z is 2026-08-22 01:00 in Asia/Damascus (UTC+3) --
+    // the shop-local date must roll over even though UTC hasn't.
+    const utcDate = new Date('2026-08-21T22:00:00Z')
+    expect(shopLocalDateString('Asia/Damascus', utcDate)).toBe('2026-08-22')
+  })
+})
+
+describe('WAFI-148 getShopLocalToday', () => {
+  it('resolves the shop-local date when the shop has a configured timezone', async () => {
+    const result = await getShopLocalToday('shop-with-tz')
+    expect(result).not.toBeNull()
+  })
+
+  it('returns null when the shop has no configured timezone', async () => {
+    const result = await getShopLocalToday('shop-without-tz')
+    expect(result).toBeNull()
   })
 })

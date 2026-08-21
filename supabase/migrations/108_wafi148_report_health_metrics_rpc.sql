@@ -41,7 +41,7 @@ BEGIN
   END IF;
 
   IF NOT EXISTS (
-    SELECT 1 FROM public.devices WHERE id = p_device_id AND shop_id = v_shop_id
+    SELECT 1 FROM public.devices WHERE id = p_device_id AND shop_id = v_shop_id AND is_active IS NOT FALSE
   ) THEN
     RAISE EXCEPTION 'device does not belong to the authenticated shop' USING ERRCODE = 'P0001';
   END IF;

@@ -13,9 +13,13 @@ vi.mock('@/data/supabase/client', () => ({
 // WAFI-148: spy on the shared health counter helper so quarantineOp's
 // counter side effect can be asserted without a real db.
 const incrementLocalHealthCounter = vi.fn(async () => {})
+const getShopLocalToday = vi.fn(async () => '2026-08-21')
 vi.mock('../healthCounters', () => ({
   incrementLocalHealthCounter: (...a: any[]) => incrementLocalHealthCounter(...a),
-  shopLocalToday: () => '2026-08-21',
+  getShopLocalToday: (...a: any[]) => getShopLocalToday(...a),
+}))
+vi.mock('@/store/device.store', () => ({
+  useDeviceStore: () => ({ shopId: 'shop-1' }),
 }))
 
 import {

@@ -4,7 +4,8 @@ import type { CrudEntry } from '@powersync/common'
 import type { PostgrestError } from '@supabase/supabase-js'
 import { v4 as uuidv4 } from 'uuid'
 import { runOp, isPermanentError } from './ops'
-import { incrementLocalHealthCounter, shopLocalToday } from './healthCounters'
+import { incrementLocalHealthCounter, getShopLocalToday } from './healthCounters'
+import { useDeviceStore } from '@/store/device.store'
 
 /** One upload op the server permanently rejected, held locally for recovery. */
 export interface DeadLetterEntry {
@@ -64,9 +65,16 @@ export async function quarantineOp(
   // both the failure numerator and the shared total denominator. Only on the
   // actual insert path above (not the idempotent `existing` early-return),
   // so a re-processed batch that re-quarantines the same clientId doesn't
-  // double-count.
-  await incrementLocalHealthCounter('sync_failure_terminal', shopLocalToday())
-  await incrementLocalHealthCounter('sync_terminal_total', shopLocalToday())
+  // double-count. Skipped entirely if the shop or its timezone isn't
+  // resolvable yet, per the spec, rather than falling back to UTC.
+  const shopId = useDeviceStore().shopId
+  if (shopId) {
+    const today = await getShopLocalToday(shopId)
+    if (today) {
+      await incrementLocalHealthCounter('sync_failure_terminal', today)
+      await incrementLocalHealthCounter('sync_terminal_total', today)
+    }
+  }
 }
 
 export async function countDeadLetter(db: AbstractPowerSyncDatabase): Promise<number> {

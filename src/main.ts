@@ -10,7 +10,7 @@ import App    from './App.vue'
 import router from './router'
 import { initSentry } from './sentry'
 import { resumeBootstrapIfPending } from './router/bootstrap-resume'
-import { incrementLocalHealthCounter, shopLocalToday } from './data/powersync/healthCounters'
+import { incrementLocalHealthCounter, getShopLocalToday } from './data/powersync/healthCounters'
 import { startHealthReporting } from './features/health/composables/useHealthReporting'
 import { useDeviceStore } from './store/device.store'
 
@@ -28,7 +28,14 @@ initSentry(app)
 // both the local health counter and Sentry reporting fire on every error.
 const previousErrorHandler = app.config.errorHandler
 app.config.errorHandler = (err, instance, info) => {
-  void incrementLocalHealthCounter('app_error_count', shopLocalToday())
+  // deviceStoreForHealth is declared further below in this module, but this
+  // handler only ever runs after boot has completed (never synchronously
+  // during setup), so it's always initialized by the time an error fires.
+  void (async () => {
+    if (!deviceStoreForHealth.shopId) return
+    const today = await getShopLocalToday(deviceStoreForHealth.shopId)
+    if (today) await incrementLocalHealthCounter('app_error_count', today)
+  })()
   previousErrorHandler?.(err, instance, info)
 }
 
@@ -41,12 +48,14 @@ app.use(pinia)
 // bogus ids. Must run after app.use(pinia) since useDeviceStore() needs an
 // active Pinia instance.
 const deviceStoreForHealth = useDeviceStore()
-startHealthReporting(() => {
+startHealthReporting(async () => {
   if (!deviceStoreForHealth.shopId || !deviceStoreForHealth.deviceId) return null
+  const today = await getShopLocalToday(deviceStoreForHealth.shopId)
+  if (!today) return null // timezone not yet configured -- skip this tick entirely
   return {
     shopId: deviceStoreForHealth.shopId,
     deviceId: deviceStoreForHealth.deviceId,
-    today: shopLocalToday(),
+    today,
   }
 })
 

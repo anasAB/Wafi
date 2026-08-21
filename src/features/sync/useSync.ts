@@ -10,7 +10,7 @@ import {
   type DeadLetterEntry, type RetryResult,
 } from '@/data/powersync/dead-letter'
 import { supabase } from '@/data/supabase/client'
-import { incrementLocalHealthCounter, shopLocalToday } from '@/data/powersync/healthCounters'
+import { incrementLocalHealthCounter, getShopLocalToday } from '@/data/powersync/healthCounters'
 import { runHealthReportingTick } from '@/features/health/composables/useHealthReporting'
 
 export function useSync() {
@@ -156,21 +156,35 @@ export function useSync() {
         if (!status.connected) {
           if (offlineStartedAt.value === null) offlineStartedAt.value = Date.now()
         } else if (offlineStartedAt.value !== null) {
-          const durationSeconds = (Date.now() - offlineStartedAt.value) / 1000
+          // Round to a whole number of seconds -- report_health_metrics casts
+          // this straight to bigint server-side, and a fractional value there
+          // throws and aborts the WHOLE RPC batch (every counter and the
+          // gauge in that call), not just this one counter.
+          const durationSeconds = Math.round((Date.now() - offlineStartedAt.value) / 1000)
           offlineStartedAt.value = null
-          void incrementLocalHealthCounter('offline_duration_seconds', shopLocalToday(), durationSeconds)
 
-          // WAFI-148: report accumulated health metrics immediately on this
-          // same reconnect transition (in addition to the 30-minute periodic
-          // tick started in main.ts) -- reuses this existing connectivity
-          // listener rather than a second detector.
-          if (deviceStore.shopId && deviceStore.deviceId) {
-            void runHealthReportingTick({
-              shopId: deviceStore.shopId,
-              deviceId: deviceStore.deviceId,
-              today: shopLocalToday(),
-            })
-          }
+          void (async () => {
+            if (!deviceStore.shopId) return
+            // Per the spec, health metrics don't compute until the shop's
+            // timezone is configured -- skip the write entirely rather than
+            // falling back to a UTC date.
+            const today = await getShopLocalToday(deviceStore.shopId)
+            if (!today) return
+
+            await incrementLocalHealthCounter('offline_duration_seconds', today, durationSeconds)
+
+            // WAFI-148: report accumulated health metrics immediately on this
+            // same reconnect transition (in addition to the 30-minute periodic
+            // tick started in main.ts) -- reuses this existing connectivity
+            // listener rather than a second detector.
+            if (deviceStore.deviceId) {
+              await runHealthReportingTick({
+                shopId: deviceStore.shopId,
+                deviceId: deviceStore.deviceId,
+                today,
+              })
+            }
+          })()
         }
 
         if (status.connected) {

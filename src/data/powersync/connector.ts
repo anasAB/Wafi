@@ -3,7 +3,8 @@ import type { PowerSyncBackendConnector } from '@powersync/common'
 import { supabase } from '@/data/supabase/client'
 import { runOp, isPermanentError } from './ops'
 import { quarantineOp } from './dead-letter'
-import { incrementLocalHealthCounter, shopLocalToday } from './healthCounters'
+import { incrementLocalHealthCounter, getShopLocalToday } from './healthCounters'
+import { useDeviceStore } from '@/store/device.store'
 
 // Re-export so existing importers and the runOp unit tests keep one entry point.
 export { runOp, isPermanentError } from './ops'
@@ -53,7 +54,11 @@ export class SupabaseConnector implements PowerSyncBackendConnector {
         this.permanentFailures.delete(op.clientId)
         if (!this.countedSuccess.has(op.clientId)) {
           this.countedSuccess.add(op.clientId)
-          void incrementLocalHealthCounter('sync_terminal_total', shopLocalToday())
+          const shopId = useDeviceStore().shopId
+          if (shopId) {
+            const today = await getShopLocalToday(shopId)
+            if (today) await incrementLocalHealthCounter('sync_terminal_total', today)
+          }
         }
         continue
       }

@@ -8,7 +8,7 @@ import { registerJobHandler, resetJobTypeRegistry } from '@/services/events/jobT
 const incrementLocalHealthCounter = vi.fn(async () => {})
 vi.mock('@/data/powersync/healthCounters', () => ({
   incrementLocalHealthCounter: (...a: any[]) => incrementLocalHealthCounter(...a),
-  shopLocalToday: () => '2026-08-21',
+  getShopLocalToday: async () => '2026-08-21',
 }))
 
 import { drainDeferredJobs } from '@/services/events/drainDeferredJobs'

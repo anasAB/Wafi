@@ -39,7 +39,14 @@ vi.mock('../router/bootstrap-resume', () => ({ resumeBootstrapIfPending: vi.fn()
 const incrementLocalHealthCounter = vi.fn(async () => {})
 vi.mock('../data/powersync/healthCounters', () => ({
   incrementLocalHealthCounter: (...a: any[]) => incrementLocalHealthCounter(...a),
-  shopLocalToday: () => '2026-08-21',
+  getShopLocalToday: async () => '2026-08-21',
+}))
+// deviceId deliberately left empty: startHealthReporting's getContext (a
+// separate concern from the error handler under test here) requires both
+// shopId AND deviceId to attempt a tick, so leaving it unset keeps that
+// machinery (real db/supabase, unmocked here) from ever running.
+vi.mock('../store/device.store', () => ({
+  useDeviceStore: () => ({ shopId: 'shop-1', deviceId: '', refreshShopId: vi.fn() }),
 }))
 
 describe('main.ts global error handler (WAFI-148)', () => {
@@ -56,7 +63,11 @@ describe('main.ts global error handler (WAFI-148)', () => {
     const err = new Error('boom')
     capturedApp.config.errorHandler(err, null, 'render function')
 
-    expect(incrementLocalHealthCounter).toHaveBeenCalledExactlyOnceWith('app_error_count', '2026-08-21')
+    // The handler resolves the shop's timezone asynchronously (fire-and-forget)
+    // before incrementing -- await that instead of asserting synchronously.
+    await vi.waitFor(() => {
+      expect(incrementLocalHealthCounter).toHaveBeenCalledExactlyOnceWith('app_error_count', '2026-08-21')
+    })
   })
 
   it('still forwards to a previously-installed handler (e.g. Sentry) rather than replacing it', async () => {
@@ -78,7 +89,9 @@ describe('main.ts global error handler (WAFI-148)', () => {
     const err = new Error('boom')
     capturedApp.config.errorHandler(err, null, 'render function')
 
-    expect(incrementLocalHealthCounter).toHaveBeenCalledExactlyOnceWith('app_error_count', '2026-08-21')
+    await vi.waitFor(() => {
+      expect(incrementLocalHealthCounter).toHaveBeenCalledExactlyOnceWith('app_error_count', '2026-08-21')
+    })
     expect(previousHandler).toHaveBeenCalledExactlyOnceWith(err, null, 'render function')
   })
 })

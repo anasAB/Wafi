@@ -6,9 +6,18 @@ import { mount } from '@vue/test-utils'
 // WAFI-148: spy on the shared health counter helper so the offline-duration
 // cycle can be asserted without a real local_health_metrics table.
 const incrementLocalHealthCounter = vi.fn(async () => {})
+const getShopLocalToday = vi.fn(async () => '2026-08-21')
 vi.mock('@/data/powersync/healthCounters', () => ({
   incrementLocalHealthCounter: (...a: any[]) => incrementLocalHealthCounter(...a),
-  shopLocalToday: () => '2026-08-21',
+  getShopLocalToday: (...a: any[]) => getShopLocalToday(...a),
+}))
+
+// deviceStore.shopId must resolve for the reconnect handler to write
+// anything. deviceId is deliberately left unset so the immediate
+// runHealthReportingTick call (a separate concern, untested here) is
+// skipped -- this file only asserts the offline-duration counter write.
+vi.mock('@/store/device.store', () => ({
+  useDeviceStore: () => ({ shopId: 'shop-1', deviceId: '', refreshShopId: vi.fn() }),
 }))
 
 // Capture the statusChanged listener bindPowerSync() registers so tests can
@@ -77,7 +86,12 @@ describe('useSync offline-duration cycle tracking (WAFI-148)', () => {
     nowSpy.mockReturnValue(1_000_000 + 30_000) // 30s later
     statusListener!({ connected: true, dataFlowStatus: {} }) // reconnect
 
-    expect(incrementLocalHealthCounter).toHaveBeenCalledExactlyOnceWith('offline_duration_seconds', '2026-08-21', 30)
+    // The write now goes through an async shop-local-timezone resolution
+    // (getShopLocalToday) before the counter is incremented -- await its
+    // completion rather than asserting synchronously.
+    await vi.waitFor(() => {
+      expect(incrementLocalHealthCounter).toHaveBeenCalledExactlyOnceWith('offline_duration_seconds', '2026-08-21', 30)
+    })
     nowSpy.mockRestore()
     wrapper.unmount()
   })
@@ -92,7 +106,9 @@ describe('useSync offline-duration cycle tracking (WAFI-148)', () => {
     statusListener!({ connected: true, dataFlowStatus: {} })
     statusListener!({ connected: true, dataFlowStatus: {} }) // double-fire
 
-    expect(incrementLocalHealthCounter).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => {
+      expect(incrementLocalHealthCounter).toHaveBeenCalledTimes(1)
+    })
     nowSpy.mockRestore()
     wrapper.unmount()
   })

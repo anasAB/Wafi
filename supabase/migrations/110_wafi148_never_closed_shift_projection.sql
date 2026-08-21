@@ -7,6 +7,10 @@
 -- events.type (not event_type) and events.payload is TEXT requiring an
 -- explicit ::jsonb cast before ->> (migration 074_events_bus_core.sql; same
 -- correction already applied in Task 4's migration 109).
+--
+-- The payload key is camelCase (`forceClosedBy`), matching ShiftClosedPayload
+-- in src/services/events/domainEvent.types.ts and the event published by
+-- src/services/staff.service.ts (WAFI-148 Task 5b) -- NOT snake_case.
 
 CREATE OR REPLACE FUNCTION public._apply_health_never_closed_shift(p_event_id uuid)
 RETURNS void
@@ -24,7 +28,7 @@ BEGIN
     RETURN;
   END IF;
 
-  IF v_event.payload::jsonb ->> 'force_closed_by' IS NULL THEN
+  IF v_event.payload::jsonb ->> 'forceClosedBy' IS NULL THEN
     RETURN; -- a normal close, not a zombie force-close
   END IF;
 

@@ -14,7 +14,7 @@ INSERT INTO public.shops (id, name, timezone) VALUES
 INSERT INTO public.events (id, shop_id, type, entity_id, payload, staff_id, occurred_at)
 VALUES (
   gen_random_uuid(), '88888888-8888-8888-8888-888888888888', 'shift.closed',
-  '88888888-8888-8888-8888-888888888888', jsonb_build_object('force_closed_by', gen_random_uuid())::text,
+  '88888888-8888-8888-8888-888888888888', jsonb_build_object('forceClosedBy', gen_random_uuid())::text,
   '00000000-0000-0000-0000-000000000000', now()
 );
 SELECT public._apply_health_never_closed_shift(
@@ -34,7 +34,7 @@ SELECT is(
 INSERT INTO public.events (id, shop_id, type, entity_id, payload, staff_id, occurred_at)
 VALUES (
   gen_random_uuid(), '88888888-8888-8888-8888-888888888888', 'shift.closed',
-  '88888888-8888-8888-8888-888888888888', jsonb_build_object('force_closed_by', NULL)::text,
+  '88888888-8888-8888-8888-888888888888', jsonb_build_object('forceClosedBy', NULL)::text,
   '00000000-0000-0000-0000-000000000000', now()
 );
 SELECT public._apply_health_never_closed_shift(

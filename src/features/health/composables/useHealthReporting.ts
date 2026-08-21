@@ -18,14 +18,42 @@ function isClosedPeriod(periodStart: string, today: string): boolean {
 }
 
 export async function runHealthReportingTick(ctx: TickContext): Promise<void> {
-  const localRows = await db.getAll<{ metric_key: string; period_start: string; value: number }>(
+  const allRows = await db.getAll<{ metric_key: string; period_start: string; value: number }>(
     `SELECT metric_key, period_start, value FROM local_health_metrics`,
   )
+
+  // Retention cap runs FIRST and unconditionally, before any RPC call --
+  // never after a (possibly failed) response. A stale row outside the
+  // server's accepted 7-day window otherwise gets rejected by the RPC on
+  // every future tick, the function returns early on that error, and the
+  // prune that would have removed it never runs -- permanently wedging the
+  // device (WAFI-148 final-review fix).
+  const windowStart = new Date(ctx.today)
+  windowStart.setDate(windowStart.getDate() - (RETENTION_DAYS - 1))
+  const windowStartStr = windowStart.toISOString().slice(0, 10)
+
+  const staleRows = allRows.filter((row) => row.period_start < windowStartStr)
+  if (staleRows.length > 0) {
+    await db.execute(`DELETE FROM local_health_metrics WHERE period_start < ?`, [windowStartStr])
+    // Read-then-insert-or-update, NOT an upsert -- same PowerSync localOnly-table
+    // constraint as incrementLocalHealthCounter (Task 10); reuse it directly
+    // rather than duplicating the pattern here.
+    await incrementLocalHealthCounter('telemetry_periods_dropped', ctx.today, staleRows.length)
+  }
+
+  // Only in-window rows are ever sent -- a single stale row (already pruned
+  // above, but this also guards any row that arrives between the prune and
+  // this read) can never poison an otherwise-valid batch.
+  const localRows = allRows.filter((row) => row.period_start >= windowStartStr)
 
   const counters: HealthCounterReport[] = localRows.map((row) => ({
     metric_key: row.metric_key as HealthCounterReport['metric_key'],
     period_start: row.period_start,
-    value: row.value,
+    // Defensive coercion: report_health_metrics casts this straight to
+    // bigint server-side, which throws on any fractional value and aborts
+    // the WHOLE RPC batch. Rounding here is belt-and-braces on top of the
+    // fix at the useSync.ts offline-duration call site.
+    value: Math.round(row.value),
   }))
 
   // countDeadLetter takes the PowerSync db handle explicitly (see
@@ -63,22 +91,6 @@ export async function runHealthReportingTick(ctx: TickContext): Promise<void> {
       )
     }
   }
-
-  // Retention cap: drop any still-unacknowledged row outside the 7-day
-  // window, counting the drop as diagnostic-only metadata (never shown to
-  // the owner, never part of health status).
-  const windowStart = new Date(ctx.today)
-  windowStart.setDate(windowStart.getDate() - (RETENTION_DAYS - 1))
-  const windowStartStr = windowStart.toISOString().slice(0, 10)
-
-  const staleRows = localRows.filter((row) => row.period_start < windowStartStr)
-  if (staleRows.length > 0) {
-    await db.execute(`DELETE FROM local_health_metrics WHERE period_start < ?`, [windowStartStr])
-    // Read-then-insert-or-update, NOT an upsert -- same PowerSync localOnly-table
-    // constraint as incrementLocalHealthCounter (Task 10); reuse it directly
-    // rather than duplicating the pattern here.
-    await incrementLocalHealthCounter('telemetry_periods_dropped', ctx.today, staleRows.length)
-  }
 }
 
 let tickHandle: ReturnType<typeof setInterval> | undefined
@@ -87,11 +99,13 @@ let tickHandle: ReturnType<typeof setInterval> | undefined
 // tick plus an immediate call on the app's existing connectivity-reconnect
 // signal (wired by the caller in main.ts alongside the existing useSync.ts
 // listener), never a new detector.
-export function startHealthReporting(getContext: () => TickContext | null): void {
+export function startHealthReporting(
+  getContext: () => TickContext | null | Promise<TickContext | null>,
+): void {
   if (tickHandle) return
 
   const tick = async () => {
-    const ctx = getContext()
+    const ctx = await getContext()
     if (ctx) await runHealthReportingTick(ctx)
   }
 
