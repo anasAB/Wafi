@@ -814,8 +814,14 @@ git commit -m "feat(WAFI-148): add event-sourced drawer_mismatch_count projectio
 - Test: `supabase/tests/wafi148_never_closed_shift_projection.test.sql`
 
 **Interfaces:**
-- Consumes: `public.events` (existing — a zombie force-close per WAFI-065 emits a
-  `shift.closed` event with a `force_closed_by` field per migration 025's comment).
+- Consumes: `public.events` (`shift.closed` events carrying a `force_closed_by`
+  field — **correction, found during this task's review**: this signal did NOT
+  actually exist in production when this task was written; migration 025's comment
+  only documents the `cashier_shifts.force_closed_by` DB column, and the force-close
+  code path never published any event at all. **Task 5b** (inserted immediately after
+  this task) wires the producer side to actually emit this field. This SQL projection
+  itself is correct and needs no changes — it was written against the intended
+  eventual payload shape; only the producer needed fixing.).
 - Produces: `public._apply_health_never_closed_shift(p_event_id uuid)`,
   `public._rebuild_health_never_closed_shift()`.
 
@@ -970,6 +976,213 @@ Expected: PASS — 3/3 assertions.
 ```bash
 git add supabase/migrations/110_wafi148_never_closed_shift_projection.sql supabase/tests/wafi148_never_closed_shift_projection.test.sql
 git commit -m "feat(WAFI-148): add event-sourced never_closed_shift_count projection"
+```
+
+---
+
+### Task 5b: Wire `force_closed_by` into an emitted `shift.closed` event (inserted mid-plan)
+
+**Why this task exists:** Task 5's review found that the brief's premise — "a zombie
+force-close emits a `shift.closed` event with a `force_closed_by` field" — is false in
+this codebase. Verified directly: `forceCloseShift()` in
+`src/features/shifts/composables/useShift.ts` performs a raw `db.execute(UPDATE
+cashier_shifts ...)` and never calls into the event-publishing path at all — unlike the
+normal-close path (`closeShift()` in the same file), which correctly delegates to
+`closeShiftService()` in `src/services/staff.service.ts`, which publishes via
+`executeBusinessOperation`. This is a **pre-existing, deliberate gap**, not new
+breakage: the code comment explicitly says "force-close ... is out of scope" of the
+WAFI-152 business-services migration. Without this fix, `_apply_health_never_closed_shift`
+(Task 5) will never fire in production — `never_closed_shift_count` reads as a
+permanent, silent 0 regardless of actual zombie-shift activity, which is worse than no
+metric at all (a false-negative health signal). Ruling: fix this at the producer side
+with the smallest change that unblocks Task 5's metric, rather than descoping the metric
+or modifying Task 5's already-correct SQL.
+
+**Constraint found and must be respected:** `publishEvent()` has an explicit contract
+("Called only from executeBusinessOperation ... never import this directly from a
+service") — so the fix must route through `executeBusinessOperation`, mirroring
+`closeShiftService`'s existing pattern exactly, not add a direct `publishEvent` call
+into the composable.
+
+**Files:**
+- Modify: `src/services/events/domainEvent.types.ts` (extend `ShiftClosedPayload`)
+- Modify: `src/services/staff.service.ts` (add a `forceCloseShift` service function,
+  mirroring `closeShift`'s existing structure)
+- Modify: `src/features/shifts/composables/useShift.ts` (route `forceCloseShift()`
+  through the new service function instead of its own raw `writeShiftClose` call)
+- Test: `src/services/__tests__/staff.service.test.ts` (extend), `src/features/shifts/composables/__tests__/useShiftClose.test.ts` (extend)
+
+**Interfaces:**
+- Consumes: `executeBusinessOperation` (existing, `src/composables/executeBusinessOperation.ts`),
+  `ShiftClosedPayload` (existing, extended by this task).
+- Produces: a real `shift.closed` event carrying `forceClosedBy: string | null` for
+  BOTH the normal-close path (`null`) and the force-close path (the forcing staff
+  member's id) — this is what makes Task 5's `_apply_health_never_closed_shift` finally
+  reachable in production.
+
+- [ ] **Step 1: Write the failing test**
+
+```typescript
+// append to src/services/__tests__/staff.service.test.ts
+describe('StaffService.forceCloseShift', () => {
+  it('publishes a shift.closed event with forceClosedBy set to the forcing staff id', async () => {
+    const publishSpy = vi.fn()
+    vi.doMock('@/services/events/publishEvent', () => ({ publishEvent: publishSpy }))
+    const { forceCloseShift } = await import('@/services/staff.service')
+
+    await forceCloseShift('shop1', 'shift1', 'staff1', {
+      closingCashUsd: 100, closingCashSyp: 0,
+      varianceUsd: -20, varianceSyp: null,
+      closeNote: 'owner force-close', zReport: null, closingBreakdown: null,
+      forcedByStaffId: 'owner-staff-id',
+    }, { logShiftForceClosed: vi.fn() })
+
+    expect(publishSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'shift.closed',
+        payload: expect.objectContaining({ shiftId: 'shift1', forceClosedBy: 'owner-staff-id' }),
+      }),
+    )
+  })
+
+  it('still writes force_closed_by to the cashier_shifts row', async () => {
+    const { forceCloseShift } = await import('@/services/staff.service')
+    const params = await captureExecuteParams(() => forceCloseShift('shop1', 'shift1', 'staff1', {
+      closingCashUsd: 100, closingCashSyp: 0,
+      varianceUsd: -20, varianceSyp: null,
+      closeNote: null, zReport: null, closingBreakdown: null,
+      forcedByStaffId: 'owner-staff-id',
+    }, { logShiftForceClosed: vi.fn() }))
+    expect(params[6]).toBe('owner-staff-id') // force_closed_by column position, matching closeShift's existing UPDATE
+  })
+})
+```
+
+Use this file's existing mocking helpers (`captureExecuteParams` or equivalent already
+used by the `StaffService.closeShift` describe block above it) — read the existing
+`closeShift` tests in this file first and mirror their exact mocking approach rather
+than inventing a new one.
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx vitest run src/services/__tests__/staff.service.test.ts`
+Expected: FAIL — `forceCloseShift` is not exported from `staff.service.ts`.
+
+- [ ] **Step 3: Extend `ShiftClosedPayload` and add `forceCloseShift` to `staff.service.ts`**
+
+```typescript
+// src/services/events/domainEvent.types.ts — extend the existing interface
+export interface ShiftClosedPayload {
+  shiftId: string
+  staffId: string
+  expectedCash: number
+  countedCash: number
+  variance: number
+  forceClosedBy: string | null   // WAFI-148: null on the normal-close path; the
+                                  // forcing staff member's id on a WAFI-065 force-close.
+                                  // Existing consumers (shiftLateClose.rule.ts,
+                                  // businessRuleSubscriber.ts's drawer_variance handler)
+                                  // don't read this field and are unaffected.
+}
+```
+
+```typescript
+// src/services/staff.service.ts — add alongside the existing closeShift function
+export interface ForceCloseShiftAuditPort {
+  logShiftForceClosed: (shiftId: string) => Promise<void>
+}
+
+export interface ForceCloseShiftWriteInput {
+  closingCashUsd: number
+  closingCashSyp: number
+  varianceUsd: number | null
+  varianceSyp: number | null
+  closeNote: string | null
+  zReport: unknown
+  closingBreakdown: unknown
+  forcedByStaffId: string
+}
+
+/** The force-close UPDATE + event publish (WAFI-065 owner force-close, wired to the
+ *  event bus by WAFI-148 Task 5b — previously this path never published any event at
+ *  all, which meant WAFI-148's never_closed_shift_count metric could never fire). */
+export async function forceCloseShift(
+  shopId: string,
+  shiftId: string,
+  staffId: string,
+  input: ForceCloseShiftWriteInput,
+  audit: ForceCloseShiftAuditPort,
+): Promise<void> {
+  const now = new Date().toISOString()
+
+  const write = async (): Promise<void> => {
+    await db.execute(
+      `UPDATE cashier_shifts
+       SET status = 'closed', closed_at = ?, closing_cash_usd = ?, closing_cash_syp = ?,
+           variance_usd = ?, variance_syp = ?, close_note = ?, force_closed_by = ?,
+           z_report_data = ?, closing_breakdown = ?
+       WHERE id = ?`,
+      [
+        now,
+        input.closingCashUsd,
+        input.closingCashSyp,
+        input.varianceUsd,
+        input.varianceSyp,
+        input.closeNote,
+        input.forcedByStaffId,
+        input.zReport ? JSON.stringify(input.zReport) : null,
+        input.closingBreakdown ? JSON.stringify(input.closingBreakdown) : null,
+        shiftId,
+      ],
+    )
+  }
+
+  await executeBusinessOperation(write, {
+    audit: () => audit.logShiftForceClosed(shiftId),
+    toEvent: () => ({
+      type: StaffEventType.ShiftClosed,
+      entityId: shiftId,
+      payload: {
+        shiftId, staffId,
+        expectedCash: input.closingCashUsd - (input.varianceUsd ?? 0),
+        countedCash: input.closingCashUsd,
+        variance: input.varianceUsd ?? 0,
+        forceClosedBy: input.forcedByStaffId,
+      } satisfies ShiftClosedPayload,
+      payloadVersion: 1,
+      staffId,
+      shopId,
+      occurredAt: now,
+    }),
+  })
+}
+```
+
+Also update the existing `closeShift` function's `toEvent` payload to explicitly set
+`forceClosedBy: null` (satisfying the now-required field on `ShiftClosedPayload`).
+
+- [ ] **Step 4: Update `useShift.ts`'s composable to call the new service function**
+
+Replace `forceCloseShift`'s body (currently calling `writeShiftClose` directly) to call
+the new `forceCloseShiftService` (imported alongside the existing
+`closeShift as closeShiftService` import), passing `forcedByStaffId: input.forcedBy.id`.
+Remove the composable's own subsequent `await logShiftForceClosed(...)` call — that
+audit write now happens inside the service via the `audit` port, matching how the
+normal-close path already delegates its own audit call the same way. Keep the
+session-teardown logic (`if (shiftStore.activeShiftId === input.shiftId) { ... }`)
+exactly as-is — that's unrelated to event publishing and must not change.
+
+- [ ] **Step 5: Run tests to verify they pass**
+
+Run: `npx vitest run src/services/__tests__/staff.service.test.ts src/features/shifts/composables/__tests__/useShiftClose.test.ts`
+Expected: PASS, including the two new assertions from Step 1. Also run the full shift
+test suite to confirm no regression: `npx vitest run src/features/shifts`
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/services/events/domainEvent.types.ts src/services/staff.service.ts src/features/shifts/composables/useShift.ts src/services/__tests__/staff.service.test.ts src/features/shifts/composables/__tests__/useShiftClose.test.ts
+git commit -m "fix(WAFI-148): wire force-close to publish shift.closed with forceClosedBy, unblocking never_closed_shift_count"
 ```
 
 ---
