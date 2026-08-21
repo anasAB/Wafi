@@ -1,7 +1,7 @@
 # WAFI-148: Internal Health Monitoring — Design
 
 **Date:** 2026-08-21
-**Status:** Implementation-ready — self-review round 2 applied 2026-08-21
+**Status:** Implementation-ready — self-review round 3 applied 2026-08-21
 
 ## Prerequisite: shop timezone does not currently exist
 
@@ -11,6 +11,16 @@ period boundary falls on, so this is a real schema gap, not a nuance — **a
 `shops.timezone` column (IANA name, e.g. `Asia/Damascus`) must be added as part of this
 ticket's first migration**, not assumed to already exist. See "Period boundaries and
 timezone" below for why device-local or UTC dates are unsafe here.
+
+**Backfill policy for existing shops — must not assume a single default.** Defaulting
+every existing shop to `'Asia/Damascus'` would be wrong for any shop outside Syria
+(the CLAUDE.md context explicitly notes international signups from Lebanon, Iraq,
+Jordan are accepted opportunistically), and there's no reliable existing column to
+derive a real timezone from. The column must be added **nullable**, with health-metric
+computation simply not running for a shop until its timezone is set — this is an
+onboarding/settings requirement (surface a one-time "set your shop's timezone" prompt),
+not a migration-time guess. No shop may begin producing health metrics with an
+undefined period timezone.
 
 ## Problem
 
@@ -185,6 +195,25 @@ report_health_metrics(device_id, {
   → returns: accepted list of (metric_key | gauge_key, period_start | null)
 ```
 
+**"Accepted" means the server processed this observation, not that the submitted value
+is now the current server value.** Because of `GREATEST()`, if two reports for the same
+device/metric/period race or arrive out of order (e.g. a retry resending an older
+cached value after a newer one already landed), the server keeps the higher value and
+still returns "accepted" for the older one — the client must not interpret "accepted"
+as "the server's stored value now equals what I sent." This only matters for the
+decision to delete a closed-period local row (safe either way, since deleting the local
+row doesn't affect the server's already-higher authoritative value), never for
+correctness of the stored value itself.
+
+**Single-writer invariant**: this design assumes **exactly one logical device identity
+is the writer for a given device-scoped client metric** — one authenticated device
+session reporting its own local accumulator, not multiple tabs/webviews/processes
+independently reporting under the same `device_id`. If this app ever allows multiple
+concurrent sessions per registered device, `GREATEST()` semantics would need
+reconsideration (two legitimate-but-different partial counts would produce a wrong
+merged value, since the higher one isn't necessarily the union of both). Not believed
+to be a current risk, but the assumption must be stated rather than left implicit.
+
 `last_seen_at` means **reachability** ("this device could talk to the WAFI server") —
 it does not mean "this device's business data is synchronized." A device can have a
 healthy health-RPC connection while its actual sync pipeline is broken; that divergence
@@ -233,7 +262,8 @@ client (for bucketing local accumulator writes) and server (for validating incom
 local_health_metrics (localOnly: true)
   metric_key      text      -- one of: sync_failure_terminal, sync_terminal_total,
                              -- offline_duration_seconds, deferred_job_failure_terminal,
-                             -- deferred_job_terminal_total, app_error_count
+                             -- deferred_job_terminal_total, app_error_count,
+                             -- active_device_day
   period_start    text      -- ISO date, shop-local calendar day (see timezone section)
   value           integer   -- cumulative value for that period so far
   updated_at      text
@@ -257,10 +287,10 @@ a separate flag.
 neutral default. The dashboard's operational-visibility purpose doesn't need
 hour-level resolution, and daily buckets keep the local table tiny — only **4 metrics
 are client-cumulative** (sync failure rate and deferred-job failure rate each need a
-terminal-failure counter *and* a terminal-total counter to compute a rate, offline
-duration and app-error count are single counters), so worst case is roughly
-`(2+2+1+1) metrics × 7 open days = 42 rows/device`, plus 1 gauge row, plus the
-telemetry-drop meta-counter — never per-event row explosion, no hourly→daily
+terminal-failure counter *and* a terminal-total counter to compute a rate; offline
+duration, app-error count, and `active_device_day` are single counters each), so worst
+case is roughly `(2+2+1+1+1) metrics × 7 open days = 49 rows/device`, plus 1 gauge row,
+plus the telemetry-drop meta-counter — never per-event row explosion, no hourly→daily
 compaction machinery needed. Hourly granularity is explicitly out of scope for v1.
 
 **Retention/overflow**: local rows are retained for **the current shop-local day plus
@@ -305,8 +335,12 @@ answer two different questions and can never overlap in time:
 
 The moment a device reconnects and reports its offline interval, it's no longer
 "currently stale" — so the server-inferred signal clears for that device at exactly the
-point client-reporting would otherwise start overlapping it. No interval-reconciliation
-logic is needed; the two metrics are mutually exclusive in time by construction.
+point client-reporting would otherwise start overlapping it. **These two metrics
+represent different temporal states — one historical/confirmed, one live/current — and
+are never combined into a single duration calculation.** (A stale-device flag today can
+still coexist with an offline-duration row from an earlier, already-closed period for
+the same device; that's expected and not a conflict, since the two numbers are never
+added together.) No interval-reconciliation logic is needed.
 
 ### Terminal outcome semantics (sync, deferred jobs)
 
@@ -335,8 +369,8 @@ server-authoritative · **G** = client-authoritative current-state gauge
 | 3 | Dead-Letter Count | G | `COUNT(*)` of currently-unresolved rows in local `sync_dead_letter`, sampled at `observed_at` | Current-state only, no history |
 | 4 | Drawer Mismatch Count | S (event-derived, rebuildable) | `COUNT(shift.closed events)` where `abs(variance) > 15` (threshold owned by the existing drawer/reconciliation rule — **WAFI-148 does not redefine it**) | 90d, rebuildable from source events |
 | 5 | Deferred Job Failure Rate | C | `terminal_dead_jobs / (terminal_dead_jobs + terminal_completed_jobs)`, device/day | 90d server / 7d local |
-| 6 | Unhandled App Error Count | C | Raw count is authoritative from the app-side error signal (Sentry is a parallel diagnostic sink, never the source of truth — must not disappear if Sentry is unconfigured); rate = `count / active_device_days` — see denominator note below | 90d server / 7d local |
-| 7 | Stale Device Count | S (current-state query, **not** event-sourced) | `COUNT(devices)` where `now() - last_seen_at > STALE_DEVICE_THRESHOLD` (threshold is **policy/configuration**, not part of the metric formula — v1 candidate value chosen and documented during implementation) | Current-state only |
+| 6 | Unhandled App Error Count | C | **Two raw client-cumulative counters**, not one: `app_error_count` (authoritative from the app-side error signal — Sentry is a parallel diagnostic sink, never the source of truth, must not disappear if Sentry is unconfigured) and `active_device_day` (see locked definition below). Displayed rate = `SUM(app_error_count) / SUM(active_device_day)`, computed at query time, never stored as a rate | Both raw counters retained 90d server / 7d local — the rate is never stored on its own, since a rate without its components can't be re-aggregated at the shop level |
+| 7 | Stale Device Count | S (current-state query, **not** event-sourced) | `COUNT(devices)` **where `devices.is_active = true`** and `now() - last_seen_at > STALE_DEVICE_THRESHOLD` (threshold is **policy/configuration**, not part of the metric formula — v1 candidate value chosen and documented during implementation) | Current-state only |
 | 8 | Never-Closed Shift Count | S (event-derived, rebuildable) | `COUNT(*)` of shifts force-closed via the existing WAFI-065 zombie-shift guard — explicitly **not** the same as a merely-late close | 90d, rebuildable |
 
 **Deferred:** Printer failure count, Scanner failure count — see Scope above.
@@ -357,6 +391,13 @@ distinction must be explicit, not implied:
 - **Metric 7** is not event-sourced at all — it's a live query derived from current
   `last_seen_at` state, with no event history and no rebuild function, since there's
   no "past state" to reconstruct.
+
+**Metric 7 is scoped to `devices.is_active = true` only** — confirmed this flag already
+exists (migration 042, "deactivation for lost/retired devices"). Without this scope, a
+revoked/retired/decommissioned device would silently and permanently render its shop
+"unhealthy" forever, since it will never check in again. The exact predicate is
+"registered devices currently participating in health monitoring," not "every row ever
+inserted into `devices`."
 
 **Rebuildability has a retention dependency**: the 90-day rebuildable guarantee for
 metrics 4 and 8 is only true as long as the underlying source events/data they're
@@ -382,23 +423,28 @@ owned, not just here.
   threshold) are policy, kept explicitly outside the metric's mathematical definition** —
   a metric formula must remain reusable and must never encode display/severity policy in
   the database model.
-- **`active_device_day`** (metric 6's denominator) must represent genuine local device
-  *usage*, not mere server reachability. A device that briefly checks in via the health
-  RPC and then spends 12 hours offline while being actively used locally must still
-  count as one active device-day — but under a "checked in with the server" definition,
-  a device that checks in for 30 seconds and is otherwise idle would count identically
-  to one used all day, while a device that's actively used all day but never manages to
-  reach the server (exactly the failure mode this metric should catch) would wrongly
-  fall out of the denominator entirely as "no data." **The best local-usage signal
-  found in this codebase is `device_sessions.updated_at`** (bumped by every
-  `switch_active_operator` call, migration 044/045) — a real evidence of a human
-  actively operating the device that day, unlike `last_seen_at` which only proves the
-  device could reach the server. This needs to be confirmed as sufficient during
-  implementation; if it proves inadequate (e.g. a shift that never switches operators),
-  the metric must be explicitly renamed (e.g. "errors per connected device-day") rather
-  than silently calling a reachability-based denominator "active usage." This is a shop-
-  wide denominator; per-device error counts and the shop-level rate are reported as
-  separate dimensions, not conflated.
+- **`active_device_day` — locked as a dedicated client-side counter, not a derived
+  server signal.** It must represent genuine local device *usage*, not mere server
+  reachability: a device that briefly checks in via the health RPC and then spends 12
+  hours offline while being actively used locally must still count as one active
+  device-day, while a device that's actively used all day but never manages to reach
+  the server (exactly the failure mode this metric should catch) must not wrongly fall
+  out of the denominator as "no data." **`device_sessions.updated_at` was considered and
+  rejected** — verified it's bumped only by `switch_active_operator`/session-lockout/
+  revocation events (migrations 045/046/048/067/069/096), i.e. it's an auth-lifecycle
+  signal, not a general app-usage signal; a device used all day without a single
+  operator switch would wrongly show zero activity. Instead: **`active_device_day` is
+  set to `1` (idempotently — not incremented per interaction) the first time the app
+  registers qualifying local foreground activity on a given shop-local day** (the exact
+  interaction list — e.g. any POS screen navigation, any business operation — is an
+  implementation detail, but it must be genuine foreground usage, not a passive
+  background timer or the health RPC's own tick). This is a shop-wide denominator once
+  aggregated (`SUM(active_device_day)` across devices); per-device error counts and the
+  shop-level rate are reported as separate dimensions, not conflated. **Both raw
+  counters (`app_error_count`, `active_device_day`) are retained for the full 90-day
+  server history — never only the derived rate** — otherwise the rate could never be
+  correctly re-aggregated to the shop level (point 1's sum-then-divide rule) or
+  recomputed if the definition of "qualifying activity" is refined later.
 
 ## Visibility (Owner + Team dashboards)
 
@@ -445,6 +491,13 @@ The last message intentionally never surfaces internal shift IDs, staff/operator
 identifiers, or device names to the owner — that level of detail belongs only in the
 team view (below); the owner view stays within its plain operational-health scope.
 
+**Multi-device shops need the message contextualized around affected device count, not
+phrased as if the whole shop is unhealthy.** A shop with two tablets where only one is
+stale should read "One of your tablets is currently unreachable," not "Your shop is
+unhealthy" — the latter overstates the problem when the other device is fine. The
+top-level status color logic (any-critical → Issue, etc.) is unaffected; this is a
+message-phrasing requirement for implementation, not an architecture change.
+
 **App-error owner policy is a threshold decision, not `count > 0`** — one harmless
 isolated error shouldn't surface to the owner; the exact cutoff is a presentation-policy
 choice made during implementation, not baked into the metric.
@@ -467,7 +520,11 @@ authenticated shop-owner/staff session, so an ordinary shop staff member can nev
 cross-shop health data through it. This is a security-review item, not a metrics
 decision.
 
-- All 8 metrics, exact values — no traffic-light rounding.
+- All 8 metrics — **the raw values required to interpret each metric, plus derived
+  rates where applicable** (not a single "exact value" per metric uniformly: metric 3 is
+  a gauge shown with its freshness age, metric 6 shows both its raw count and its
+  derived rate, metric 7 is a live count with no historical value) — no traffic-light
+  rounding.
 - **Every rate is shown with its numerator and denominator alongside the computed
   value** (e.g. `2/1010 · 0.2%`), never as a bare percentage — this is what lets a team
   member immediately distinguish no-data from healthy and verify the sum-then-divide
@@ -535,9 +592,17 @@ notification — as its own properly-scoped design, rather than smuggled into th
 - Owner dashboard evaluates the most recently completed shop-local day for historical
   metrics, live state for current-state metrics; an explicit "No recent health data"
   state exists so all-no-data can never silently render as "Healthy."
-- `active_device_day` needs a genuine local-usage signal (candidate:
-  `device_sessions.updated_at`), not mere server-reachability — to be confirmed during
-  implementation, with an explicit rename if it turns out reachability-based.
+- `active_device_day` is a **dedicated client-side counter** (idempotent, set to 1 on
+  first qualifying foreground activity per shop-local day) — `device_sessions.updated_at`
+  was investigated and rejected as an auth-lifecycle signal, not a general-usage one.
+  Both `app_error_count` and `active_device_day` are retained as raw components for the
+  full 90-day history; the rate is always computed at query time, never stored.
+- Server-authoritative metrics split three ways: **4 and 8** are server-owned
+  event-sourced aggregates/projections (client cannot cause or modify them); **7** is a
+  server-owned *live derived query* with no stored value and no event history at all —
+  these are not interchangeable reconstruction mechanisms. Metric 7 is additionally
+  scoped to `devices.is_active = true` so a retired/revoked device can never
+  permanently render a shop unhealthy.
 - 3 metric authority classes: cumulative client (`GREATEST()`), server-authoritative
   (overwrite/rebuildable), client-authoritative current-state gauge (overwrite, no
   ack-delete).
