@@ -31,6 +31,7 @@ import { useSalesChart }       from '@/features/dashboard/composables/useSalesCh
 import { useSaleHistory }      from '@/features/sale-history/useSaleHistory'
 import { useDeviceStore }      from '@/store/device.store'
 import { db }                  from '@/data/powersync/db'
+import { getShopCurrentDay }   from '@/data/powersync/shopTimezone'
 
 const router = useRouter()
 const device = useDeviceStore()
@@ -213,9 +214,12 @@ const liveRevenueSyp = ref(0)
 
 onMounted(() => {
   const shopId = device.shopId
-  const today = new Date().toISOString().slice(0, 10)
   const controller = new AbortController()
   ;(async () => {
+    // WAFI-148 follow-up: was a synchronous UTC slice, which stopped
+    // matching what dashboardRevenueProjection.ts/localTodayRevenueRebuild.ts
+    // write under once a shop can confirm a non-UTC timezone.
+    const today = await getShopCurrentDay(shopId)
     const iterable = db.watch(
       `SELECT revenue_usd, revenue_syp FROM local_today_revenue_projection WHERE shop_id = ? AND date = ?`,
       [shopId, today],

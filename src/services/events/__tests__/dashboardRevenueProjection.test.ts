@@ -26,6 +26,7 @@ describe('startDashboardRevenueProjection', () => {
                     payload: JSON.stringify({ saleId: 'sale1', shopId: 'shop1', staffId: 's1', totalUsd: 42, totalSyp: 630000, paymentSummary: { cashUsd: 42, cashSyp: 0, cardTotal: 0, creditTotal: 0, methodCount: 1 }, itemCount: 1, discountApplied: false }),
                     payload_version: 1, staff_id: 's1', shop_id: 'shop1',
                     occurred_at: '2026-08-06T10:00:00.000Z', created_at: '2026-08-06T10:00:00.000Z',
+                    event_projection_day: '2026-08-06',
                   }],
                 },
               },
@@ -42,7 +43,7 @@ describe('startDashboardRevenueProjection', () => {
 
     const insertCall = vi.mocked(db.execute).mock.calls.find(([sql]) => sql.toLowerCase().includes('insert into local_today_revenue_projection'))
     expect(insertCall).toBeDefined()
-    expect(insertCall![1]).toContain('2026-08-06') // date derived from occurred_at
+    expect(insertCall![1]).toContain('2026-08-06') // date derived from event_projection_day (WAFI-148 follow-up)
     expect(insertCall![1]).toContain(42)            // revenue_usd
   })
 
@@ -65,6 +66,7 @@ describe('startDashboardRevenueProjection', () => {
                     payload: JSON.stringify({ saleId: 'sale2', shopId: 'shop1', staffId: 's1', totalUsd: 42, totalSyp: 630000, paymentSummary: { cashUsd: 42, cashSyp: 0, cardTotal: 0, creditTotal: 0, methodCount: 1 }, itemCount: 1, discountApplied: false }),
                     payload_version: 1, staff_id: 's1', shop_id: 'shop1',
                     occurred_at: '2026-08-06T11:00:00.000Z', created_at: '2026-08-06T11:00:00.000Z',
+                    event_projection_day: '2026-08-06',
                   }],
                 },
               },

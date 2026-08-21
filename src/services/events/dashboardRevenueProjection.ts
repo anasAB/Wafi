@@ -20,7 +20,13 @@ export function startDashboardRevenueProjection(shopId: string): { stop: () => v
     SalesEventType.Completed,
     async (row: EventRow<SaleCompletedPayload>) => {
       await processProjectionAtMostOnce(SubscriberId.TodayRevenueProjection, row.id, async () => {
-        const date = row.occurred_at.slice(0, 10)
+        // WAFI-148 follow-up: was `row.occurred_at.slice(0, 10)` -- always a
+        // UTC date regardless of the shop's actual timezone. Once a shop
+        // confirms a non-UTC zone, that key would silently stop matching
+        // what localTodayRevenueRebuild.ts/HomePage.vue read/write under.
+        // event_projection_day is the immutable, shop-timezone-aware bucket
+        // every one of these three call sites now agrees on.
+        const date = row.event_projection_day
         // Read-then-insert-or-update, NOT an upsert -- same reason as
         // dailyEventCountsProjection.ts: PowerSync client tables are SQLite views over
         // CRUD-queue triggers, and SQLite rejects ON CONFLICT against a view.

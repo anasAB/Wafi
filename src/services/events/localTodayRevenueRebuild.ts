@@ -1,4 +1,5 @@
 import { db } from '@/data/powersync/db'
+import { getShopCurrentDay } from '@/data/powersync/shopTimezone'
 import { SalesEventType, type SaleCompletedPayload } from '@/services/events/domainEvent.types'
 
 type RebuildResult =
@@ -17,7 +18,7 @@ type RebuildResult =
  * into a deterministic replay. On failure, rebuild aborts with no changes.
  */
 export async function rebuildLocalTodayRevenueProjection(shopId: string): Promise<RebuildResult> {
-  const today = await getShopLocalToday(shopId)
+  const today = await getShopCurrentDay(shopId)
 
   const localCount = await db.getOptional<{ n: number }>(
     `SELECT count(*) AS n FROM events WHERE shop_id = ? AND type = ? AND event_projection_day = ?`,
@@ -102,17 +103,9 @@ export async function rebuildLocalTodayRevenueProjection(shopId: string): Promis
   return { status: 'success', revenueUsd, revenueSyp }
 }
 
-// WAFI-151 Plan 2 final review: "today" is computed as the device's UTC date,
-// matching dashboardRevenueProjection.ts and HomePage.vue's existing convention --
-// NOT derived from event_projection_day, despite that being the more principled
-// choice in general. This is deliberate and temporary: shops.timezone (migration
-// 084) defaults to 'UTC' and nothing in this codebase currently sets it to
-// anything else, so device-UTC and shop-local are identical today. If
-// shops.timezone ever becomes client-configurable, this function, the
-// incremental subscriber in dashboardRevenueProjection.ts, and HomePage.vue's
-// date-reading logic all need to move to shop-local day together -- moving only
-// one of them (as an earlier draft of this function did) creates a worse bug:
-// the rebuild would write to a date key the rest of the system doesn't read.
-async function getShopLocalToday(_shopId: string): Promise<string> {
-  return new Date().toISOString().slice(0, 10)
-}
+// WAFI-148 follow-up (resolves the warning this comment used to carry):
+// shops.timezone became client-configurable (owners can now confirm a real
+// IANA zone via confirm_shop_timezone()), so "today" moved to a real
+// shop-local day -- getShopCurrentDay (shopTimezone.ts), shared with
+// dashboardRevenueProjection.ts and HomePage.vue, which all now agree on the
+// same key.

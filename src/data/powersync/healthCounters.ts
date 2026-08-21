@@ -1,5 +1,13 @@
 import { db } from '@/data/powersync/db'
+import { shopLocalDateString } from '@/data/powersync/shopTimezone'
 import type { HealthMetricKey } from '@/features/health/health.types'
+
+// Re-exported for existing importers (e.g. useDeviceActivity.ts) -- the
+// formatter itself now lives in shopTimezone.ts, shared with the unrelated
+// revenue-projection pipeline, which needs the identical shop-local-date
+// formatting logic but must NOT gate on timezone_confirmed_at the way
+// getShopLocalToday below does (see shopTimezone.ts's getShopCurrentDay).
+export { shopLocalDateString }
 
 // Additive terminal-outcome counter, distinct from markDeviceActiveForDay's
 // idempotent set-to-1. Used only for the 6 additive counters:
@@ -33,15 +41,6 @@ export async function incrementLocalHealthCounter(
       [crypto.randomUUID(), metricKey, periodStart, amount, new Date().toISOString()],
     )
   }
-}
-
-// Shared shop-local calendar-date formatter (WAFI-148 final-review fix).
-// Every period_start the client writes must be a shop-local calendar date,
-// per the design spec's "Period boundaries and timezone" rule -- never a UTC
-// date. Single source of truth, reused by useDeviceActivity.ts instead of
-// each keeping its own copy.
-export function shopLocalDateString(timezone: string, now: Date = new Date()): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(now) // en-CA -> YYYY-MM-DD
 }
 
 // Resolves "today" as a shop-local calendar date for the given shop, reading

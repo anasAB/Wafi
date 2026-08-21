@@ -12,6 +12,12 @@ export interface EventRow<T = unknown> {
   shop_id: string
   occurred_at: string
   created_at: string
+  // Immutable, write-time shop-local day bucket (migration 084) -- was
+  // already present on every row via this file's `SELECT *`, just missing
+  // from this type. Prefer this over slicing occurred_at/using device time
+  // whenever a subscriber needs to bucket by day -- it's the only value that
+  // stays correct across a later shop timezone change (WAFI-148 follow-up).
+  event_projection_day: string
 }
 
 export interface UseEventSubscriptionOptions {

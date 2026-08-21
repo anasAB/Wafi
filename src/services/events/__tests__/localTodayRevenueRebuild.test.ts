@@ -9,6 +9,7 @@ describe('rebuildLocalTodayRevenueProjection', () => {
 
   it('refuses to rebuild when the local event count does not match the authoritative daily_event_counts row', async () => {
     vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({ timezone: 'UTC' } as any) // WAFI-148 follow-up: getShopCurrentDay's shop lookup
       .mockResolvedValueOnce({ n: 3 } as any)   // local COUNT(*) of sale.completed events for today
       .mockResolvedValueOnce({ count: 5 } as any) // authoritative daily_event_counts row says 5
     const result = await rebuildLocalTodayRevenueProjection('shop-1')
@@ -18,6 +19,7 @@ describe('rebuildLocalTodayRevenueProjection', () => {
 
   it('refuses to rebuild when the authoritative daily_event_counts row is missing (not treated as zero)', async () => {
     vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({ timezone: 'UTC' } as any)
       .mockResolvedValueOnce({ n: 0 } as any)
       .mockResolvedValueOnce(null as any) // no synced row for today yet
     const result = await rebuildLocalTodayRevenueProjection('shop-1')
@@ -26,6 +28,7 @@ describe('rebuildLocalTodayRevenueProjection', () => {
 
   it('refuses to rebuild when a local event in scope lacks a server-assigned sequence', async () => {
     vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({ timezone: 'UTC' } as any)
       .mockResolvedValueOnce({ n: 2 } as any)
       .mockResolvedValueOnce({ count: 2 } as any)
       .mockResolvedValueOnce({ n: 1 } as any) // one of the 2 events has sequence IS NULL
@@ -36,6 +39,7 @@ describe('rebuildLocalTodayRevenueProjection', () => {
 
   it('rebuilds successfully when coverage passes: replays events in sequence order, writes the projection and ledger inside one writeTransaction', async () => {
     vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({ timezone: 'UTC' } as any)
       .mockResolvedValueOnce({ n: 2 } as any)      // local count matches
       .mockResolvedValueOnce({ count: 2 } as any)  // authoritative count matches
       .mockResolvedValueOnce({ n: 0 } as any)      // no unsequenced events
@@ -67,6 +71,7 @@ describe('rebuildLocalTodayRevenueProjection', () => {
 
   it('a failure partway through the transaction leaves the local projection and ledger untouched (rollback, via writeTransaction rejecting)', async () => {
     vi.mocked(db.getOptional)
+      .mockResolvedValueOnce({ timezone: 'UTC' } as any)
       .mockResolvedValueOnce({ n: 1 } as any)
       .mockResolvedValueOnce({ count: 1 } as any)
       .mockResolvedValueOnce({ n: 0 } as any)
