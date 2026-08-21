@@ -187,6 +187,11 @@ export interface ShiftClosedPayload {
   expectedCash: number
   countedCash: number
   variance: number
+  /** WAFI-148: null on the normal-close path; the forcing staff member's id on a
+   *  WAFI-065 owner force-close. Existing consumers (shiftLateClose.rule.ts,
+   *  businessRuleSubscriber.ts's drawer_variance handler) don't read this field
+   *  and are unaffected. */
+  forceClosedBy: string | null
 }
 
 // WAFI-140 Sprint 2 payloads (design spec §6).

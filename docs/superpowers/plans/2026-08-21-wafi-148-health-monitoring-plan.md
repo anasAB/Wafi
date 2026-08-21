@@ -202,15 +202,22 @@ SELECT col_not_null('public', 'health_metrics', 'value', 'health_metrics.value i
 SELECT col_not_null('public', 'health_gauges', 'observed_at', 'health_gauges.observed_at is NOT NULL');
 
 -- RLS smoke test: two shops, cross-shop read must return 0 rows.
+-- auth_shop_id() (migration 015) resolves via shops.owner_user_id = auth.uid(),
+-- reading the JWT's `sub` claim -- NOT a shop_id claim (there is no such claim
+-- anywhere in this codebase's auth model). Established pattern per
+-- supabase/tests/wafi156_execute_rule_action.test.sql: give the shop a known
+-- owner_user_id, then set_config('request.jwt.claims', '{"sub":"<same uuid>",...}').
 SET LOCAL role postgres;
-INSERT INTO public.shops (id, name) VALUES ('11111111-1111-1111-1111-111111111111', 'Shop A')
+INSERT INTO public.shops (id, name, owner_user_id) VALUES
+  ('11111111-1111-1111-1111-111111111111', 'Shop A', 'e0000000-0000-0000-0000-000000000001')
   ON CONFLICT (id) DO NOTHING;
-INSERT INTO public.shops (id, name) VALUES ('22222222-2222-2222-2222-222222222222', 'Shop B')
+INSERT INTO public.shops (id, name, owner_user_id) VALUES
+  ('22222222-2222-2222-2222-222222222222', 'Shop B', 'e0000000-0000-0000-0000-000000000002')
   ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.health_metrics (shop_id, device_id, metric_key, period_start, value)
 VALUES ('11111111-1111-1111-1111-111111111111', gen_random_uuid(), 'app_error_count', '2026-08-21', 3);
 
-SET LOCAL request.jwt.claims = '{"shop_id":"22222222-2222-2222-2222-222222222222"}';
+SELECT set_config('request.jwt.claims', '{"sub":"e0000000-0000-0000-0000-000000000002","active_role":"owner"}', true);
 SET LOCAL role authenticated;
 SELECT is(
   (SELECT count(*)::int FROM public.health_metrics WHERE shop_id = '11111111-1111-1111-1111-111111111111'),
@@ -325,13 +332,16 @@ git commit -m "feat(WAFI-148): add health_metrics/health_gauges read models with
 BEGIN;
 SELECT plan(9);
 
+-- auth_shop_id() (migration 015) resolves via shops.owner_user_id = auth.uid(),
+-- reading the JWT's `sub` claim -- not a shop_id claim (established pattern per
+-- supabase/tests/wafi156_execute_rule_action.test.sql).
 SET LOCAL role postgres;
-INSERT INTO public.shops (id, name, timezone) VALUES
-  ('33333333-3333-3333-3333-333333333333', 'Shop C', 'Asia/Damascus');
+INSERT INTO public.shops (id, name, timezone, owner_user_id) VALUES
+  ('33333333-3333-3333-3333-333333333333', 'Shop C', 'Asia/Damascus', 'e0000000-0000-0000-0000-000000000003');
 INSERT INTO public.devices (id, shop_id, code, is_active) VALUES
   ('44444444-4444-4444-4444-444444444444', '33333333-3333-3333-3333-333333333333', 'DEV1', true);
 
-SET LOCAL request.jwt.claims = '{"shop_id":"33333333-3333-3333-3333-333333333333"}';
+SELECT set_config('request.jwt.claims', '{"sub":"e0000000-0000-0000-0000-000000000003","active_role":"owner"}', true);
 SET LOCAL role authenticated;
 
 -- 1. Client-allowed counter is accepted and GREATEST()-merged.
@@ -425,12 +435,12 @@ SELECT throws_ok(
 );
 
 -- 7. A device belonging to a different shop cannot be reported against.
-INSERT INTO public.shops (id, name, timezone) VALUES
-  ('55555555-5555-5555-5555-555555555555', 'Shop D', 'Asia/Damascus');
 SET LOCAL role postgres;
+INSERT INTO public.shops (id, name, timezone, owner_user_id) VALUES
+  ('55555555-5555-5555-5555-555555555555', 'Shop D', 'Asia/Damascus', 'e0000000-0000-0000-0000-000000000004');
 INSERT INTO public.devices (id, shop_id, code, is_active) VALUES
   ('66666666-6666-6666-6666-666666666666', '55555555-5555-5555-5555-555555555555', 'DEV2', true);
-SET LOCAL request.jwt.claims = '{"shop_id":"33333333-3333-3333-3333-333333333333"}';
+SELECT set_config('request.jwt.claims', '{"sub":"e0000000-0000-0000-0000-000000000003","active_role":"owner"}', true);
 SET LOCAL role authenticated;
 SELECT throws_ok(
   $$ SELECT public.report_health_metrics(
@@ -649,15 +659,20 @@ INSERT INTO public.shops (id, name, timezone) VALUES
   ('77777777-7777-7777-7777-777777777777', 'Shop E', 'Asia/Damascus');
 
 -- Simulate a shift.closed event with a mismatch over the existing $15 threshold.
-INSERT INTO public.events (id, shop_id, event_type, occurred_at, payload)
+-- public.events' event-kind column is `type` (migration 074), not `event_type`,
+-- and `payload` is stored as TEXT (JSON.stringify'd by the client), not JSONB --
+-- see 074_events_bus_core.sql and 086_profit_cache_apply.sql for the precedent
+-- of casting with `payload::jsonb` before `->>`.
+INSERT INTO public.events (id, shop_id, type, entity_id, payload, staff_id, occurred_at)
 VALUES (
-  gen_random_uuid(), '77777777-7777-7777-7777-777777777777', 'shift.closed', now(),
-  jsonb_build_object('variance', 20.00)
+  gen_random_uuid(), '77777777-7777-7777-7777-777777777777', 'shift.closed',
+  '77777777-7777-7777-7777-777777777777', jsonb_build_object('variance', 20.00)::text,
+  '00000000-0000-0000-0000-000000000000', now()
 );
 
 SELECT public._apply_health_drawer_mismatch(
   (SELECT id FROM public.events WHERE shop_id = '77777777-7777-7777-7777-777777777777'
-     AND event_type = 'shift.closed' ORDER BY occurred_at DESC LIMIT 1)
+     AND type = 'shift.closed' ORDER BY occurred_at DESC LIMIT 1)
 );
 
 SELECT is(
@@ -669,14 +684,15 @@ SELECT is(
 );
 
 -- A within-threshold variance must NOT increment the count.
-INSERT INTO public.events (id, shop_id, event_type, occurred_at, payload)
+INSERT INTO public.events (id, shop_id, type, entity_id, payload, staff_id, occurred_at)
 VALUES (
-  gen_random_uuid(), '77777777-7777-7777-7777-777777777777', 'shift.closed', now(),
-  jsonb_build_object('variance', 5.00)
+  gen_random_uuid(), '77777777-7777-7777-7777-777777777777', 'shift.closed',
+  '77777777-7777-7777-7777-777777777777', jsonb_build_object('variance', 5.00)::text,
+  '00000000-0000-0000-0000-000000000000', now()
 );
 SELECT public._apply_health_drawer_mismatch(
   (SELECT id FROM public.events WHERE shop_id = '77777777-7777-7777-7777-777777777777'
-     AND event_type = 'shift.closed' ORDER BY occurred_at DESC LIMIT 1)
+     AND type = 'shift.closed' ORDER BY occurred_at DESC LIMIT 1)
 );
 SELECT is(
   (SELECT value FROM public.health_metrics
@@ -716,6 +732,10 @@ Expected: FAIL — functions don't exist.
 -- this projection does NOT redefine that threshold, it only counts occurrences.
 -- device_id is a fixed sentinel (all-zeros) since this is a shop-level, not
 -- per-device, metric.
+--
+-- events.type (not event_type) and events.payload is TEXT requiring an
+-- explicit ::jsonb cast before ->> (migration 074_events_bus_core.sql; matches
+-- the established precedent in 086_profit_cache_apply.sql).
 
 CREATE OR REPLACE FUNCTION public._apply_health_drawer_mismatch(p_event_id uuid)
 RETURNS void
@@ -730,11 +750,11 @@ DECLARE
   v_timezone text;
 BEGIN
   SELECT * INTO v_event FROM public.events WHERE id = p_event_id;
-  IF NOT FOUND OR v_event.event_type != 'shift.closed' THEN
+  IF NOT FOUND OR v_event.type != 'shift.closed' THEN
     RETURN;
   END IF;
 
-  v_variance := (v_event.payload ->> 'variance')::numeric;
+  v_variance := (v_event.payload::jsonb ->> 'variance')::numeric;
   IF v_variance IS NULL OR abs(v_variance) <= 15 THEN
     RETURN;
   END IF;
@@ -764,7 +784,7 @@ BEGIN
 
   PERFORM public._apply_health_drawer_mismatch(id)
     FROM public.events
-   WHERE event_type = 'shift.closed'
+   WHERE type = 'shift.closed'
    ORDER BY occurred_at ASC;
 END;
 $$;
@@ -794,8 +814,14 @@ git commit -m "feat(WAFI-148): add event-sourced drawer_mismatch_count projectio
 - Test: `supabase/tests/wafi148_never_closed_shift_projection.test.sql`
 
 **Interfaces:**
-- Consumes: `public.events` (existing — a zombie force-close per WAFI-065 emits a
-  `shift.closed` event with a `force_closed_by` field per migration 025's comment).
+- Consumes: `public.events` (`shift.closed` events carrying a `force_closed_by`
+  field — **correction, found during this task's review**: this signal did NOT
+  actually exist in production when this task was written; migration 025's comment
+  only documents the `cashier_shifts.force_closed_by` DB column, and the force-close
+  code path never published any event at all. **Task 5b** (inserted immediately after
+  this task) wires the producer side to actually emit this field. This SQL projection
+  itself is correct and needs no changes — it was written against the intended
+  eventual payload shape; only the producer needed fixing.).
 - Produces: `public._apply_health_never_closed_shift(p_event_id uuid)`,
   `public._rebuild_health_never_closed_shift()`.
 
@@ -806,19 +832,24 @@ git commit -m "feat(WAFI-148): add event-sourced drawer_mismatch_count projectio
 BEGIN;
 SELECT plan(3);
 
+-- events.type (not event_type) and events.payload is TEXT requiring an
+-- explicit ::jsonb cast to read fields from it (migration 074_events_bus_core.sql;
+-- same correction already applied in Task 4's migration 109/test, matched here
+-- exactly: sentinel staff_id, entity_id = the shop id as text).
 SET LOCAL role postgres;
 INSERT INTO public.shops (id, name, timezone) VALUES
   ('88888888-8888-8888-8888-888888888888', 'Shop F', 'Asia/Damascus');
 
 -- A force-closed (zombie) shift.closed event.
-INSERT INTO public.events (id, shop_id, event_type, occurred_at, payload)
+INSERT INTO public.events (id, shop_id, type, entity_id, payload, staff_id, occurred_at)
 VALUES (
-  gen_random_uuid(), '88888888-8888-8888-8888-888888888888', 'shift.closed', now(),
-  jsonb_build_object('force_closed_by', gen_random_uuid())
+  gen_random_uuid(), '88888888-8888-8888-8888-888888888888', 'shift.closed',
+  '88888888-8888-8888-8888-888888888888', jsonb_build_object('force_closed_by', gen_random_uuid())::text,
+  '00000000-0000-0000-0000-000000000000', now()
 );
 SELECT public._apply_health_never_closed_shift(
   (SELECT id FROM public.events WHERE shop_id = '88888888-8888-8888-8888-888888888888'
-     AND event_type = 'shift.closed' ORDER BY occurred_at DESC LIMIT 1)
+     AND type = 'shift.closed' ORDER BY occurred_at DESC LIMIT 1)
 );
 SELECT is(
   (SELECT value FROM public.health_metrics
@@ -830,14 +861,15 @@ SELECT is(
 
 -- A normal (non-force-closed) shift.closed event must NOT increment it --
 -- a merely-late close is not the same signal as a zombie force-close.
-INSERT INTO public.events (id, shop_id, event_type, occurred_at, payload)
+INSERT INTO public.events (id, shop_id, type, entity_id, payload, staff_id, occurred_at)
 VALUES (
-  gen_random_uuid(), '88888888-8888-8888-8888-888888888888', 'shift.closed', now(),
-  jsonb_build_object('force_closed_by', NULL)
+  gen_random_uuid(), '88888888-8888-8888-8888-888888888888', 'shift.closed',
+  '88888888-8888-8888-8888-888888888888', jsonb_build_object('force_closed_by', NULL)::text,
+  '00000000-0000-0000-0000-000000000000', now()
 );
 SELECT public._apply_health_never_closed_shift(
   (SELECT id FROM public.events WHERE shop_id = '88888888-8888-8888-8888-888888888888'
-     AND event_type = 'shift.closed' ORDER BY occurred_at DESC LIMIT 1)
+     AND type = 'shift.closed' ORDER BY occurred_at DESC LIMIT 1)
 );
 SELECT is(
   (SELECT value FROM public.health_metrics
@@ -875,6 +907,10 @@ Expected: FAIL — functions don't exist.
 -- event-sourced. Distinct from a merely-late close: only shift.closed events
 -- carrying force_closed_by (WAFI-065's zombie force-close guard, migration
 -- 025/026) count here.
+--
+-- events.type (not event_type) and events.payload is TEXT requiring an
+-- explicit ::jsonb cast before ->> (migration 074_events_bus_core.sql; same
+-- correction already applied in Task 4's migration 109).
 
 CREATE OR REPLACE FUNCTION public._apply_health_never_closed_shift(p_event_id uuid)
 RETURNS void
@@ -888,11 +924,11 @@ DECLARE
   v_timezone text;
 BEGIN
   SELECT * INTO v_event FROM public.events WHERE id = p_event_id;
-  IF NOT FOUND OR v_event.event_type != 'shift.closed' THEN
+  IF NOT FOUND OR v_event.type != 'shift.closed' THEN
     RETURN;
   END IF;
 
-  IF v_event.payload ->> 'force_closed_by' IS NULL THEN
+  IF v_event.payload::jsonb ->> 'force_closed_by' IS NULL THEN
     RETURN; -- a normal close, not a zombie force-close
   END IF;
 
@@ -921,7 +957,7 @@ BEGIN
 
   PERFORM public._apply_health_never_closed_shift(id)
     FROM public.events
-   WHERE event_type = 'shift.closed'
+   WHERE type = 'shift.closed'
    ORDER BY occurred_at ASC;
 END;
 $$;
@@ -940,6 +976,213 @@ Expected: PASS — 3/3 assertions.
 ```bash
 git add supabase/migrations/110_wafi148_never_closed_shift_projection.sql supabase/tests/wafi148_never_closed_shift_projection.test.sql
 git commit -m "feat(WAFI-148): add event-sourced never_closed_shift_count projection"
+```
+
+---
+
+### Task 5b: Wire `force_closed_by` into an emitted `shift.closed` event (inserted mid-plan)
+
+**Why this task exists:** Task 5's review found that the brief's premise — "a zombie
+force-close emits a `shift.closed` event with a `force_closed_by` field" — is false in
+this codebase. Verified directly: `forceCloseShift()` in
+`src/features/shifts/composables/useShift.ts` performs a raw `db.execute(UPDATE
+cashier_shifts ...)` and never calls into the event-publishing path at all — unlike the
+normal-close path (`closeShift()` in the same file), which correctly delegates to
+`closeShiftService()` in `src/services/staff.service.ts`, which publishes via
+`executeBusinessOperation`. This is a **pre-existing, deliberate gap**, not new
+breakage: the code comment explicitly says "force-close ... is out of scope" of the
+WAFI-152 business-services migration. Without this fix, `_apply_health_never_closed_shift`
+(Task 5) will never fire in production — `never_closed_shift_count` reads as a
+permanent, silent 0 regardless of actual zombie-shift activity, which is worse than no
+metric at all (a false-negative health signal). Ruling: fix this at the producer side
+with the smallest change that unblocks Task 5's metric, rather than descoping the metric
+or modifying Task 5's already-correct SQL.
+
+**Constraint found and must be respected:** `publishEvent()` has an explicit contract
+("Called only from executeBusinessOperation ... never import this directly from a
+service") — so the fix must route through `executeBusinessOperation`, mirroring
+`closeShiftService`'s existing pattern exactly, not add a direct `publishEvent` call
+into the composable.
+
+**Files:**
+- Modify: `src/services/events/domainEvent.types.ts` (extend `ShiftClosedPayload`)
+- Modify: `src/services/staff.service.ts` (add a `forceCloseShift` service function,
+  mirroring `closeShift`'s existing structure)
+- Modify: `src/features/shifts/composables/useShift.ts` (route `forceCloseShift()`
+  through the new service function instead of its own raw `writeShiftClose` call)
+- Test: `src/services/__tests__/staff.service.test.ts` (extend), `src/features/shifts/composables/__tests__/useShiftClose.test.ts` (extend)
+
+**Interfaces:**
+- Consumes: `executeBusinessOperation` (existing, `src/composables/executeBusinessOperation.ts`),
+  `ShiftClosedPayload` (existing, extended by this task).
+- Produces: a real `shift.closed` event carrying `forceClosedBy: string | null` for
+  BOTH the normal-close path (`null`) and the force-close path (the forcing staff
+  member's id) — this is what makes Task 5's `_apply_health_never_closed_shift` finally
+  reachable in production.
+
+- [ ] **Step 1: Write the failing test**
+
+```typescript
+// append to src/services/__tests__/staff.service.test.ts
+describe('StaffService.forceCloseShift', () => {
+  it('publishes a shift.closed event with forceClosedBy set to the forcing staff id', async () => {
+    const publishSpy = vi.fn()
+    vi.doMock('@/services/events/publishEvent', () => ({ publishEvent: publishSpy }))
+    const { forceCloseShift } = await import('@/services/staff.service')
+
+    await forceCloseShift('shop1', 'shift1', 'staff1', {
+      closingCashUsd: 100, closingCashSyp: 0,
+      varianceUsd: -20, varianceSyp: null,
+      closeNote: 'owner force-close', zReport: null, closingBreakdown: null,
+      forcedByStaffId: 'owner-staff-id',
+    }, { logShiftForceClosed: vi.fn() })
+
+    expect(publishSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'shift.closed',
+        payload: expect.objectContaining({ shiftId: 'shift1', forceClosedBy: 'owner-staff-id' }),
+      }),
+    )
+  })
+
+  it('still writes force_closed_by to the cashier_shifts row', async () => {
+    const { forceCloseShift } = await import('@/services/staff.service')
+    const params = await captureExecuteParams(() => forceCloseShift('shop1', 'shift1', 'staff1', {
+      closingCashUsd: 100, closingCashSyp: 0,
+      varianceUsd: -20, varianceSyp: null,
+      closeNote: null, zReport: null, closingBreakdown: null,
+      forcedByStaffId: 'owner-staff-id',
+    }, { logShiftForceClosed: vi.fn() }))
+    expect(params[6]).toBe('owner-staff-id') // force_closed_by column position, matching closeShift's existing UPDATE
+  })
+})
+```
+
+Use this file's existing mocking helpers (`captureExecuteParams` or equivalent already
+used by the `StaffService.closeShift` describe block above it) — read the existing
+`closeShift` tests in this file first and mirror their exact mocking approach rather
+than inventing a new one.
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx vitest run src/services/__tests__/staff.service.test.ts`
+Expected: FAIL — `forceCloseShift` is not exported from `staff.service.ts`.
+
+- [ ] **Step 3: Extend `ShiftClosedPayload` and add `forceCloseShift` to `staff.service.ts`**
+
+```typescript
+// src/services/events/domainEvent.types.ts — extend the existing interface
+export interface ShiftClosedPayload {
+  shiftId: string
+  staffId: string
+  expectedCash: number
+  countedCash: number
+  variance: number
+  forceClosedBy: string | null   // WAFI-148: null on the normal-close path; the
+                                  // forcing staff member's id on a WAFI-065 force-close.
+                                  // Existing consumers (shiftLateClose.rule.ts,
+                                  // businessRuleSubscriber.ts's drawer_variance handler)
+                                  // don't read this field and are unaffected.
+}
+```
+
+```typescript
+// src/services/staff.service.ts — add alongside the existing closeShift function
+export interface ForceCloseShiftAuditPort {
+  logShiftForceClosed: (shiftId: string) => Promise<void>
+}
+
+export interface ForceCloseShiftWriteInput {
+  closingCashUsd: number
+  closingCashSyp: number
+  varianceUsd: number | null
+  varianceSyp: number | null
+  closeNote: string | null
+  zReport: unknown
+  closingBreakdown: unknown
+  forcedByStaffId: string
+}
+
+/** The force-close UPDATE + event publish (WAFI-065 owner force-close, wired to the
+ *  event bus by WAFI-148 Task 5b — previously this path never published any event at
+ *  all, which meant WAFI-148's never_closed_shift_count metric could never fire). */
+export async function forceCloseShift(
+  shopId: string,
+  shiftId: string,
+  staffId: string,
+  input: ForceCloseShiftWriteInput,
+  audit: ForceCloseShiftAuditPort,
+): Promise<void> {
+  const now = new Date().toISOString()
+
+  const write = async (): Promise<void> => {
+    await db.execute(
+      `UPDATE cashier_shifts
+       SET status = 'closed', closed_at = ?, closing_cash_usd = ?, closing_cash_syp = ?,
+           variance_usd = ?, variance_syp = ?, close_note = ?, force_closed_by = ?,
+           z_report_data = ?, closing_breakdown = ?
+       WHERE id = ?`,
+      [
+        now,
+        input.closingCashUsd,
+        input.closingCashSyp,
+        input.varianceUsd,
+        input.varianceSyp,
+        input.closeNote,
+        input.forcedByStaffId,
+        input.zReport ? JSON.stringify(input.zReport) : null,
+        input.closingBreakdown ? JSON.stringify(input.closingBreakdown) : null,
+        shiftId,
+      ],
+    )
+  }
+
+  await executeBusinessOperation(write, {
+    audit: () => audit.logShiftForceClosed(shiftId),
+    toEvent: () => ({
+      type: StaffEventType.ShiftClosed,
+      entityId: shiftId,
+      payload: {
+        shiftId, staffId,
+        expectedCash: input.closingCashUsd - (input.varianceUsd ?? 0),
+        countedCash: input.closingCashUsd,
+        variance: input.varianceUsd ?? 0,
+        forceClosedBy: input.forcedByStaffId,
+      } satisfies ShiftClosedPayload,
+      payloadVersion: 1,
+      staffId,
+      shopId,
+      occurredAt: now,
+    }),
+  })
+}
+```
+
+Also update the existing `closeShift` function's `toEvent` payload to explicitly set
+`forceClosedBy: null` (satisfying the now-required field on `ShiftClosedPayload`).
+
+- [ ] **Step 4: Update `useShift.ts`'s composable to call the new service function**
+
+Replace `forceCloseShift`'s body (currently calling `writeShiftClose` directly) to call
+the new `forceCloseShiftService` (imported alongside the existing
+`closeShift as closeShiftService` import), passing `forcedByStaffId: input.forcedBy.id`.
+Remove the composable's own subsequent `await logShiftForceClosed(...)` call — that
+audit write now happens inside the service via the `audit` port, matching how the
+normal-close path already delegates its own audit call the same way. Keep the
+session-teardown logic (`if (shiftStore.activeShiftId === input.shiftId) { ... }`)
+exactly as-is — that's unrelated to event publishing and must not change.
+
+- [ ] **Step 5: Run tests to verify they pass**
+
+Run: `npx vitest run src/services/__tests__/staff.service.test.ts src/features/shifts/composables/__tests__/useShiftClose.test.ts`
+Expected: PASS, including the two new assertions from Step 1. Also run the full shift
+test suite to confirm no regression: `npx vitest run src/features/shifts`
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/services/events/domainEvent.types.ts src/services/staff.service.ts src/features/shifts/composables/useShift.ts src/services/__tests__/staff.service.test.ts src/features/shifts/composables/__tests__/useShiftClose.test.ts
+git commit -m "fix(WAFI-148): wire force-close to publish shift.closed with forceClosedBy, unblocking never_closed_shift_count"
 ```
 
 ---
@@ -1349,15 +1592,31 @@ function shopLocalDateString(timezone: string, now: Date): string {
 // the health-reporting tick itself, a connectivity callback, or a server
 // response. Idempotent: repeated calls on the same shop-local day are a
 // no-op overwrite of the same value, never an increment.
+//
+// Read-then-insert-or-update, NOT an upsert: local_health_metrics is a
+// PowerSync localOnly table -- a SQLite view backed by CRUD-queue triggers --
+// and SQLite rejects ON CONFLICT against a view (no local unique-index
+// conflict target exists client-side even though the server table has one).
+// Same established pattern as dailyEventCountsProjection.ts/profitCacheProjection.ts.
 export async function markDeviceActiveForDay(shopTimezone: string, now: Date = new Date()): Promise<void> {
   const periodStart = shopLocalDateString(shopTimezone, now)
 
-  await db.execute(
-    `INSERT INTO local_health_metrics (metric_key, period_start, value, updated_at)
-     VALUES (?, ?, 1, ?)
-     ON CONFLICT (metric_key, period_start) DO UPDATE SET updated_at = excluded.updated_at`,
-    ['active_device_day', periodStart, now.toISOString()],
+  const existing = await db.getOptional<{ id: string }>(
+    `SELECT id FROM local_health_metrics WHERE metric_key = ? AND period_start = ?`,
+    ['active_device_day', periodStart],
   )
+
+  if (existing) {
+    await db.execute(
+      `UPDATE local_health_metrics SET updated_at = ? WHERE id = ?`,
+      [now.toISOString(), existing.id],
+    )
+  } else {
+    await db.execute(
+      `INSERT INTO local_health_metrics (id, metric_key, period_start, value, updated_at) VALUES (?, ?, ?, 1, ?)`,
+      [crypto.randomUUID(), 'active_device_day', periodStart, now.toISOString()],
+    )
+  }
 }
 ```
 
@@ -1413,23 +1672,53 @@ git commit -m "feat(WAFI-148): add markDeviceActiveForDay, wired to real navigat
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { incrementLocalHealthCounter } from '../healthCounters'
 
-const executed: Array<{ sql: string; params: unknown[] }> = []
+// local_health_metrics is a PowerSync localOnly table (SQLite view backed by
+// CRUD-queue triggers) -- ON CONFLICT against it fails at runtime (no local
+// unique-index conflict target), per the established read-then-insert-or-update
+// pattern in dailyEventCountsProjection.ts/profitCacheProjection.ts. This mock
+// models that: getOptional returns existing rows by (metric_key, period_start).
+const rows = new Map<string, { id: string; value: number }>()
 const mockDb = {
-  execute: vi.fn(async (sql: string, params: unknown[] = []) => {
-    executed.push({ sql, params })
+  getOptional: vi.fn(async (_sql: string, params: unknown[]) => {
+    const key = `${params[0]}|${params[1]}`
+    return rows.get(key) ?? null
+  }),
+  execute: vi.fn(async (sql: string, params: unknown[]) => {
+    if (sql.includes('INSERT')) {
+      const [id, metricKey, periodStart, value] = params as [string, string, string, number]
+      rows.set(`${metricKey}|${periodStart}`, { id, value })
+    } else if (sql.includes('UPDATE')) {
+      const [value, id] = params as [number, string]
+      for (const row of rows.values()) if (row.id === id) row.value = value
+    }
   }),
 }
 vi.mock('@/data/powersync/db', () => ({ db: mockDb }))
 
 describe('WAFI-148 incrementLocalHealthCounter', () => {
   beforeEach(() => {
-    executed.length = 0
+    rows.clear()
+    mockDb.execute.mockClear()
+    mockDb.getOptional.mockClear()
   })
 
-  it('additively increments a counter for the given metric/period', async () => {
+  it('inserts a new row with the given amount when none exists yet', async () => {
     await incrementLocalHealthCounter('sync_failure_terminal', '2026-08-21')
-    expect(executed[0].sql).toMatch(/value\s*\+\s*1|value\s*=\s*.*\+\s*1/)
-    expect(executed[0].params).toEqual(expect.arrayContaining(['sync_failure_terminal', '2026-08-21']))
+    expect(rows.get('sync_failure_terminal|2026-08-21')?.value).toBe(1)
+  })
+
+  it('additively increments an existing row rather than overwriting it', async () => {
+    await incrementLocalHealthCounter('sync_failure_terminal', '2026-08-21')
+    await incrementLocalHealthCounter('sync_failure_terminal', '2026-08-21')
+    await incrementLocalHealthCounter('sync_failure_terminal', '2026-08-21', 3)
+    expect(rows.get('sync_failure_terminal|2026-08-21')?.value).toBe(5) // 1 + 1 + 3
+  })
+
+  it('never issues an ON CONFLICT statement against local_health_metrics', async () => {
+    await incrementLocalHealthCounter('sync_failure_terminal', '2026-08-21')
+    for (const call of mockDb.execute.mock.calls) {
+      expect(call[0]).not.toMatch(/ON CONFLICT/i)
+    }
   })
 })
 ```
@@ -1451,18 +1740,33 @@ import type { HealthMetricKey } from '@/features/health/health.types'
 // sync_failure_terminal, sync_terminal_total, offline_duration_seconds
 // (added as a duration, not +1), deferred_job_failure_terminal,
 // deferred_job_terminal_total, app_error_count.
+//
+// Read-then-insert-or-update, NOT an upsert: local_health_metrics is a
+// PowerSync localOnly table (a SQLite view backed by CRUD-queue triggers) --
+// ON CONFLICT against it fails at runtime, since there's no local unique-index
+// conflict target. Same established pattern as
+// dailyEventCountsProjection.ts/profitCacheProjection.ts.
 export async function incrementLocalHealthCounter(
   metricKey: HealthMetricKey,
   periodStart: string,
   amount = 1,
 ): Promise<void> {
-  await db.execute(
-    `INSERT INTO local_health_metrics (metric_key, period_start, value, updated_at)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT (metric_key, period_start)
-     DO UPDATE SET value = local_health_metrics.value + ?, updated_at = excluded.updated_at`,
-    [metricKey, periodStart, amount, new Date().toISOString(), amount],
+  const existing = await db.getOptional<{ id: string; value: number }>(
+    `SELECT id, value FROM local_health_metrics WHERE metric_key = ? AND period_start = ?`,
+    [metricKey, periodStart],
   )
+
+  if (existing) {
+    await db.execute(
+      `UPDATE local_health_metrics SET value = ?, updated_at = ? WHERE id = ?`,
+      [existing.value + amount, new Date().toISOString(), existing.id],
+    )
+  } else {
+    await db.execute(
+      `INSERT INTO local_health_metrics (id, metric_key, period_start, value, updated_at) VALUES (?, ?, ?, ?, ?)`,
+      [crypto.randomUUID(), metricKey, periodStart, amount, new Date().toISOString()],
+    )
+  }
 }
 ```
 
@@ -1521,7 +1825,10 @@ git commit -m "feat(WAFI-148): wire terminal-outcome health counters into sync, 
 **Interfaces:**
 - Consumes: `local_health_metrics`/`local_health_gauges` (Task 7),
   `countDeadLetter()` (existing, `dead-letter.ts`), `report_health_metrics` RPC (Task 3,
-  via the existing raw Supabase client, same pattern as `register_device`).
+  via the existing raw Supabase client, same pattern as `register_device`),
+  `incrementLocalHealthCounter` (Task 10, reused directly for the
+  `telemetry_periods_dropped` write rather than duplicating its
+  read-then-insert-or-update logic).
 - Produces: `startHealthReporting(): void` (idempotent — safe to call once at boot),
   `runHealthReportingTick(): Promise<void>` (exported separately for direct testing).
 
@@ -1534,6 +1841,8 @@ import { runHealthReportingTick } from '../composables/useHealthReporting'
 
 const mockDb = {
   getAll: vi.fn(),
+  getOptional: vi.fn(async () => null), // used internally by incrementLocalHealthCounter
+                                          // (Task 10) for the telemetry_periods_dropped path
   execute: vi.fn(async () => {}),
 }
 vi.mock('@/data/powersync/db', () => ({ db: mockDb }))
@@ -1600,6 +1909,7 @@ Expected: FAIL — module doesn't exist.
 import { db } from '@/data/powersync/db'
 import { supabase } from '@/data/supabase/client'
 import { countDeadLetter } from '@/data/powersync/dead-letter'
+import { incrementLocalHealthCounter } from '@/data/powersync/healthCounters'
 import type { HealthCounterReport, HealthGaugeReport } from '@/features/health/health.types'
 
 const RETENTION_DAYS = 7
@@ -1669,13 +1979,10 @@ export async function runHealthReportingTick(ctx: TickContext): Promise<void> {
   const staleRows = localRows.filter((row) => row.period_start < windowStartStr)
   if (staleRows.length > 0) {
     await db.execute(`DELETE FROM local_health_metrics WHERE period_start < ?`, [windowStartStr])
-    await db.execute(
-      `INSERT INTO local_health_metrics (metric_key, period_start, value, updated_at)
-       VALUES ('telemetry_periods_dropped', ?, ?, ?)
-       ON CONFLICT (metric_key, period_start)
-       DO UPDATE SET value = local_health_metrics.value + ?, updated_at = excluded.updated_at`,
-      [ctx.today, staleRows.length, new Date().toISOString(), staleRows.length],
-    )
+    // Read-then-insert-or-update, NOT an upsert -- same PowerSync localOnly-table
+    // constraint as incrementLocalHealthCounter (Task 10); reuse it directly
+    // rather than duplicating the pattern here.
+    await incrementLocalHealthCounter('telemetry_periods_dropped', ctx.today, staleRows.length)
   }
 }
 
@@ -1945,15 +2252,18 @@ git commit -m "feat(WAFI-148): add owner health dashboard, gated by can_view_hea
 BEGIN;
 SELECT plan(2);
 
+-- list_health_for_admin checks platform_admins via auth.uid() directly (no
+-- auth_shop_id()/shop_id claim involved) -- the "ordinary session" here just
+-- needs a sub claim for a real, non-admin user.
 SET LOCAL role postgres;
-INSERT INTO public.shops (id, name, timezone) VALUES
-  ('99999999-9999-9999-9999-999999999999', 'Shop G', 'Asia/Damascus');
+INSERT INTO public.shops (id, name, timezone, owner_user_id) VALUES
+  ('99999999-9999-9999-9999-999999999999', 'Shop G', 'Asia/Damascus', 'e0000000-0000-0000-0000-000000000005');
 INSERT INTO public.health_metrics (shop_id, device_id, metric_key, period_start, value)
 VALUES ('99999999-9999-9999-9999-999999999999', '00000000-0000-0000-0000-000000000000',
         'drawer_mismatch_count', current_date, 2);
 
--- Ordinary authenticated shop session (not a platform admin) must be rejected.
-SET LOCAL request.jwt.claims = '{"shop_id":"99999999-9999-9999-9999-999999999999"}';
+-- Ordinary authenticated shop owner (not a platform admin) must be rejected.
+SELECT set_config('request.jwt.claims', '{"sub":"e0000000-0000-0000-0000-000000000005","active_role":"owner"}', true);
 SET LOCAL role authenticated;
 SELECT throws_ok(
   $$ SELECT * FROM public.list_health_for_admin(NULL) $$,
@@ -2158,15 +2468,15 @@ BEGIN;
 SELECT plan(4);
 
 SET LOCAL role postgres;
-INSERT INTO public.shops (id, name, timezone) VALUES
-  ('cccccccc-cccc-cccc-cccc-cccccccccccc', 'Shop H', 'Asia/Damascus'),
-  ('dddddddd-dddd-dddd-dddd-dddddddddddd', 'Shop I', 'Asia/Damascus');
+INSERT INTO public.shops (id, name, timezone, owner_user_id) VALUES
+  ('cccccccc-cccc-cccc-cccc-cccccccccccc', 'Shop H', 'Asia/Damascus', 'e0000000-0000-0000-0000-000000000006'),
+  ('dddddddd-dddd-dddd-dddd-dddddddddddd', 'Shop I', 'Asia/Damascus', 'e0000000-0000-0000-0000-000000000007');
 INSERT INTO public.health_metrics (shop_id, device_id, metric_key, period_start, value)
 VALUES ('cccccccc-cccc-cccc-cccc-cccccccccccc', gen_random_uuid(), 'app_error_count', current_date, 1);
 INSERT INTO public.health_gauges (shop_id, device_id, gauge_key, value, observed_at)
 VALUES ('cccccccc-cccc-cccc-cccc-cccccccccccc', gen_random_uuid(), 'dead_letter_count', 1, now());
 
-SET LOCAL request.jwt.claims = '{"shop_id":"dddddddd-dddd-dddd-dddd-dddddddddddd"}';
+SELECT set_config('request.jwt.claims', '{"sub":"e0000000-0000-0000-0000-000000000007","active_role":"owner"}', true);
 SET LOCAL role authenticated;
 
 SELECT is(

@@ -1,8 +1,17 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { createRealSqliteDb } from '@/__tests__/helpers/realSqliteDb'
 import { initLocalDeferredJobsSchema } from '@/services/events/deferredJobsSchema'
-import { drainDeferredJobs } from '@/services/events/drainDeferredJobs'
 import { registerJobHandler, resetJobTypeRegistry } from '@/services/events/jobTypeRegistry'
+
+// WAFI-148: spy on the shared health counter helper so terminal-outcome
+// counting can be asserted without a real local_health_metrics table.
+const incrementLocalHealthCounter = vi.fn(async () => {})
+vi.mock('@/data/powersync/healthCounters', () => ({
+  incrementLocalHealthCounter: (...a: any[]) => incrementLocalHealthCounter(...a),
+  getShopLocalToday: async () => '2026-08-21',
+}))
+
+import { drainDeferredJobs } from '@/services/events/drainDeferredJobs'
 
 async function freshDb() {
   const database = createRealSqliteDb()
@@ -25,7 +34,10 @@ async function seed(database: any, row: Partial<Record<string, unknown>>) {
 }
 
 describe('drainDeferredJobs', () => {
-  beforeEach(() => resetJobTypeRegistry())
+  beforeEach(() => {
+    resetJobTypeRegistry()
+    incrementLocalHealthCounter.mockClear()
+  })
 
   it('claims and completes an offline-capable job while offline', async () => {
     const database = createRealSqliteDb() // note: drainDeferredJobs is written against the real `db` import in Task 7; this task's tests exercise the pure query/ordering logic via an injectable db param added alongside opts (see Step 3's `database` param)
@@ -125,6 +137,38 @@ describe('drainDeferredJobs', () => {
     expect(row.status).toBe('dead')
     expect(row.attempts).toBe(1)
     expect(row.next_retry_at).toBeNull()
+  })
+
+  it('WAFI-148: a completed job counts deferred_job_terminal_total but not the failure counter', async () => {
+    const database = await freshDb()
+    const handler = vi.fn().mockResolvedValue(undefined)
+    registerJobHandler({ jobType: 'test.a', handler, priority: 'normal', requiresNetwork: false, maxQueuedJobs: 200 })
+    await seed(database, {})
+    await drainDeferredJobs('shop1', { isConnected: () => true, isForegrounded: () => true }, database)
+
+    expect(incrementLocalHealthCounter).toHaveBeenCalledExactlyOnceWith('deferred_job_terminal_total', '2026-08-21')
+  })
+
+  it('WAFI-148: a job that goes dead counts both deferred_job_failure_terminal and deferred_job_terminal_total', async () => {
+    const database = await freshDb()
+    const handler = vi.fn().mockRejectedValue(new Error('malformed payload'))
+    registerJobHandler({ jobType: 'test.a', handler, priority: 'normal', requiresNetwork: false, maxQueuedJobs: 200 })
+    await seed(database, {})
+    await drainDeferredJobs('shop1', { isConnected: () => true, isForegrounded: () => true }, database)
+
+    expect(incrementLocalHealthCounter).toHaveBeenCalledWith('deferred_job_failure_terminal', '2026-08-21')
+    expect(incrementLocalHealthCounter).toHaveBeenCalledWith('deferred_job_terminal_total', '2026-08-21')
+    expect(incrementLocalHealthCounter).toHaveBeenCalledTimes(2)
+  })
+
+  it('WAFI-148: a transient retry (not yet terminal) does not increment any counter', async () => {
+    const database = await freshDb()
+    const handler = vi.fn().mockRejectedValue(new Error('database is locked'))
+    registerJobHandler({ jobType: 'test.a', handler, priority: 'normal', requiresNetwork: false, maxQueuedJobs: 200 })
+    await seed(database, {})
+    await drainDeferredJobs('shop1', { isConnected: () => true, isForegrounded: () => true }, database)
+
+    expect(incrementLocalHealthCounter).not.toHaveBeenCalled()
   })
 
   it('a job that fails MAX_ATTEMPTS times transiently ends up dead, not retried a 6th time', async () => {

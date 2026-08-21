@@ -130,10 +130,10 @@ export async function paySettlement(
 // services. Moving that orchestration into a framework-agnostic service would
 // mean either breaking the "services never touch stores" rule for real, or
 // inventing a callback-injection layer no other service in this ticket needs.
-// So only the raw INSERT (brand-new shift) / UPDATE (normal close) writes are
-// extracted here; useShift.ts keeps every session/store-mutating branch,
-// including forceCloseShift entirely (out of scope — its audit/teardown
-// semantics differ from a normal close and it isn't in this ticket's spec).
+// So only the raw INSERT (brand-new shift) / UPDATE (normal close, and — as of
+// WAFI-148 Task 5b — force close) writes are extracted here; useShift.ts keeps
+// every session/store-mutating branch (identity teardown, shiftStore mutation),
+// which still differs between the normal-close and force-close callers.
 
 /** Narrow audit interface this service needs — implemented by the caller via
  *  useAuditLog(), never imported here. */
@@ -206,8 +206,8 @@ export interface CloseShiftWriteInput {
   closingBreakdown: unknown
 }
 
-/** The normal-close UPDATE only — force-close (a different actor/audit shape,
- *  useShift.ts's forceCloseShift) is out of scope, see the module comment above. */
+/** The normal-close UPDATE only (force_closed_by always null) — the force-close
+ *  UPDATE (different actor/audit shape) is `forceCloseShift` below. */
 export async function closeShift(
   shopId: string,
   shiftId: string,
@@ -249,6 +249,78 @@ export async function closeShift(
         expectedCash: input.closingCashUsd - (input.varianceUsd ?? 0),
         countedCash: input.closingCashUsd,
         variance: input.varianceUsd ?? 0,
+        forceClosedBy: null,  // always null on the normal-close path
+      } satisfies ShiftClosedPayload,
+      payloadVersion: 1,
+      staffId,
+      shopId,
+      occurredAt: now,
+    }),
+  })
+}
+
+/** Narrow audit interface this service needs — implemented by the caller via
+ *  useAuditLog(), never imported here. */
+export interface ForceCloseShiftAuditPort {
+  logShiftForceClosed: (shiftId: string) => Promise<void>
+}
+
+export interface ForceCloseShiftWriteInput {
+  closingCashUsd: number
+  closingCashSyp: number
+  varianceUsd: number | null
+  varianceSyp: number | null
+  closeNote: string | null
+  zReport: unknown
+  closingBreakdown: unknown
+  forcedByStaffId: string
+}
+
+/** The force-close UPDATE + event publish (WAFI-065 owner force-close, wired to the
+ *  event bus by WAFI-148 Task 5b — previously this path never published any event at
+ *  all, which meant WAFI-148's never_closed_shift_count metric could never fire). */
+export async function forceCloseShift(
+  shopId: string,
+  shiftId: string,
+  staffId: string,
+  input: ForceCloseShiftWriteInput,
+  audit: ForceCloseShiftAuditPort,
+): Promise<void> {
+  const now = new Date().toISOString()
+
+  const write = async (): Promise<void> => {
+    await db.execute(
+      `UPDATE cashier_shifts
+       SET status = 'closed', closed_at = ?, closing_cash_usd = ?, closing_cash_syp = ?,
+           variance_usd = ?, variance_syp = ?, close_note = ?, force_closed_by = ?,
+           z_report_data = ?, closing_breakdown = ?
+       WHERE id = ?`,
+      [
+        now,
+        input.closingCashUsd,
+        input.closingCashSyp,
+        input.varianceUsd,
+        input.varianceSyp,
+        input.closeNote,
+        input.forcedByStaffId,
+        input.zReport ? JSON.stringify(input.zReport) : null,
+        input.closingBreakdown ? JSON.stringify(input.closingBreakdown) : null,
+        shiftId,
+      ],
+    )
+  }
+
+  await executeBusinessOperation(write, {
+    audit: () => audit.logShiftForceClosed(shiftId),
+    toEvent: () => ({
+      type: StaffEventType.ShiftClosed,
+      entityId: shiftId,
+      payload: {
+        shiftId, staffId,
+        expectedCash: input.closingCashUsd - (input.varianceUsd ?? 0),
+        countedCash: input.closingCashUsd,
+        variance: input.varianceUsd ?? 0,
+        forceClosedBy: input.forcedByStaffId,
       } satisfies ShiftClosedPayload,
       payloadVersion: 1,
       staffId,

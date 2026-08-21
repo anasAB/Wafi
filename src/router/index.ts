@@ -7,6 +7,9 @@ import type { FlagKey } from '@/features/flags/flagRegistry'
 import type { StaffPermissions } from '@/features/staff/staff.types'
 import { supabase } from '@/data/supabase/client'
 import { usePlatformAdminStore } from '@/features/admin/platformAdmin.store'
+import { db } from '@/data/powersync/db'
+import { useDeviceStore } from '@/store/device.store'
+import { markDeviceActiveForDay } from '@/features/health/composables/useDeviceActivity'
 
 const SHIFT_OPEN_REDIRECT = '/shifts/history'
 
@@ -89,12 +92,22 @@ const router = createRouter({
     // WAFI-018: structurally owner-only — can_view_staff_performance is never
     // granted to a manager (see permissionsForRole), unlike can_view_reports.
     { path: '/reports/staff',   component: () => import('@/features/dashboard/components/StaffPerformancePage.vue'), meta: { permission: 'can_view_staff_performance', feature: 'reporting_pack' } },
+
+    // WAFI-148: owner-facing health dashboard, gated by can_view_health_metrics
+    // (owner-grantable, defaults off) -- same mechanism as every permission
+    // gate above, not a new one.
+    { path: '/health',         component: () => import('@/features/health/OwnerHealthPage.vue'), meta: { permission: 'can_view_health_metrics' } },
     // WAFI-131: upgrade teaser for pack-gated features
     { path: '/feature-locked',  component: () => import('@/features/flags/FeatureLockedScreen.vue') },
     { path: '/onboarding',      component: () => import('@/pages/OnboardingPage.vue') },
     // WAFI-155: platform-admin-only feature-flag rollout console. Not part
     // of the shop staff/role model -- gated in beforeEach below.
     { path: '/admin/rollouts',  component: () => import('@/features/admin/RolloutAdminScreen.vue'), meta: { requiresPlatformAdmin: true } },
+    // WAFI-148: founder-facing cross-shop team health dashboard. Structurally
+    // separate from /health's can_view_health_metrics (owner-grantable,
+    // per-shop) -- gated the same way as /admin/rollouts, via
+    // requiresPlatformAdmin below, NOT a permission flag.
+    { path: '/team-health',    component: () => import('@/features/health/TeamHealthPage.vue'), meta: { requiresPlatformAdmin: true } },
     { path: '/shifts/history',  component: () => import('@/features/shifts/components/ShiftHistoryScreen.vue') },
     { path: '/shifts/:id',      component: () => import('@/features/shifts/components/ShiftDetailScreen.vue') },
     { path: '/setup-owner',     component: () => import('@/features/shifts/components/OwnerSetupScreen.vue') },
@@ -182,6 +195,30 @@ router.beforeEach(async (to) => {
   }
 
   return true
+})
+
+// WAFI-148: a real router navigation is genuine foreground device usage --
+// exactly the qualifying signal markDeviceActiveForDay()'s contract requires
+// (never a background timer, the health-reporting tick, a connectivity
+// callback, or a server response). Reads the current shop's timezone via
+// the same device.store.ts shopId -> synced `shops` local-table lookup
+// every other shop-scoped composable in this codebase uses (see
+// src/composables/insights/shopCreatedAt.ts for the precedent). Best-effort:
+// a missing/unsynced shop row or a write failure must never block navigation.
+router.afterEach(async () => {
+  try {
+    const device = useDeviceStore()
+    if (!device.shopId) return
+    const shop = await db.getOptional<{ timezone: string | null }>(
+      `SELECT timezone FROM shops WHERE id = ?`,
+      [device.shopId],
+    )
+    if (shop?.timezone) {
+      await markDeviceActiveForDay(shop.timezone)
+    }
+  } catch (err) {
+    console.warn('[WAFI-148] markDeviceActiveForDay failed (non-blocking):', err)
+  }
 })
 
 export default router

@@ -398,6 +398,29 @@ const local_deferred_jobs = new Table({
   finished_at:       column.text,     // ISO string, nullable
 }, { localOnly: true })
 
+// WAFI-148 -- client-side health metrics cache. Never synced (localOnly: true);
+// written by health monitoring tasks, read by dashboard display logic.
+const local_health_metrics = new Table(
+  {
+    metric_key:   column.text,
+    period_start: column.text,
+    value:        column.integer,
+    updated_at:   column.text,
+  },
+  { localOnly: true },
+)
+
+// WAFI-148 -- client-side health gauges (point-in-time snapshots). Never synced (localOnly: true);
+// written by health monitoring tasks, read by dashboard display logic.
+const local_health_gauges = new Table(
+  {
+    gauge_key:   column.text,
+    value:       column.integer,
+    observed_at: column.text,
+  },
+  { localOnly: true },
+)
+
 const events = new Table({
   type:                column.text,
   entity_id:           column.text,
@@ -570,6 +593,7 @@ const shops = new Table({
   open_time:                   column.text,    // WAFI-145: 'HH:MM', NULL = no operating-hours checks
   close_time:                  column.text,    // WAFI-145
   is_24_7:                     column.integer, // WAFI-145: 0/1
+  timezone:                    column.text,    // WAFI-148: IANA name (e.g. Asia/Damascus), NULL until owner configures it
 })
 
 const notification_settings = new Table({
@@ -601,6 +625,31 @@ const business_rules = new Table({
 // WAFI-147B -- server-generated scheduled report snapshots (Task 8's cron jobs).
 // Synced with a permission-filtered bucket (see powersync.yaml) -- unlike every
 // other synced table, this one is NOT shop-scope-only at the sync layer.
+// WAFI-148 -- server-side read models for the 8 locked health metrics
+// (migration 107). Server-authoritative/rebuildable and client-cumulative
+// GREATEST()-merged, all landing in the same table -- read-only from the
+// client (no local write policy exists), same shape discipline as
+// daily_event_counts/profit_cache above.
+const health_metrics = new Table({
+  shop_id:      column.text,
+  device_id:    column.text,
+  metric_key:   column.text,
+  period_start: column.text,
+  value:        column.integer,
+  updated_at:   column.text,
+})
+
+// WAFI-148 -- the one client-authoritative current-state gauge exception
+// (dead-letter count): overwritten, never GREATEST()'d, always carries
+// observed_at freshness. Read-only from the client, same as health_metrics.
+const health_gauges = new Table({
+  shop_id:     column.text,
+  device_id:   column.text,
+  gauge_key:   column.text,
+  value:       column.integer,
+  observed_at: column.text,
+})
+
 const generated_reports = new Table({
   shop_id:                 column.text,
   report_type:             column.text,
@@ -645,6 +694,8 @@ export const AppSchema = new Schema({
   local_event_processing_retries,
   local_subscriber_processed_events,
   local_deferred_jobs,
+  local_health_metrics,
+  local_health_gauges,
   audit_log,
   events,
   daily_event_counts,
@@ -668,4 +719,6 @@ export const AppSchema = new Schema({
   denomination_configs,
   generated_reports,
   generated_report_staff_sections,
+  health_metrics,
+  health_gauges,
 })

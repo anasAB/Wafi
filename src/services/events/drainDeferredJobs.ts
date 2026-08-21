@@ -3,6 +3,7 @@ import { getJobTypePolicy, getRegisteredJobTypes } from '@/services/events/jobTy
 import { isTransientEventFailure } from '@/services/events/isTransientEventFailure'
 import { DEFERRED_JOB_LEASE_MINUTES, MAX_ATTEMPTS, BACKOFF_MINUTES, RETENTION_DAYS } from '@/services/events/deferredJob.constants'
 import { reportDeferredJobDead } from '@/services/events/reportDeferredJobDead'
+import { incrementLocalHealthCounter, getShopLocalToday } from '@/data/powersync/healthCounters'
 
 type DbLike = Pick<typeof appDb, 'execute' | 'getAll' | 'getOptional' | 'writeTransaction'>
 
@@ -93,6 +94,11 @@ async function runDrain(shopId: string, opts: DrainOptions, database: DbLike): P
       await database.execute(`UPDATE local_deferred_jobs SET status = 'completed', finished_at = ? WHERE id = ?`, [
         new Date().toISOString(), row.id,
       ])
+      // WAFI-148: terminal success outcome for this job. Per the spec, skip
+      // the write entirely (rather than falling back to UTC) when the shop's
+      // timezone isn't resolvable yet.
+      const today = await getShopLocalToday(shopId)
+      if (today) void incrementLocalHealthCounter('deferred_job_terminal_total', today)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       const transient = isTransientEventFailure(err)
@@ -109,6 +115,13 @@ async function runDrain(shopId: string, opts: DrainOptions, database: DbLike): P
           [message, new Date().toISOString(), row.id],
         )
         await reportDeferredJobDead({ ...row, last_error: message }, err instanceof Error ? err : undefined)
+        // WAFI-148: terminal failure is also a terminal outcome -- counts
+        // toward both the failure numerator and the shared total denominator.
+        const today = await getShopLocalToday(shopId)
+        if (today) {
+          void incrementLocalHealthCounter('deferred_job_failure_terminal', today)
+          void incrementLocalHealthCounter('deferred_job_terminal_total', today)
+        }
       }
     }
 

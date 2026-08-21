@@ -10,6 +10,18 @@ vi.mock('@/data/supabase/client', () => ({
   supabase: { from: () => ({ upsert, update, delete: del }) },
 }))
 
+// WAFI-148: spy on the shared health counter helper so quarantineOp's
+// counter side effect can be asserted without a real db.
+const incrementLocalHealthCounter = vi.fn(async () => {})
+const getShopLocalToday = vi.fn(async () => '2026-08-21')
+vi.mock('../healthCounters', () => ({
+  incrementLocalHealthCounter: (...a: any[]) => incrementLocalHealthCounter(...a),
+  getShopLocalToday: (...a: any[]) => getShopLocalToday(...a),
+}))
+vi.mock('@/store/device.store', () => ({
+  useDeviceStore: () => ({ shopId: 'shop-1' }),
+}))
+
 import {
   quarantineOp,
   countDeadLetter,
@@ -82,6 +94,19 @@ describe('dead-letter quarantine holding', () => {
     await quarantineOp(db as any, crudOp({ clientId: 7 }), pgErr('42501'))
     await quarantineOp(db as any, crudOp({ clientId: 7 }), pgErr('42501'))
     expect(await countDeadLetter(db as any)).toBe(1)
+  })
+
+  it('WAFI-148: quarantineOp counts both sync_failure_terminal and sync_terminal_total', async () => {
+    await quarantineOp(db as any, crudOp(), pgErr('23505'))
+    expect(incrementLocalHealthCounter).toHaveBeenCalledWith('sync_failure_terminal', '2026-08-21')
+    expect(incrementLocalHealthCounter).toHaveBeenCalledWith('sync_terminal_total', '2026-08-21')
+    expect(incrementLocalHealthCounter).toHaveBeenCalledTimes(2)
+  })
+
+  it('WAFI-148: re-quarantining the same op (idempotent path) does not double-count', async () => {
+    await quarantineOp(db as any, crudOp({ clientId: 7 }), pgErr('42501'))
+    await quarantineOp(db as any, crudOp({ clientId: 7 }), pgErr('42501'))
+    expect(incrementLocalHealthCounter).toHaveBeenCalledTimes(2) // only the first call counted
   })
 
   it('retry that now succeeds removes the op from the holding (recovered)', async () => {

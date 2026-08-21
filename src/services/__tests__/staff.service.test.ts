@@ -4,7 +4,7 @@ vi.mock('@/data/powersync/db', () => import('@/../src/__tests__/__mocks__/db'))
 vi.mock('@/services/events/publishEvent', () => ({ publishEvent: vi.fn().mockResolvedValue(undefined) }))
 
 import { db } from '@/data/powersync/db'
-import { addLedgerEntry, paySettlement, openShift, closeShift } from '@/services/staff.service'
+import { addLedgerEntry, paySettlement, openShift, closeShift, forceCloseShift } from '@/services/staff.service'
 import { useSessionStore } from '@/store/session.store'
 import type { NewStaffLedgerEntry } from '@/features/staff-ledger/staff-ledger.types'
 import type { Staff } from '@/features/staff/staff.types'
@@ -182,8 +182,64 @@ describe('StaffService.closeShift', () => {
     const event = vi.mocked(publishEvent).mock.calls[0][0]
     expect(event.type).toBe('shift.closed')
     expect(Object.keys(event.payload).sort()).toEqual(
-      ['shiftId', 'staffId', 'expectedCash', 'countedCash', 'variance'].sort(),
+      ['shiftId', 'staffId', 'expectedCash', 'countedCash', 'variance', 'forceClosedBy'].sort(),
     )
     expect(event.payloadVersion).toBe(1)
+  })
+
+  it('publishes shift.closed with forceClosedBy always null on the normal-close path', async () => {
+    const { publishEvent } = await import('@/services/events/publishEvent')
+    await closeShift('shop1', 'shift1', 'staff1', {
+      closingCashUsd: 230, closingCashSyp: 0, varianceUsd: -20, varianceSyp: 0,
+      closeNote: null, zReport: null, closingBreakdown: null,
+    }, fakeCloseAudit)
+    const event = vi.mocked(publishEvent).mock.calls[0][0]
+    expect((event.payload as any).forceClosedBy).toBeNull()
+  })
+})
+
+describe('StaffService.forceCloseShift', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(db.execute).mockResolvedValue({ rows: { _array: [] } } as any)
+  })
+
+  const fakeForceCloseAudit = { logShiftForceClosed: vi.fn().mockResolvedValue(undefined) }
+
+  it('updates the shift to closed with variance and force_closed_by set to the forcing staff id', async () => {
+    await forceCloseShift('shop1', 'shift1', 'staff1', {
+      closingCashUsd: 100, closingCashSyp: 0, varianceUsd: -20, varianceSyp: null,
+      closeNote: 'owner force-close', zReport: null, closingBreakdown: null,
+      forcedByStaffId: 'owner-staff-id',
+    }, fakeForceCloseAudit)
+
+    const [sql, params] = vi.mocked(db.execute).mock.calls[0]
+    expect(sql).toContain(`status = 'closed'`)
+    expect(params).toContain(-20)
+    expect(params[6]).toBe('owner-staff-id')  // force_closed_by column position, matching closeShift's UPDATE
+  })
+
+  it('calls the injected audit port with the shift id', async () => {
+    await forceCloseShift('shop1', 'shift1', 'staff1', {
+      closingCashUsd: 100, closingCashSyp: 0, varianceUsd: 0, varianceSyp: 0,
+      closeNote: null, zReport: null, closingBreakdown: null,
+      forcedByStaffId: 'owner-staff-id',
+    }, fakeForceCloseAudit)
+    expect(fakeForceCloseAudit.logShiftForceClosed).toHaveBeenCalledWith('shift1')
+  })
+
+  it('publishes a shift.closed event with forceClosedBy set to the forcing staff id', async () => {
+    const { publishEvent } = await import('@/services/events/publishEvent')
+    await forceCloseShift('shop1', 'shift1', 'staff1', {
+      closingCashUsd: 100, closingCashSyp: 0, varianceUsd: -20, varianceSyp: null,
+      closeNote: 'owner force-close', zReport: null, closingBreakdown: null,
+      forcedByStaffId: 'owner-staff-id',
+    }, fakeForceCloseAudit)
+
+    const event = vi.mocked(publishEvent).mock.calls[0][0]
+    expect(event.type).toBe('shift.closed')
+    expect(event.payload).toEqual(
+      expect.objectContaining({ shiftId: 'shift1', forceClosedBy: 'owner-staff-id' }),
+    )
   })
 })

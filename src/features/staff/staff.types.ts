@@ -12,6 +12,7 @@ export interface StaffPermissions {
   can_manage_products:   boolean
   can_manage_customers:  boolean
   can_view_expenses:     boolean
+  can_view_health_metrics: boolean
   can_manage_settings:   boolean
   can_manage_inventory:  boolean
   can_manage_suppliers:  boolean
@@ -30,6 +31,7 @@ export const DEFAULT_CASHIER_PERMISSIONS: StaffPermissions = {
   can_manage_products:   false,
   can_manage_customers:  false,
   can_view_expenses:     false,
+  can_view_health_metrics: false,
   can_manage_settings:   false,
   can_manage_inventory:  false,
   can_manage_suppliers:  false,
@@ -43,6 +45,7 @@ export const OWNER_PERMISSIONS: StaffPermissions = {
   can_manage_products:   true,
   can_manage_customers:  true,
   can_view_expenses:     true,
+  can_view_health_metrics: true,
   can_manage_settings:   true,
   can_manage_inventory:  true,
   can_manage_suppliers:  true,
@@ -54,6 +57,8 @@ export const OWNER_PERMISSIONS: StaffPermissions = {
 // A manager runs the floor: products + customers, open/close shifts, ring sales.
 // WAFI-058: financials (reports/expenses) are Owner-only by DEFAULT and become
 // owner-grantable per staff member, so the two financial flags default OFF here.
+// WAFI-148: health metrics are Owner-only by DEFAULT and owner-grantable per
+// staff member, so can_view_health_metrics defaults OFF here.
 // The structural flags below are fixed by role (see permissionsForRole), and
 // can_manage_settings stays false so a manager can never grant access to anyone.
 export const MANAGER_PERMISSIONS: StaffPermissions = {
@@ -61,6 +66,7 @@ export const MANAGER_PERMISSIONS: StaffPermissions = {
   can_manage_products:   true,
   can_manage_customers:  true,
   can_view_expenses:     false,
+  can_view_health_metrics: false,
   can_manage_settings:   false,
   can_manage_inventory:  true,
   can_manage_suppliers:  true,
@@ -76,10 +82,12 @@ export const MANAGER_PERMISSIONS: StaffPermissions = {
  *
  * - Owner: every permission, not grantable away.
  * - Manager: structural flags fixed by role (products/customers true,
- *   settings false). The two FINANCIAL flags — can_view_reports and
+ *   settings false). The FINANCIAL flags — can_view_reports and
  *   can_view_expenses — are read from the member's stored permissions and
- *   default to false (WAFI-058). Keeping can_manage_settings role-fixed at false
- *   is what guarantees only the owner can grant financial access.
+ *   default to false (WAFI-058). can_view_health_metrics is read from the
+ *   member's stored permissions and defaults to false (WAFI-148). Keeping
+ *   can_manage_settings role-fixed at false is what guarantees only the owner
+ *   can grant these owner-only accesses.
  * - Cashier: carries its full stored per-staff custom set (unchanged).
  */
 export function permissionsForRole(
@@ -97,6 +105,7 @@ export function permissionsForRole(
       can_manage_stock_take: true,
       can_view_reports:      Boolean(custom?.can_view_reports),
       can_view_expenses:     Boolean(custom?.can_view_expenses),
+      can_view_health_metrics: Boolean(custom?.can_view_health_metrics),
       can_view_staff_ledger: Boolean(custom?.can_view_staff_ledger),
       // Deliberately NOT read from `custom` — see the field comment on
       // StaffPermissions. A manager can never hold this, even via an
