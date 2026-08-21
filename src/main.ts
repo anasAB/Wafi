@@ -10,12 +10,26 @@ import App    from './App.vue'
 import router from './router'
 import { initSentry } from './sentry'
 import { resumeBootstrapIfPending } from './router/bootstrap-resume'
+import { incrementLocalHealthCounter, shopLocalToday } from './data/powersync/healthCounters'
 
 const pinia = createPinia()
 pinia.use(piniaPluginPersistedstate)
 
 const app = createApp(App)
 initSentry(app)
+
+// WAFI-148: global unhandled-error counter. This must run independent of
+// whether Sentry is configured (initSentry no-ops when VITE_SENTRY_DSN is
+// unset, or outside a PROD build) -- chain onto whatever handler initSentry
+// may have already installed (Sentry's @sentry/vue integration wires its own
+// app.config.errorHandler when configured) rather than overwriting it, so
+// both the local health counter and Sentry reporting fire on every error.
+const previousErrorHandler = app.config.errorHandler
+app.config.errorHandler = (err, instance, info) => {
+  void incrementLocalHealthCounter('app_error_count', shopLocalToday())
+  previousErrorHandler?.(err, instance, info)
+}
+
 app.use(pinia)
 
 // Must run only after app.use(pinia) above -- resumeBootstrapIfPending()

@@ -4,6 +4,7 @@ import type { CrudEntry } from '@powersync/common'
 import type { PostgrestError } from '@supabase/supabase-js'
 import { v4 as uuidv4 } from 'uuid'
 import { runOp, isPermanentError } from './ops'
+import { incrementLocalHealthCounter, shopLocalToday } from './healthCounters'
 
 /** One upload op the server permanently rejected, held locally for recovery. */
 export interface DeadLetterEntry {
@@ -58,6 +59,14 @@ export async function quarantineOp(
       new Date().toISOString(),
     ],
   )
+
+  // WAFI-148: a terminal failure is also a terminal outcome -- counts toward
+  // both the failure numerator and the shared total denominator. Only on the
+  // actual insert path above (not the idempotent `existing` early-return),
+  // so a re-processed batch that re-quarantines the same clientId doesn't
+  // double-count.
+  await incrementLocalHealthCounter('sync_failure_terminal', shopLocalToday())
+  await incrementLocalHealthCounter('sync_terminal_total', shopLocalToday())
 }
 
 export async function countDeadLetter(db: AbstractPowerSyncDatabase): Promise<number> {

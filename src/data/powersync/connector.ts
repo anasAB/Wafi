@@ -3,6 +3,7 @@ import type { PowerSyncBackendConnector } from '@powersync/common'
 import { supabase } from '@/data/supabase/client'
 import { runOp, isPermanentError } from './ops'
 import { quarantineOp } from './dead-letter'
+import { incrementLocalHealthCounter, shopLocalToday } from './healthCounters'
 
 // Re-export so existing importers and the runOp unit tests keep one entry point.
 export { runOp, isPermanentError } from './ops'
@@ -19,6 +20,13 @@ export class SupabaseConnector implements PowerSyncBackendConnector {
   // Ops already moved to the dead-letter holding this session — skipped on every
   // subsequent pass so a poison op can't re-block the writes queued behind it.
   private quarantined = new Set<number>()
+  // WAFI-148: ops already counted toward sync_terminal_total this session —
+  // mirrors `quarantined` above. Without this guard, an op that already
+  // succeeded in an earlier pass over the same uncompleted batch (held open by
+  // a *different* still-failing op) would be re-run and re-counted on every
+  // subsequent pass, since uploadData() re-issues the whole batch until every
+  // op in it resolves.
+  private countedSuccess = new Set<number>()
 
   async fetchCredentials() {
     const psUrl = import.meta.env.VITE_POWERSYNC_URL as string
@@ -43,6 +51,10 @@ export class SupabaseConnector implements PowerSyncBackendConnector {
       const error = await runOp(op.op, op.table, op.id, op.opData)
       if (!error) {
         this.permanentFailures.delete(op.clientId)
+        if (!this.countedSuccess.has(op.clientId)) {
+          this.countedSuccess.add(op.clientId)
+          void incrementLocalHealthCounter('sync_terminal_total', shopLocalToday())
+        }
         continue
       }
 

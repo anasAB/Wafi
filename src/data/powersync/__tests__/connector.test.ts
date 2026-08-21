@@ -22,6 +22,14 @@ vi.mock('@/data/supabase/client', () => ({
 const quarantineOp = vi.fn(async () => {})
 vi.mock('../dead-letter', () => ({ quarantineOp: (...a: any[]) => quarantineOp(...a) }))
 
+// WAFI-148: spy on the shared health counter helper so we can assert the
+// success path counts toward sync_terminal_total without a real db.
+const incrementLocalHealthCounter = vi.fn(async () => {})
+vi.mock('../healthCounters', () => ({
+  incrementLocalHealthCounter: (...a: any[]) => incrementLocalHealthCounter(...a),
+  shopLocalToday: () => '2026-08-21',
+}))
+
 import { SupabaseConnector } from '../connector'
 
 const op = (id: string, clientId: number, type = UpdateType.PUT) =>
@@ -48,6 +56,29 @@ describe('SupabaseConnector.uploadData — poison-op quarantine', () => {
 
     expect(batch.complete).toHaveBeenCalledOnce()
     expect(quarantineOp).not.toHaveBeenCalled()
+  })
+
+  it('WAFI-148: counts sync_terminal_total once per successful op', async () => {
+    const c = new SupabaseConnector()
+    const batch = batchOf(op('a', 1), op('b', 2))
+    await c.uploadData(dbReturning(batch))
+
+    expect(incrementLocalHealthCounter).toHaveBeenCalledTimes(2)
+    expect(incrementLocalHealthCounter).toHaveBeenCalledWith('sync_terminal_total', '2026-08-21')
+  })
+
+  it('WAFI-148: does not re-count an already-succeeded op re-processed by a later retry pass', async () => {
+    transientRows.add('laggy')
+    const c = new SupabaseConnector()
+    const batch = batchOf(op('a', 1), op('laggy', 2))
+
+    // 'a' succeeds every pass but the batch stays open because 'laggy' keeps
+    // throwing transiently -- 'a' must only be counted once, not once per pass.
+    await expect(c.uploadData(dbReturning(batch))).rejects.toThrow()
+    await expect(c.uploadData(dbReturning(batch))).rejects.toThrow()
+
+    const successCalls = incrementLocalHealthCounter.mock.calls.filter(([key]) => key === 'sync_terminal_total')
+    expect(successCalls).toHaveLength(1)
   })
 
   it('leaves the batch uncompleted and never quarantines on a transient error', async () => {

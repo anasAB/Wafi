@@ -10,6 +10,7 @@ import {
   type DeadLetterEntry, type RetryResult,
 } from '@/data/powersync/dead-letter'
 import { supabase } from '@/data/supabase/client'
+import { incrementLocalHealthCounter, shopLocalToday } from '@/data/powersync/healthCounters'
 
 export function useSync() {
   const syncStore  = useSyncStore()
@@ -125,6 +126,14 @@ export function useSync() {
     return now.value - syncStore.lastSyncedAt.getTime() > STALE_AFTER_MS
   })
 
+  // WAFI-148: offline-duration cycle tracking. Set when bindPowerSync's own
+  // statusChanged listener sees the connection drop (status.connected false —
+  // the same signal the rest of this listener already relies on, not raw
+  // navigator.onLine), cleared on the matching reconnect. Guards the
+  // double-fire idempotency case: a second reconnect notification before this
+  // is cleared must not increment a second time for the same offline period.
+  const offlineStartedAt = ref<number | null>(null)
+
   function bindPowerSync() {
     // PowerSync exposes status via registerListener({ statusChanged }) and the
     // current snapshot via db.currentStatus — not db.status.onChange (which
@@ -142,6 +151,14 @@ export function useSync() {
         // Keep the queue-depth indicators live: each status change (upload
         // start/stop) is when ps_crud drains or a poison op gets parked.
         void refreshCounts()
+
+        if (!status.connected) {
+          if (offlineStartedAt.value === null) offlineStartedAt.value = Date.now()
+        } else if (offlineStartedAt.value !== null) {
+          const durationSeconds = (Date.now() - offlineStartedAt.value) / 1000
+          offlineStartedAt.value = null
+          void incrementLocalHealthCounter('offline_duration_seconds', shopLocalToday(), durationSeconds)
+        }
 
         if (status.connected) {
           syncStore.setStatus('online')
