@@ -11,6 +11,7 @@ import {
 } from '@/data/powersync/dead-letter'
 import { supabase } from '@/data/supabase/client'
 import { incrementLocalHealthCounter, shopLocalToday } from '@/data/powersync/healthCounters'
+import { runHealthReportingTick } from '@/features/health/composables/useHealthReporting'
 
 export function useSync() {
   const syncStore  = useSyncStore()
@@ -158,6 +159,18 @@ export function useSync() {
           const durationSeconds = (Date.now() - offlineStartedAt.value) / 1000
           offlineStartedAt.value = null
           void incrementLocalHealthCounter('offline_duration_seconds', shopLocalToday(), durationSeconds)
+
+          // WAFI-148: report accumulated health metrics immediately on this
+          // same reconnect transition (in addition to the 30-minute periodic
+          // tick started in main.ts) -- reuses this existing connectivity
+          // listener rather than a second detector.
+          if (deviceStore.shopId && deviceStore.deviceId) {
+            void runHealthReportingTick({
+              shopId: deviceStore.shopId,
+              deviceId: deviceStore.deviceId,
+              today: shopLocalToday(),
+            })
+          }
         }
 
         if (status.connected) {
