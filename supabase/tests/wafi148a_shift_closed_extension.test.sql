@@ -18,6 +18,15 @@ SELECT plan(12);
 
 SET LOCAL role postgres;
 
+-- WAFI-148A Task 11: migration 123 gates the claim path of
+-- _apply_health_alert_drawer_mismatch behind the WAFI-155 'health_alerting'
+-- rollout flag, fail-closed (default disabled). This file's fixtures predate
+-- that gate and rely on claims firing by default, so default every new
+-- shops row in this transaction to flag-enabled -- rolled back with the rest
+-- of the transaction, so this has no effect outside this test file.
+ALTER TABLE public.shops ALTER COLUMN features
+  SET DEFAULT jsonb_build_object('rollout', jsonb_build_object('health_alerting', true));
+
 INSERT INTO public.shops (id, name, timezone) VALUES
   ('22222222-3333-4444-5555-666666666666', 'Shop K', 'Asia/Damascus');
 

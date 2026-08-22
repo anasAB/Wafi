@@ -19,6 +19,16 @@ SELECT plan(37);
 
 SET LOCAL role postgres;
 
+-- WAFI-148A Task 11: migration 123 gates the claim paths of
+-- _scheduled_check_overdue_shifts, _scheduled_check_dead_letter_count, and
+-- _scheduled_check_stale_devices behind the WAFI-155 'health_alerting'
+-- rollout flag, fail-closed (default disabled). This file's fixtures predate
+-- that gate and rely on claims firing by default, so default every new
+-- shops row in this transaction to flag-enabled -- rolled back with the rest
+-- of the transaction, so this has no effect outside this test file.
+ALTER TABLE public.shops ALTER COLUMN features
+  SET DEFAULT jsonb_build_object('rollout', jsonb_build_object('health_alerting', true));
+
 -- ============================================================================
 -- Section 1: bootstrap + no-repeat (Shop N)
 -- ============================================================================

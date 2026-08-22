@@ -19,6 +19,15 @@
 BEGIN;
 SELECT plan(14);
 
+-- WAFI-148A Task 11: migration 123 gates the entire body of
+-- evaluate_health_alerts_foreground behind the WAFI-155 'health_alerting'
+-- rollout flag, fail-closed (default disabled). This file's fixtures predate
+-- that gate and rely on claims firing by default, so default every new
+-- shops row in this transaction to flag-enabled -- rolled back with the rest
+-- of the transaction, so this has no effect outside this test file.
+ALTER TABLE public.shops ALTER COLUMN features
+  SET DEFAULT jsonb_build_object('rollout', jsonb_build_object('health_alerting', true));
+
 -- ============================================================================
 -- Section 1: authorization -- the RPC takes no shop_id parameter at all; it
 -- derives the caller's shop via auth_shop_id(). Shop A's owner calling it
