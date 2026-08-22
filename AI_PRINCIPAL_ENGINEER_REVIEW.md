@@ -413,6 +413,55 @@ checklist complete on the strength of intent alone.
 
 ---
 
+# CONSTITUTION CHECK
+
+Required for every feature design and every final whole-branch review
+(WAFI-033) — once at design time, once at final review, as a filled-in
+artifact. The canonical laws live at
+`docs/architecture/PRODUCT_CONSTITUTION.md`; current known gaps live at
+`docs/architecture/PRODUCT_CONSTITUTION_COMPLIANCE.md`. A design that
+touches none of the nine laws still fills this in — "none" is a valid,
+checked answer, not an exemption.
+
+The last question is the one this check exists for: a feature spec must
+never quietly invent an exception to a constitutional law. If a design
+appears to need one, that is either a sign the design needs to change, or
+a sign the constitution itself needs an explicit, deliberate amendment —
+never something a single feature decides on its own.
+
+## Design-Time Checklist
+
+Copy this block into the feature's design spec:
+
+```
+## Constitution Check (design time)
+Laws affected: [list by number, or "none identified"]
+How the design preserves each affected law: [one line per law listed above]
+New source of truth, calculation, mutable historical state, authority
+  boundary, or sync/replay behavior introduced: [describe, or "none"]
+Exception to an existing law: [no / yes — if yes, is it actually permitted
+  by the Constitution as written, or does the Constitution require an
+  explicit amendment first? Do not proceed on an unresolved "yes."]
+```
+
+## Final-Review Checklist
+
+Copy this block into the feature's final whole-branch review write-up:
+
+```
+## Constitution Check (final review)
+Laws affected, re-confirmed after implementation: [list, or "none"]
+Any law-relevant behavior introduced that wasn't in the design-time check: [list, or "none"]
+PRODUCT_CONSTITUTION_COMPLIANCE.md updated: [yes / not needed / not yet — explain]
+```
+
+If final review finds the implementation touches a law the design-time
+check missed, that's a signal the design pass wasn't thorough enough —
+note it in the ticket's status entry rather than silently patching the
+compliance matrix and moving on.
+
+---
+
 # RIPPLE EFFECT REVIEW
 
 For every action identify:
