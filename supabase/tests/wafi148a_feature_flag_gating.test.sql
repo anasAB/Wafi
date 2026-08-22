@@ -17,7 +17,7 @@
 -- Run via: npx supabase test db
 
 BEGIN;
-SELECT plan(29);
+SELECT plan(31);
 
 SET LOCAL role postgres;
 
@@ -288,6 +288,31 @@ SELECT is(
      WHERE shop_id = 'f4111111-0000-0000-0000-000000000001' AND type = 'health_alert_dead_letter_count'),
   1,
   'dead-letter asymmetry: only the original flag-on claim produced a notification -- the flag-off re-claim attempt produced none'
+);
+
+-- (Task 12, round-3 completion) Flip the flag back ON. The gauge is still
+-- over threshold (10, unchanged since the last tick) -- this is the
+-- "disabled while bad -> recovered while still disabled -> bad again ->
+-- re-enable" scenario's final step: exactly ONE additional notification for
+-- this post-re-enable episode (two total), not zero and not a duplicate of
+-- the pre-disable episode.
+UPDATE public.shops SET features = jsonb_build_object('rollout', jsonb_build_object('health_alerting', true))
+ WHERE id = 'f4111111-0000-0000-0000-000000000001';
+
+SELECT public._scheduled_check_dead_letter_count();
+
+SELECT is(
+  (SELECT state FROM public.health_alert_state_b
+     WHERE shop_id = 'f4111111-0000-0000-0000-000000000001' AND alert_key = 'dead_letter_count'
+       AND entity_id = '00000000-0000-0000-0000-000000000000'),
+  'ALERTING',
+  'round-3 (#3) completion: re-enabling with the gauge still over threshold claims ALERTING again for the post-re-enable episode'
+);
+SELECT is(
+  (SELECT count(*)::int FROM public.notifications
+     WHERE shop_id = 'f4111111-0000-0000-0000-000000000001' AND type = 'health_alert_dead_letter_count'),
+  2,
+  'round-3 (#3) completion: exactly one additional notification after re-enabling (two total) -- not zero, not a stale duplicate of the earlier episode'
 );
 
 -- ============================================================================

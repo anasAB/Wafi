@@ -15,7 +15,7 @@
 -- Run via: npx supabase test db
 
 BEGIN;
-SELECT plan(37);
+SELECT plan(39);
 
 SET LOCAL role postgres;
 
@@ -342,6 +342,111 @@ SELECT is(
      WHERE shop_id = 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff' AND type = 'health_alert_overdue_shift'),
   0,
   'a closed shift, otherwise overdue by opened_at, is absent from the status=open candidate query -- no notification'
+);
+
+-- ============================================================================
+-- Section 6a (Task 12, round-3 addition): metric #8 disable -> recover-while-
+-- disabled -> bad-again -> re-enable -> exactly one notification for the
+-- post-re-enable episode. This is the one scenario the design spec calls out
+-- explicitly for the 3 reversible (Shape B) metrics: an episode that spans
+-- BOTH a notification_settings.enabled toggle AND the underlying condition's
+-- own state changes (here, via the shift.closed trigger's independent
+-- _resolve_overdue_shift_alert resolve path, which is never gated on
+-- `enabled`). Shop VV.
+-- ============================================================================
+INSERT INTO public.shops (id, name, timezone) VALUES
+  ('eeeeeeee-ffff-0000-1111-000000000001', 'Shop VV (overdue-shift disable/recover/re-enable round trip)', 'Asia/Damascus');
+
+INSERT INTO public.devices (id, shop_id, code) VALUES
+  ('eeeeeeee-ffff-0000-1111-000000000002', 'eeeeeeee-ffff-0000-1111-000000000001', 'DEV-VV-1');
+
+INSERT INTO public.notification_settings (shop_id, type, enabled, threshold_json)
+VALUES (
+  'eeeeeeee-ffff-0000-1111-000000000001',
+  'health_alert_overdue_shift',
+  true,
+  jsonb_build_object('threshold', 4)
+);
+
+-- Shift 1: opened 10 hours ago, past the 4-hour threshold.
+INSERT INTO public.cashier_shifts (id, shop_id, device_id, opened_at, opening_cash_usd, status)
+VALUES (
+  'eeeeeeee-ffff-0000-1111-000000000003',
+  'eeeeeeee-ffff-0000-1111-000000000001',
+  'eeeeeeee-ffff-0000-1111-000000000002',
+  now() - interval '10 hours',
+  0, 'open'
+);
+
+-- Step 1: enabled, bad -> claims ALERTING, one notification.
+SELECT public._scheduled_check_overdue_shifts();
+
+SELECT is(
+  (SELECT count(*)::int FROM public.notifications
+     WHERE shop_id = 'eeeeeeee-ffff-0000-1111-000000000001' AND type = 'health_alert_overdue_shift'),
+  1,
+  'round-3 (#8) step 1: enabled + bad shift claims exactly one notification'
+);
+
+-- Step 2: disable the type.
+UPDATE public.notification_settings SET enabled = false
+ WHERE shop_id = 'eeeeeeee-ffff-0000-1111-000000000001' AND type = 'health_alert_overdue_shift';
+
+-- Step 3: the shift recovers (closes) WHILE disabled. Recovery for this
+-- metric is owned exclusively by the shift.closed trigger's
+-- _resolve_overdue_shift_alert path, which is never gated on `enabled` (only
+-- claim paths are) -- it must resolve the state to HEALTHY even though the
+-- type is currently disabled.
+INSERT INTO public.events (id, shop_id, type, entity_id, payload, staff_id, occurred_at)
+VALUES (
+  'eeeeeeee-ffff-0000-1111-100000000001',
+  'eeeeeeee-ffff-0000-1111-000000000001', 'shift.closed',
+  'eeeeeeee-ffff-0000-1111-000000000003',
+  jsonb_build_object('variance', 5.00, 'shiftId', 'eeeeeeee-ffff-0000-1111-000000000003')::text,
+  '00000000-0000-0000-0000-000000000000', now()
+);
+
+SELECT is(
+  (SELECT state FROM public.health_alert_state_b
+     WHERE shop_id = 'eeeeeeee-ffff-0000-1111-000000000001' AND alert_key = 'overdue_shift'
+       AND entity_id = 'eeeeeeee-ffff-0000-1111-000000000003'),
+  'HEALTHY',
+  'round-3 (#8) step 3: the shift recovers (closes) to HEALTHY while the type is still disabled -- resolve is never gated on enabled'
+);
+
+-- Step 4: the underlying condition goes bad again (a NEW shift, same shop),
+-- still while disabled -- must NOT claim.
+INSERT INTO public.cashier_shifts (id, shop_id, device_id, opened_at, opening_cash_usd, status)
+VALUES (
+  'eeeeeeee-ffff-0000-1111-000000000004',
+  'eeeeeeee-ffff-0000-1111-000000000001',
+  'eeeeeeee-ffff-0000-1111-000000000002',
+  now() - interval '10 hours',
+  0, 'open'
+);
+
+SELECT public._scheduled_check_overdue_shifts();
+
+SELECT is(
+  (SELECT count(*)::int FROM public.notifications
+     WHERE shop_id = 'eeeeeeee-ffff-0000-1111-000000000001' AND type = 'health_alert_overdue_shift'),
+  1,
+  'round-3 (#8) step 4: a new overdue shift while still disabled produces zero additional notifications (still just the step-1 total)'
+);
+
+-- Step 5: re-enable, then run again -- the still-open, still-overdue shift 2
+-- is now eligible and claims exactly once for this post-re-enable episode
+-- (not zero, not two -- no stale carry-over from shift 1's earlier episode).
+UPDATE public.notification_settings SET enabled = true
+ WHERE shop_id = 'eeeeeeee-ffff-0000-1111-000000000001' AND type = 'health_alert_overdue_shift';
+
+SELECT public._scheduled_check_overdue_shifts();
+
+SELECT is(
+  (SELECT count(*)::int FROM public.notifications
+     WHERE shop_id = 'eeeeeeee-ffff-0000-1111-000000000001' AND type = 'health_alert_overdue_shift'),
+  2,
+  'round-3 (#8) step 5: re-enabling produces exactly one additional notification (two total) -- one for the post-re-enable episode, not zero, not stale-doubled'
 );
 
 -- ============================================================================
