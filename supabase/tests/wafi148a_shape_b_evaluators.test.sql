@@ -3,8 +3,9 @@
 -- (_scheduled_check_overdue_shifts / metric #8, migration 120) behaves
 -- correctly: bootstrap alert, no-repeat on a second run, disabled-type skip,
 -- invalid-threshold skip (including the explicitly-invalid zero case),
--- per-candidate failure isolation, and timezone-independence of the
--- elapsed-duration comparison.
+-- per-candidate failure isolation, timezone-independence of the
+-- elapsed-duration comparison, and a closed shift being absent from the
+-- open-shift candidate query.
 --
 -- This file is intentionally structured so Tasks 6 and 7 (dispatched after
 -- this task, also targeting migration 120) can append their own sections
@@ -14,7 +15,7 @@
 -- Run via: npx supabase test db
 
 BEGIN;
-SELECT plan(11);
+SELECT plan(12);
 
 SET LOCAL role postgres;
 
@@ -287,6 +288,50 @@ SELECT is(
      WHERE shop_id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' AND type = 'health_alert_overdue_shift'),
   1,
   'timezone-independence: a shop in a non-UTC (negative offset) timezone still alerts correctly on absolute elapsed duration, not a shop-local-day bucket'
+);
+
+-- ============================================================================
+-- Section 6: a CLOSED shift, otherwise "overdue" by opened_at, is simply
+-- absent from the candidate query (WHERE status = 'open') -- the scheduled
+-- check must never claim/notify for it. This is distinct from the
+-- resolve-on-close path (owned exclusively by the shift.closed trigger
+-- extension, migration 119/Task 4); here we assert the scheduled check
+-- alone, with no shift.closed event involved, correctly does nothing for a
+-- shift that is already closed.
+-- ============================================================================
+INSERT INTO public.shops (id, name, timezone) VALUES
+  ('bbbbbbbb-cccc-dddd-eeee-ffffffffffff', 'Shop U (closed shift)', 'Asia/Damascus');
+
+INSERT INTO public.devices (id, shop_id, code) VALUES
+  ('bbbbbbbb-cccc-dddd-eeee-111111111111', 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff', 'DEV-U-1');
+
+INSERT INTO public.notification_settings (shop_id, type, enabled, threshold_json)
+VALUES (
+  'bbbbbbbb-cccc-dddd-eeee-ffffffffffff',
+  'health_alert_overdue_shift',
+  true,
+  jsonb_build_object('threshold', 4)
+);
+
+-- Opened 48 hours ago (well past the 4-hour threshold) but already closed --
+-- must not appear in the status='open' candidate query at all.
+INSERT INTO public.cashier_shifts (id, shop_id, device_id, opened_at, closed_at, opening_cash_usd, closing_cash_usd, status)
+VALUES (
+  'bbbbbbbb-cccc-dddd-eeee-222222222222',
+  'bbbbbbbb-cccc-dddd-eeee-ffffffffffff',
+  'bbbbbbbb-cccc-dddd-eeee-111111111111',
+  now() - interval '48 hours',
+  now() - interval '1 hour',
+  0, 0, 'closed'
+);
+
+SELECT public._scheduled_check_overdue_shifts();
+
+SELECT is(
+  (SELECT count(*)::int FROM public.notifications
+     WHERE shop_id = 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff' AND type = 'health_alert_overdue_shift'),
+  0,
+  'a closed shift, otherwise overdue by opened_at, is absent from the status=open candidate query -- no notification'
 );
 
 SELECT * FROM finish();
