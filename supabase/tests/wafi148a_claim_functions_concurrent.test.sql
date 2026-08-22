@@ -1,0 +1,57 @@
+-- supabase/tests/wafi148a_claim_functions_concurrent.test.sql
+-- WAFI-148A Task 3: documents the concurrent-claim guarantee that
+-- claim_health_alert_period()'s `INSERT ... ON CONFLICT (shop_id, metric_key,
+-- period_start) DO NOTHING RETURNING *` and claim_health_alert_transition()'s
+-- `INSERT ... ON CONFLICT (shop_id, alert_key, entity_id) DO UPDATE ... WHERE
+-- state = 'HEALTHY' RETURNING *` are meant to provide -- see
+-- supabase/migrations/118_wafi148a_claim_functions.sql.
+--
+-- Mirrors supabase/tests/wafi156_execute_rule_action_concurrent.test.sql
+-- exactly: pgTAP's single-session model can't express true transaction
+-- overlap (one psql/pgTAP session cannot hold two concurrently-open
+-- transactions against the same connection). This suite is therefore NOT a
+-- pgTAP file to be run via `npx supabase test db` -- it is exercised by a
+-- separate script using two real client connections:
+--   scripts/testing/wafi148a-concurrent-claim-test.mjs
+-- (Node + the `pg` package, same dependency the WAFI-156 script already
+-- introduced). This file records the scenario and the assertions the .mjs
+-- script makes, for reviewers who don't want to read JS to understand what's
+-- being proven.
+--
+-- Scenario 1 (claim_health_alert_period): two connections both call
+--   SELECT public.claim_health_alert_period(<same shop_id>, <same metric_key>,
+--     <same period_start>, ...)
+-- for the SAME (shop_id, metric_key, period_start) key, fired back-to-back
+-- without awaiting the first call before issuing the second, so both requests
+-- reach Postgres nearly simultaneously and genuinely race for the same row.
+--
+-- Scenario 2 (claim_health_alert_transition): two connections both call
+--   SELECT public.claim_health_alert_transition(<same shop_id>, <same
+--     alert_key>, <same entity_id>, ...)
+-- for the SAME (shop_id, alert_key, entity_id) key, starting from a missing
+-- row (the bootstrap case), fired the same unawaited way.
+--
+-- Why no artificial pg_sleep hook is needed: in both scenarios the race is
+-- decided entirely inside the function's `INSERT ... ON CONFLICT` statement.
+-- That statement takes a row lock on the conflicting key as part of
+-- evaluating the ON CONFLICT clause -- whichever transaction's INSERT
+-- reaches Postgres first wins the row lock, proceeds to insert/update, and
+-- commits; the second transaction's statement blocks on that row lock until
+-- the first commits, then evaluates its own DO NOTHING / DO UPDATE ... WHERE
+-- against the now-committed row (already claimed / already ALERTING) and
+-- correctly finds no row to return (RETURNING * yields NULL -> the function
+-- returns false). No pg_sleep or advisory-lock hook is required to force
+-- overlap, and none was added to either production function's body.
+--
+-- Assert (checked by the .mjs script after both calls settle, per scenario):
+--   - exactly one of the two calls returns true, the other returns false
+--     (never both true, never both false)
+--   - exactly one row in public.notifications for the claimed key
+--   - exactly one row in the relevant alert-state table for the claimed key
+--     (health_alert_state_a for scenario 1, health_alert_state_b for scenario 2)
+--
+-- Run: node scripts/testing/wafi148a-concurrent-claim-test.mjs
+-- (requires a running local Supabase Postgres; DATABASE_URL env var; not
+-- runnable in this sandbox -- Docker unavailable, same blocker documented in
+-- task-3-report.md -- so this was verified by reading the row-locking
+-- semantics only, not by execution.)

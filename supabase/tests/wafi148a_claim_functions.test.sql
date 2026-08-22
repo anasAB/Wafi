@@ -208,11 +208,12 @@ SELECT is(
 -- ========================================================================
 
 -- 6. Existing ALERTING row -> resolves to HEALTHY, inserts NO notification (silent recovery).
-SELECT is(
-  (SELECT count(*)::int FROM public.notifications) AS pre_count,
-  (SELECT count(*)::int FROM public.notifications),
-  'sanity: notification count stable before resolve call'
-);
+-- Snapshot the REAL pre-resolve notification count into a temp table (not a
+-- tautological self-comparison, and not a hardcoded literal that goes stale
+-- as earlier assertions in this file change) so the post-resolve assertion
+-- below is anchored to the actual count at this point in the test.
+CREATE TEMP TABLE wafi148a_precount AS
+  SELECT count(*)::int AS n FROM public.notifications;
 
 SELECT lives_ok(
   $$ SELECT public.resolve_health_alert_transition(
@@ -228,9 +229,11 @@ SELECT is(
 );
 SELECT is(
   (SELECT count(*)::int FROM public.notifications),
-  2,
-  'resolve_health_alert_transition inserted zero new notifications (recovery is silent)'
+  (SELECT n FROM wafi148a_precount),
+  'resolve_health_alert_transition inserted zero new notifications (recovery is silent) -- count unchanged from the real pre-resolve snapshot'
 );
+
+DROP TABLE wafi148a_precount;
 
 -- 7. Missing row -> no-op, no error.
 SELECT lives_ok(
