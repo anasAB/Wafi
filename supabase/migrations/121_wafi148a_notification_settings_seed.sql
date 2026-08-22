@@ -1,0 +1,107 @@
+-- supabase/migrations/121_wafi148a_notification_settings_seed.sql
+-- WAFI-148A Task 9: Gate 2 -- notification_settings "seeding".
+--
+-- Filename note: the plan (and the migration-numbering ruling recorded in
+-- migration 120's header, Task 9 uses 122) calls this file
+-- "..._notification_settings_seed.sql" and expects a data-seeding migration.
+-- Despite the filename, THIS MIGRATION DOES NOT INSERT ANY DATA ROWS. That
+-- is a deliberate re-scoping, not an oversight -- see below.
+--
+-- ============================================================================
+-- Why no rows are inserted here (schema fact, migration 080)
+-- ============================================================================
+-- notification_settings is defined as:
+--   PRIMARY KEY (shop_id, type)
+--   shop_id UUID NOT NULL REFERENCES shops(id)
+--   type TEXT NOT NULL          -- no CHECK constraint on type today
+--   enabled BOOLEAN NOT NULL DEFAULT true
+--   threshold_json JSONB        -- nullable
+--
+-- This table is per-shop-scoped. A schema migration runs once, at deploy
+-- time, against whatever shops happen to exist in that environment at that
+-- moment -- it has no way to insert a row for a shop that signs up next
+-- week, next month, or next year. "Seed all shops" would mean either:
+--
+--   (a) inserting placeholder-threshold rows for every shop that exists in
+--       the database RIGHT NOW, which does nothing for every shop that
+--       exists AFTER this migration runs (i.e. does not actually seed the
+--       table for the product's lifetime, only for a snapshot of it), or
+--   (b) inventing threshold numbers with no product-owned basis (drawer
+--       mismatch count, offline-duration hours, overdue-shift hours, etc.)
+--       and writing them into every existing shop's live settings,
+--       instantly enabling client-visible/pushable alerts nobody asked for.
+--
+-- Both are real production data operations dressed up as a schema
+-- migration, and neither is something to do speculatively. Per the design
+-- spec's Gate 2, this migration does not ship real per-shop configuration
+-- rows until product supplies actual threshold defaults; when that happens
+-- it is a data backfill/ops task run deliberately against the target
+-- environment(s), not something bundled into this (or any other) versioned
+-- schema migration.
+--
+-- ============================================================================
+-- Why a missing row is not a gap -- it's the mechanism
+-- ============================================================================
+-- Every evaluator built in Tasks 4/5/6/7/8 (migrations 119 and 120) already
+-- implements the correct behavior for this exact situation ("Option A" in
+-- the design spec):
+--
+--   missing notification_settings row for (shop_id, type)   -> skip, no claim
+--   row present but enabled = false                          -> skip, no claim
+--   row present, enabled = true, threshold_json IS NULL       -> skip + RAISE WARNING
+--   threshold_json present but non-numeric / unparseable      -> skip + RAISE WARNING
+--   threshold_json numeric but negative (or, for #8 only,
+--     zero -- rejected because 0 hours is not a meaningful
+--     "overdue" threshold for that specific metric)            -> skip + RAISE WARNING
+--
+-- A MISSING row is therefore not an oversight to be patched with placeholder
+-- data -- it is the deliberate, safe default state for a health-alert type
+-- an owner has not yet configured. Every one of the 8 new alert types below
+-- consequently ships "off by default" for every shop, forever, until an
+-- owner explicitly turns it on and sets a threshold via the Settings UI
+-- (Task 13). This is exactly the same posture the design spec already
+-- requires evaluators to have -- this migration formalizes it as an
+-- intentional decision about the table rather than leaving it implicit.
+--
+-- The 8 new alert types this applies to (design spec, Notification
+-- Integration section):
+--   health_alert_sync_failures          (#1 -- evaluator not yet built)
+--   health_alert_offline_duration       (#2 -- evaluator not yet built)
+--   health_alert_dead_letter_count      (#3 -- migration 120, Task 7)
+--   health_alert_drawer_mismatches      (#4 -- migration 119, Task 4)
+--   health_alert_deferred_job_failures  (#5 -- evaluator not yet built)
+--   health_alert_app_errors             (#6 -- evaluator not yet built)
+--   health_alert_stale_device           (#7 -- migration 120, Task 8)
+--   health_alert_overdue_shift          (#8 -- migration 120, Task 5)
+--
+-- ============================================================================
+-- What IS a real, safe addition, and what is deliberately NOT done here
+-- ============================================================================
+-- notification_settings.type has no CHECK constraint today -- it is
+-- unconstrained free text. This is a real risk (a typo in evaluator code, in
+-- the future Settings UI, or in a manual insert could silently create an
+-- unenforced, disconnected type string that never matches anything), and it
+-- is exactly the kind of risk this feature's design already guarded against
+-- for health_alert_state_b.alert_key (which DOES have a CHECK constraint,
+-- migration 117).
+--
+-- Adding a CHECK constraint enumerating every `type` string used across the
+-- ENTIRE app's notification_settings usage (device.sync_stale, large_return,
+-- drawer_variance, and whatever else predates this feature) is deliberately
+-- NOT done here. That would require auditing every existing call site in the
+-- whole codebase to build a complete, correct enum, and getting even one
+-- string wrong or missing one existing type would break unrelated,
+-- already-shipped notification configuration -- far too risky for a task
+-- scoped to the 8 new health-alert types. That audit, if wanted, is a
+-- separate, explicitly-scoped piece of work.
+--
+-- Instead, the safety net for the 8 new identifiers lives in
+-- supabase/tests/wafi148a_notification_settings_types.test.sql: a pgTAP test
+-- that asserts each of the 8 strings appears EXACTLY ONCE, spelled exactly
+-- as above, across the evaluator SQL actually shipped in migrations 119 and
+-- 120. That catches a typo in one of these 8 identifiers without touching
+-- the database schema or any other notification type in the app.
+--
+-- No SQL statements follow. This migration file exists so the plan's
+-- file-numbering and Gate 2 decision are recorded in migration history, not
+-- to change the database.
