@@ -16,10 +16,17 @@ implementation convention and can legitimately change. "A completed sale is
 never silently rewritten" cannot — no future architecture makes that
 acceptable.
 
-This document currently holds **nine laws**. That number was not chosen in
+This document currently holds **eight laws**. That number was not chosen in
 advance; it is what a full evidence-based audit of the existing codebase
-supported. A law is added here only when the same rigor — real evidence,
-not aspiration — justifies it.
+supported, followed by an adversarial review that found two of an earlier
+nine-law draft were artificially separated and merged them. A law is added,
+merged, or split here only when the same rigor — real evidence, not
+aspiration or a round number — justifies it.
+
+Each law is independently testable: for any given code change, it must be
+possible to say whether that specific law was violated without the answer
+depending entirely on another law's evidence. Where two candidate laws
+could only ever be violated together, they are one law, not two.
 
 ## Relationship to other documents
 
@@ -48,75 +55,63 @@ was serving.
 
 ---
 
-## Law 1 — Financial history is immutable; corrections create new facts
+## Law 1 — Recorded facts are immutable; corrections create new facts
 
-**Statement:** A recorded financial event is never silently rewritten or
-retroactively changed. A correction is itself a new, separately recorded
-fact — never an edit to the original.
+**Statement:** Once a fact is recorded as part of WAFI's durable history —
+a sale, a payment, a ledger entry, an audit record, a product change, a
+device event, a staff action, or any other event WAFI treats as having
+happened — it is not silently rewritten or deleted. This applies whether
+the fact is financial or not: the same guarantee protects a completed sale
+and a product-catalog change alike. A correction, reversal, or supersession
+is always represented as its own new fact, never as an edit to the
+original.
 
-**Why:** The moment a shop owner discovers that a past number quietly
-changed — a sale's total, a shift's counted cash, a settlement's amount —
-every number WAFI has ever shown them becomes suspect. Financial trust, once
-broken this way, does not come back with an apology.
+**Why:** The moment a shop owner — or an engineer debugging a dispute —
+discovers that a past record quietly changed, every record WAFI has ever
+kept becomes suspect. This is true whether the changed record was a sale
+total or a staff action log; a history that can be silently rewritten
+after the fact is not a history, it's a current snapshot pretending to be
+one.
 
 **Forbidden:**
-- Editing a completed sale's totals, line items, or payment amounts after
-  the fact.
-- Recomputing a closed shift's figures from a later, different set of
-  inputs.
-- "Fixing" a mistaken entry by mutating it in place rather than recording
-  the correction as its own fact.
+- Updating a historical record to change what it originally recorded.
+- Deleting a record to erase or conceal a prior fact.
+- Mutating a ledger row in place instead of recording the correcting event
+  as a new row.
+- Rewriting an audit or event record to reflect a later state rather than
+  the state at the time it was recorded.
 
 **Allowed:**
-- Recording a return as its own new fact, linked to the original sale, not
-  an edit to it.
-- Recording a correction, adjustment, or reversal as a new entry that
-  references what it corrects.
-- Persisting an immutable snapshot of a financial moment (e.g. a shift
-  close) so later reads never depend on anything that could change later.
+- Appending a correcting, reversing, superseding, or settlement event that
+  references the record it corrects.
+- Persisting an immutable snapshot of a moment (e.g. a shift close) so
+  later reads never depend on anything that could change afterward.
+- Maintaining a separate, explicitly mutable *current-state* view (e.g. an
+  outstanding balance) alongside the immutable history it's derived from —
+  as long as the history itself is never the thing being mutated.
+- Rebuilding a derived projection from that immutable history (see Law 3).
 
-**Examples:** sale/return tables with insert-only write policies; a
-shift-close snapshot read back verbatim on every later view rather than
-recomputed.
+**What this law does NOT cover:** whether a past record's *meaning* can
+shift because something *else* — a timezone, an exchange rate, a price —
+changed after the fact. A record can be perfectly unmutated and still be
+misinterpreted if its meaning is recomputed from current settings instead
+of what was true when it was recorded. That failure mode is Law 2's, not
+this one — this law is about whether the record itself changed, not about
+how it's later interpreted.
+
+**Examples:** sale, payment, and return tables with insert-only write
+policies, closing an exploit that previously let a session mutate a
+completed sale's total; an append-only activity/audit log enforced by both
+dropped write policies and a hard-failing trigger; a domain-event stream
+with no update/delete path at all, covering financial and non-financial
+facts alike (a product change, a device registration, and a sale are all
+"events" under the same guarantee); a shift-close snapshot read back
+verbatim on every later view rather than recomputed; a return recorded as
+its own new fact linked to the original sale, never an edit to it.
 
 ---
 
-## Law 2 — Ledgers are append-only
-
-**Statement:** A ledger's history grows only through new entries. It is
-never edited or deleted in place, and this applies to every ledger in the
-system, not only explicitly financial ones — an activity/audit trail, a
-cash-movement record, and a domain-event stream are all ledgers under this
-law.
-
-**Why:** A ledger's entire value is that its past is a fixed, trustworthy
-record of what happened and when. An editable ledger is not a ledger — it's
-a mutable table wearing a ledger's name, and it cannot be relied on for
-audit, dispute resolution, or reconstructing what actually occurred.
-
-**Forbidden:**
-- Any write path that can UPDATE or DELETE an existing ledger row, for any
-  actor, including administrative ones, outside an explicit, rare,
-  break-glass procedure.
-- Treating "we'll just fix the one row" as an acceptable exception.
-
-**Allowed:**
-- Appending a new row that reverses or supersedes an earlier one.
-- Restricting which columns of a *not-yet-finalized* entry may be
-  completed (e.g. linking an entry to a settlement that happens once, at a
-  known point) — but only when that narrow allowance is itself enforced as
-  narrowly as it's described, not left open to broader mutation.
-
-**Examples:** an append-only activity/audit log enforced by both dropped
-write policies and a hard-failing trigger; a cash-movement ledger with only
-select/insert access; a domain-event stream with no update/delete path at
-all, covering financial and non-financial facts alike (a product change, a
-device registration, and a sale are all "events" under the same append-only
-guarantee).
-
----
-
-## Law 3 — Historical meaning is fixed at write time
+## Law 2 — Historical meaning is fixed at write time
 
 **Statement:** A past result is determined by the state of the world at the
 moment it occurred, captured and stored then — never recomputed later from
@@ -130,6 +125,10 @@ meaning is silently reinterpreted through today's version of that
 configuration, the report is no longer describing what actually happened —
 it's describing what *would have* happened if today's settings had always
 been true, which is a different, false claim being presented as history.
+This is distinct from Law 1: the underlying record can be perfectly
+unmutated and this failure can still occur, purely because something it
+depends on for interpretation was allowed to be read live instead of
+captured once.
 
 **Forbidden:**
 - Deriving which calendar day a past event belongs to from the *current*
@@ -155,7 +154,7 @@ than looking one up later.
 
 ---
 
-## Law 4 — Projections are derived state and must be rebuildable
+## Law 3 — Projections are derived state and must be rebuildable
 
 **Statement:** Any read-optimized, cached, or denormalized view of data —
 a projection — must be fully reconstructable from its authoritative source
@@ -181,6 +180,12 @@ of what a projection is for.
   rather than producing a plausible-looking but unverified number.
 - Best-effort incremental maintenance of a projection between rebuilds, as
   long as a full rebuild remains available as the correctness backstop.
+- A projection's authoritative computation requiring connectivity, as long
+  as the projection remains rebuildable and the client's local copy
+  degrades gracefully (stale-but-present) rather than breaking, when
+  offline (see Law 5's boundary — this is the general escape valve for any
+  "online-only because it computes over data the client already has,"
+  not Law 5's).
 
 **Examples:** a revenue projection with a coverage-checked rebuild function
 that compares its local event count against an authoritative count before
@@ -189,7 +194,7 @@ disagree.
 
 ---
 
-## Law 5 — A business fact has one canonical definition, calculation, and representation
+## Law 4 — A business fact has one canonical definition, calculation, and representation
 
 **Statement:** Every business concept — revenue, profit, an outstanding
 balance, a converted amount — is defined, calculated, and represented in
@@ -229,32 +234,43 @@ own code.
 
 ---
 
-## Law 6 — Offline-first protects core workflows
+## Law 5 — Offline-first protects core workflows
 
 **Statement:** The core operations a shop depends on minute-to-minute —
 selling, recording stock changes, taking payments — must continue to work
-through a loss of connectivity. Anything that genuinely requires
-connectivity (identity/setup actions, platform administration, and other
-operations that are inherently a conversation with the server) must be an
-explicit, deliberate boundary, not an accidental one discovered by a user
-mid-sale.
+through a loss of connectivity. An online-only requirement is permitted
+only when the operation has no meaningful local source of truth to fall
+back on — establishing or verifying identity, registering a device,
+administering across tenants, or similarly inherently server-mediated acts
+where there is nothing local to be authoritative about. It is never
+permitted merely because a computation happens to be easier or more
+authoritative to run on the server, when the client already holds the data
+that computation needs.
 
 **Why:** This product exists for shops in places where connectivity is not
 reliable. If checkout depends on the internet, the product has failed at
-its most basic promise, no matter how good everything else is. Equally,
-pretending *everything* is offline-capable when some things genuinely
-cannot be invites a worse failure: a feature that silently breaks offline
-because nobody decided, on purpose, that it wouldn't work that way.
+its most basic promise, no matter how good everything else is. The
+exemption for genuinely server-only acts exists because those operations
+have no local truth to defer to — but that is a narrow, specific carve-out,
+not a general license. A business calculation over data the client already
+has locally is a rebuildable-projection problem (Law 3), not a reason to
+require connectivity for something a shop needs to keep operating.
 
 **Forbidden:**
 - Any core selling, stock, or payment-recording workflow that requires a
   live connection to complete.
 - An online-only requirement that exists because nobody thought about it,
-  rather than because the operation genuinely cannot be made local-first.
+  rather than because the operation genuinely has no local source of
+  truth.
+- Justifying an online-only requirement for a computation over data the
+  client already has locally by calling it "server-mediated" — if the
+  client holds the source data, the connectivity requirement must be
+  justified under Law 3's rebuildable-projection framework instead (with a
+  graceful, stale-but-present local fallback), not excused here.
 
 **Allowed:**
 - Identity bootstrap, device registration, cross-tenant administration, and
-  similarly inherently-server-mediated operations being online-only, as
+  similarly acts with no local source of truth at all being online-only, as
   long as that boundary is explicit and doesn't block core shop operation.
 - A feature degrading gracefully offline (e.g. showing "will sync later")
   rather than requiring full local functionality for every feature without
@@ -263,11 +279,12 @@ because nobody decided, on purpose, that it wouldn't work that way.
 **Examples:** the point-of-sale write path operating entirely against a
 local database that syncs when connectivity returns; owner/device
 identity setup being one of the deliberately-online-only exceptions to that
-rule.
+rule, because there is no local notion of "who this device is" to fall
+back on before the server has said so.
 
 ---
 
-## Law 7 — Authority is explicit and enforced at the correct boundary
+## Law 6 — Authority is explicit and enforced at the correct boundary
 
 **Statement:** For any decision that matters — who can see what, who can
 change what, whether a financial calculation is trusted — the system must
@@ -287,13 +304,20 @@ it is the absence of enforcement, dressed up to look like a boundary.
 - Leaving an authority boundary implicit or undocumented, such that it's
   unclear whether the server or the client is supposed to be the source of
   truth for a given decision.
+- Treating a code comment or design note as sufficient acknowledgment of a
+  known enforcement gap. An acknowledged gap with no tracked ticket, no
+  named owner, and no defined point at which it's revisited is
+  indistinguishable in practice from an undocumented one — the gap simply
+  persists indefinitely either way.
 
 **Allowed:**
 - Client-side checks as a first line of UX (hiding a button a user
   shouldn't see) as long as the real enforcement exists server-side too.
-- A documented, explicit gap between intended and current enforcement,
-  tracked openly, while the fix is pending — as long as it's acknowledged,
-  not silently assumed to be fine.
+- A temporary, explicit gap between intended and current enforcement, while
+  a fix is pending — but only when it is tracked as an open, owned ticket
+  with a defined point at which it is revisited, not merely noted in a
+  comment. A gap without that tracking is a violation of this law, not an
+  exception to it.
 
 **Examples:** a role-permission check re-verified inside a server-side
 function rather than trusted from a client-supplied value; a
@@ -302,7 +326,7 @@ what the interface chooses to display.
 
 ---
 
-## Law 8 — Retry and replay safety matches the consequences of the operation
+## Law 7 — Retry and replay safety matches the consequences of the operation
 
 **Statement:** There is no single, universal idempotency rule. The safety
 mechanism protecting an operation from being duplicated by retry, replay,
@@ -341,7 +365,7 @@ consequential record is being written.
 
 ---
 
-## Law 9 — Tenant isolation is enforced below the UI
+## Law 8 — Tenant isolation is enforced below the UI
 
 **Statement:** One shop's data is inaccessible to another shop's users at
 the data-access layer itself — the database and the sync layer — not only
@@ -361,6 +385,11 @@ fragile claim.
 - Assuming a permission-scoped sync or query mechanism is safe without
   having verified it actually fails closed under the conditions it will
   run in.
+- Leaving an unverified isolation-relevant mechanism unverified
+  indefinitely. A mechanism flagged as unverified must have a tracked,
+  owned path to actually being verified — an unverified flag with no
+  plan to resolve it is functionally the same unbounded gap Law 6
+  forbids for authority boundaries, applied here to isolation.
 
 **Allowed:**
 - A UI-level restriction as an additional, secondary layer, on top of
@@ -368,7 +397,8 @@ fragile claim.
   used to mean "the only depth" is not.
 - A newly-added sync or access mechanism being explicitly marked
   unverified/high-risk while its real-world behavior is being confirmed,
-  as long as that status is visible and tracked, not silently assumed safe.
+  as long as that status is tracked with an owner and a defined path to
+  resolution, not left as a standing, indefinite comment.
 
 **Examples:** row-level security scoping every tenant-owned table by the
 authenticated owner's identity, independently mirrored by the same scoping

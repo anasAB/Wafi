@@ -420,7 +420,7 @@ Required for every feature design and every final whole-branch review
 artifact. The canonical laws live at
 `docs/architecture/PRODUCT_CONSTITUTION.md`; current known gaps live at
 `docs/architecture/PRODUCT_CONSTITUTION_COMPLIANCE.md`. A design that
-touches none of the nine laws still fills this in — "none" is a valid,
+touches none of the eight laws still fills this in — "none" is a valid,
 checked answer, not an exemption.
 
 The last question is the one this check exists for: a feature spec must
@@ -429,13 +429,31 @@ appears to need one, that is either a sign the design needs to change, or
 a sign the constitution itself needs an explicit, deliberate amendment —
 never something a single feature decides on its own.
 
+**"None identified" requires evidence, not assertion.** The Cross-Epic
+checklist doesn't accept "no other epics affected" without naming which
+`DOMAIN INTERACTION MATRIX` rows were checked — this checklist holds the
+same bar. Before writing "none identified," the surface-scan row below
+must be filled in first: every table, RPC, or write path the design adds
+or changes, one line each, with the law(s) that govern it (or "none apply
+— it introduces no new fact, calculation, mutable-in-place field, or
+authority boundary"). "None identified" for the laws-affected line is only
+valid if every row in that scan resolves to "none apply." A scan with zero
+rows (because nothing is being written or changed) is the only way to
+skip the scan itself — a design that touches no table, RPC, or write path
+has nothing for the laws to govern.
+
 ## Design-Time Checklist
 
 Copy this block into the feature's design spec:
 
 ```
 ## Constitution Check (design time)
-Laws affected: [list by number, or "none identified"]
+Surface scan — every new/changed table, RPC, or write path this design
+  introduces, one line each:
+  - [table/RPC/write path]: [law(s) that govern it, or "none apply — <why>"]
+  (If this design introduces no table/RPC/write path, state that instead
+  of leaving this scan empty.)
+Laws affected: [list by number, derived from the scan above, or "none identified"]
 How the design preserves each affected law: [one line per law listed above]
 New source of truth, calculation, mutable historical state, authority
   boundary, or sync/replay behavior introduced: [describe, or "none"]
@@ -450,6 +468,9 @@ Copy this block into the feature's final whole-branch review write-up:
 
 ```
 ## Constitution Check (final review)
+Surface scan re-confirmed against the actual diff (not the design-time
+  guess) — any table/RPC/write path in the diff missing from the
+  design-time scan: [list, or "none — matches design-time scan"]
 Laws affected, re-confirmed after implementation: [list, or "none"]
 Any law-relevant behavior introduced that wasn't in the design-time check: [list, or "none"]
 PRODUCT_CONSTITUTION_COMPLIANCE.md updated: [yes / not needed / not yet — explain]

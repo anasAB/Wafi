@@ -12,7 +12,11 @@ instead.
 
 This document is audited against actual code (migrations, RLS policies,
 composables, RPCs) as of **2026-08-22**, not against intent or memory. Every
-row cites the evidence it's based on.
+row cites the evidence it's based on. Each finding is logged under exactly
+one law — if the same evidence would otherwise need repeating under a
+second law, that was the signal (during an adversarial review of an
+earlier nine-law draft) that the two laws were not actually independent
+and needed to be merged, not that the finding belongs in two places.
 
 ## Status/tier definitions
 
@@ -32,7 +36,7 @@ row cites the evidence it's based on.
 
 ---
 
-## Law 1 — Financial history is immutable; corrections create new facts
+## Law 1 — Recorded facts are immutable; corrections create new facts
 
 **Status: Partial enforcement**
 
@@ -43,39 +47,15 @@ Shift-close persists an immutable Z-report snapshot, read back verbatim
 rather than recomputed (`src/features/shifts/composables/useShift.ts:287-303`).
 Returns are recorded as new `returns` rows, never edits to the original
 sale (no UPDATE call site into `sales`/`sale_*` tables found anywhere in
-`src/`).
-
-**Known gap (verified violation):** `staff_ledger` and `staff_settlements`
-are financial-adjacent records without append-only/immutability protection
-— see Law 2's matching finding below; the same evidence applies to both
-laws since these tables sit at the intersection.
-
-**Severity:** Medium — this closed a previously-live exploit for the core
-sales tables (a manager session could mutate `total_usd` on a completed
-sale before migration 064); the `staff_ledger` gap is the same class of
-risk, unaddressed, on a different table.
-
-**Follow-up:** Not yet ticketed. Recommend a scoped fix restricting
-`staff_ledger`/`staff_settlements` UPDATE access to exactly the narrow,
-one-time field-completion case the design already intends (see Law 2).
-
----
-
-## Law 2 — Ledgers are append-only
-
-**Status: Partial enforcement**
-
-**Enforcement mechanisms:** `audit_log` has both RLS UPDATE/DELETE policies
-dropped and a `BEFORE UPDATE OR DELETE` trigger that hard-raises for every
-role except a bypass-RLS superuser
-(`supabase/migrations/018_audit_log_append_only.sql:16-27`). `cash_movements`
-has only SELECT+INSERT RLS policies, no UPDATE/DELETE
-(`supabase/migrations/027_cash_movements.sql:37-45`). The `events` table
-(the append-only domain-event backbone covering financial and non-financial
-facts alike — `StaffEventType`, `ProductEventType`, `DeviceEventType`
-alongside `SalesEventType`/`CashEventType`, per
-`src/services/events/domainEvent.types.ts:35-73`) has no update/delete
-write path found anywhere.
+`src/`). `audit_log` has both RLS UPDATE/DELETE policies dropped and a
+`BEFORE UPDATE OR DELETE` trigger that hard-raises for every role except a
+bypass-RLS superuser (`supabase/migrations/018_audit_log_append_only.sql:16-27`).
+`cash_movements` has only SELECT+INSERT RLS policies, no UPDATE/DELETE
+(`supabase/migrations/027_cash_movements.sql:37-45`). The `events` table —
+covering financial and non-financial facts alike (`StaffEventType`,
+`ProductEventType`, `DeviceEventType` alongside `SalesEventType`/
+`CashEventType`, per `src/services/events/domainEvent.types.ts:35-73`) —
+has no update/delete write path found anywhere.
 
 **Known gap (verified violation):**
 `supabase/migrations/043_staff_ledger.sql:124-142` — `staff_ledger` and
@@ -85,12 +65,12 @@ write path found anywhere.
 (line 103) states the intent is that only `settlement_id` is ever set once
 by `finalize()` — but the RLS as written permits any in-shop
 authenticated/anon session to update **any column** of any ledger row, not
-just the one field the design intends. This directly contradicts the
-append-only guarantee for this specific ledger.
+just the one field the design intends. This is a direct violation of this
+law for a financial-adjacent ledger.
 
-**Severity:** Medium-High — this is a currently-open, confirmed
-contradiction between documented intent and actual enforcement on a
-financial-adjacent ledger, not a theoretical risk.
+**Severity:** Medium-High — this contradicts documented intent on a
+currently-open, confirmed code path, and mirrors the exact kind of gap
+migration 064 closed for the core sales tables.
 
 **Follow-up:** Not yet ticketed. Recommend narrowing the RLS policy (or
 moving the one legitimate write to a SECURITY DEFINER RPC that only ever
@@ -100,7 +80,7 @@ actually matches its own documented intent.
 
 ---
 
-## Law 3 — Historical meaning is fixed at write time
+## Law 2 — Historical meaning is fixed at write time
 
 **Status: Partial enforcement**
 
@@ -147,7 +127,7 @@ period.
 
 ---
 
-## Law 4 — Projections are derived state and must be rebuildable
+## Law 3 — Projections are derived state and must be rebuildable
 
 **Status: Fully enforced**
 
@@ -163,14 +143,31 @@ and both WAFI-148 health projections (`drawer_mismatch_count`,
 `_rebuild_health_never_closed_shift()`, `supabase/migrations/115_wafi148_timezone_confirmation_gates.sql`)
 all have real, callable rebuild functions.
 
-**Known gaps:** None found. Every projection identified during this audit
-has a corresponding rebuild path.
+**Online-only computation, justified under this law (not Law 5):**
+`apply_daily_event_count`/`apply_profit_cache`
+(`src/data/powersync/ops.ts:58,69`) require connectivity to apply, even
+though the client already holds the source data locally. This is correctly
+this law's territory, not Law 5's identity/admin exemption: the
+justification is that these are projection-maintenance computations with a
+real rebuild path and coverage-checked correctness guarantee, not that they
+are "inherently server-mediated" in the sense Law 5 reserves for
+identity/cross-tenant acts. (An earlier draft of this matrix filed this
+under the offline-first law's exemption; an adversarial review correctly
+flagged that as stretching that law's wording past its own examples — this
+is the corrected classification.)
 
-**Follow-up:** None.
+**Known gaps:** None found for rebuildability itself. Every projection
+identified during this audit has a corresponding rebuild path.
+
+**Follow-up:** None for rebuildability. Separately worth confirming: does
+the local client degrade gracefully (stale-but-present) while
+`apply_profit_cache` is unreachable, per this law's requirement that the
+online-only computation not break the client's local copy when offline?
+Not yet independently verified.
 
 ---
 
-## Law 5 — A business fact has one canonical definition, calculation, and representation
+## Law 4 — A business fact has one canonical definition, calculation, and representation
 
 **Status: Partial enforcement**
 
@@ -230,41 +227,49 @@ with one centrally-defined rounding policy.
 
 ---
 
-## Law 6 — Offline-first protects core workflows
+## Law 5 — Offline-first protects core workflows
 
 **Status: Partial enforcement (documented boundary, not a gap)**
 
 **Enforcement mechanisms:** Core POS write paths (sales, stock, payments)
 go through PowerSync's local-write-then-sync flow.
 
-**Documented online-only boundary** (intentional, not a violation, but
-worth keeping visible as the actual current scope of the law):
-`bootstrap_owner_identity`, `register_device`/`revoke_device_session`,
-`record_device_session_id`, `switch_active_operator`,
-`confirm_shop_timezone`, `update_business_rule`/`execute_rule_action`,
-`report_health_metrics`, `list_shops_for_rollout_admin`/`set_rollout_flag`,
+**Documented online-only boundary, correctly scoped to this law**
+(operations with no local source of truth — identity/admin, not
+computation over locally-available data): `bootstrap_owner_identity`,
+`register_device`/`revoke_device_session`, `record_device_session_id`,
+`switch_active_operator`, `confirm_shop_timezone`,
+`update_business_rule`/`execute_rule_action`, `report_health_metrics`,
+`list_shops_for_rollout_admin`/`set_rollout_flag`,
 `list_health_for_admin`/`list_health_gauges_and_devices_for_admin` are all
 direct-RPC, online-only calls, bypassing PowerSync's local-first path by
-design. Notably, **the server-authoritative side of financial-projection
-maintenance** (`apply_daily_event_count`, `apply_profit_cache`) is also
-online-only — the client stages a local marker, but the actual financial
-computation requires connectivity to apply.
+design — each is an identity, device, business-rule-authoring, or
+platform-administration act with no meaningful local source of truth to
+fall back on.
 
-**Known gap:** None confirmed as accidental; every online-only path found
-appears to be identity/admin/platform-level or an intentional
-server-authority boundary (Law 7), not a core selling/stock/payment
-workflow silently requiring connectivity.
+**Reclassified out of this law:** an earlier draft of this matrix filed
+`apply_daily_event_count`/`apply_profit_cache` here as "similarly
+server-mediated." An adversarial review correctly identified that as
+stretching this law's exemption past its own examples — those are
+computations over data the client already holds locally, which this law's
+own wording now explicitly excludes from this exemption. They are
+evaluated under Law 3 instead (see that law's entry).
+
+**Known gap:** None confirmed as accidental; every online-only path
+remaining under this law's exemption is genuinely identity/admin/platform-
+level, with no local source of truth to defer to.
 
 **Severity:** N/A (documented boundary, not a violation) — flagged here
 only so this boundary stays visible rather than being assumed away by a
 future reader of "offline-first."
 
 **Follow-up:** None required; keep this list current as new online-only
-RPCs are added.
+RPCs are added, and re-evaluate against Law 3 (not this law) if a future
+RPC's justification is "it computes over data the client already has."
 
 ---
 
-## Law 7 — Authority is explicit and enforced at the correct boundary
+## Law 6 — Authority is explicit and enforced at the correct boundary
 
 **Status: Partial enforcement**
 
@@ -273,27 +278,34 @@ are server-authoritative RPCs, not plain client upserts
 (`src/data/powersync/ops.ts:58,69`). `switch_active_operator` and device
 registration are SECURITY DEFINER RPCs re-verifying identity server-side.
 
-**Known gap (verified violation, self-documented in the codebase):**
-`powersync.yaml:28-31` states directly: "WAFI-122's server-side role
-enforcement is NOT live... Cost/expense data is currently visible to every
-role via sync... client-side gating (`permissions.ts`) is the only
-protection." `docs/architecture/WAFI-122-rpc-audit.md:1-9,55-64` confirms
-only two SECURITY DEFINER RPCs existed as of migration 062, with an
-explicit requirement that any future financial-write RPC document itself
-there before merge — meaning this is a tracked, acknowledged gap, not a
-newly-discovered one.
+**Known gap (verified violation, self-documented in the codebase, currently
+UNBOUNDED — a violation of this law's tracking requirement, not only of
+its underlying enforcement requirement):** `powersync.yaml:28-31` states
+directly: "WAFI-122's server-side role enforcement is NOT live... Cost/
+expense data is currently visible to every role via sync... client-side
+gating (`permissions.ts`) is the only protection."
+`docs/architecture/WAFI-122-rpc-audit.md:1-9,55-64` confirms only two
+SECURITY DEFINER RPCs existed as of migration 062, with an explicit
+requirement that any future financial-write RPC document itself there
+before merge. This gap is acknowledged in code comments and an
+architecture doc, but as of this audit has **no tracked ticket, no named
+owner, and no defined revisit point** — under this law's own wording, an
+acknowledgment without that tracking does not qualify as the law's
+"Allowed" exception; it is itself a violation of the law's Forbidden list.
 
 **Severity:** Medium-High — cost/expense visibility across roles is
-currently enforced only client-side, which is precisely the pattern this
-law forbids, for financially-sensitive data.
+currently enforced only client-side (a direct instance of what this law
+forbids), and the gap's open-endedness is itself a second, distinct
+violation of this law's tracking requirement.
 
-**Follow-up:** Already tracked pre-existing (WAFI-122); not resolved as of
-this audit. This document doesn't open a new ticket — it confirms the
-existing one remains open.
+**Follow-up:** Needs an actual ticket with an owner and a revisit date —
+not yet created as of this audit. This document doesn't invent one
+unilaterally; it records that the law now requires one to exist for this
+gap to count as a compliant exception rather than a violation.
 
 ---
 
-## Law 8 — Retry and replay safety matches the consequences of the operation
+## Law 7 — Retry and replay safety matches the consequences of the operation
 
 **Status: Fully enforced (within its documented scope)**
 
@@ -309,8 +321,11 @@ treat as acceptable specifically because current consumers are disposable
 projections, not ledgers.
 
 **Known gaps:** None found — every current use of the lightweight
-at-most-once mechanism stays within its documented, appropriate scope. No
-financial write was found using it.
+at-most-once mechanism stays within its documented, appropriate scope
+(verified: its only two consumers, `profitCacheProjection.ts` and
+`dailyEventCountsProjection.ts`, are both Law-3-governed rebuildable
+projections, never a raw ledger or financial write). No financial write
+was found using it.
 
 **Follow-up:** None required now. This law's actual risk is that a
 *future* financial-write subscriber reaches for the existing lightweight
@@ -320,9 +335,10 @@ rather than a code fix today.
 
 ---
 
-## Law 9 — Tenant isolation is enforced below the UI
+## Law 8 — Tenant isolation is enforced below the UI
 
-**Status: Unverified / high-risk (one specific mechanism), Fully enforced (everything else)**
+**Status: Unverified / high-risk (one specific mechanism, currently
+UNBOUNDED), Fully enforced (everything else)**
 
 **Enforcement mechanisms:** Every core tenant-owned table gets shop-scoped
 RLS via `auth_shop_id()` (`supabase/migrations/015_rls_tenant_scoping.sql:33-88`),
@@ -330,28 +346,34 @@ independently mirrored by matching `owner_user_id = auth.user_id()` scoping
 in the PowerSync sync-rules layer (`powersync.yaml:40-140`) — two
 independent enforcement points for the same boundary.
 
-**Known risk (explicitly unverified, not a confirmed violation):** the
-`generated_reports`/`generated_report_staff_sections` sync buckets rely on
-`auth.parameters() ->> 'staff_id'` for their **permission** filter
-(`can_view_reports`/owner-only staff-performance content), and are
-self-flagged directly in `powersync.yaml:94-109,120-124` as
-"UNVERIFIED/HIGH RISK... has NOT been re-tested against a live
-device/session... do not trust it in production until it is." This is
-explicitly a risk under active tracking, not a confirmed cross-tenant leak
-— the underlying shop-level scoping (which shop's data syncs at all) is
+**Known risk (explicitly unverified, not a confirmed violation — but
+currently unbounded, which this law's tracking requirement now treats as
+its own issue):** the `generated_reports`/`generated_report_staff_sections`
+sync buckets rely on `auth.parameters() ->> 'staff_id'` for their
+**permission** filter (`can_view_reports`/owner-only staff-performance
+content), and are self-flagged directly in `powersync.yaml:94-109,120-124`
+as "UNVERIFIED/HIGH RISK... has NOT been re-tested against a live
+device/session... do not trust it in production until it is." The
+underlying shop-level scoping (which shop's data syncs at all) is
 separately enforced and not in question; only the finer-grained
-staff-permission filter within a shop's own data is unverified.
+staff-permission filter within a shop's own data is unverified. As of this
+audit, this flag has **no tracked ticket or defined verification date** —
+under this law's own wording, that makes the *lack of a resolution path*
+itself non-compliant, independent of whether the underlying mechanism
+turns out to be fine or broken.
 
 **Severity:** High if the risk materializes (a parameter mechanism failing
 open, as a related mechanism — `active_role` — previously did per
 ADR-009/ADR-010, cited in the same file), but currently unconfirmed either
-way.
+way. The tracking gap itself is a separate, Medium-severity issue under
+this law regardless of how the underlying risk resolves.
 
-**Follow-up:** Already tracked in-repo (the `powersync.yaml` comment
-itself); needs live-device verification before this status can move to
-either "fully enforced" or "verified violation." Not a new finding, but
-worth carrying into this matrix so it's visible from the constitution's own
-compliance tracking, not only from a YAML comment.
+**Follow-up:** Needs a real ticket with an owner and a defined
+verification date before this can be logged as either "fully enforced" or
+"verified violation" — not yet created as of this audit. Carrying this
+into the constitution's own compliance tracking (rather than leaving it
+only as a YAML comment) is precisely so it can't quietly age into a
+permanent, untracked gap.
 
 ---
 
@@ -359,17 +381,20 @@ compliance tracking, not only from a YAML comment.
 
 | Law | Status |
 |---|---|
-| 1. Financial history immutable | Partial enforcement |
-| 2. Ledgers append-only | Partial enforcement |
-| 3. Historical meaning fixed at write time | Partial enforcement |
-| 4. Projections rebuildable | Fully enforced |
-| 5. One canonical business fact | Partial enforcement |
-| 6. Offline-first core workflows | Partial enforcement (documented boundary) |
-| 7. Explicit authority boundaries | Partial enforcement |
-| 8. Retry/replay safety matches consequence | Fully enforced (within scope) |
-| 9. Tenant isolation below the UI | Unverified/high-risk (one mechanism) |
+| 1. Recorded facts immutable; corrections are new facts | Partial enforcement |
+| 2. Historical meaning fixed at write time | Partial enforcement |
+| 3. Projections rebuildable | Fully enforced |
+| 4. One canonical business fact | Partial enforcement |
+| 5. Offline-first core workflows | Partial enforcement (documented boundary) |
+| 6. Explicit authority boundaries | Partial enforcement (gap currently untracked) |
+| 7. Retry/replay safety matches consequence | Fully enforced (within scope) |
+| 8. Tenant isolation below the UI | Unverified/high-risk (currently untracked) |
 
 No law is fully violated wholesale. Every gap found is scoped to a specific
 table, file, or mechanism, not a systemic failure of the law itself — which
 is itself evidence the constitution reflects real, mostly-followed
-discipline rather than aspiration disconnected from practice.
+discipline rather than aspiration disconnected from practice. Two gaps
+(Laws 6 and 8) are flagged not only for their underlying risk but because
+they are currently open-ended with no tracked resolution path — under
+those laws' own wording, that absence of tracking is itself part of what
+needs fixing, not a detail to fix later.
