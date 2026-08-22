@@ -385,20 +385,23 @@ fragile claim.
 - Assuming a permission-scoped sync or query mechanism is safe without
   having verified it actually fails closed under the conditions it will
   run in.
-- Leaving an unverified isolation-relevant mechanism unverified
-  indefinitely. A mechanism flagged as unverified must have a tracked,
-  owned path to actually being verified — an unverified flag with no
-  plan to resolve it is functionally the same unbounded gap Law 6
-  forbids for authority boundaries, applied here to isolation.
+- Treating a code comment or design note as sufficient acknowledgment of a
+  mechanism flagged as unverified. A mechanism flagged as unverified with
+  no tracked ticket, no named owner, and no defined point at which it is
+  revisited or verified is indistinguishable in practice from an
+  undocumented gap — the same unbounded condition Law 6 forbids for
+  authority boundaries, applied here to isolation.
 
 **Allowed:**
 - A UI-level restriction as an additional, secondary layer, on top of
   real data-layer enforcement — defense in depth is good; defense-in-depth
   used to mean "the only depth" is not.
 - A newly-added sync or access mechanism being explicitly marked
-  unverified/high-risk while its real-world behavior is being confirmed,
-  as long as that status is tracked with an owner and a defined path to
-  resolution, not left as a standing, indefinite comment.
+  unverified/high-risk while its real-world behavior is being confirmed —
+  but only when it is tracked as an open, owned ticket with a defined
+  point at which it is verified, not merely noted in a comment. A flag
+  without that tracking is a violation of this law, not an exception to
+  it.
 
 **Examples:** row-level security scoping every tenant-owned table by the
 authenticated owner's identity, independently mirrored by the same scoping

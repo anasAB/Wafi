@@ -468,9 +468,14 @@ Copy this block into the feature's final whole-branch review write-up:
 
 ```
 ## Constitution Check (final review)
-Surface scan re-confirmed against the actual diff (not the design-time
-  guess) — any table/RPC/write path in the diff missing from the
-  design-time scan: [list, or "none — matches design-time scan"]
+Surface scan re-confirmed against the actual diff — every table, RPC, or
+  write path the merged diff actually touches, one line each (re-list all
+  of them; do not just state whether they match the design-time guess):
+  - [table/RPC/write path]: [law(s) that govern it, or "none apply — <why>"]
+  (If the diff touches no table/RPC/write path, state that instead of
+  leaving this scan empty.)
+Delta from the design-time scan: [list any path present in one scan but
+  not the other, or "none — the two scans match"]
 Laws affected, re-confirmed after implementation: [list, or "none"]
 Any law-relevant behavior introduced that wasn't in the design-time check: [list, or "none"]
 PRODUCT_CONSTITUTION_COMPLIANCE.md updated: [yes / not needed / not yet — explain]

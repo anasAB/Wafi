@@ -111,7 +111,15 @@ column) and has since been corrected to read the stored value
    period, not only "today") by multiplying it against the **current, live**
    exchange rate rather than a rate fixed to the period it describes. This
    is a direct instance of this law's forbidden pattern: recomputing a
-   historical figure's meaning using today's configuration.
+   historical figure's meaning using today's configuration. **Genuinely
+   cross-cutting, not a duplicated finding:** this same line is also cited
+   under Law 4 as one of the ~10 duplicated currency-conversion call
+   sites — that is a separate defect (the formula itself is
+   independently reimplemented rather than centralized) from this one
+   (the formula is applied against a live rather than period-fixed rate).
+   Centralizing the formula under Law 4 would not, by itself, fix this
+   finding; the centralized version would still need to be called with a
+   period-fixed rate.
 3. **Previously fixed, noted for completeness:** `dashboardRevenueProjection.ts`
    (UTC-slice bug) and `localTodayRevenueRebuild.ts`/`HomePage.vue`'s
    `local_today_revenue_projection` date-key derivation (device-UTC vs.
@@ -200,7 +208,10 @@ that same computed result rather than recomputing it independently
    `src/features/expenses/composables/useExpenses.ts:93`,
    `src/features/returns/composables/useReturnSheet.ts:47,161,243`,
    `src/features/pos/useSale.ts:26`, `src/features/pos/SalePanel.vue:45`,
-   `src/pages/HomePage.vue:243`. Rounding rules differ by call site
+   `src/pages/HomePage.vue:243` (also cited under Law 2 as a live-rate
+   reinterpretation finding at this same line — genuinely two independent
+   defects, not a duplicated finding: see that entry for why). Rounding
+   rules differ by call site
    (some round SYP directly, some round USD to cents first, one branches
    its rounding rule by currency inline) — there is no single shared
    rounding policy.
@@ -271,16 +282,22 @@ RPC's justification is "it computes over data the client already has."
 
 ## Law 6 — Authority is explicit and enforced at the correct boundary
 
-**Status: Partial enforcement**
+**Status: Verified violation** (for the WAFI-122 gap below; every other
+mechanism examined under this law is fully enforced — see "Enforcement
+mechanisms"). By this document's own tier definitions (see "Status/tier
+definitions" above), an acknowledged gap with no tracked ticket, owner, or
+revisit point is a confirmed, present-tense contradiction of this law's
+own Forbidden list — not a softer "partial enforcement" of the
+underlying access-control requirement it also happens to describe. The two
+are separate confirmed violations, both cited below.
 
 **Enforcement mechanisms:** `apply_profit_cache`/`apply_daily_event_count`
 are server-authoritative RPCs, not plain client upserts
 (`src/data/powersync/ops.ts:58,69`). `switch_active_operator` and device
 registration are SECURITY DEFINER RPCs re-verifying identity server-side.
 
-**Known gap (verified violation, self-documented in the codebase, currently
-UNBOUNDED — a violation of this law's tracking requirement, not only of
-its underlying enforcement requirement):** `powersync.yaml:28-31` states
+**Known gap (two confirmed violations — substantive and tracking):**
+`powersync.yaml:28-31` states
 directly: "WAFI-122's server-side role enforcement is NOT live... Cost/
 expense data is currently visible to every role via sync... client-side
 gating (`permissions.ts`) is the only protection."
@@ -292,11 +309,12 @@ architecture doc, but as of this audit has **no tracked ticket, no named
 owner, and no defined revisit point** — under this law's own wording, an
 acknowledgment without that tracking does not qualify as the law's
 "Allowed" exception; it is itself a violation of the law's Forbidden list.
+Violation 1 (substantive): cost/expense visibility is enforced
+client-side only. Violation 2 (tracking): the gap has no ticket, owner, or
+revisit date.
 
-**Severity:** Medium-High — cost/expense visibility across roles is
-currently enforced only client-side (a direct instance of what this law
-forbids), and the gap's open-endedness is itself a second, distinct
-violation of this law's tracking requirement.
+**Severity:** Medium-High — both violations are live and confirmed, not
+merely at risk of becoming so.
 
 **Follow-up:** Needs an actual ticket with an owner and a revisit date —
 not yet created as of this audit. This document doesn't invent one
@@ -337,43 +355,51 @@ rather than a code fix today.
 
 ## Law 8 — Tenant isolation is enforced below the UI
 
-**Status: Unverified / high-risk (one specific mechanism, currently
-UNBOUNDED), Fully enforced (everything else)**
+This law has two separate findings below, each carrying its own single
+status tier rather than one compound label — the underlying isolation
+mechanism's real-world correctness and the tracking discipline around it
+are independently checkable, and only one of the two is currently a
+violation.
 
-**Enforcement mechanisms:** Every core tenant-owned table gets shop-scoped
-RLS via `auth_shop_id()` (`supabase/migrations/015_rls_tenant_scoping.sql:33-88`),
-independently mirrored by matching `owner_user_id = auth.user_id()` scoping
-in the PowerSync sync-rules layer (`powersync.yaml:40-140`) — two
-independent enforcement points for the same boundary.
+**Finding A — shop-level scoping. Status: Fully enforced.** Every core
+tenant-owned table gets shop-scoped RLS via `auth_shop_id()`
+(`supabase/migrations/015_rls_tenant_scoping.sql:33-88`), independently
+mirrored by matching `owner_user_id = auth.user_id()` scoping in the
+PowerSync sync-rules layer (`powersync.yaml:40-140`) — two independent
+enforcement points for the same boundary, neither of which is "does the
+screen show it." Which shop's data syncs at all is not in question.
 
-**Known risk (explicitly unverified, not a confirmed violation — but
-currently unbounded, which this law's tracking requirement now treats as
-its own issue):** the `generated_reports`/`generated_report_staff_sections`
-sync buckets rely on `auth.parameters() ->> 'staff_id'` for their
-**permission** filter (`can_view_reports`/owner-only staff-performance
-content), and are self-flagged directly in `powersync.yaml:94-109,120-124`
-as "UNVERIFIED/HIGH RISK... has NOT been re-tested against a live
-device/session... do not trust it in production until it is." The
-underlying shop-level scoping (which shop's data syncs at all) is
-separately enforced and not in question; only the finer-grained
-staff-permission filter within a shop's own data is unverified. As of this
-audit, this flag has **no tracked ticket or defined verification date** —
-under this law's own wording, that makes the *lack of a resolution path*
-itself non-compliant, independent of whether the underlying mechanism
-turns out to be fine or broken.
+**Finding B — staff-permission filter within a shop's own data. Status:
+Verified violation** (of this law's tracking requirement — the underlying
+mechanism's correctness itself remains genuinely undetermined, see below).
+The `generated_reports`/`generated_report_staff_sections` sync buckets
+rely on `auth.parameters() ->> 'staff_id'` for their **permission** filter
+(`can_view_reports`/owner-only staff-performance content), and are
+self-flagged directly in `powersync.yaml:94-109,120-124` as "UNVERIFIED/
+HIGH RISK... has NOT been re-tested against a live device/session... do
+not trust it in production until it is." As of this audit, this flag has
+**no tracked ticket, no named owner, and no defined verification date** —
+under this law's own wording, that absence of tracking is itself a
+confirmed, present-tense violation, independent of whether the underlying
+`auth.parameters()` mechanism turns out to be sound or broken. Whether the
+mechanism itself is sound remains genuinely **Unverified/high-risk** — the
+tracking violation and the mechanism's unresolved correctness are two
+different facts, and only the first is being scored as a violation here.
 
-**Severity:** High if the risk materializes (a parameter mechanism failing
-open, as a related mechanism — `active_role` — previously did per
-ADR-009/ADR-010, cited in the same file), but currently unconfirmed either
-way. The tracking gap itself is a separate, Medium-severity issue under
-this law regardless of how the underlying risk resolves.
+**Severity:** Finding B's tracking violation is Medium (confirmed, but
+inexpensive to close — open a ticket). If the underlying mechanism turns
+out to be broken (High risk — a parameter mechanism failing open, as a
+related mechanism, `active_role`, previously did per ADR-009/ADR-010,
+cited in the same file), that would become a second, more severe finding
+in its own right once confirmed.
 
 **Follow-up:** Needs a real ticket with an owner and a defined
-verification date before this can be logged as either "fully enforced" or
-"verified violation" — not yet created as of this audit. Carrying this
-into the constitution's own compliance tracking (rather than leaving it
-only as a YAML comment) is precisely so it can't quietly age into a
-permanent, untracked gap.
+verification date before Finding B's tracking violation is resolved, and
+before the underlying mechanism can be reclassified as either "fully
+enforced" or "verified violation" on its own merits — not yet created as
+of this audit. Carrying this into the constitution's own compliance
+tracking (rather than leaving it only as a YAML comment) is precisely so
+it can't quietly age into a permanent, untracked gap.
 
 ---
 
