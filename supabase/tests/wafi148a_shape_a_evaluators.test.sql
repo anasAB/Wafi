@@ -17,7 +17,7 @@
 -- Run via: npx supabase test db
 
 BEGIN;
-SELECT plan(14);
+SELECT plan(15);
 
 -- WAFI-148A Task 11: migration 123 gates the entire body of
 -- evaluate_health_alerts_foreground behind the WAFI-155 'health_alerting'
@@ -346,6 +346,26 @@ SELECT is(
        AND type IN ('health_alert_offline_duration', 'health_alert_deferred_job_failures', 'health_alert_app_errors')),
   3,
   'per-metric isolation: the other 3 metrics, all over threshold in the same call, are still evaluated and alerted despite sync_failures raising'
+);
+
+-- ============================================================================
+-- WAFI-148A Task 14: secondary correctness assertion -- the claim-then-
+-- notify transaction invariant. notifications.created_at and
+-- health_alert_state_a.alerted_at are written inside the SAME
+-- claim_health_alert_period call (migration 118), so for the Section 1
+-- sync_failures alert on Shop FG-A, the two timestamps must be effectively
+-- equal (same transaction -- exactly equal or off by microseconds at most).
+-- This is a correctness/atomicity check, not a product KPI.
+-- ============================================================================
+SELECT ok(
+  (SELECT abs(extract(epoch FROM
+     (SELECT created_at FROM public.notifications
+        WHERE shop_id = 'e1111111-0000-0000-0000-000000000001' AND type = 'health_alert_sync_failures')
+     -
+     (SELECT alerted_at FROM public.health_alert_state_a
+        WHERE shop_id = 'e1111111-0000-0000-0000-000000000001' AND metric_key = 'sync_failure_terminal')
+  ))) < 0.01,
+  'claim-then-notify atomicity: notifications.created_at and health_alert_state_a.alerted_at for the Shop FG-A sync_failures alert differ by less than 10ms (same transaction)'
 );
 
 SELECT * FROM finish();

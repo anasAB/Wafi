@@ -14,7 +14,7 @@
 -- follow-up once Task 5 ships.
 
 BEGIN;
-SELECT plan(12);
+SELECT plan(13);
 
 SET LOCAL role postgres;
 
@@ -244,6 +244,27 @@ SELECT is(
      WHERE alert_key = 'overdue_shift' AND entity_id = '22222222-3333-4444-5555-666666666666'),
   0,
   '_resolve_overdue_shift_alert is a safe no-op for a shift with no pre-existing health_alert_state_b row (test-1''s shiftId)'
+);
+
+-- ============================================================================
+-- WAFI-148A Task 14: secondary correctness assertion -- the claim-then-
+-- notify transaction invariant. notifications.created_at and
+-- health_alert_state_a.alerted_at are written inside the SAME
+-- claim_health_alert_period call (migration 118), so for the drawer-mismatch
+-- alert claimed by the second shift.closed event above (test 2/3), the two
+-- timestamps must be effectively equal (same transaction -- exactly equal or
+-- off by microseconds at most). This is a correctness/atomicity check, not a
+-- product KPI.
+-- ============================================================================
+SELECT ok(
+  (SELECT abs(extract(epoch FROM
+     (SELECT created_at FROM public.notifications
+        WHERE shop_id = '22222222-3333-4444-5555-666666666666' AND type = 'health_alert_drawer_mismatches')
+     -
+     (SELECT alerted_at FROM public.health_alert_state_a
+        WHERE shop_id = '22222222-3333-4444-5555-666666666666' AND metric_key = 'drawer_mismatch_count')
+  ))) < 0.01,
+  'claim-then-notify atomicity: notifications.created_at and health_alert_state_a.alerted_at for the drawer-mismatch alert differ by less than 10ms (same transaction)'
 );
 
 SELECT * FROM finish();

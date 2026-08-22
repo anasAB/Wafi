@@ -157,6 +157,38 @@ tuning its threshold or removing it, not for building more rules.
 
 ---
 
+## Health Alerting — Evaluation Freshness (WAFI-148A)
+
+**Primary KPI:** alert evaluation freshness — how often each evaluator
+type actually runs, per shop where applicable. Concretely: median/p95/max
+time between consecutive `evaluation_source='scheduled'` log rows (one
+value across all shops, since scheduled evaluators run shop-agnostic cron
+ticks); median/p95 time between eligible foreground-check opportunities
+and the next `evaluation_source='foreground'` log row, per shop.
+`evaluation_source='event'` (the drawer-mismatch evaluator) is expected to
+be near-instant, bounded by shift-close transaction latency — it is not
+really a "freshness" concern and is not part of this KPI's target-setting.
+
+**Target:** Pending — depends on the chosen `pg_cron` interval and typical
+shop foreground-check cadence, neither of which product has weighed in on
+yet. This is Gate 3 of the WAFI-148A design spec, still open. Do not
+invent a number here; this section stays "instrumented, target pending
+product sign-off" until product supplies one.
+
+**Measurement:** now available via `health_alert_evaluation_log`
+(migration 124, WAFI-148A Task 14) — one row per evaluator invocation
+(`evaluation_source` in `event`/`scheduled`/`foreground`, `shop_id`
+populated for `event`/`foreground`, NULL for `scheduled`, `started_at`/
+`completed_at` per invocation). Median/p95/max are derivable via a
+straightforward query grouping by `evaluation_source` (and `shop_id`
+where populated) over consecutive `started_at` gaps.
+
+**If below target:** n/a yet — no target exists to be below.
+
+**Owner:** Founder/Product.
+
+---
+
 ## Business Rules Engine (WAFI-156)
 
 **Primary KPI:** % of shops that have modified at least one rule's

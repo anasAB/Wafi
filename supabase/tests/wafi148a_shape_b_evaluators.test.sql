@@ -15,7 +15,7 @@
 -- Run via: npx supabase test db
 
 BEGIN;
-SELECT plan(39);
+SELECT plan(40);
 
 SET LOCAL role postgres;
 
@@ -906,6 +906,28 @@ SELECT is(
      WHERE shop_id = 'dddddddd-eeee-ffff-0000-000000000040' AND type = 'health_alert_stale_device'),
   0,
   'stale-device disabled-type: a disabled notification_settings row never claims, regardless of how stale the device is'
+);
+
+-- ============================================================================
+-- WAFI-148A Task 14: secondary correctness assertion -- the claim-then-
+-- notify transaction invariant. notifications.created_at and
+-- health_alert_state_b.state_changed_at are written inside the SAME
+-- claim_health_alert_transition call (migration 118), so for the bootstrap
+-- overdue-shift alert from Section 1 above, the two timestamps must be
+-- effectively equal (same transaction -- exactly equal or off by
+-- microseconds at most). This is a correctness/atomicity check, not a
+-- product KPI.
+-- ============================================================================
+SELECT ok(
+  (SELECT abs(extract(epoch FROM
+     (SELECT created_at FROM public.notifications
+        WHERE shop_id = '66666666-7777-8888-9999-aaaaaaaaaaaa' AND type = 'health_alert_overdue_shift')
+     -
+     (SELECT state_changed_at FROM public.health_alert_state_b
+        WHERE shop_id = '66666666-7777-8888-9999-aaaaaaaaaaaa' AND alert_key = 'overdue_shift'
+          AND entity_id = '66666666-7777-8888-9999-cccccccccccc')
+  ))) < 0.01,
+  'claim-then-notify atomicity: notifications.created_at and health_alert_state_b.state_changed_at for the bootstrap overdue-shift alert differ by less than 10ms (same transaction)'
 );
 
 SELECT * FROM finish();
