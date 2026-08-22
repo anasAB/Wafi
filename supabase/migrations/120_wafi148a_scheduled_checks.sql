@@ -154,3 +154,149 @@ SELECT cron.schedule(
   '*/15 * * * *', -- every 15 minutes; conservative starting point, tunable later, not architectural
   $$ SELECT public._scheduled_check_overdue_shifts() $$
 );
+
+-- ============================================================================
+-- Task 7: Metric #3 (dead-letter count) -- scheduled evaluator
+--
+-- Spec-gap ruling (plan owner, carried exactly): health_gauges (migration 107)
+-- is stored PER-DEVICE (PRIMARY KEY (shop_id, device_id, gauge_key)), but the
+-- design spec's alert_key='dead_letter_count' convention (migration 117) uses
+-- a single shop-level sentinel entity_id ('00000000-0000-0000-0000-000000000000').
+-- Resolution: aggregate via MAX(value) ... GROUP BY shop_id across all of a
+-- shop's devices -- not SUM -- alerting when the worst single device is bad,
+-- without requiring combined counts across devices to cross the threshold.
+-- This deliberately does NOT reuse the client-side dashboard query pattern in
+-- useOwnerHealth.ts (~lines 268-272), which GROUPs BY gauge_key with a bare,
+-- non-aggregated value column -- imprecise for multi-device shops and not a
+-- safe precedent for this server-side evaluator.
+--
+-- Candidate query: SELECT shop_id, MAX(value) FROM health_gauges WHERE
+-- gauge_key='dead_letter_count' GROUP BY shop_id. A shop with zero gauge rows
+-- has never reported and is correctly excluded -- no synthetic zero-row is
+-- invented for it.
+--
+-- Threshold source: notification_settings.threshold_json for
+-- type='health_alert_dead_letter_count' (per the design spec's now-formalized
+-- Notification Integration section, metric #3). Same Option-A skip semantics
+-- as every other evaluator in this feature: missing/disabled settings row ->
+-- skip entirely, no claim attempt; missing/non-numeric/negative threshold ->
+-- skip + RAISE WARNING, never invent a default. Unlike metric #8, zero IS a
+-- valid threshold here in principle ("alert on any dead letter at all") --
+-- this function does not reject a zero threshold.
+--
+-- Recovery: UNLIKE metric #8, this function owns its own recovery logic --
+-- there is no other trigger/mechanism that would ever resolve a recovered
+-- dead-letter gauge back to HEALTHY. Each per-shop loop iteration either
+-- claims (max_value >= threshold) or resolves (max_value < threshold); both
+-- claim_health_alert_transition and resolve_health_alert_transition are safe
+-- no-ops when not applicable (per their contracts in migration 118), so no
+-- separate "check current state first" branch is needed.
+-- ============================================================================
+
+-- ============================================================================
+-- _scheduled_check_dead_letter_count
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public._scheduled_check_dead_letter_count()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_row          record;
+  v_settings     public.notification_settings%ROWTYPE;
+  v_threshold    numeric;
+  v_sentinel     uuid := '00000000-0000-0000-0000-000000000000';
+BEGIN
+  -- One row per shop with any dead_letter_count gauge data at all, aggregated
+  -- via MAX across that shop's devices (see spec-gap ruling above).
+  FOR v_row IN
+    SELECT shop_id, MAX(value) AS max_value
+      FROM public.health_gauges
+     WHERE gauge_key = 'dead_letter_count'
+     GROUP BY shop_id
+  LOOP
+    -- Per-candidate failure isolation, same pattern as
+    -- _scheduled_check_overdue_shifts above: an exception here does not abort
+    -- evaluation of the remaining shops in this loop. No explicit ROLLBACK
+    -- (invalid inside a PL/pgSQL exception handler).
+    BEGIN
+      SELECT * INTO v_settings
+        FROM public.notification_settings
+       WHERE shop_id = v_row.shop_id
+         AND type = 'health_alert_dead_letter_count';
+
+      IF NOT FOUND OR NOT v_settings.enabled THEN
+        CONTINUE;
+      END IF;
+
+      IF v_settings.threshold_json IS NULL THEN
+        RAISE WARNING 'health_alert_dead_letter_count: no threshold_json configured for shop %; skipping', v_row.shop_id;
+        CONTINUE;
+      END IF;
+
+      BEGIN
+        v_threshold := (v_settings.threshold_json ->> 'threshold')::numeric;
+      EXCEPTION WHEN OTHERS THEN
+        v_threshold := NULL;
+      END;
+
+      -- Zero IS a valid threshold for this metric ("alert on any dead letter
+      -- at all") -- deliberately not rejected here, unlike metric #8's
+      -- zero-rejection rule (which was specific to that metric's semantics).
+      IF v_threshold IS NULL OR v_threshold < 0 THEN
+        RAISE WARNING 'health_alert_dead_letter_count: invalid threshold_json for shop %; skipping', v_row.shop_id;
+        CONTINUE;
+      END IF;
+
+      IF v_row.max_value >= v_threshold THEN
+        PERFORM public.claim_health_alert_transition(
+          v_row.shop_id,
+          'dead_letter_count',
+          v_sentinel,
+          'health_alert_dead_letter_count',
+          'رسائل معلقة في قائمة الانتظار',
+          format('يوجد %s رسالة معلقة في جهاز واحد على الأقل في متجرك', v_row.max_value),
+          'CRITICAL',
+          NULL
+        );
+      ELSE
+        -- Recovery owned exclusively by this function (see header note) --
+        -- safe no-op when there is no existing ALERTING row to resolve.
+        PERFORM public.resolve_health_alert_transition(
+          v_row.shop_id,
+          'dead_letter_count',
+          v_sentinel
+        );
+      END IF;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE WARNING '_scheduled_check_dead_letter_count failed for shop=%: %',
+        v_row.shop_id, SQLERRM;
+    END;
+  END LOOP;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public._scheduled_check_dead_letter_count() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public._scheduled_check_dead_letter_count() FROM anon;
+REVOKE ALL ON FUNCTION public._scheduled_check_dead_letter_count() FROM authenticated;
+
+-- ============================================================================
+-- pg_cron registration for the dead-letter-count evaluator. Same idempotent
+-- unschedule-then-schedule pattern. Same 15-minute cadence as the
+-- overdue-shift job -- a separate job (batch-efficiency decision, not
+-- architectural) rather than folding into the same job, so a failure/slowdown
+-- in one evaluator's candidate set never delays the other's schedule tick.
+-- ============================================================================
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'wafi148a_dead_letter_check') THEN
+    PERFORM cron.unschedule('wafi148a_dead_letter_check');
+  END IF;
+END $$;
+
+SELECT cron.schedule(
+  'wafi148a_dead_letter_check',
+  '*/15 * * * *',
+  $$ SELECT public._scheduled_check_dead_letter_count() $$
+);

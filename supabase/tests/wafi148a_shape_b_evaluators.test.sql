@@ -15,7 +15,7 @@
 -- Run via: npx supabase test db
 
 BEGIN;
-SELECT plan(12);
+SELECT plan(23);
 
 SET LOCAL role postgres;
 
@@ -332,6 +332,240 @@ SELECT is(
      WHERE shop_id = 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff' AND type = 'health_alert_overdue_shift'),
   0,
   'a closed shift, otherwise overdue by opened_at, is absent from the status=open candidate query -- no notification'
+);
+
+-- ============================================================================
+-- Task 7: metric #3 (dead-letter count) evaluator
+-- (_scheduled_check_dead_letter_count / migration 120). Sections 7-10 below
+-- each use their own dedicated shop id(s), per this file's stated convention.
+-- ============================================================================
+
+-- ============================================================================
+-- Section 7: bootstrap (Shop V) -- gauge already over threshold at first
+-- evaluation produces exactly one notification, using the exact sentinel
+-- entity_id constant from Task 3/migration 117.
+-- ============================================================================
+INSERT INTO public.shops (id, name, timezone) VALUES
+  ('cccccccc-dddd-eeee-ffff-000000000001', 'Shop V (dead-letter bootstrap)', 'Asia/Damascus');
+
+INSERT INTO public.devices (id, shop_id, code) VALUES
+  ('cccccccc-dddd-eeee-ffff-000000000002', 'cccccccc-dddd-eeee-ffff-000000000001', 'DEV-V-1');
+
+INSERT INTO public.notification_settings (shop_id, type, enabled, threshold_json)
+VALUES (
+  'cccccccc-dddd-eeee-ffff-000000000001',
+  'health_alert_dead_letter_count',
+  true,
+  jsonb_build_object('threshold', 5)
+);
+
+INSERT INTO public.health_gauges (shop_id, device_id, gauge_key, value, observed_at)
+VALUES (
+  'cccccccc-dddd-eeee-ffff-000000000001',
+  'cccccccc-dddd-eeee-ffff-000000000002',
+  'dead_letter_count', 10, now()
+);
+
+SELECT public._scheduled_check_dead_letter_count();
+
+SELECT is(
+  (SELECT count(*)::int FROM public.notifications
+     WHERE shop_id = 'cccccccc-dddd-eeee-ffff-000000000001' AND type = 'health_alert_dead_letter_count'),
+  1,
+  'dead-letter bootstrap: a gauge already over threshold at first evaluation produces exactly one notification'
+);
+SELECT is(
+  (SELECT severity FROM public.notifications
+     WHERE shop_id = 'cccccccc-dddd-eeee-ffff-000000000001' AND type = 'health_alert_dead_letter_count'),
+  'CRITICAL',
+  'dead-letter bootstrap notification severity is CRITICAL'
+);
+SELECT is(
+  (SELECT entity_id FROM public.notifications
+     WHERE shop_id = 'cccccccc-dddd-eeee-ffff-000000000001' AND type = 'health_alert_dead_letter_count'),
+  '00000000-0000-0000-0000-000000000000',
+  'dead-letter bootstrap notification entity_id is the exact shop-level sentinel constant, not a real device id'
+);
+SELECT is(
+  (SELECT state FROM public.health_alert_state_b
+     WHERE shop_id = 'cccccccc-dddd-eeee-ffff-000000000001' AND alert_key = 'dead_letter_count'
+       AND entity_id = '00000000-0000-0000-0000-000000000000'),
+  'ALERTING',
+  'health_alert_state_b row transitioned to ALERTING using the sentinel entity_id'
+);
+
+-- ============================================================================
+-- Section 8: recovery-then-realert (Shop W) -- gauge rises, falls back under
+-- threshold, rises again -> exactly two notifications (one per
+-- HEALTHY->ALERTING transition), zero while continuously above threshold
+-- across multiple ticks.
+-- ============================================================================
+INSERT INTO public.shops (id, name, timezone) VALUES
+  ('cccccccc-dddd-eeee-ffff-000000000010', 'Shop W (dead-letter recovery/re-alert)', 'Asia/Damascus');
+
+INSERT INTO public.devices (id, shop_id, code) VALUES
+  ('cccccccc-dddd-eeee-ffff-000000000011', 'cccccccc-dddd-eeee-ffff-000000000010', 'DEV-W-1');
+
+INSERT INTO public.notification_settings (shop_id, type, enabled, threshold_json)
+VALUES (
+  'cccccccc-dddd-eeee-ffff-000000000010',
+  'health_alert_dead_letter_count',
+  true,
+  jsonb_build_object('threshold', 5)
+);
+
+-- Tick 1: rises above threshold -> first ALERTING transition, one notification.
+INSERT INTO public.health_gauges (shop_id, device_id, gauge_key, value, observed_at)
+VALUES ('cccccccc-dddd-eeee-ffff-000000000010', 'cccccccc-dddd-eeee-ffff-000000000011', 'dead_letter_count', 8, now());
+
+SELECT public._scheduled_check_dead_letter_count();
+
+-- Tick 2: still above threshold, unchanged -- must NOT produce an additional
+-- notification while continuously above threshold.
+SELECT public._scheduled_check_dead_letter_count();
+
+SELECT is(
+  (SELECT count(*)::int FROM public.notifications
+     WHERE shop_id = 'cccccccc-dddd-eeee-ffff-000000000010' AND type = 'health_alert_dead_letter_count'),
+  1,
+  'recovery/re-alert: continuously above threshold across multiple ticks produces only the one initial notification'
+);
+
+-- Tick 3: falls back under threshold -> resolves to HEALTHY, silently (no notification).
+UPDATE public.health_gauges
+   SET value = 2, observed_at = now()
+ WHERE shop_id = 'cccccccc-dddd-eeee-ffff-000000000010'
+   AND device_id = 'cccccccc-dddd-eeee-ffff-000000000011';
+
+SELECT public._scheduled_check_dead_letter_count();
+
+SELECT is(
+  (SELECT state FROM public.health_alert_state_b
+     WHERE shop_id = 'cccccccc-dddd-eeee-ffff-000000000010' AND alert_key = 'dead_letter_count'
+       AND entity_id = '00000000-0000-0000-0000-000000000000'),
+  'HEALTHY',
+  'recovery/re-alert: gauge falling back under threshold resolves the alert state to HEALTHY'
+);
+SELECT is(
+  (SELECT count(*)::int FROM public.notifications
+     WHERE shop_id = 'cccccccc-dddd-eeee-ffff-000000000010' AND type = 'health_alert_dead_letter_count'),
+  1,
+  'recovery/re-alert: the recovery tick itself is silent -- still only one notification total'
+);
+
+-- Tick 4: rises again above threshold -> second HEALTHY->ALERTING transition,
+-- exactly one more notification (two total).
+UPDATE public.health_gauges
+   SET value = 9, observed_at = now()
+ WHERE shop_id = 'cccccccc-dddd-eeee-ffff-000000000010'
+   AND device_id = 'cccccccc-dddd-eeee-ffff-000000000011';
+
+SELECT public._scheduled_check_dead_letter_count();
+
+SELECT is(
+  (SELECT count(*)::int FROM public.notifications
+     WHERE shop_id = 'cccccccc-dddd-eeee-ffff-000000000010' AND type = 'health_alert_dead_letter_count'),
+  2,
+  'recovery/re-alert: rising above threshold again after recovery produces exactly one more notification (two total)'
+);
+
+-- ============================================================================
+-- Section 9: multi-device MAX aggregation (Shop X) -- two devices, one with a
+-- high value (over threshold) and one with a low value (under threshold).
+-- The alert must fire based on MAX(value), not the average or sum across
+-- devices -- this is the correctness-critical test for the spec-gap ruling.
+-- ============================================================================
+INSERT INTO public.shops (id, name, timezone) VALUES
+  ('cccccccc-dddd-eeee-ffff-000000000020', 'Shop X (multi-device MAX aggregation)', 'Asia/Damascus');
+
+INSERT INTO public.devices (id, shop_id, code) VALUES
+  ('cccccccc-dddd-eeee-ffff-000000000021', 'cccccccc-dddd-eeee-ffff-000000000020', 'DEV-X-1'),
+  ('cccccccc-dddd-eeee-ffff-000000000022', 'cccccccc-dddd-eeee-ffff-000000000020', 'DEV-X-2');
+
+INSERT INTO public.notification_settings (shop_id, type, enabled, threshold_json)
+VALUES (
+  'cccccccc-dddd-eeee-ffff-000000000020',
+  'health_alert_dead_letter_count',
+  true,
+  jsonb_build_object('threshold', 5)
+);
+
+-- Device 1: high value, over threshold. Device 2: low value, under threshold.
+-- Sum would be 12+1=13 (also over) and average would be 6.5 (also over), so
+-- this alone would not distinguish MAX from those aggregations -- the
+-- distinguishing assertion is Section 9b below (both under threshold
+-- individually, but a naive SUM would push them over).
+INSERT INTO public.health_gauges (shop_id, device_id, gauge_key, value, observed_at) VALUES
+  ('cccccccc-dddd-eeee-ffff-000000000020', 'cccccccc-dddd-eeee-ffff-000000000021', 'dead_letter_count', 12, now()),
+  ('cccccccc-dddd-eeee-ffff-000000000020', 'cccccccc-dddd-eeee-ffff-000000000022', 'dead_letter_count', 1, now());
+
+SELECT public._scheduled_check_dead_letter_count();
+
+SELECT is(
+  (SELECT count(*)::int FROM public.notifications
+     WHERE shop_id = 'cccccccc-dddd-eeee-ffff-000000000020' AND type = 'health_alert_dead_letter_count'),
+  1,
+  'multi-device MAX: alert fires when at least one device is over threshold, even though the other device is well under'
+);
+
+-- Section 9b: SUM-would-fire-but-MAX-should-not case (Shop Y). Two devices
+-- each individually UNDER threshold (3 and 3, threshold 5), but whose SUM (6)
+-- would be over threshold. MAX (3) is correctly under threshold -- no alert.
+INSERT INTO public.shops (id, name, timezone) VALUES
+  ('cccccccc-dddd-eeee-ffff-000000000030', 'Shop Y (MAX vs SUM distinguishing case)', 'Asia/Damascus');
+
+INSERT INTO public.devices (id, shop_id, code) VALUES
+  ('cccccccc-dddd-eeee-ffff-000000000031', 'cccccccc-dddd-eeee-ffff-000000000030', 'DEV-Y-1'),
+  ('cccccccc-dddd-eeee-ffff-000000000032', 'cccccccc-dddd-eeee-ffff-000000000030', 'DEV-Y-2');
+
+INSERT INTO public.notification_settings (shop_id, type, enabled, threshold_json)
+VALUES (
+  'cccccccc-dddd-eeee-ffff-000000000030',
+  'health_alert_dead_letter_count',
+  true,
+  jsonb_build_object('threshold', 5)
+);
+
+INSERT INTO public.health_gauges (shop_id, device_id, gauge_key, value, observed_at) VALUES
+  ('cccccccc-dddd-eeee-ffff-000000000030', 'cccccccc-dddd-eeee-ffff-000000000031', 'dead_letter_count', 3, now()),
+  ('cccccccc-dddd-eeee-ffff-000000000030', 'cccccccc-dddd-eeee-ffff-000000000032', 'dead_letter_count', 3, now());
+
+SELECT public._scheduled_check_dead_letter_count();
+
+SELECT is(
+  (SELECT count(*)::int FROM public.notifications
+     WHERE shop_id = 'cccccccc-dddd-eeee-ffff-000000000030' AND type = 'health_alert_dead_letter_count'),
+  0,
+  'multi-device MAX: two devices individually under threshold produce no alert, even though their SUM would exceed it'
+);
+
+-- ============================================================================
+-- Section 10: disabled-type skip (Shop Z).
+-- ============================================================================
+INSERT INTO public.shops (id, name, timezone) VALUES
+  ('cccccccc-dddd-eeee-ffff-000000000040', 'Shop Z (dead-letter disabled)', 'Asia/Damascus');
+
+INSERT INTO public.devices (id, shop_id, code) VALUES
+  ('cccccccc-dddd-eeee-ffff-000000000041', 'cccccccc-dddd-eeee-ffff-000000000040', 'DEV-Z-1');
+
+INSERT INTO public.notification_settings (shop_id, type, enabled, threshold_json)
+VALUES (
+  'cccccccc-dddd-eeee-ffff-000000000040',
+  'health_alert_dead_letter_count',
+  false,
+  jsonb_build_object('threshold', 1)
+);
+
+INSERT INTO public.health_gauges (shop_id, device_id, gauge_key, value, observed_at)
+VALUES ('cccccccc-dddd-eeee-ffff-000000000040', 'cccccccc-dddd-eeee-ffff-000000000041', 'dead_letter_count', 99, now());
+
+SELECT public._scheduled_check_dead_letter_count();
+
+SELECT is(
+  (SELECT count(*)::int FROM public.notifications
+     WHERE shop_id = 'cccccccc-dddd-eeee-ffff-000000000040' AND type = 'health_alert_dead_letter_count'),
+  0,
+  'dead-letter disabled-type: a disabled notification_settings row never claims, regardless of gauge value'
 );
 
 SELECT * FROM finish();
