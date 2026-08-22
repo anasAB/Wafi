@@ -29,6 +29,7 @@ import { startNotificationSubscribers, handleDiscountEvent } from '@/services/ev
 import { startBusinessRuleSubscribers } from '@/services/events/businessRuleSubscriber'
 import { startDeferredJobWorker } from '@/services/events/deferredJobWorker'
 import { checkDeviceSyncStaleness } from '@/services/notifications/syncStalenessCheck'
+import { checkHealthAlerts } from '@/features/health/alerting/healthAlertCheck'
 import type { DomainEvent } from '@/services/events/domainEvent.types'
 
 const { offlineReady, dismissOfflineReady, needRefresh, applyUpdate, dismissNeedRefresh } = usePwaLifecycle()
@@ -75,6 +76,7 @@ function onSystemThemeChange() { applyTheme(settings.theme) }
 function onVisibilityChange() {
   if (document.visibilityState === 'visible') {
     void checkDeviceSyncStaleness(useDeviceStore().shopId, useDeviceStore().deviceId)
+    void checkHealthAlerts()
   }
 }
 
@@ -160,6 +162,12 @@ onMounted(async () => {
   // every app-foreground moment instead: once here on mount, and again on every
   // visibilitychange back to 'visible' (see the listener registered below).
   void checkDeviceSyncStaleness(useDeviceStore().shopId, useDeviceStore().deviceId)
+
+  // WAFI-148A Task 10: foreground evaluator for metrics #1/#2/#5/#6 (sync
+  // failures, offline duration, deferred-job failures, app errors). Same
+  // foreground-only trigger as the sync-staleness check above -- no
+  // shop_id is passed; the RPC derives the caller's own shop server-side.
+  void checkHealthAlerts()
 
   // WAFI-150: start the audit subscribers -- the first durable-subscriber consumer
   // -- at the same gate as the sweepers above (device/shop context resolved).

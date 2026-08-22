@@ -29,6 +29,7 @@ const {
   startProcessingRetrySweeperMock,
   startDeferredJobWorkerMock,
   checkDeviceSyncStalenessMock,
+  checkHealthAlertsMock,
 } = vi.hoisted(() => ({
   refreshShopIdMock: vi.fn().mockResolvedValue(undefined),
   hasAnyStaffMock: vi.fn().mockResolvedValue(true),
@@ -49,6 +50,7 @@ const {
   startProcessingRetrySweeperMock: vi.fn(),
   startDeferredJobWorkerMock: vi.fn().mockReturnValue({ stop: vi.fn() }),
   checkDeviceSyncStalenessMock: vi.fn().mockResolvedValue(undefined),
+  checkHealthAlertsMock: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/store/device.store', () => ({
@@ -113,6 +115,10 @@ vi.mock('@/services/notifications/syncStalenessCheck', () => ({
   checkDeviceSyncStaleness: checkDeviceSyncStalenessMock,
 }))
 
+vi.mock('@/features/health/alerting/healthAlertCheck', () => ({
+  checkHealthAlerts: checkHealthAlertsMock,
+}))
+
 import App from '@/App.vue'
 
 describe('App.vue onMounted', () => {
@@ -137,6 +143,12 @@ describe('App.vue onMounted', () => {
       },
     },
   }
+
+  it('runs the health alerts foreground evaluator on mount (WAFI-148A Task 10)', async () => {
+    mount(App, mountOpts)
+    await flushPromises()
+    expect(checkHealthAlertsMock).toHaveBeenCalled()
+  })
 
   it('starts the event-publish retry queue sweeper on mount (Sprint 2 final-review fix)', async () => {
     mount(App, mountOpts)
