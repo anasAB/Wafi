@@ -150,7 +150,7 @@ keeps `shift_id` as its `entity_id`. Full evidence in
 **Files:**
 - Create: `supabase/migrations/116_wafi148a_health_alert_state_a.sql`
 - Test: `supabase/tests/wafi148a_alert_state_schema.test.sql` (this task's assertions;
-  Task 2 adds more to the same file)
+  Task 3 adds more to the same file)
 
 - [ ] **Step 1: Write the failing pgTAP test** — table exists; columns `shop_id`,
       `metric_key`, `period_start`, `threshold_used`, `alerted_at` all `NOT NULL`;
@@ -272,13 +272,30 @@ keeps `shift_id` as its `entity_id`. Full evidence in
       `alert_key='overdue_shift'`, `entity_id` = that shift's id.
 - [ ] **Step 4: Run tests, verify they pass.**
 
+**✅ Tasks 1–6 complete** — concurrent-open-shift gate resolved; `health_alert_state_a`/`_b`
+schema, shared claim/resolve functions, metric #4's event-derived evaluator, and metric
+#8's scheduled evaluator all implemented, reviewed, and committed — see
+`.superpowers/sdd/2026-08-22-wafi-148a-health-alerting-plan/progress.md` for full detail,
+commit ranges, and review verdicts per task.
+
+**⚠️ Task 0 (WAFI-148 production-readiness gate) is NOT confirmed resolved** — per this
+task's own text, it does not block writing/testing code locally (which is all Tasks 1-6
+have done, against no live Postgres at all, Docker unavailable throughout), so
+implementation correctly proceeded. But it DOES gate actually shipping any of this
+plan's migrations to the hosted Supabase project. This remains an open item to clear
+before deployment — do not silently treat it as satisfied by local implementation
+progress.
+
+Continuing at Task 7.
+
 ### Task 6 — depends on Task 1's finding: Metric #8 (overdue shift) — scheduled evaluator
 
 **Files:**
-- Create: part of `supabase/migrations/121_wafi148a_scheduled_checks.sql`
+- Create: part of `supabase/migrations/120_wafi148a_scheduled_checks.sql` (already
+  created by this task — implemented and reviewed clean, see ledger)
 - Create: part of `supabase/tests/wafi148a_shape_b_evaluators.test.sql`
 
-- [ ] **Step 1: Confirm Task 1's finding is applied** — `entity_id` granularity for this
+- [x] **Step 1: Confirm Task 1's finding is applied** — `entity_id` granularity for this
       metric is per-`shift_id` (or the simplified sentinel, only if Task 1 justified it).
 - [ ] **Step 2: Write failing pgTAP tests:**
   - An open shift past threshold, never before evaluated, produces exactly one
@@ -306,7 +323,7 @@ keeps `shift_id` as its `entity_id`. Full evidence in
 ### Task 7: Metric #3 (dead-letter count) — scheduled evaluator
 
 **Files:**
-- Extend: `supabase/migrations/121_wafi148a_scheduled_checks.sql`
+- Extend: `supabase/migrations/120_wafi148a_scheduled_checks.sql`
 - Extend: `supabase/tests/wafi148a_shape_b_evaluators.test.sql`
 
 - [ ] **Step 1: Write failing pgTAP tests:**
@@ -329,7 +346,7 @@ keeps `shift_id` as its `entity_id`. Full evidence in
 exactly, do not collapse it back into one query for "simplicity."**
 
 **Files:**
-- Extend: `supabase/migrations/121_wafi148a_scheduled_checks.sql`
+- Extend: `supabase/migrations/120_wafi148a_scheduled_checks.sql`
 - Extend: `supabase/tests/wafi148a_shape_b_evaluators.test.sql`
 
 - [ ] **Step 1: Write failing pgTAP tests:**
@@ -366,7 +383,7 @@ exactly, do not collapse it back into one query for "simplicity."**
 ### Task 9 — Gate 2: notification_settings seeding (blocked on product thresholds)
 
 **Files:**
-- Create: `supabase/migrations/122_wafi148a_notification_settings_seed.sql`
+- Create: `supabase/migrations/121_wafi148a_notification_settings_seed.sql`
 
 - [ ] **Step 1: Write the migration structurally**, with `threshold_json` values left as
       explicit placeholders (e.g. a clearly-named sentinel or a migration that fails
@@ -388,7 +405,7 @@ exactly, do not collapse it back into one query for "simplicity."**
 - Create: `src/features/health/alerting/healthAlertCheck.ts`
 - Create: `src/features/health/alerting/healthAlertTypes.ts`
 - Create: `src/features/health/alerting/__tests__/healthAlertCheck.test.ts`
-- Create: `supabase/migrations/120_wafi148a_foreground_rpc.sql`
+- Create: `supabase/migrations/122_wafi148a_foreground_rpc.sql`
 - Create: part of `supabase/tests/wafi148a_shape_a_evaluators.test.sql`
 
 - [ ] **Step 1: Write failing pgTAP tests for the foreground RPC:**
@@ -424,7 +441,7 @@ exactly, do not collapse it back into one query for "simplicity."**
   - Flag off: no claims occur, existing state untouched.
   - Flag off while a Shape B condition recovers, then flag on: first post-re-enable
     evaluation resolves to `HEALTHY` without a spurious alert (uses Task 8's
-    reconciliation query for #7; uses Task 5/6's mechanisms for #8/#3).
+    reconciliation query for #7; uses Task 6/7's mechanisms for #8/#3).
   - Flag off then on, Shape A: evaluates fresh against current value/threshold, no
     attempt to reconstruct missed history.
 - [ ] **Step 2: Run tests, verify they fail.**
