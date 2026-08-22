@@ -15,7 +15,7 @@
 -- Run via: npx supabase test db
 
 BEGIN;
-SELECT plan(23);
+SELECT plan(37);
 
 SET LOCAL role postgres;
 
@@ -566,6 +566,231 @@ SELECT is(
      WHERE shop_id = 'cccccccc-dddd-eeee-ffff-000000000040' AND type = 'health_alert_dead_letter_count'),
   0,
   'dead-letter disabled-type: a disabled notification_settings row never claims, regardless of gauge value'
+);
+
+-- ============================================================================
+-- Task 8: metric #7 (stale devices) evaluator
+-- (_scheduled_check_stale_devices / migration 120). Sections 11-15 below each
+-- use their own dedicated shop id(s).
+-- ============================================================================
+
+-- ============================================================================
+-- Section 11: new-candidate discovery (Shop AA) -- an eligible, active device
+-- past the threshold produces exactly one notification: WARNING severity
+-- (not CRITICAL -- that's reserved for metric #8), entity_type='device',
+-- entity_id is the real device id (no shop-level sentinel).
+-- ============================================================================
+INSERT INTO public.shops (id, name, timezone) VALUES
+  ('dddddddd-eeee-ffff-0000-000000000001', 'Shop AA (stale device bootstrap)', 'Asia/Damascus');
+
+INSERT INTO public.devices (id, shop_id, code, is_active, last_seen_at) VALUES
+  ('dddddddd-eeee-ffff-0000-000000000002', 'dddddddd-eeee-ffff-0000-000000000001', 'DEV-AA-1', true, now() - interval '30 hours');
+
+INSERT INTO public.notification_settings (shop_id, type, enabled, threshold_json)
+VALUES (
+  'dddddddd-eeee-ffff-0000-000000000001',
+  'health_alert_stale_device',
+  true,
+  jsonb_build_object('threshold', 24)
+);
+
+SELECT public._scheduled_check_stale_devices();
+
+SELECT is(
+  (SELECT count(*)::int FROM public.notifications
+     WHERE shop_id = 'dddddddd-eeee-ffff-0000-000000000001' AND type = 'health_alert_stale_device'),
+  1,
+  'stale-device bootstrap: an active device past the threshold produces exactly one notification'
+);
+SELECT is(
+  (SELECT severity FROM public.notifications
+     WHERE shop_id = 'dddddddd-eeee-ffff-0000-000000000001' AND type = 'health_alert_stale_device'),
+  'WARNING',
+  'stale-device bootstrap notification severity is WARNING, not CRITICAL'
+);
+SELECT is(
+  (SELECT entity_type FROM public.notifications
+     WHERE shop_id = 'dddddddd-eeee-ffff-0000-000000000001' AND type = 'health_alert_stale_device'),
+  'device',
+  'stale-device bootstrap notification entity_type is device'
+);
+SELECT is(
+  (SELECT entity_id FROM public.notifications
+     WHERE shop_id = 'dddddddd-eeee-ffff-0000-000000000001' AND type = 'health_alert_stale_device'),
+  'dddddddd-eeee-ffff-0000-000000000002',
+  'stale-device bootstrap notification entity_id is the real device id, not a shop-level sentinel'
+);
+
+-- ============================================================================
+-- Section 12: recovery via freshness (Shop BB) -- a device that was stale and
+-- ALERTING becomes fresh again (last_seen_at updated) -> Query B resolves the
+-- alert to HEALTHY on the next tick.
+-- ============================================================================
+INSERT INTO public.shops (id, name, timezone) VALUES
+  ('dddddddd-eeee-ffff-0000-000000000010', 'Shop BB (stale device recovery via freshness)', 'Asia/Damascus');
+
+INSERT INTO public.devices (id, shop_id, code, is_active, last_seen_at) VALUES
+  ('dddddddd-eeee-ffff-0000-000000000011', 'dddddddd-eeee-ffff-0000-000000000010', 'DEV-BB-1', true, now() - interval '30 hours');
+
+INSERT INTO public.notification_settings (shop_id, type, enabled, threshold_json)
+VALUES (
+  'dddddddd-eeee-ffff-0000-000000000010',
+  'health_alert_stale_device',
+  true,
+  jsonb_build_object('threshold', 24)
+);
+
+-- Tick 1: stale -> ALERTING.
+SELECT public._scheduled_check_stale_devices();
+
+SELECT is(
+  (SELECT state FROM public.health_alert_state_b
+     WHERE shop_id = 'dddddddd-eeee-ffff-0000-000000000010' AND alert_key = 'stale_device'
+       AND entity_id = 'dddddddd-eeee-ffff-0000-000000000011'),
+  'ALERTING',
+  'recovery-via-freshness setup: the stale device is ALERTING after tick 1'
+);
+
+-- Device syncs again -- now fresh.
+UPDATE public.devices SET last_seen_at = now()
+ WHERE id = 'dddddddd-eeee-ffff-0000-000000000011';
+
+-- Tick 2: Query B must notice the now-fresh device (still is_active=true, so
+-- it would ALSO still be excluded from claiming again by Query A's threshold
+-- comparison, but resolution here is specifically Query B's job).
+SELECT public._scheduled_check_stale_devices();
+
+SELECT is(
+  (SELECT state FROM public.health_alert_state_b
+     WHERE shop_id = 'dddddddd-eeee-ffff-0000-000000000010' AND alert_key = 'stale_device'
+       AND entity_id = 'dddddddd-eeee-ffff-0000-000000000011'),
+  'HEALTHY',
+  'recovery-via-freshness: a stale ALERTING device that becomes fresh again is resolved to HEALTHY on the next tick'
+);
+
+-- ============================================================================
+-- Section 13: recovery via disappearance (Shop CC) -- THE round-3 fix. A
+-- stale device is ALERTING; it is then deactivated (is_active=false). This
+-- test explicitly proves Query B (not Query A) does the resolving: first we
+-- confirm the deactivated device is genuinely absent from a manual run of
+-- Query A's own predicate (is_active = true), THEN we run the full evaluator
+-- and confirm the existing ALERTING row was resolved anyway. If only Query A
+-- ran, this device would never be reconsidered at all (it has dropped out of
+-- the candidate population), so the resolution could only come from Query B.
+-- ============================================================================
+INSERT INTO public.shops (id, name, timezone) VALUES
+  ('dddddddd-eeee-ffff-0000-000000000020', 'Shop CC (stale device recovery via disappearance)', 'Asia/Damascus');
+
+INSERT INTO public.devices (id, shop_id, code, is_active, last_seen_at) VALUES
+  ('dddddddd-eeee-ffff-0000-000000000021', 'dddddddd-eeee-ffff-0000-000000000020', 'DEV-CC-1', true, now() - interval '30 hours');
+
+INSERT INTO public.notification_settings (shop_id, type, enabled, threshold_json)
+VALUES (
+  'dddddddd-eeee-ffff-0000-000000000020',
+  'health_alert_stale_device',
+  true,
+  jsonb_build_object('threshold', 24)
+);
+
+-- Tick 1: stale -> ALERTING.
+SELECT public._scheduled_check_stale_devices();
+
+SELECT is(
+  (SELECT state FROM public.health_alert_state_b
+     WHERE shop_id = 'dddddddd-eeee-ffff-0000-000000000020' AND alert_key = 'stale_device'
+       AND entity_id = 'dddddddd-eeee-ffff-0000-000000000021'),
+  'ALERTING',
+  'recovery-via-disappearance setup: the stale device is ALERTING after tick 1'
+);
+
+-- Device is deactivated (lost/retired device workflow).
+UPDATE public.devices SET is_active = false
+ WHERE id = 'dddddddd-eeee-ffff-0000-000000000021';
+
+-- Prove the deactivated device is genuinely absent from Query A's own
+-- predicate (is_active = true) -- i.e. Query A alone could never resolve it,
+-- because it never even sees this row again.
+SELECT is(
+  (SELECT count(*)::int FROM public.devices
+     WHERE id = 'dddddddd-eeee-ffff-0000-000000000021' AND is_active = true),
+  0,
+  'recovery-via-disappearance: the deactivated device is genuinely absent from Query A''s own is_active=true predicate'
+);
+
+-- Tick 2: run the full evaluator. The disappearance can only be noticed by
+-- Query B (which starts from the existing ALERTING row), not Query A.
+SELECT public._scheduled_check_stale_devices();
+
+SELECT is(
+  (SELECT state FROM public.health_alert_state_b
+     WHERE shop_id = 'dddddddd-eeee-ffff-0000-000000000020' AND alert_key = 'stale_device'
+       AND entity_id = 'dddddddd-eeee-ffff-0000-000000000021'),
+  'HEALTHY',
+  'recovery-via-disappearance: a deactivated device''s stale ALERTING row is resolved to HEALTHY by Query B, despite being absent from Query A''s candidate predicate'
+);
+
+-- ============================================================================
+-- Section 14: multi-device shop (Shop DD) -- two devices, one stale+ALERTING,
+-- one fresh, tracked independently with no cross-device interference.
+-- ============================================================================
+INSERT INTO public.shops (id, name, timezone) VALUES
+  ('dddddddd-eeee-ffff-0000-000000000030', 'Shop DD (multi-device independence)', 'Asia/Damascus');
+
+INSERT INTO public.devices (id, shop_id, code, is_active, last_seen_at) VALUES
+  ('dddddddd-eeee-ffff-0000-000000000031', 'dddddddd-eeee-ffff-0000-000000000030', 'DEV-DD-1', true, now() - interval '30 hours'),
+  ('dddddddd-eeee-ffff-0000-000000000032', 'dddddddd-eeee-ffff-0000-000000000030', 'DEV-DD-2', true, now() - interval '1 hour');
+
+INSERT INTO public.notification_settings (shop_id, type, enabled, threshold_json)
+VALUES (
+  'dddddddd-eeee-ffff-0000-000000000030',
+  'health_alert_stale_device',
+  true,
+  jsonb_build_object('threshold', 24)
+);
+
+SELECT public._scheduled_check_stale_devices();
+
+SELECT is(
+  (SELECT state FROM public.health_alert_state_b
+     WHERE shop_id = 'dddddddd-eeee-ffff-0000-000000000030' AND alert_key = 'stale_device'
+       AND entity_id = 'dddddddd-eeee-ffff-0000-000000000031'),
+  'ALERTING',
+  'multi-device independence: the stale device (DEV-DD-1) is ALERTING'
+);
+SELECT is(
+  (SELECT count(*)::int FROM public.health_alert_state_b
+     WHERE shop_id = 'dddddddd-eeee-ffff-0000-000000000030' AND alert_key = 'stale_device'
+       AND entity_id = 'dddddddd-eeee-ffff-0000-000000000032'),
+  0,
+  'multi-device independence: the fresh device (DEV-DD-2) never got a health_alert_state_b row at all -- no cross-device interference'
+);
+
+-- ============================================================================
+-- Section 15: disabled-type skip for Query A (Shop EE) -- a disabled
+-- notification_settings row never claims a new alert, regardless of how
+-- stale the device is.
+-- ============================================================================
+INSERT INTO public.shops (id, name, timezone) VALUES
+  ('dddddddd-eeee-ffff-0000-000000000040', 'Shop EE (stale device disabled)', 'Asia/Damascus');
+
+INSERT INTO public.devices (id, shop_id, code, is_active, last_seen_at) VALUES
+  ('dddddddd-eeee-ffff-0000-000000000041', 'dddddddd-eeee-ffff-0000-000000000040', 'DEV-EE-1', true, now() - interval '999 hours');
+
+INSERT INTO public.notification_settings (shop_id, type, enabled, threshold_json)
+VALUES (
+  'dddddddd-eeee-ffff-0000-000000000040',
+  'health_alert_stale_device',
+  false,
+  jsonb_build_object('threshold', 1)
+);
+
+SELECT public._scheduled_check_stale_devices();
+
+SELECT is(
+  (SELECT count(*)::int FROM public.notifications
+     WHERE shop_id = 'dddddddd-eeee-ffff-0000-000000000040' AND type = 'health_alert_stale_device'),
+  0,
+  'stale-device disabled-type: a disabled notification_settings row never claims, regardless of how stale the device is'
 );
 
 SELECT * FROM finish();

@@ -300,3 +300,257 @@ SELECT cron.schedule(
   '*/15 * * * *',
   $$ SELECT public._scheduled_check_dead_letter_count() $$
 );
+
+-- ============================================================================
+-- Task 8: Metric #7 (stale devices) -- scheduled evaluator with a genuine
+-- TWO-QUERY model. This is the round-3 correctness fix: a single
+-- eligible-candidate query cannot ever notice a device that has been
+-- deactivated (or deleted) while its alert was ALERTING, because such a
+-- device drops out of the eligible-candidate predicate entirely. Recovery
+-- therefore CANNOT be "re-run the candidate query and see if it's still
+-- there" -- it must be its own independent query that starts from existing
+-- ALERTING rows, not from the eligible-device population.
+--
+-- Eligible-device predicate: this is a translation of the WHERE-clause LOGIC
+-- in the client-side PowerSync/SQLite check src/services/notifications/
+-- syncStalenessCheck.ts, not a literal call to that file (it has no
+-- server-side equivalent). Verified against the actual devices table schema
+-- (migrations 001, 037, 042): shop_id = ? AND is_active = true. is_active is
+-- `boolean NOT NULL DEFAULT true` server-side, so unlike the client-side
+-- query (which tolerated legacy nulls on already-synced local rows), no
+-- null-check is needed here. There is no "onboarding-complete" column
+-- anywhere in the schema -- the design spec's mention of it does not map to
+-- any real column and is not implemented.
+--
+-- Threshold source: notification_settings.threshold_json for
+-- type='health_alert_stale_device', shape {"threshold": <hours>}. Same
+-- Option-A skip semantics as every other evaluator in this feature:
+-- missing/disabled settings row -> skip entirely, no claim attempt;
+-- missing/non-numeric/negative threshold -> skip + RAISE WARNING, never
+-- invent a default. Zero IS a valid threshold for this metric ("stale after
+-- 0 hours" is a valid, if aggressive, configuration) -- deliberately NOT
+-- rejecting zero the way metric #8 does; that rejection was specific to
+-- metric #8's elapsed-hours-since-open semantics, not a general rule.
+--
+-- Query A (new-alert discovery): candidates are active devices with a
+-- non-null last_seen_at that is at least the shop's configured threshold in
+-- the past. On match: claim_health_alert_transition(..., 'stale_device', ...,
+-- 'health_alert_stale_device', ..., 'WARNING', 'device') -- severity WARNING
+-- per the spec's Alert Definitions table (not CRITICAL, which is reserved
+-- for metric #8), entity_type='device', entity_id=the real device id (no
+-- shop-level sentinel -- this is genuinely per-device).
+--
+-- Query B (reconciliation) -- THE critical piece. A SEPARATE query over
+-- existing health_alert_state_b rows with alert_key='stale_device' AND
+-- state='ALERTING' (NOT the devices candidate list). For each such row,
+-- independently re-check whether the device is now fresh (last_seen_at
+-- within the shop's CURRENT threshold -- re-read per shop, since a shop may
+-- have changed its threshold since the alert fired) OR no longer eligible at
+-- all (deactivated: is_active=false, or deleted: no matching devices row).
+-- Either condition resolves via resolve_health_alert_transition. If a shop's
+-- notification_settings are missing/disabled/invalid at reconciliation time,
+-- freshness cannot be determined for that shop -- this function's choice is
+-- to skip freshness-based resolution for that ALERTING row on this tick (do
+-- NOT guess a default threshold) while still resolving it via the
+-- disappearance branch if the device is inactive/deleted. This is a
+-- documented judgment call, not an accident.
+--
+-- Both queries run every scheduled tick, from the same cron job. Both use the
+-- same per-candidate exception-isolation pattern as the other evaluators in
+-- this file (implicit PL/pgSQL subtransaction via BEGIN...EXCEPTION WHEN
+-- OTHERS, no explicit ROLLBACK).
+-- ============================================================================
+
+-- ============================================================================
+-- _scheduled_check_stale_devices
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public._scheduled_check_stale_devices()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_device       record;
+  v_alert        record;
+  v_settings     public.notification_settings%ROWTYPE;
+  v_threshold_hrs numeric;
+  v_dev          record;
+  v_is_fresh     boolean;
+BEGIN
+  -- ==========================================================================
+  -- Query A: new-alert discovery. Candidates are drawn from the eligible
+  -- device population directly (is_active = true, belongs to a shop, has a
+  -- last_seen_at, past the shop's threshold). A device that is inactive or
+  -- deleted simply never appears here -- that is exactly why Query B exists.
+  -- ==========================================================================
+  FOR v_device IN
+    SELECT id, shop_id, last_seen_at
+      FROM public.devices
+     WHERE is_active = true
+       AND last_seen_at IS NOT NULL
+  LOOP
+    BEGIN
+      SELECT * INTO v_settings
+        FROM public.notification_settings
+       WHERE shop_id = v_device.shop_id
+         AND type = 'health_alert_stale_device';
+
+      IF NOT FOUND OR NOT v_settings.enabled THEN
+        CONTINUE;
+      END IF;
+
+      IF v_settings.threshold_json IS NULL THEN
+        RAISE WARNING 'health_alert_stale_device: no threshold_json configured for shop %; skipping device %', v_device.shop_id, v_device.id;
+        CONTINUE;
+      END IF;
+
+      BEGIN
+        v_threshold_hrs := (v_settings.threshold_json ->> 'threshold')::numeric;
+      EXCEPTION WHEN OTHERS THEN
+        v_threshold_hrs := NULL;
+      END;
+
+      -- Zero IS a valid threshold for this metric -- deliberately not
+      -- rejected, unlike metric #8's zero-rejection rule.
+      IF v_threshold_hrs IS NULL OR v_threshold_hrs < 0 THEN
+        RAISE WARNING 'health_alert_stale_device: invalid threshold_json for shop %; skipping device %', v_device.shop_id, v_device.id;
+        CONTINUE;
+      END IF;
+
+      IF now() - v_device.last_seen_at >= (v_threshold_hrs || ' hours')::interval THEN
+        PERFORM public.claim_health_alert_transition(
+          v_device.shop_id,
+          'stale_device',
+          v_device.id,
+          'health_alert_stale_device',
+          'جهاز غير متصل منذ فترة طويلة',
+          format('هذا الجهاز لم يتزامن منذ أكثر من %s ساعة', v_threshold_hrs),
+          'WARNING',
+          'device'
+        );
+      END IF;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE WARNING '_scheduled_check_stale_devices (Query A) failed for device=%, shop=%: %',
+        v_device.id, v_device.shop_id, SQLERRM;
+    END;
+  END LOOP;
+
+  -- ==========================================================================
+  -- Query B: reconciliation. Starts from EXISTING ALERTING rows, not from the
+  -- eligible-device population -- this is the only way a deactivated/deleted
+  -- device (which has already dropped out of Query A's WHERE is_active=true
+  -- filter) can ever be noticed and resolved.
+  -- ==========================================================================
+  FOR v_alert IN
+    SELECT shop_id, entity_id
+      FROM public.health_alert_state_b
+     WHERE alert_key = 'stale_device'
+       AND state = 'ALERTING'
+  LOOP
+    BEGIN
+      -- Independently look up the device's current row, if any. No matching
+      -- row at all = deleted; is_active = false = deactivated. Either is a
+      -- "no longer eligible" disappearance case.
+      SELECT id, is_active, last_seen_at INTO v_dev
+        FROM public.devices
+       WHERE id = v_alert.entity_id
+         AND shop_id = v_alert.shop_id;
+
+      IF NOT FOUND OR NOT v_dev.is_active THEN
+        -- Disappearance branch: resolve regardless of threshold/freshness --
+        -- there is no eligible device left to be stale.
+        PERFORM public.resolve_health_alert_transition(
+          v_alert.shop_id,
+          'stale_device',
+          v_alert.entity_id
+        );
+        CONTINUE;
+      END IF;
+
+      -- Device still exists and is active -- re-check freshness against the
+      -- shop's CURRENT threshold (it may have changed since the alert
+      -- fired). Re-read notification_settings independently of Query A.
+      SELECT * INTO v_settings
+        FROM public.notification_settings
+       WHERE shop_id = v_alert.shop_id
+         AND type = 'health_alert_stale_device';
+
+      IF NOT FOUND OR NOT v_settings.enabled OR v_settings.threshold_json IS NULL THEN
+        -- Cannot determine freshness without a valid, enabled threshold for
+        -- this shop right now. Documented choice: skip freshness-based
+        -- resolution for this ALERTING row on this tick rather than guessing
+        -- a default threshold. (The disappearance branch above already
+        -- covers the case where the device itself is gone.)
+        CONTINUE;
+      END IF;
+
+      BEGIN
+        v_threshold_hrs := (v_settings.threshold_json ->> 'threshold')::numeric;
+      EXCEPTION WHEN OTHERS THEN
+        v_threshold_hrs := NULL;
+      END;
+
+      IF v_threshold_hrs IS NULL OR v_threshold_hrs < 0 THEN
+        -- Same "cannot determine freshness" reasoning as above.
+        CONTINUE;
+      END IF;
+
+      IF v_dev.last_seen_at IS NULL THEN
+        -- No last_seen_at at all: cannot be "fresh". Leave ALERTING.
+        v_is_fresh := false;
+      ELSE
+        v_is_fresh := (now() - v_dev.last_seen_at < (v_threshold_hrs || ' hours')::interval);
+      END IF;
+
+      IF v_is_fresh THEN
+        PERFORM public.resolve_health_alert_transition(
+          v_alert.shop_id,
+          'stale_device',
+          v_alert.entity_id
+        );
+      END IF;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE WARNING '_scheduled_check_stale_devices (Query B) failed for device=%, shop=%: %',
+        v_alert.entity_id, v_alert.shop_id, SQLERRM;
+    END;
+  END LOOP;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public._scheduled_check_stale_devices() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public._scheduled_check_stale_devices() FROM anon;
+REVOKE ALL ON FUNCTION public._scheduled_check_stale_devices() FROM authenticated;
+
+-- ============================================================================
+-- Indexes supporting Query A and Query B. EXPLAIN was not run against
+-- realistic data volume in this environment (Docker/local Postgres
+-- unavailable here, same established limitation as prior tasks in this
+-- feature) -- these are the straightforward covering indexes for each
+-- query's WHERE clause, not verified against a real query plan; revisit if
+-- production EXPLAIN output suggests otherwise.
+-- ============================================================================
+CREATE INDEX IF NOT EXISTS idx_devices_shop_active_last_seen
+  ON public.devices (shop_id, is_active, last_seen_at);
+
+CREATE INDEX IF NOT EXISTS idx_health_alert_state_b_stale_device_alerting
+  ON public.health_alert_state_b (shop_id, entity_id)
+  WHERE alert_key = 'stale_device' AND state = 'ALERTING';
+
+-- ============================================================================
+-- pg_cron registration for the stale-device evaluator. Same idempotent
+-- unschedule-then-schedule pattern, same 15-minute cadence, own separate job
+-- (same batch-efficiency rationale as the dead-letter job above).
+-- ============================================================================
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'wafi148a_stale_device_check') THEN
+    PERFORM cron.unschedule('wafi148a_stale_device_check');
+  END IF;
+END $$;
+
+SELECT cron.schedule(
+  'wafi148a_stale_device_check',
+  '*/15 * * * *',
+  $$ SELECT public._scheduled_check_stale_devices() $$
+);
