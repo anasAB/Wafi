@@ -15,7 +15,7 @@
 -- Run via: npx supabase test db
 
 BEGIN;
-SELECT plan(40);
+SELECT plan(50);
 
 SET LOCAL role postgres;
 
@@ -928,6 +928,230 @@ SELECT ok(
           AND entity_id = '66666666-7777-8888-9999-cccccccccccc')
   ))) < 0.01,
   'claim-then-notify atomicity: notifications.created_at and health_alert_state_b.state_changed_at for the bootstrap overdue-shift alert differ by less than 10ms (same transaction)'
+);
+
+-- ============================================================================
+-- Section 16 (Task 15, Finding 2 round-trip test for #7): disable
+-- health_alert_stale_device -> device goes stale (claim correctly gated,
+-- zero notifications) -> device becomes fresh again WHILE STILL DISABLED
+-- (must resolve to HEALTHY -- this is the part Finding 1 broke: the
+-- pre-fix code ANDed `NOT v_settings.enabled` into the same guard as the
+-- missing-threshold check, so it never resolved a disabled type's freshness
+-- branch) -> device goes stale again (still disabled, no claim) -> re-enable
+-- -> exactly one new notification for the post-re-enable episode.
+-- Shop WW.
+-- ============================================================================
+INSERT INTO public.shops (id, name, timezone) VALUES
+  ('eeeeeeee-ffff-0000-1111-000000000010', 'Shop WW (stale-device disable/recover/re-enable round trip)', 'Asia/Damascus');
+
+INSERT INTO public.devices (id, shop_id, code, is_active, last_seen_at) VALUES
+  ('eeeeeeee-ffff-0000-1111-000000000011', 'eeeeeeee-ffff-0000-1111-000000000010', 'DEV-WW-1', true, now() - interval '30 hours');
+
+INSERT INTO public.notification_settings (shop_id, type, enabled, threshold_json)
+VALUES (
+  'eeeeeeee-ffff-0000-1111-000000000010',
+  'health_alert_stale_device',
+  true,
+  jsonb_build_object('threshold', 24)
+);
+
+-- Step 0: enabled + stale -> claims ALERTING, one notification (establishes
+-- the ALERTING row the disable step below then targets).
+SELECT public._scheduled_check_stale_devices();
+
+-- Step 1: disable the type.
+UPDATE public.notification_settings SET enabled = false
+ WHERE shop_id = 'eeeeeeee-ffff-0000-1111-000000000010' AND type = 'health_alert_stale_device';
+
+-- Device is already stale/ALERTING from step 0. Confirm disabling produced
+-- no additional notification (still just the one from step 0) -- claim is
+-- correctly gated while disabled.
+SELECT is(
+  (SELECT count(*)::int FROM public.notifications
+     WHERE shop_id = 'eeeeeeee-ffff-0000-1111-000000000010' AND type = 'health_alert_stale_device'),
+  1,
+  'round-trip (#7) step 1: still just the pre-disable notification -- disabling does not itself claim or resolve'
+);
+
+-- Step 2: the device becomes fresh again WHILE STILL DISABLED. Resolve must
+-- fire regardless of `enabled` (Finding 1).
+UPDATE public.devices SET last_seen_at = now()
+ WHERE id = 'eeeeeeee-ffff-0000-1111-000000000011';
+
+SELECT public._scheduled_check_stale_devices();
+
+SELECT is(
+  (SELECT state FROM public.health_alert_state_b
+     WHERE shop_id = 'eeeeeeee-ffff-0000-1111-000000000010' AND alert_key = 'stale_device'
+       AND entity_id = 'eeeeeeee-ffff-0000-1111-000000000011'),
+  'HEALTHY',
+  'round-trip (#7) step 2: the device recovers (becomes fresh) to HEALTHY while the type is still disabled -- resolve is never gated on enabled'
+);
+
+-- Step 3: the device goes stale again, still disabled -- must NOT claim.
+UPDATE public.devices SET last_seen_at = now() - interval '30 hours'
+ WHERE id = 'eeeeeeee-ffff-0000-1111-000000000011';
+
+SELECT public._scheduled_check_stale_devices();
+
+SELECT is(
+  (SELECT count(*)::int FROM public.notifications
+     WHERE shop_id = 'eeeeeeee-ffff-0000-1111-000000000010' AND type = 'health_alert_stale_device'),
+  1,
+  'round-trip (#7) step 3: going stale again while still disabled produces zero additional notifications (still just the step-0 total)'
+);
+
+-- Step 4: re-enable -- the still-stale device is now eligible and claims
+-- exactly once for this post-re-enable episode.
+UPDATE public.notification_settings SET enabled = true
+ WHERE shop_id = 'eeeeeeee-ffff-0000-1111-000000000010' AND type = 'health_alert_stale_device';
+
+SELECT public._scheduled_check_stale_devices();
+
+SELECT is(
+  (SELECT count(*)::int FROM public.notifications
+     WHERE shop_id = 'eeeeeeee-ffff-0000-1111-000000000010' AND type = 'health_alert_stale_device'),
+  2,
+  'round-trip (#7) step 4: re-enabling produces exactly one additional notification (two total) -- one for the post-re-enable episode, not zero, not stale-doubled'
+);
+
+-- ============================================================================
+-- Section 17 (Task 15, Finding 2 round-trip test for #3): disable
+-- health_alert_dead_letter_count -> gauge rises above threshold (claim
+-- correctly gated, zero notifications) -> gauge drops back down WHILE STILL
+-- DISABLED (must resolve to HEALTHY -- Finding 1: the pre-fix code's
+-- settings-guard sat above the claim/resolve IF/ELSE, making the resolve
+-- branch unreachable whenever the type was disabled) -> gauge rises again
+-- (still disabled, no claim) -> re-enable -> exactly one new notification.
+-- Shop XX.
+-- ============================================================================
+INSERT INTO public.shops (id, name, timezone) VALUES
+  ('eeeeeeee-ffff-0000-1111-000000000020', 'Shop XX (dead-letter disable/recover/re-enable round trip)', 'Asia/Damascus');
+
+INSERT INTO public.devices (id, shop_id, code) VALUES
+  ('eeeeeeee-ffff-0000-1111-000000000021', 'eeeeeeee-ffff-0000-1111-000000000020', 'DEV-XX-1');
+
+INSERT INTO public.notification_settings (shop_id, type, enabled, threshold_json)
+VALUES (
+  'eeeeeeee-ffff-0000-1111-000000000020',
+  'health_alert_dead_letter_count',
+  true,
+  jsonb_build_object('threshold', 5)
+);
+
+-- Step 0: enabled + gauge over threshold -> claims ALERTING, one notification.
+INSERT INTO public.health_gauges (shop_id, device_id, gauge_key, value, observed_at)
+VALUES ('eeeeeeee-ffff-0000-1111-000000000020', 'eeeeeeee-ffff-0000-1111-000000000021', 'dead_letter_count', 9, now());
+
+SELECT public._scheduled_check_dead_letter_count();
+
+-- Step 1: disable the type.
+UPDATE public.notification_settings SET enabled = false
+ WHERE shop_id = 'eeeeeeee-ffff-0000-1111-000000000020' AND type = 'health_alert_dead_letter_count';
+
+SELECT is(
+  (SELECT count(*)::int FROM public.notifications
+     WHERE shop_id = 'eeeeeeee-ffff-0000-1111-000000000020' AND type = 'health_alert_dead_letter_count'),
+  1,
+  'round-trip (#3) step 1: still just the pre-disable notification -- disabling does not itself claim or resolve'
+);
+
+-- Step 2: the gauge drops back under threshold WHILE STILL DISABLED. Resolve
+-- must fire regardless of `enabled` (Finding 1).
+UPDATE public.health_gauges SET value = 1, observed_at = now()
+ WHERE shop_id = 'eeeeeeee-ffff-0000-1111-000000000020'
+   AND device_id = 'eeeeeeee-ffff-0000-1111-000000000021';
+
+SELECT public._scheduled_check_dead_letter_count();
+
+SELECT is(
+  (SELECT state FROM public.health_alert_state_b
+     WHERE shop_id = 'eeeeeeee-ffff-0000-1111-000000000020' AND alert_key = 'dead_letter_count'
+       AND entity_id = '00000000-0000-0000-0000-000000000000'),
+  'HEALTHY',
+  'round-trip (#3) step 2: the gauge recovers to HEALTHY while the type is still disabled -- resolve is never gated on enabled'
+);
+
+-- Step 3: the gauge rises above threshold again, still disabled -- must NOT
+-- claim.
+UPDATE public.health_gauges SET value = 9, observed_at = now()
+ WHERE shop_id = 'eeeeeeee-ffff-0000-1111-000000000020'
+   AND device_id = 'eeeeeeee-ffff-0000-1111-000000000021';
+
+SELECT public._scheduled_check_dead_letter_count();
+
+SELECT is(
+  (SELECT count(*)::int FROM public.notifications
+     WHERE shop_id = 'eeeeeeee-ffff-0000-1111-000000000020' AND type = 'health_alert_dead_letter_count'),
+  1,
+  'round-trip (#3) step 3: rising above threshold again while still disabled produces zero additional notifications (still just the step-0 total)'
+);
+
+-- Step 4: re-enable -- the still-bad gauge is now eligible and claims
+-- exactly once for this post-re-enable episode.
+UPDATE public.notification_settings SET enabled = true
+ WHERE shop_id = 'eeeeeeee-ffff-0000-1111-000000000020' AND type = 'health_alert_dead_letter_count';
+
+SELECT public._scheduled_check_dead_letter_count();
+
+SELECT is(
+  (SELECT count(*)::int FROM public.notifications
+     WHERE shop_id = 'eeeeeeee-ffff-0000-1111-000000000020' AND type = 'health_alert_dead_letter_count'),
+  2,
+  'round-trip (#3) step 4: re-enabling produces exactly one additional notification (two total) -- one for the post-re-enable episode, not zero, not stale-doubled'
+);
+
+-- ============================================================================
+-- Section 18 (Task 15, Finding 3): a shop has an ALERTING dead-letter row,
+-- then its health_gauges row for dead_letter_count is deleted entirely
+-- (simulating the gauge stopping reporting) -> the next scheduled run
+-- resolves the row to HEALTHY via Query B's gauge-disappeared branch, even
+-- though the shop is no longer visited by Query A's GROUP BY (which only
+-- ever sees shops that currently have gauge rows). Shop YY.
+-- ============================================================================
+INSERT INTO public.shops (id, name, timezone) VALUES
+  ('eeeeeeee-ffff-0000-1111-000000000030', 'Shop YY (dead-letter gauge disappears entirely)', 'Asia/Damascus');
+
+INSERT INTO public.devices (id, shop_id, code) VALUES
+  ('eeeeeeee-ffff-0000-1111-000000000031', 'eeeeeeee-ffff-0000-1111-000000000030', 'DEV-YY-1');
+
+INSERT INTO public.notification_settings (shop_id, type, enabled, threshold_json)
+VALUES (
+  'eeeeeeee-ffff-0000-1111-000000000030',
+  'health_alert_dead_letter_count',
+  true,
+  jsonb_build_object('threshold', 5)
+);
+
+INSERT INTO public.health_gauges (shop_id, device_id, gauge_key, value, observed_at)
+VALUES ('eeeeeeee-ffff-0000-1111-000000000030', 'eeeeeeee-ffff-0000-1111-000000000031', 'dead_letter_count', 9, now());
+
+-- Establish the ALERTING row.
+SELECT public._scheduled_check_dead_letter_count();
+
+SELECT is(
+  (SELECT state FROM public.health_alert_state_b
+     WHERE shop_id = 'eeeeeeee-ffff-0000-1111-000000000030' AND alert_key = 'dead_letter_count'
+       AND entity_id = '00000000-0000-0000-0000-000000000000'),
+  'ALERTING',
+  'gauge-disappeared setup: the dead-letter row is ALERTING before the gauge is removed'
+);
+
+-- The gauge stops reporting entirely -- its health_gauges row is deleted, so
+-- this shop drops out of Query A's GROUP BY population altogether.
+DELETE FROM public.health_gauges
+ WHERE shop_id = 'eeeeeeee-ffff-0000-1111-000000000030'
+   AND device_id = 'eeeeeeee-ffff-0000-1111-000000000031'
+   AND gauge_key = 'dead_letter_count';
+
+SELECT public._scheduled_check_dead_letter_count();
+
+SELECT is(
+  (SELECT state FROM public.health_alert_state_b
+     WHERE shop_id = 'eeeeeeee-ffff-0000-1111-000000000030' AND alert_key = 'dead_letter_count'
+       AND entity_id = '00000000-0000-0000-0000-000000000000'),
+  'HEALTHY',
+  'gauge-disappeared: a shop whose dead_letter_count gauge row is deleted entirely still has its existing ALERTING row resolved to HEALTHY by Query B'
 );
 
 SELECT * FROM finish();
