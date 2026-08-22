@@ -31,7 +31,8 @@ decisions, and are placed precisely in the task list below rather than silently 
 **Depends on:** WAFI-148 migrations 106-115 must be deployed to the hosted Supabase
 project and its pgTAP suite must have run against real Postgres before this plan's
 migrations ship (per WAFI-148's own outstanding status — this is not a new dependency
-introduced by 148A, it's inherited and restated so it isn't missed).
+introduced by 148A, it's inherited and restated so it isn't missed). **Enforced as Task
+0/Gate 0 below**, not left as prose only.
 
 ## Global Constraints (carried from the spec — do not re-derive, just apply)
 
@@ -74,7 +75,7 @@ introduced by 148A, it's inherited and restated so it isn't missed).
   the three scheduled-check functions (#3, #7, #8)
 - `supabase/migrations/122_wafi148a_notification_settings_seed.sql` — new alert types in
   `notification_settings`, **thresholds left as placeholders pending product sign-off
-  (Gate 2 — see Task 8)**
+  (Gate 2 — see Task 9)**
 - `supabase/tests/wafi148a_alert_state_schema.test.sql`
 - `supabase/tests/wafi148a_claim_functions.test.sql`
 - `supabase/tests/wafi148a_shape_a_evaluators.test.sql`
@@ -95,27 +96,56 @@ introduced by 148A, it's inherited and restated so it isn't missed).
 
 ---
 
-### Task 0 — Gate 1: verify concurrent-open-shift possibility (blocks Task 5 only)
+### Task 0 — Gate 0: WAFI-148 production-readiness (blocks Tasks 1-15 from shipping)
 
-**This must run before Task 5 (#8's evaluator) is finalized — not before Tasks 1-4.**
-Nothing about Shape A, Shape B's tables/functions, metric #4, or metrics #3/#7 depends on
-this answer; only #8's `entity_id` cardinality does.
+**This gate must be cleared before any of this plan's migrations are applied to the
+hosted Supabase project — it does not block writing/testing code locally against a
+throwaway Postgres instance.** 148A's evaluators read `health_metrics`/`health_gauges`
+directly; if WAFI-148's own schema/RPCs are not confirmed correct in a real environment,
+148A would be building alerting on top of an unverified foundation. This restates and
+formalizes the plan's existing "Depends on" note as an actual gated task, per
+implementation-readiness review round 4, rather than leaving it as prose easy to skip past.
 
-- [ ] Inspect `cashier_shifts`' schema, constraints, indexes, and the shift-opening
-      service code (`staff.service.ts`) to determine whether more than one shift can be
-      open (`closed_at IS NULL`) concurrently for one shop.
-- [ ] Record the finding directly in the spec's "Still open" section (update, don't
-      leave stale) and in this task.
-- [ ] If multiple concurrent open shifts are possible: #8 alerts per open shift, keyed by
-      real `shift_id` as `entity_id` (already the spec's assumption — no plan change
-      needed).
-- [ ] If not possible: consider whether `entity_id` for #8 can safely be a per-shop
-      sentinel instead of `shift_id` — **only simplify if the schema genuinely
-      guarantees single-open-shift-per-shop; do not assume it without the Task 0 finding.**
+- [ ] Confirm migrations 106-115 (WAFI-148) are deployed to the hosted Supabase project.
+- [ ] Confirm WAFI-148's pgTAP suite has been run and passes against real Postgres (not
+      just hand-verified/traced, per that ticket's own outstanding-risk note).
+- [ ] Spot-check `health_metrics`/`health_gauges` schema and RPC behavior
+      (`report_health_metrics`) against a real row in the hosted project — column
+      types, `GREATEST`-merge behavior, and the day-bucketed primary key all match what
+      this plan's evaluators assume.
+- [ ] **Gate:** if any of the above fails, stop — do not begin Task 1. Fix or re-verify
+      WAFI-148 first; 148A's migrations must not ship ahead of, or interleaved with, an
+      unverified WAFI-148 foundation.
 
 ---
 
-### Task 1: `health_alert_state_a` — schema
+### Task 1 — Gate 1: verify concurrent-open-shift possibility (blocks Task 6 only)
+
+**This must run before Task 6 (#8's evaluator) is finalized — not before Tasks 2-5.**
+Nothing about Shape A, Shape B's tables/functions, metric #4, or metrics #3/#7 depends on
+this answer; only #8's `entity_id` cardinality does.
+
+**Already resolved, recorded here for traceability — do not redo.** The spec's "Still
+open" section documents this was answered 2026-08-22: multiple shifts can be open
+concurrently for one shop (only uniqueness guarantee is one-open-shift-per-*device*, not
+per-shop — `supabase/migrations/026_cashier_shifts_zombie_guard.sql:33-38`). Decision: #8
+keeps `shift_id` as its `entity_id`. Full evidence in
+`.superpowers/sdd/2026-08-22-wafi-148a-health-alerting-plan/task-0-report.md`.
+
+- [x] Inspect `cashier_shifts`' schema, constraints, indexes, and the shift-opening
+      service code (`staff.service.ts`) to determine whether more than one shift can be
+      open (`closed_at IS NULL`) concurrently for one shop. **Done — yes, possible.**
+- [x] Record the finding directly in the spec's "Still open" section (update, don't
+      leave stale) and in this task. **Done.**
+- [x] If multiple concurrent open shifts are possible: #8 alerts per open shift, keyed by
+      real `shift_id` as `entity_id` (already the spec's assumption — no plan change
+      needed). **Confirmed — applies.**
+- [ ] ~~If not possible: consider whether `entity_id` for #8 can safely be a per-shop
+      sentinel instead of `shift_id`~~ — moot, multiple concurrent shifts are possible.
+
+---
+
+### Task 2: `health_alert_state_a` — schema
 
 **Files:**
 - Create: `supabase/migrations/116_wafi148a_health_alert_state_a.sql`
@@ -133,7 +163,7 @@ this answer; only #8's `entity_id` cardinality does.
       before deciding, don't diverge without reason).
 - [ ] **Step 4: Run test, verify it passes.**
 
-### Task 2: `health_alert_state_b` — schema
+### Task 3: `health_alert_state_b` — schema
 
 **Files:**
 - Modify: `supabase/tests/wafi148a_alert_state_schema.test.sql`
@@ -159,7 +189,7 @@ this answer; only #8's `entity_id` cardinality does.
       call site that uses it for `alert_key='dead_letter_count'`, not just in this
       migration's comment.
 
-### Task 3: Shared claim/resolve functions
+### Task 4: Shared claim/resolve functions
 
 **Files:**
 - Create: `supabase/migrations/118_wafi148a_claim_functions.sql`
@@ -211,7 +241,7 @@ this answer; only #8's `entity_id` cardinality does.
       project's existing RPC pattern says otherwise; verify against how `execute_rule_action`
       itself is locked down and mirror that, don't invent a new privilege model).
 
-### Task 4: Metric #4 (drawer mismatches) — event-derived evaluator
+### Task 5: Metric #4 (drawer mismatches) — event-derived evaluator
 
 **Files:**
 - Create: `supabase/migrations/119_wafi148a_shift_closed_trigger_extension.sql`
@@ -232,8 +262,8 @@ this answer; only #8's `entity_id` cardinality does.
     simulates this) and assert no second notification results.
   - **#8 resolve test:** a `shift.closed` event for a shift that was `ALERTING` in
     `health_alert_state_b` (`alert_key='overdue_shift'`) resolves that row to `HEALTHY` in
-    the same transaction — depends on Task 5's `alert_key` existing; if Task 5 isn't done
-    yet, stub this assertion and complete it after Task 5, don't skip it permanently.
+    the same transaction — depends on Task 6's `alert_key` existing; if Task 6 isn't done
+    yet, stub this assertion and complete it after Task 6, don't skip it permanently.
 - [ ] **Step 2: Run tests, verify they fail.**
 - [ ] **Step 3: Extend the existing `shift.closed` trigger function** to sequentially,
       within its existing transaction: (a) the existing drawer-mismatch projection write
@@ -242,24 +272,24 @@ this answer; only #8's `entity_id` cardinality does.
       `alert_key='overdue_shift'`, `entity_id` = that shift's id.
 - [ ] **Step 4: Run tests, verify they pass.**
 
-### Task 5 — depends on Task 0's finding: Metric #8 (overdue shift) — scheduled evaluator
+### Task 6 — depends on Task 1's finding: Metric #8 (overdue shift) — scheduled evaluator
 
 **Files:**
 - Create: part of `supabase/migrations/121_wafi148a_scheduled_checks.sql`
 - Create: part of `supabase/tests/wafi148a_shape_b_evaluators.test.sql`
 
-- [ ] **Step 1: Confirm Task 0's finding is applied** — `entity_id` granularity for this
-      metric is per-`shift_id` (or the simplified sentinel, only if Task 0 justified it).
+- [ ] **Step 1: Confirm Task 1's finding is applied** — `entity_id` granularity for this
+      metric is per-`shift_id` (or the simplified sentinel, only if Task 1 justified it).
 - [ ] **Step 2: Write failing pgTAP tests:**
   - An open shift past threshold, never before evaluated, produces exactly one
     notification (bootstrap case).
   - The same open shift, still overdue, on a second scheduled run produces zero
     additional notifications.
-  - Closing the shift (via the Task 4 trigger extension) resolves the state — **not**
+  - Closing the shift (via the Task 5 trigger extension) resolves the state — **not**
     the scheduled check — assert the scheduled check alone, without any `shift.closed`
     event, does *not* resolve an already-closed... actually assert the inverse: a closed
     shift is simply absent from the open-shift candidate query, so the scheduled check
-    correctly does nothing for it (the resolve already happened via Task 4).
+    correctly does nothing for it (the resolve already happened via Task 5).
   - Elapsed-duration comparison is timezone-independent — construct a shop in a
     non-UTC timezone and confirm the threshold comparison uses absolute `timestamptz`
     elapsed time, not a shop-local-day bucket comparison.
@@ -273,7 +303,7 @@ this answer; only #8's `entity_id` cardinality does.
       operational tuning, not architectural).
 - [ ] **Step 6: Run tests, verify they pass.**
 
-### Task 6: Metric #3 (dead-letter count) — scheduled evaluator
+### Task 7: Metric #3 (dead-letter count) — scheduled evaluator
 
 **Files:**
 - Extend: `supabase/migrations/121_wafi148a_scheduled_checks.sql`
@@ -284,16 +314,16 @@ this answer; only #8's `entity_id` cardinality does.
   - Gauge rises, falls back under threshold, rises again → exactly two notifications
     (one per `HEALTHY→ALERTING` transition), zero while it stays above threshold across
     multiple ticks.
-  - Uses the defined sentinel `entity_id` from Task 2, Step 5 — assert the exact constant.
+  - Uses the defined sentinel `entity_id` from Task 3, Step 5 — assert the exact constant.
 - [ ] **Step 2: Run tests, verify they fail.**
 - [ ] **Step 3: Implement the scheduled function** — read `health_gauges.dead_letter_count`
       per shop, call `claim_health_alert_transition` (rising) or
       `resolve_health_alert_transition` (falling) as appropriate, same per-candidate
-      exception-isolation pattern as Task 5. Register in the same `pg_cron` job or a
+      exception-isolation pattern as Task 6. Register in the same `pg_cron` job or a
       separate one — batch efficiency decision, not architectural.
 - [ ] **Step 4: Run tests, verify they pass.**
 
-### Task 7: Metric #7 (stale devices) — scheduled evaluator with dual-query recovery
+### Task 8: Metric #7 (stale devices) — scheduled evaluator with dual-query recovery
 
 **This is the task with the round-3 correctness fix — implement the two-query model
 exactly, do not collapse it back into one query for "simplicity."**
@@ -324,7 +354,7 @@ exactly, do not collapse it back into one query for "simplicity."**
     `alert_key='stale_device'` and `state='ALERTING'`, independently check whether the
     device is now fresh **or** no longer in the eligible population at all, call
     `resolve_health_alert_transition` for either case.
-  - Both wrapped in the same per-candidate exception-isolation pattern as Task 5/6.
+  - Both wrapped in the same per-candidate exception-isolation pattern as Task 6/7.
 - [ ] **Step 4: Add indexes** — `devices(shop_id, last_seen_at)` (plus whatever columns
       the reused eligibility predicate filters on) for Query A; a partial index
       `health_alert_state_b (shop_id, entity_id) WHERE alert_key='stale_device' AND
@@ -333,7 +363,7 @@ exactly, do not collapse it back into one query for "simplicity."**
       seeing real query plans.
 - [ ] **Step 5: Run tests, verify they pass.**
 
-### Task 8 — Gate 2: notification_settings seeding (blocked on product thresholds)
+### Task 9 — Gate 2: notification_settings seeding (blocked on product thresholds)
 
 **Files:**
 - Create: `supabase/migrations/122_wafi148a_notification_settings_seed.sql`
@@ -350,9 +380,9 @@ exactly, do not collapse it back into one query for "simplicity."**
       supplies the actual threshold defaults** (spec Gate 2). Schema, RPCs, cron jobs, and
       all tests above are fully implementable and testable using placeholder/test-only
       threshold values in the meantime — this gate blocks production config seeding only,
-      not any of Tasks 0-7 or 9-11.
+      not any of Tasks 0-8 or 10-12.
 
-### Task 9: Client-side foreground evaluator (metrics 1/2/5/6)
+### Task 10: Client-side foreground evaluator (metrics 1/2/5/6)
 
 **Files:**
 - Create: `src/features/health/alerting/healthAlertCheck.ts`
@@ -384,7 +414,7 @@ exactly, do not collapse it back into one query for "simplicity."**
       itself (these are two independent triggers, per the spec's clarification).
 - [ ] **Step 6: Implement, run tests, verify they pass.**
 
-### Task 10: Feature-flag gating (WAFI-155)
+### Task 11: Feature-flag gating (WAFI-155)
 
 **Files:**
 - Modify: relevant evaluator call sites (trigger, RPC, scheduled functions) to check the
@@ -393,8 +423,8 @@ exactly, do not collapse it back into one query for "simplicity."**
 - [ ] **Step 1: Write failing tests:**
   - Flag off: no claims occur, existing state untouched.
   - Flag off while a Shape B condition recovers, then flag on: first post-re-enable
-    evaluation resolves to `HEALTHY` without a spurious alert (uses Task 7's
-    reconciliation query for #7; uses Task 4/5's mechanisms for #8/#3).
+    evaluation resolves to `HEALTHY` without a spurious alert (uses Task 8's
+    reconciliation query for #7; uses Task 5/6's mechanisms for #8/#3).
   - Flag off then on, Shape A: evaluates fresh against current value/threshold, no
     attempt to reconstruct missed history.
 - [ ] **Step 2: Run tests, verify they fail.**
@@ -402,10 +432,10 @@ exactly, do not collapse it back into one query for "simplicity."**
       claim function).
 - [ ] **Step 4: Run tests, verify they pass.**
 
-### Task 11: `notification_settings.enabled = false` behavior
+### Task 12: `notification_settings.enabled = false` behavior
 
 **Files:**
-- Modify: same evaluator call sites as Task 10.
+- Modify: same evaluator call sites as Task 11.
 
 - [ ] **Step 1: Write failing tests:**
   - Disabled type + bad condition → no claim occurs at all (not claim-but-suppress).
@@ -420,18 +450,18 @@ exactly, do not collapse it back into one query for "simplicity."**
       disabled.
 - [ ] **Step 4: Run tests, verify they pass.**
 
-### Task 12: Settings UI — new alert types
+### Task 13: Settings UI — new alert types
 
 **Files:**
 - Modify: existing notification-settings screen/composable to surface the 8 new types.
 
 - [ ] **Step 1:** Add the 8 new `notification_settings` types to the existing UI, with
-      threshold input validation matching Task 8's server-side rules (reject invalid
+      threshold input validation matching Task 9's server-side rules (reject invalid
       config at write time, not just at evaluation time).
 - [ ] **Step 2:** Manual verification in a running dev instance — toggle each type,
       confirm settings persist and are read by the evaluators.
 
-### Task 13 — Gate 3: KPI instrumentation (target number pending product)
+### Task 14 — Gate 3: KPI instrumentation (target number pending product)
 
 **Files:**
 - New instrumentation for `evaluation_started_at`, `evaluation_completed_at`,
@@ -449,7 +479,7 @@ exactly, do not collapse it back into one query for "simplicity."**
       number** (Gate 3). This blocks final KPI sign-off / feature-completion, not
       instrumentation work.
 
-### Task 14: Full-branch verification
+### Task 15: Full-branch verification
 
 - [ ] Run the complete pgTAP suite against real Postgres (both this branch's tests and
       WAFI-148's own still-outstanding suite — per this plan's stated dependency, both
@@ -463,5 +493,5 @@ exactly, do not collapse it back into one query for "simplicity."**
       `AI_PRINCIPAL_ENGINEER_REVIEW.md`'s required templates — do not mark KPI ownership
       `Defined` if Gate 3's target number is still outstanding; record it as `Backfill
       needed` instead, honestly, per that checklist's own instructions.
-- [ ] Confirm Gates 1, 2, 3 are each either resolved or explicitly still tracked as open
+- [ ] Confirm Gates 0, 1, 2, 3 are each either resolved or explicitly still tracked as open
       before calling the ticket complete.
