@@ -37,21 +37,8 @@ CREATE TABLE IF NOT EXISTS public.health_alert_state_b (
   PRIMARY KEY (shop_id, alert_key, entity_id)
 );
 
--- Index to support efficient queries over alert state by shop and key.
-CREATE INDEX IF NOT EXISTS idx_health_alert_state_b_shop_key
-  ON public.health_alert_state_b (shop_id, alert_key);
-
--- Partial index to support #7's existing-state reconciliation query:
--- "which ALERTING device-stale alerts exist for this shop?"
-CREATE INDEX IF NOT EXISTS idx_health_alert_state_b_stale_device_alerting
-  ON public.health_alert_state_b (shop_id, entity_id)
-  WHERE alert_key = 'stale_device' AND state = 'ALERTING';
-
--- Partial index to support #8's existing-state reconciliation query:
--- "which ALERTING overdue-shift alerts exist for this shop?"
-CREATE INDEX IF NOT EXISTS idx_health_alert_state_b_overdue_shift_alerting
-  ON public.health_alert_state_b (shop_id, entity_id)
-  WHERE alert_key = 'overdue_shift' AND state = 'ALERTING';
+-- Index design deferred to Task 7 (per plan): no indexes until real evaluator queries
+-- exist to validate against with EXPLAIN. Task 1-6 create schema only.
 
 ALTER TABLE public.health_alert_state_b ENABLE ROW LEVEL SECURITY;
 
