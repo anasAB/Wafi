@@ -15,6 +15,13 @@ import {
   DEFAULT_SETTINGS, getNotificationSettings,
   type SettingsBearingType, type NotificationTypeSettings,
 } from '@/services/notifications/notificationSettings'
+import { getHealthAlertSetting } from '@/features/health/alerting/healthAlertSettings'
+import type { HealthAlertType } from '@/features/health/alerting/healthAlertTypes'
+import {
+  HEALTH_ALERT_SYNC_FAILURES, HEALTH_ALERT_OFFLINE_DURATION, HEALTH_ALERT_DEAD_LETTER_COUNT,
+  HEALTH_ALERT_DRAWER_MISMATCHES, HEALTH_ALERT_DEFERRED_JOB_FAILURES, HEALTH_ALERT_APP_ERRORS,
+  HEALTH_ALERT_STALE_DEVICE, HEALTH_ALERT_OVERDUE_SHIFT,
+} from '@/features/health/alerting/healthAlertTypes'
 
 // 10 settings-bearing types, NOT 11 -- inventory.low_stock is deliberately
 // absent (its threshold is products.low_stock_threshold, per product, per the
@@ -54,8 +61,78 @@ interface Row {
   thresholdField: string | undefined
 }
 
+// WAFI-148A Task 13: the 8 new health-alert types, deliberately NOT part of
+// TYPES/DEFAULT_SETTINGS above -- see healthAlertSettings.ts for why they
+// need their own read/write path (Option A: missing row = disabled, no
+// invented threshold, unlike the 10 types above).
+const HEALTH_TYPES: HealthAlertType[] = [
+  HEALTH_ALERT_SYNC_FAILURES,
+  HEALTH_ALERT_OFFLINE_DURATION,
+  HEALTH_ALERT_DEAD_LETTER_COUNT,
+  HEALTH_ALERT_DRAWER_MISMATCHES,
+  HEALTH_ALERT_DEFERRED_JOB_FAILURES,
+  HEALTH_ALERT_APP_ERRORS,
+  HEALTH_ALERT_STALE_DEVICE,
+  HEALTH_ALERT_OVERDUE_SHIFT,
+]
+
+// Labels matched to the exact Arabic wording each server-side evaluator uses
+// in its notification title (migrations 119/120/122), so the settings label
+// and the alert the owner later sees read as the same thing. The drawer-
+// mismatches label is deliberately worded as a COUNT ("حالات عدم تطابق"), not
+// as "فرق في تسوية الصندوق" (the existing WAFI-145 drawer.variance label
+// above) -- different mechanism, count-based not magnitude-based.
+const HEALTH_TYPE_LABELS: Record<HealthAlertType, string> = {
+  [HEALTH_ALERT_SYNC_FAILURES]:        'فشل في المزامنة',
+  [HEALTH_ALERT_OFFLINE_DURATION]:     'انقطاع طويل عن الإنترنت',
+  [HEALTH_ALERT_DEAD_LETTER_COUNT]:    'رسائل معلقة في قائمة الانتظار',
+  [HEALTH_ALERT_DRAWER_MISMATCHES]:    'عدد حالات عدم تطابق الصندوق',
+  [HEALTH_ALERT_DEFERRED_JOB_FAILURES]:'فشل في تنفيذ عملية مؤجلة',
+  [HEALTH_ALERT_APP_ERRORS]:           'أخطاء متكررة في التطبيق',
+  [HEALTH_ALERT_STALE_DEVICE]:         'جهاز غير متزامن لفترة طويلة',
+  [HEALTH_ALERT_OVERDUE_SHIFT]:        'وردية مفتوحة لفترة طويلة',
+}
+
+// Unit hint shown next to each threshold input, per the design spec's Alert
+// Definitions table. Sync failures / deferred-job failures / app errors /
+// drawer mismatches are raw SUM(...) >= N count comparisons (migrations
+// 119/122); stale device / overdue shift compare an elapsed-hours interval
+// directly against the configured number (migration 120, `(threshold ||
+// 'hours')::interval`), so the number IS hours, not a converted unit.
+// Offline duration is a SUM(offline_duration_seconds) >= N comparison
+// (migration 122) -- the configured number is compared directly against a
+// seconds total, so it is labeled in seconds here rather than "hours" to
+// avoid a unit mismatch between what the owner types and what the evaluator
+// compares against. Dead-letter count is a plain gauge >= N comparison.
+const HEALTH_THRESHOLD_UNIT: Record<HealthAlertType, string> = {
+  [HEALTH_ALERT_SYNC_FAILURES]:        'العدد اليوم ≥',
+  [HEALTH_ALERT_OFFLINE_DURATION]:     'إجمالي ثواني الانقطاع اليوم ≥',
+  [HEALTH_ALERT_DEAD_LETTER_COUNT]:    'العدد ≥',
+  [HEALTH_ALERT_DRAWER_MISMATCHES]:    'العدد اليوم ≥',
+  [HEALTH_ALERT_DEFERRED_JOB_FAILURES]:'العدد اليوم ≥',
+  [HEALTH_ALERT_APP_ERRORS]:           'العدد اليوم ≥',
+  [HEALTH_ALERT_STALE_DEVICE]:         'عدد الساعات ≥',
+  [HEALTH_ALERT_OVERDUE_SHIFT]:        'عدد الساعات ≥',
+}
+
+interface HealthRow {
+  type: HealthAlertType
+  enabled: boolean
+  threshold: number | null
+  inputValue: string
+  error: string
+}
+
+function isValidHealthThreshold(value: string): number | null {
+  if (value.trim() === '') return null
+  const num = Number(value)
+  if (Number.isNaN(num) || num <= 0) return null
+  return num
+}
+
 const router = useRouter()
 const rows = ref<Row[]>([])
+const healthRows = ref<HealthRow[]>([])
 const openTime = ref<string>('')
 const closeTime = ref<string>('')
 const is24x7 = ref(false)
@@ -68,6 +145,20 @@ async function loadRows() {
     const s = await getNotificationSettings(shopId, type)
     const { enabled, ...settings } = s
     return { type, enabled, settings: settings as NotificationTypeSettings, thresholdField: THRESHOLD_FIELD[type] }
+  }))
+}
+
+async function loadHealthRows() {
+  const shopId = useDeviceStore().shopId
+  healthRows.value = await Promise.all(HEALTH_TYPES.map(async (type) => {
+    const s = await getHealthAlertSetting(shopId, type)
+    return {
+      type,
+      enabled: s.enabled,
+      threshold: s.threshold,
+      inputValue: s.threshold === null ? '' : String(s.threshold),
+      error: '',
+    }
   }))
 }
 
@@ -122,6 +213,70 @@ async function updateThreshold(row: Row, value: string) {
   await upsertSettings(row)
 }
 
+// Same read-then-insert-or-update pattern as upsertSettings above, against
+// the same notification_settings table -- deliberately not a different write
+// mechanism. threshold_json is written as exactly `{"threshold": N}`, the
+// shape every evaluator in migrations 119/120/122 reads via
+// `threshold_json ->> 'threshold'`. When threshold is null (not yet
+// configured), threshold_json is written as null rather than inventing 0.
+async function upsertHealthRow(row: HealthRow) {
+  const shopId = useDeviceStore().shopId
+  const now = new Date().toISOString()
+  const thresholdJson = row.threshold === null ? null : JSON.stringify({ threshold: row.threshold })
+  const existing = await db.getOptional<{ id: string }>(
+    `select id from notification_settings where shop_id = ? and type = ?`,
+    [shopId, row.type],
+  )
+  if (existing) {
+    await db.execute(
+      `update notification_settings set enabled = ?, threshold_json = ?, updated_at = ? where id = ?`,
+      [row.enabled ? 1 : 0, thresholdJson, now, existing.id],
+    )
+  } else {
+    await db.execute(
+      `insert into notification_settings (id, shop_id, type, enabled, threshold_json, updated_at) values (?, ?, ?, ?, ?, ?)`,
+      [crypto.randomUUID(), shopId, row.type, row.enabled ? 1 : 0, thresholdJson, now],
+    )
+  }
+}
+
+// Enabling requires a valid (>0) threshold already present -- the UI's job is
+// to prevent submitting an invalid config in the first place, matching (but
+// stricter than) the server-side's "invalid config -> skip" rule. Disabling
+// is always allowed and keeps whatever threshold was already configured.
+async function toggleHealthEnabled(row: HealthRow) {
+  if (!row.enabled) {
+    const num = isValidHealthThreshold(row.inputValue)
+    if (num === null) {
+      row.error = 'أدخل قيمة صحيحة أكبر من صفر قبل التفعيل'
+      return
+    }
+    row.threshold = num
+  }
+  row.error = ''
+  row.enabled = !row.enabled
+  await upsertHealthRow(row)
+}
+
+async function updateHealthThreshold(row: HealthRow, value: string) {
+  row.inputValue = value
+  const num = isValidHealthThreshold(value)
+  if (num === null) {
+    // Invalid/empty threshold: never silently enable/keep-enabled with a bad
+    // value -- force the type off until the owner enters a valid number.
+    row.threshold = null
+    if (row.enabled) {
+      row.enabled = false
+      row.error = 'تم إيقاف هذا التنبيه لأن القيمة غير صالحة'
+    }
+    await upsertHealthRow(row)
+    return
+  }
+  row.error = ''
+  row.threshold = num
+  await upsertHealthRow(row)
+}
+
 async function saveHours() {
   hoursError.value = ''
   hoursSaved.value = false
@@ -147,6 +302,7 @@ async function saveHours() {
 
 onMounted(async () => {
   await loadRows()
+  await loadHealthRows()
   await loadShopHours()
 })
 </script>
@@ -227,6 +383,53 @@ onMounted(async () => {
         </div>
       </div>
     </div>
+
+    <p class="section-label">تنبيهات صحة النظام</p>
+    <div class="settings-card health-alerts-card" data-testid="health-alerts-section">
+      <p class="health-alerts-hint">
+        هذه التنبيهات متوقفة حتى تُدخل قيمة الحد وتفعّلها بنفسك -- لا توجد قيمة افتراضية.
+      </p>
+      <div
+        v-for="(row, idx) in healthRows"
+        :key="row.type"
+        class="type-row"
+        :class="{ 'type-row--last': idx === healthRows.length - 1 }"
+        :data-testid="`health-alert-type-row-${row.type}`"
+      >
+        <div class="type-row-main">
+          <span class="type-row-label">{{ HEALTH_TYPE_LABELS[row.type] }}</span>
+          <label class="switch">
+            <input
+              type="checkbox"
+              :checked="row.enabled"
+              :data-testid="`health-enable-toggle-${row.type}`"
+              @change="toggleHealthEnabled(row)"
+            >
+          </label>
+        </div>
+        <div class="type-row-threshold">
+          <span class="health-threshold-unit">{{ HEALTH_THRESHOLD_UNIT[row.type] }}</span>
+          <input
+            type="number"
+            min="1"
+            step="1"
+            class="field-input field-input--small"
+            placeholder="غير مُهيّأ"
+            :value="row.inputValue"
+            :data-testid="`health-threshold-input-${row.type}`"
+            @change="updateHealthThreshold(row, ($event.target as HTMLInputElement).value)"
+          >
+        </div>
+        <p
+          v-if="row.threshold === null"
+          class="health-not-configured"
+          :data-testid="`health-not-configured-${row.type}`"
+        >
+          غير مُهيّأ
+        </p>
+        <p v-if="row.error" class="hours-error" :data-testid="`health-error-${row.type}`">{{ row.error }}</p>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -275,5 +478,13 @@ onMounted(async () => {
 
 .switch input { width: 18px; height: 18px; }
 
-.type-row-threshold { display: flex; justify-content: flex-end; }
+.type-row-threshold { display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; }
+
+.health-alerts-card {
+  background: linear-gradient(135deg, rgba(217, 119, 6, 0.14), rgba(255, 255, 255, 0.04));
+  border-color: rgba(217, 119, 6, 0.32);
+}
+.health-alerts-hint { margin: 0; padding: 0.7rem 0.95rem; font-size: 0.75rem; color: #C99A4B; border-bottom: 1px solid rgba(217, 119, 6, 0.2); }
+.health-threshold-unit { font-size: 0.72rem; color: #9AA8BE; }
+.health-not-configured { margin: 0; font-size: 0.72rem; color: #C99A4B; font-weight: 600; }
 </style>

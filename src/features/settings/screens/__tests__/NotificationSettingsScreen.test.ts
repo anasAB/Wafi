@@ -124,4 +124,77 @@ describe('NotificationSettingsScreen (WAFI-145 Task 18)', () => {
       expect(wrapper.find(`[data-testid="threshold-input-${type}"]`).exists()).toBe(false)
     }
   })
+
+  // WAFI-148A Task 13: the 8 new health-alert types get their own section and
+  // their own Option-A "missing row = disabled, no default" read path
+  // (getHealthAlertSetting), NOT the 10-type getNotificationSettings path
+  // above (whose missing-row default is enabled=true, the opposite contract).
+  describe('health-alert types (WAFI-148A Task 13)', () => {
+    it('renders all 8 health-alert types in a distinct section', async () => {
+      const wrapper = mountIt()
+      await flushPromises()
+      expect(wrapper.find('[data-testid="health-alerts-section"]').exists()).toBe(true)
+      const healthTypes = [
+        'health_alert_sync_failures',
+        'health_alert_offline_duration',
+        'health_alert_dead_letter_count',
+        'health_alert_drawer_mismatches',
+        'health_alert_deferred_job_failures',
+        'health_alert_app_errors',
+        'health_alert_stale_device',
+        'health_alert_overdue_shift',
+      ]
+      for (const type of healthTypes) {
+        expect(wrapper.find(`[data-testid="health-alert-type-row-${type}"]`).exists()).toBe(true)
+      }
+    })
+
+    it('shows "not configured" (not a pre-filled default) when no row exists', async () => {
+      // getOptional resolves undefined for every query (default beforeEach mock) --
+      // no notification_settings row for any health-alert type.
+      const wrapper = mountIt()
+      await flushPromises()
+      const row = wrapper.get('[data-testid="health-alert-type-row-health_alert_sync_failures"]')
+      expect(row.find('[data-testid="health-not-configured-health_alert_sync_failures"]').exists()).toBe(true)
+      expect((row.find('[data-testid="health-enable-toggle-health_alert_sync_failures"]').element as HTMLInputElement).checked).toBe(false)
+      expect((row.find('[data-testid="health-threshold-input-health_alert_sync_failures"]').element as HTMLInputElement).value).toBe('')
+    })
+
+    it('prevents enabling without a threshold value', async () => {
+      const wrapper = mountIt()
+      await flushPromises()
+      execute.mockClear()
+      await wrapper.find('[data-testid="health-enable-toggle-health_alert_sync_failures"]').setValue(true)
+      await flushPromises()
+      expect(execute).not.toHaveBeenCalled()
+      expect(wrapper.find('[data-testid="health-error-health_alert_sync_failures"]').exists()).toBe(true)
+    })
+
+    it('entering a threshold then enabling writes threshold_json as {"threshold": N} via the same write path', async () => {
+      const wrapper = mountIt()
+      await flushPromises()
+      getOptional.mockClear()
+      execute.mockClear()
+      // No existing row -> insert path, same as the 10-type flow.
+      getOptional.mockResolvedValueOnce(undefined)
+      await wrapper.find('[data-testid="health-threshold-input-health_alert_sync_failures"]').setValue('5')
+      await flushPromises()
+
+      expect(execute).toHaveBeenCalledWith(
+        expect.stringContaining('insert into notification_settings'),
+        [expect.any(String), 'shop-1', 'health_alert_sync_failures', 0, JSON.stringify({ threshold: 5 }), expect.any(String)],
+      )
+
+      getOptional.mockClear()
+      execute.mockClear()
+      getOptional.mockResolvedValueOnce({ id: 'row-health-1' })
+      await wrapper.find('[data-testid="health-enable-toggle-health_alert_sync_failures"]').setValue(true)
+      await flushPromises()
+
+      expect(execute).toHaveBeenCalledWith(
+        expect.stringContaining('update notification_settings'),
+        [1, JSON.stringify({ threshold: 5 }), expect.any(String), 'row-health-1'],
+      )
+    })
+  })
 })
