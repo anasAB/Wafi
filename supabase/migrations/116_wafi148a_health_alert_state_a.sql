@@ -8,13 +8,7 @@
 
 CREATE TABLE IF NOT EXISTS public.health_alert_state_a (
   shop_id        uuid NOT NULL REFERENCES public.shops(id),
-  metric_key     text NOT NULL CHECK (metric_key IN (
-                   'sync_failure_terminal',
-                   'offline_duration_seconds',
-                   'drawer_mismatch_count',
-                   'deferred_job_failure_terminal',
-                   'app_error_count'
-                 )),
+  metric_key     text NOT NULL,
   period_start   date NOT NULL,
   threshold_used numeric NOT NULL,
   alerted_at     timestamptz NOT NULL DEFAULT now(),
