@@ -107,10 +107,10 @@ streams:
       # layer -- fall back instead to resolving staff identity a different way
       # (e.g. a server-side staff-session table keyed by device, joined only on
       # auth.user_id()) before re-enabling this bucket.
-      - SELECT gr.* FROM public.generated_reports gr
-          JOIN public.shops sh ON sh.id = gr.shop_id AND sh.owner_user_id = auth.user_id()
-          JOIN public.staff st ON st.shop_id = gr.shop_id AND st.id = (auth.parameters() ->> 'staff_id')::uuid
-          WHERE st.role = 'owner' OR (st.permissions ->> 'can_view_reports')::boolean IS TRUE
+      - SELECT generated_reports.* FROM public.generated_reports
+          JOIN public.shops sh ON sh.id = generated_reports.shop_id AND sh.owner_user_id = auth.user_id()
+          JOIN public.staff st ON st.shop_id = generated_reports.shop_id AND st.id::text = auth.parameters() ->> 'staff_id'
+          WHERE st.role = 'owner' OR (st.permissions ->> 'can_view_reports') = 'true'
 
       # WAFI-147B: generated_report_staff_sections -- owner-only, raw role check
       # (NOT the can_view_reports flag above). See design spec's explicit
@@ -122,9 +122,9 @@ streams:
       # generated_reports if the parameter mechanism fails open instead of
       # closed. Verify zero-row-vs-full-row failure mode against a live device
       # before trusting this in production.
-      - SELECT grs.* FROM public.generated_report_staff_sections grs
-          JOIN public.shops sh ON sh.id = grs.shop_id AND sh.owner_user_id = auth.user_id()
-          JOIN public.staff st ON st.shop_id = grs.shop_id AND st.id = (auth.parameters() ->> 'staff_id')::uuid
+      - SELECT generated_report_staff_sections.* FROM public.generated_report_staff_sections
+          JOIN public.shops sh ON sh.id = generated_report_staff_sections.shop_id AND sh.owner_user_id = auth.user_id()
+          JOIN public.staff st ON st.shop_id = generated_report_staff_sections.shop_id AND st.id::text = auth.parameters() ->> 'staff_id'
           WHERE st.role = 'owner'
 
       # WAFI-156: business_rules config, synced so RulesScreen.vue can list/edit.
