@@ -18,11 +18,11 @@ AS $$
 DECLARE
   v_cadence text;
 BEGIN
-  v_cadence := CASE p_report_type
-    WHEN 'daily-closing', 'cash-flow' THEN 'daily'
-    WHEN 'weekly-summary', 'inventory-health', 'discount-report',
-         'returns-report', 'credit-report', 'dead-stock' THEN 'weekly'
-    WHEN 'monthly-health', 'profit-trend', 'top-customers', 'top-products' THEN 'monthly'
+  v_cadence := CASE
+    WHEN p_report_type IN ('daily-closing', 'cash-flow') THEN 'daily'
+    WHEN p_report_type IN ('weekly-summary', 'inventory-health', 'discount-report',
+         'returns-report', 'credit-report', 'dead-stock') THEN 'weekly'
+    WHEN p_report_type IN ('monthly-health', 'profit-trend', 'top-customers', 'top-products') THEN 'monthly'
     ELSE NULL
   END;
 
