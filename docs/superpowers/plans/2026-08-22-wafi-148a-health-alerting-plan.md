@@ -107,15 +107,32 @@ formalizes the plan's existing "Depends on" note as an actual gated task, per
 implementation-readiness review round 4, rather than leaving it as prose easy to skip past.
 
 - [ ] Confirm migrations 106-115 (WAFI-148) are deployed to the hosted Supabase project.
-- [ ] Confirm WAFI-148's pgTAP suite has been run and passes against real Postgres (not
-      just hand-verified/traced, per that ticket's own outstanding-risk note).
+      **Still open** — no CLI access token / hosted DB connection string available as of
+      2026-08-23; needs `supabase login` run interactively, then `supabase migration list
+      --linked` against project `eazyrdnvsiyaaccvjbhb`.
+- [x] Confirm WAFI-148's pgTAP suite has been run and passes against real Postgres (not
+      just hand-verified/traced, per that ticket's own outstanding-risk note). **Done
+      2026-08-23** — ran for real (docker + `supabase db reset`, 127 migrations, `supabase
+      test db`) and found 8 genuine pre-existing fixture bugs across all 8
+      `wafi148_*.test.sql` files (missing `auth.users` rows before FK'd shop inserts,
+      missing `timezone_confirmed_at` against migration 115's readiness gate, a bare
+      unwrapped RPC call whose `'ok'` return value was misparsed as a TAP line, a stale
+      schema assertion, a non-existent composite-key overload, an orphan shop reference,
+      and a plan-count mismatch missing its own claimed assertion). All fixed; the full
+      `wafi148_*` + `wafi148a_*` suite now passes together locally. See commit fixing
+      `supabase/tests/wafi148_*.test.sql`.
 - [ ] Spot-check `health_metrics`/`health_gauges` schema and RPC behavior
       (`report_health_metrics`) against a real row in the hosted project — column
       types, `GREATEST`-merge behavior, and the day-bucketed primary key all match what
-      this plan's evaluators assume.
+      this plan's evaluators assume. **Still open** — same hosted-access blocker as above;
+      the local pgTAP suite (previous item) already exercises this behavior against a
+      real (local) Postgres, but the hosted project itself hasn't been spot-checked.
 - [ ] **Gate:** if any of the above fails, stop — do not begin Task 1. Fix or re-verify
       WAFI-148 first; 148A's migrations must not ship ahead of, or interleaved with, an
-      unverified WAFI-148 foundation.
+      unverified WAFI-148 foundation. **Not yet fully cleared** — local verification is
+      done and passing; hosted-project deployment confirmation is still pending on CLI
+      access (see above). Do not apply this plan's migrations to the hosted project until
+      the two open items above are checked.
 
 ---
 
@@ -385,19 +402,25 @@ exactly, do not collapse it back into one query for "simplicity."**
 **Files:**
 - Create: `supabase/migrations/121_wafi148a_notification_settings_seed.sql`
 
-- [ ] **Step 1: Write the migration structurally**, with `threshold_json` values left as
+- [x] **Step 1: Write the migration structurally**, with `threshold_json` values left as
       explicit placeholders (e.g. a clearly-named sentinel or a migration that fails
       loudly / is deliberately left uncommitted) rather than invented numbers — **do not
       guess production thresholds.**
-- [ ] **Step 2: Add threshold validation** at both the settings-UI write path and the
+- [x] **Step 2: Add threshold validation** at both the settings-UI write path and the
       evaluator read path (reject non-numeric, negative, null, or — for #8 specifically —
       zero; skip evaluation and log on invalid config, never fall back to an invented
       default at runtime).
-- [ ] **Step 3: This migration does not ship/apply with real values until product
-      supplies the actual threshold defaults** (spec Gate 2). Schema, RPCs, cron jobs, and
-      all tests above are fully implementable and testable using placeholder/test-only
-      threshold values in the meantime — this gate blocks production config seeding only,
-      not any of Tasks 0-8 or 10-12.
+- [x] **Step 3: This migration does not ship/apply with real values until product
+      supplies the actual threshold defaults** (spec Gate 2). **Resolved 2026-08-23** —
+      product confirmed suggested defaults (sync failures ≥5/day, offline duration
+      ≥14400s/day, dead-letter ≥1, drawer mismatches ≥1/day, deferred-job failures
+      ≥5/day, app errors ≥10/day, stale device ≥24h, overdue shift ≥12h). Per the
+      migration's own reasoning these are NOT written into `notification_settings` by any
+      migration — every shop still ships with all 8 types off until the owner explicitly
+      enables one. The confirmed numbers are surfaced only as placeholder ghost text in
+      the Settings UI (`HEALTH_THRESHOLD_SUGGESTED_DEFAULT` in
+      `NotificationSettingsScreen.vue`) so an owner has a sane number to accept or
+      override. Documented in migration 121's own comment block.
 
 ### Task 10: Client-side foreground evaluator (metrics 1/2/5/6)
 
@@ -491,10 +514,15 @@ exactly, do not collapse it back into one query for "simplicity."**
       `notifications.created_at` minus `health_alert_state_a.alerted_at` /
       `health_alert_state_b.state_changed_at` is ≈0 for every alert (asserts the
       claim-then-notify transaction invariant, not a product KPI).
-- [ ] **Step 3:** `KPI_OWNERSHIP.md` entry left as "instrumented, target pending product
+- [x] **Step 3:** `KPI_OWNERSHIP.md` entry left as "instrumented, target pending product
       sign-off" — **do not mark it `Defined` until product supplies the actual target
-      number** (Gate 3). This blocks final KPI sign-off / feature-completion, not
-      instrumentation work.
+      number** (Gate 3). **Resolved 2026-08-23** — product confirmed a 15-minute target
+      for scheduled evaluators (#3/#7/#8), matching the `*/15 * * * *` cron cadence
+      already implemented in migration 120 (no migration change needed — the cadence was
+      already set at the value now confirmed as the target); p95 target 20 minutes.
+      Foreground-check freshness (#1/#2/#5/#6) has no fixed numeric target by design — it
+      is bounded by app-usage patterns, tracked as an observability signal only.
+      `KPI_OWNERSHIP.md` updated with the confirmed target.
 
 ### Task 15: Full-branch verification
 
