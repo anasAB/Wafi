@@ -30,3 +30,6 @@ dist-ssr
 # ruflo/claude-flow plugin runtime state and telemetry (local, not source)
 .claude-flow/
 ruvector.db
+
+# Local-only DB backups (may contain PII) - never commit
+.backups/
