@@ -50,6 +50,11 @@ async function setup(admin) {
   await admin.query(`DELETE FROM public.health_alert_state_a WHERE shop_id = $1`, [SHOP_ID])
   await admin.query(`DELETE FROM public.health_alert_state_b WHERE shop_id = $1`, [SHOP_ID])
   await admin.query(`DELETE FROM public.shops WHERE id = $1`, [SHOP_ID])
+  // migration 021_provision_shop_on_signup.sql auto-creates a shop for OWNER_ID
+  // the moment the auth.users row above is inserted (uq_shops_owner_user is
+  // one shop per owner) -- delete that auto-provisioned row too, or the
+  // explicit fixed-id insert below collides on owner_user_id.
+  await admin.query(`DELETE FROM public.shops WHERE owner_user_id = $1`, [OWNER_ID])
 
   await admin.query(
     `INSERT INTO public.shops (id, name, owner_user_id) VALUES ($1, 'WAFI-148A Concurrent Test Shop', $2)`,
