@@ -60,8 +60,8 @@ SELECT is(public._health_alerting_enabled('00000000-0000-0000-0000-000000000099'
 -- Section 2: _apply_health_alert_drawer_mismatch (metric #4, Shape A claim,
 -- shift.closed trigger path) -- flag off produces no claim/notification.
 -- ============================================================================
-INSERT INTO public.shops (id, name, timezone, features) VALUES
-  ('f1111111-0000-0000-0000-000000000001', 'Shop FG1 (drawer mismatch, flag off)', 'Asia/Damascus',
+INSERT INTO public.shops (id, name, timezone, timezone_confirmed_at, features) VALUES
+  ('f1111111-0000-0000-0000-000000000001', 'Shop FG1 (drawer mismatch, flag off)', 'Asia/Damascus', now(),
    jsonb_build_object('rollout', jsonb_build_object('health_alerting', false)));
 
 INSERT INTO public.notification_settings (shop_id, type, enabled, threshold_json)
@@ -121,8 +121,13 @@ SELECT is(
 INSERT INTO auth.users (instance_id, id, email, encrypted_password, email_confirmed_at, created_at, updated_at, aud, role)
 VALUES ('00000000-0000-0000-0000-000000000000', 'f2000000-0000-0000-0000-000000000001', 'owner-wafi148a-flag-fg@test', crypt('x', gen_salt('bf')), now(), now(), now(), 'authenticated', 'authenticated');
 
-INSERT INTO public.shops (id, name, owner_user_id, timezone, features) VALUES
-  ('f2111111-0000-0000-0000-000000000001', 'Shop FG2 (foreground, flag off)', 'f2000000-0000-0000-0000-000000000001', 'Asia/Damascus',
+-- migration 021 auto-provisions a shop for this new auth.users row; delete
+-- it before inserting our own explicit shop with the same owner_user_id
+-- (uq_shops_owner_user only allows one shop per owner).
+DELETE FROM public.shops WHERE owner_user_id = 'f2000000-0000-0000-0000-000000000001';
+
+INSERT INTO public.shops (id, name, owner_user_id, timezone, timezone_confirmed_at, features) VALUES
+  ('f2111111-0000-0000-0000-000000000001', 'Shop FG2 (foreground, flag off)', 'f2000000-0000-0000-0000-000000000001', 'Asia/Damascus', now(),
    jsonb_build_object('rollout', jsonb_build_object('health_alerting', false)));
 
 INSERT INTO public.devices (id, shop_id, code) VALUES
@@ -144,6 +149,11 @@ SELECT set_config('request.jwt.claims', '{"sub":"f2000000-0000-0000-0000-0000000
 SET LOCAL ROLE authenticated;
 SELECT public.evaluate_health_alerts_foreground();
 RESET ROLE;
+-- set_config(..., true) is transaction-local, not role-local: it survives
+-- RESET ROLE. Clear it so the admin-level UPDATE below isn't mistaken by
+-- protect_shop_features() (migration 041) for a client request carrying a
+-- JWT, which would silently revert the features change.
+SELECT set_config('request.jwt.claims', '', true);
 
 SELECT is(
   (SELECT count(*)::int FROM public.notifications WHERE shop_id = 'f2111111-0000-0000-0000-000000000001'),
@@ -165,6 +175,10 @@ SELECT set_config('request.jwt.claims', '{"sub":"f2000000-0000-0000-0000-0000000
 SET LOCAL ROLE authenticated;
 SELECT public.evaluate_health_alerts_foreground();
 RESET ROLE;
+-- See the comment above the previous RESET ROLE: clear the transaction-local
+-- JWT claim so later admin-level shops.features UPDATEs are not silently
+-- reverted by protect_shop_features() (migration 041).
+SELECT set_config('request.jwt.claims', '', true);
 
 SELECT is(
   (SELECT count(*)::int FROM public.notifications WHERE shop_id = 'f2111111-0000-0000-0000-000000000001'),
@@ -413,6 +427,15 @@ SELECT lives_ok(
   'set_rollout_flag now accepts health_alerting as a known flag key (previously would have raised "unknown rollout flag")'
 );
 RESET ROLE;
+
+-- set_rollout_flag (migration 090/123) deliberately clears
+-- request.jwt.claims internally (a narrowly-scoped, transaction-local
+-- override so its own UPDATE isn't reverted by protect_shop_features,
+-- migration 041/075) -- see its header comment. Re-establish the admin's
+-- JWT claim before the next authenticated call, exactly as a fresh request
+-- would carry it.
+SELECT set_config('request.jwt.claims', '{"sub":"f6000000-0000-0000-0000-000000000001","active_role":"owner"}', true);
+SET LOCAL ROLE authenticated;
 
 SELECT is(
   (SELECT health_alerting FROM public.list_shops_for_rollout_admin('Shop FG6 (admin flag toggling)') LIMIT 1),

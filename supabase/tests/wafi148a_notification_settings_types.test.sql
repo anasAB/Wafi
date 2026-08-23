@@ -50,10 +50,17 @@ SELECT ok(
 
 SELECT is(
   (
+    -- Excludes the health_alert_state_a/health_alert_state_b/
+    -- health_alert_evaluation_log TABLE names -- standalone identifiers
+    -- (not substrings of a longer function-call name, so \m...\M alone
+    -- doesn't filter them) that legitimately appear in these functions'
+    -- bodies (FROM/INSERT INTO clauses) but are not notification_settings
+    -- type strings.
     SELECT array_agg(DISTINCT m[1] ORDER BY m[1])
       FROM pg_proc,
-           regexp_matches(pg_get_functiondef(pg_proc.oid), 'health_alert_[a-z_]+', 'g') AS m
-     WHERE proname = '_apply_health_alert_drawer_mismatch'
+           regexp_matches(pg_get_functiondef(pg_proc.oid), '\mhealth_alert_[a-z_]+\M', 'g') AS m
+     WHERE m[1] NOT IN ('health_alert_state_a', 'health_alert_state_b', 'health_alert_evaluation_log')
+       AND proname = '_apply_health_alert_drawer_mismatch'
        AND pronamespace = 'public'::regnamespace
   ),
   ARRAY['health_alert_drawer_mismatches'],
@@ -73,10 +80,17 @@ SELECT ok(
 
 SELECT is(
   (
+    -- Excludes the health_alert_state_a/health_alert_state_b/
+    -- health_alert_evaluation_log TABLE names -- standalone identifiers
+    -- (not substrings of a longer function-call name, so \m...\M alone
+    -- doesn't filter them) that legitimately appear in these functions'
+    -- bodies (FROM/INSERT INTO clauses) but are not notification_settings
+    -- type strings.
     SELECT array_agg(DISTINCT m[1] ORDER BY m[1])
       FROM pg_proc,
-           regexp_matches(pg_get_functiondef(pg_proc.oid), 'health_alert_[a-z_]+', 'g') AS m
-     WHERE proname = '_scheduled_check_overdue_shifts'
+           regexp_matches(pg_get_functiondef(pg_proc.oid), '\mhealth_alert_[a-z_]+\M', 'g') AS m
+     WHERE m[1] NOT IN ('health_alert_state_a', 'health_alert_state_b', 'health_alert_evaluation_log')
+       AND proname = '_scheduled_check_overdue_shifts'
        AND pronamespace = 'public'::regnamespace
   ),
   ARRAY['health_alert_overdue_shift'],
@@ -96,10 +110,17 @@ SELECT ok(
 
 SELECT is(
   (
+    -- Excludes the health_alert_state_a/health_alert_state_b/
+    -- health_alert_evaluation_log TABLE names -- standalone identifiers
+    -- (not substrings of a longer function-call name, so \m...\M alone
+    -- doesn't filter them) that legitimately appear in these functions'
+    -- bodies (FROM/INSERT INTO clauses) but are not notification_settings
+    -- type strings.
     SELECT array_agg(DISTINCT m[1] ORDER BY m[1])
       FROM pg_proc,
-           regexp_matches(pg_get_functiondef(pg_proc.oid), 'health_alert_[a-z_]+', 'g') AS m
-     WHERE proname = '_scheduled_check_dead_letter_count'
+           regexp_matches(pg_get_functiondef(pg_proc.oid), '\mhealth_alert_[a-z_]+\M', 'g') AS m
+     WHERE m[1] NOT IN ('health_alert_state_a', 'health_alert_state_b', 'health_alert_evaluation_log')
+       AND proname = '_scheduled_check_dead_letter_count'
        AND pronamespace = 'public'::regnamespace
   ),
   ARRAY['health_alert_dead_letter_count'],
@@ -119,10 +140,17 @@ SELECT ok(
 
 SELECT is(
   (
+    -- Excludes the health_alert_state_a/health_alert_state_b/
+    -- health_alert_evaluation_log TABLE names -- standalone identifiers
+    -- (not substrings of a longer function-call name, so \m...\M alone
+    -- doesn't filter them) that legitimately appear in these functions'
+    -- bodies (FROM/INSERT INTO clauses) but are not notification_settings
+    -- type strings.
     SELECT array_agg(DISTINCT m[1] ORDER BY m[1])
       FROM pg_proc,
-           regexp_matches(pg_get_functiondef(pg_proc.oid), 'health_alert_[a-z_]+', 'g') AS m
-     WHERE proname = '_scheduled_check_stale_devices'
+           regexp_matches(pg_get_functiondef(pg_proc.oid), '\mhealth_alert_[a-z_]+\M', 'g') AS m
+     WHERE m[1] NOT IN ('health_alert_state_a', 'health_alert_state_b', 'health_alert_evaluation_log')
+       AND proname = '_scheduled_check_stale_devices'
        AND pronamespace = 'public'::regnamespace
   ),
   ARRAY['health_alert_stale_device'],

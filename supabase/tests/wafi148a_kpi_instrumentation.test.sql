@@ -30,8 +30,8 @@ ALTER TABLE public.shops ALTER COLUMN features
 -- though the underlying alert evaluation itself does not fire (count stays
 -- below threshold).
 -- ============================================================================
-INSERT INTO public.shops (id, name, timezone) VALUES
-  ('11111111-2222-3333-4444-000000000001', 'Shop KPI-Event', 'Asia/Damascus');
+INSERT INTO public.shops (id, name, timezone, timezone_confirmed_at) VALUES
+  ('11111111-2222-3333-4444-000000000001', 'Shop KPI-Event', 'Asia/Damascus', now());
 
 INSERT INTO public.notification_settings (shop_id, type, enabled, threshold_json)
 VALUES ('11111111-2222-3333-4444-000000000001', 'health_alert_drawer_mismatches', true, jsonb_build_object('threshold', 99));
@@ -81,28 +81,44 @@ INSERT INTO public.cashier_shifts (id, shop_id, device_id, opened_at, opening_ca
   ('11111111-2222-3333-4444-000000000033', '11111111-2222-3333-4444-000000000002', '11111111-2222-3333-4444-000000000032', now() - interval '10 hours', 0, 'open'),
   ('11111111-2222-3333-4444-000000000043', '11111111-2222-3333-4444-000000000003', '11111111-2222-3333-4444-000000000042', now() - interval '10 hours', 0, 'open');
 
+-- WAFI-148A test fix: this table also receives real, COMMITTED rows from
+-- pg_cron's own periodic ticks of _scheduled_check_overdue_shifts
+-- (migration 120), which run outside this test's transaction and are never
+-- rolled back -- so an absolute count of evaluation_source='scheduled' rows
+-- drifts upward the longer the local instance has been running. Anchor on
+-- a baseline captured just before this section's own tick(s), and assert
+-- deltas from that baseline instead of absolute counts.
+CREATE TEMP TABLE wafi148a_kpi_sched_baseline AS
+  SELECT count(*)::int AS n FROM public.health_alert_evaluation_log WHERE evaluation_source = 'scheduled';
+
 SELECT public._scheduled_check_overdue_shifts();
 
 SELECT is(
-  (SELECT count(*)::int FROM public.health_alert_evaluation_log WHERE evaluation_source = 'scheduled'),
+  (SELECT count(*)::int FROM public.health_alert_evaluation_log WHERE evaluation_source = 'scheduled')
+    - (SELECT n FROM wafi148a_kpi_sched_baseline),
   1,
-  'scheduled source: one cron tick over 2 candidate shops/shifts produces exactly one log row, not one per candidate'
+  'scheduled source: one cron tick over 2 candidate shops/shifts produces exactly one NEW log row, not one per candidate'
 );
 SELECT is(
-  (SELECT shop_id FROM public.health_alert_evaluation_log WHERE evaluation_source = 'scheduled'),
+  (SELECT shop_id FROM public.health_alert_evaluation_log
+     WHERE evaluation_source = 'scheduled'
+     ORDER BY started_at DESC LIMIT 1),
   NULL,
   'scheduled source: shop_id is NULL -- no single shop per invocation'
 );
 
--- A second cron tick produces a second (distinct) log row -- proves this
--- isn't a dedup/upsert, just plain per-invocation logging.
+-- A second cron tick produces a second (distinct) NEW log row -- proves
+-- this isn't a dedup/upsert, just plain per-invocation logging.
 SELECT public._scheduled_check_overdue_shifts();
 
 SELECT is(
-  (SELECT count(*)::int FROM public.health_alert_evaluation_log WHERE evaluation_source = 'scheduled'),
+  (SELECT count(*)::int FROM public.health_alert_evaluation_log WHERE evaluation_source = 'scheduled')
+    - (SELECT n FROM wafi148a_kpi_sched_baseline),
   2,
-  'scheduled source: a second cron tick produces a second, distinct log row'
+  'scheduled source: a second cron tick produces a second, distinct NEW log row'
 );
+
+DROP TABLE wafi148a_kpi_sched_baseline;
 
 -- ============================================================================
 -- Section 3: 'foreground' source -- one RPC call produces exactly one log
@@ -111,8 +127,13 @@ SELECT is(
 INSERT INTO auth.users (instance_id, id, email, encrypted_password, email_confirmed_at, created_at, updated_at, aud, role)
 VALUES ('00000000-0000-0000-0000-000000000000', 'aaaaaaaa-0000-0000-0000-000000000001', 'owner-wafi148a-kpi@test', crypt('x', gen_salt('bf')), now(), now(), now(), 'authenticated', 'authenticated');
 
-INSERT INTO public.shops (id, name, owner_user_id, timezone) VALUES
-  ('11111111-2222-3333-4444-000000000005', 'Shop KPI-Foreground', 'aaaaaaaa-0000-0000-0000-000000000001', 'Asia/Damascus');
+-- migration 021 auto-provisions a shop for this new auth.users row; delete
+-- it before inserting our own explicit shop with the same owner_user_id
+-- (uq_shops_owner_user only allows one shop per owner).
+DELETE FROM public.shops WHERE owner_user_id = 'aaaaaaaa-0000-0000-0000-000000000001';
+
+INSERT INTO public.shops (id, name, owner_user_id, timezone, timezone_confirmed_at) VALUES
+  ('11111111-2222-3333-4444-000000000005', 'Shop KPI-Foreground', 'aaaaaaaa-0000-0000-0000-000000000001', 'Asia/Damascus', now());
 
 SELECT set_config('request.jwt.claims', '{"sub":"aaaaaaaa-0000-0000-0000-000000000001","active_role":"owner"}', true);
 SET LOCAL ROLE authenticated;
@@ -145,13 +166,19 @@ SELECT throws_ok(
   'evaluation_source is a closed set enforced by a CHECK constraint'
 );
 
--- No client role can read the table -- RLS is enabled with zero policies.
+-- No client role can read the table. WAFI-148A test fix: migration 124
+-- does `REVOKE ALL ... FROM PUBLIC, anon, authenticated` on this table --
+-- there is no SELECT privilege at all (not merely "RLS enabled with zero
+-- policies", which would return an empty set) -- so the real, correct
+-- assertion is that the query raises 42501 (permission denied), not that
+-- it succeeds and returns zero rows.
 SELECT set_config('request.jwt.claims', '{"sub":"aaaaaaaa-0000-0000-0000-000000000001","active_role":"owner"}', true);
 SET LOCAL ROLE authenticated;
-SELECT is(
-  (SELECT count(*)::int FROM public.health_alert_evaluation_log),
-  0,
-  'RLS lockdown: an authenticated client role sees zero rows in health_alert_evaluation_log (no policies granted yet)'
+SELECT throws_ok(
+  $$ SELECT count(*)::int FROM public.health_alert_evaluation_log $$,
+  '42501',
+  NULL,
+  'lockdown: an authenticated client role has no SELECT privilege on health_alert_evaluation_log at all (REVOKE ALL, migration 124)'
 );
 RESET ROLE;
 

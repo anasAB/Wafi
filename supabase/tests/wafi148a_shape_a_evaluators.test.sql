@@ -36,8 +36,13 @@ ALTER TABLE public.shops ALTER COLUMN features
 INSERT INTO auth.users (instance_id, id, email, encrypted_password, email_confirmed_at, created_at, updated_at, aud, role)
 VALUES ('00000000-0000-0000-0000-000000000000', 'e0000000-0000-0000-0000-000000000001', 'owner-wafi148a-fg-a@test', crypt('x', gen_salt('bf')), now(), now(), now(), 'authenticated', 'authenticated');
 
-INSERT INTO public.shops (id, name, owner_user_id, timezone) VALUES
-  ('e1111111-0000-0000-0000-000000000001', 'Shop FG-A (authz)', 'e0000000-0000-0000-0000-000000000001', 'Asia/Damascus');
+-- migration 021 auto-provisions a shop for this new auth.users row; delete
+-- it before inserting our own explicit shop with the same owner_user_id
+-- (uq_shops_owner_user only allows one shop per owner).
+DELETE FROM public.shops WHERE owner_user_id = 'e0000000-0000-0000-0000-000000000001';
+
+INSERT INTO public.shops (id, name, owner_user_id, timezone, timezone_confirmed_at) VALUES
+  ('e1111111-0000-0000-0000-000000000001', 'Shop FG-A (authz)', 'e0000000-0000-0000-0000-000000000001', 'Asia/Damascus', now());
 
 INSERT INTO public.devices (id, shop_id, code) VALUES
   ('e1111111-0000-0000-0000-000000000002', 'e1111111-0000-0000-0000-000000000001', 'DEV-FGA-1');
@@ -88,8 +93,10 @@ SELECT is(
 INSERT INTO auth.users (instance_id, id, email, encrypted_password, email_confirmed_at, created_at, updated_at, aud, role)
 VALUES ('00000000-0000-0000-0000-000000000000', 'e0000000-0000-0000-0000-000000000010', 'owner-wafi148a-fg-c@test', crypt('x', gen_salt('bf')), now(), now(), now(), 'authenticated', 'authenticated');
 
-INSERT INTO public.shops (id, name, owner_user_id, timezone) VALUES
-  ('e3333333-0000-0000-0000-000000000001', 'Shop FG-C (multi-device SUM)', 'e0000000-0000-0000-0000-000000000010', 'Asia/Damascus');
+DELETE FROM public.shops WHERE owner_user_id = 'e0000000-0000-0000-0000-000000000010';
+
+INSERT INTO public.shops (id, name, owner_user_id, timezone, timezone_confirmed_at) VALUES
+  ('e3333333-0000-0000-0000-000000000001', 'Shop FG-C (multi-device SUM)', 'e0000000-0000-0000-0000-000000000010', 'Asia/Damascus', now());
 
 INSERT INTO public.devices (id, shop_id, code) VALUES
   ('e3333333-0000-0000-0000-000000000002', 'e3333333-0000-0000-0000-000000000001', 'DEV-FGC-1'),
@@ -143,8 +150,10 @@ SELECT is(
 INSERT INTO auth.users (instance_id, id, email, encrypted_password, email_confirmed_at, created_at, updated_at, aud, role)
 VALUES ('00000000-0000-0000-0000-000000000000', 'e0000000-0000-0000-0000-000000000020', 'owner-wafi148a-fg-d@test', crypt('x', gen_salt('bf')), now(), now(), now(), 'authenticated', 'authenticated');
 
-INSERT INTO public.shops (id, name, owner_user_id, timezone) VALUES
-  ('e4444444-0000-0000-0000-000000000001', 'Shop FG-D (threshold attainment)', 'e0000000-0000-0000-0000-000000000020', 'Asia/Damascus');
+DELETE FROM public.shops WHERE owner_user_id = 'e0000000-0000-0000-0000-000000000020';
+
+INSERT INTO public.shops (id, name, owner_user_id, timezone, timezone_confirmed_at) VALUES
+  ('e4444444-0000-0000-0000-000000000001', 'Shop FG-D (threshold attainment)', 'e0000000-0000-0000-0000-000000000020', 'Asia/Damascus', now());
 
 INSERT INTO public.devices (id, shop_id, code) VALUES
   ('e4444444-0000-0000-0000-000000000002', 'e4444444-0000-0000-0000-000000000001', 'DEV-FGD-1');
@@ -207,8 +216,10 @@ SELECT is(
 INSERT INTO auth.users (instance_id, id, email, encrypted_password, email_confirmed_at, created_at, updated_at, aud, role)
 VALUES ('00000000-0000-0000-0000-000000000000', 'e0000000-0000-0000-0000-000000000030', 'owner-wafi148a-fg-e@test', crypt('x', gen_salt('bf')), now(), now(), now(), 'authenticated', 'authenticated');
 
-INSERT INTO public.shops (id, name, owner_user_id, timezone) VALUES
-  ('e5555555-0000-0000-0000-000000000001', 'Shop FG-E (disabled-type isolation)', 'e0000000-0000-0000-0000-000000000030', 'Asia/Damascus');
+DELETE FROM public.shops WHERE owner_user_id = 'e0000000-0000-0000-0000-000000000030';
+
+INSERT INTO public.shops (id, name, owner_user_id, timezone, timezone_confirmed_at) VALUES
+  ('e5555555-0000-0000-0000-000000000001', 'Shop FG-E (disabled-type isolation)', 'e0000000-0000-0000-0000-000000000030', 'Asia/Damascus', now());
 
 INSERT INTO public.devices (id, shop_id, code) VALUES
   ('e5555555-0000-0000-0000-000000000002', 'e5555555-0000-0000-0000-000000000001', 'DEV-FGE-1');
@@ -245,14 +256,23 @@ SELECT is(
 );
 
 -- ============================================================================
--- Section 6: missing-timezone shop -- no evaluation attempted for any
+-- Section 6: unconfirmed-timezone shop -- no evaluation attempted for any
 -- metric, no error raised.
+--
+-- WAFI-148 fix: shops.timezone is NOT NULL DEFAULT 'UTC' (migration 084) --
+-- it can never actually be NULL, so the original "missing timezone" premise
+-- here was false (an explicit NULL insert below would now violate the NOT
+-- NULL constraint). The real "not ready to evaluate" state is
+-- timezone_confirmed_at IS NULL (migration 115), which this fixture
+-- reproduces by simply never setting timezone_confirmed_at.
 -- ============================================================================
 INSERT INTO auth.users (instance_id, id, email, encrypted_password, email_confirmed_at, created_at, updated_at, aud, role)
 VALUES ('00000000-0000-0000-0000-000000000000', 'e0000000-0000-0000-0000-000000000040', 'owner-wafi148a-fg-f@test', crypt('x', gen_salt('bf')), now(), now(), now(), 'authenticated', 'authenticated');
 
+DELETE FROM public.shops WHERE owner_user_id = 'e0000000-0000-0000-0000-000000000040';
+
 INSERT INTO public.shops (id, name, owner_user_id, timezone) VALUES
-  ('e6666666-0000-0000-0000-000000000001', 'Shop FG-F (no timezone)', 'e0000000-0000-0000-0000-000000000040', NULL);
+  ('e6666666-0000-0000-0000-000000000001', 'Shop FG-F (unconfirmed timezone)', 'e0000000-0000-0000-0000-000000000040', 'Asia/Damascus');
 
 INSERT INTO public.devices (id, shop_id, code) VALUES
   ('e6666666-0000-0000-0000-000000000002', 'e6666666-0000-0000-0000-000000000001', 'DEV-FGF-1');
@@ -306,8 +326,10 @@ CREATE TRIGGER wafi148a_force_error
 INSERT INTO auth.users (instance_id, id, email, encrypted_password, email_confirmed_at, created_at, updated_at, aud, role)
 VALUES ('00000000-0000-0000-0000-000000000000', 'e0000000-0000-0000-0000-000000000050', 'owner-wafi148a-fg-g@test', crypt('x', gen_salt('bf')), now(), now(), now(), 'authenticated', 'authenticated');
 
-INSERT INTO public.shops (id, name, owner_user_id, timezone) VALUES
-  ('e7777777-0000-0000-0000-000000000001', 'Shop FG-G (per-metric isolation)', 'e0000000-0000-0000-0000-000000000050', 'Asia/Damascus');
+DELETE FROM public.shops WHERE owner_user_id = 'e0000000-0000-0000-0000-000000000050';
+
+INSERT INTO public.shops (id, name, owner_user_id, timezone, timezone_confirmed_at) VALUES
+  ('e7777777-0000-0000-0000-000000000001', 'Shop FG-G (per-metric isolation)', 'e0000000-0000-0000-0000-000000000050', 'Asia/Damascus', now());
 
 INSERT INTO public.devices (id, shop_id, code) VALUES
   ('e7777777-0000-0000-0000-000000000002', 'e7777777-0000-0000-0000-000000000001', 'DEV-FGG-1');

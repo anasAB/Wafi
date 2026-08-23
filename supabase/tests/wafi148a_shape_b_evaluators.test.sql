@@ -358,7 +358,8 @@ INSERT INTO public.shops (id, name, timezone) VALUES
   ('eeeeeeee-ffff-0000-1111-000000000001', 'Shop VV (overdue-shift disable/recover/re-enable round trip)', 'Asia/Damascus');
 
 INSERT INTO public.devices (id, shop_id, code) VALUES
-  ('eeeeeeee-ffff-0000-1111-000000000002', 'eeeeeeee-ffff-0000-1111-000000000001', 'DEV-VV-1');
+  ('eeeeeeee-ffff-0000-1111-000000000002', 'eeeeeeee-ffff-0000-1111-000000000001', 'DEV-VV-1'),
+  ('eeeeeeee-ffff-0000-1111-000000000005', 'eeeeeeee-ffff-0000-1111-000000000001', 'DEV-VV-2');
 
 INSERT INTO public.notification_settings (shop_id, type, enabled, threshold_json)
 VALUES (
@@ -406,6 +407,17 @@ VALUES (
   '00000000-0000-0000-0000-000000000000', now()
 );
 
+-- The event only drives the resolve TRIGGER (_resolve_overdue_shift_alert)
+-- in isolation -- it does not itself flip cashier_shifts.status. Mirror
+-- that same "shift actually closed" reality on the row itself, so this
+-- shift is no longer eligible for _scheduled_check_overdue_shifts' open-
+-- shift candidate query on any later tick in this test (Step 5 re-enables
+-- and re-runs the scheduled check; without this, shift 1 -- still 'open'
+-- and still 10 hours old -- would be rediscovered as a fresh overdue
+-- candidate and re-claim a 3rd, unintended notification).
+UPDATE public.cashier_shifts SET status = 'closed'
+ WHERE id = 'eeeeeeee-ffff-0000-1111-000000000003';
+
 SELECT is(
   (SELECT state FROM public.health_alert_state_b
      WHERE shop_id = 'eeeeeeee-ffff-0000-1111-000000000001' AND alert_key = 'overdue_shift'
@@ -414,13 +426,18 @@ SELECT is(
   'round-3 (#8) step 3: the shift recovers (closes) to HEALTHY while the type is still disabled -- resolve is never gated on enabled'
 );
 
--- Step 4: the underlying condition goes bad again (a NEW shift, same shop),
--- still while disabled -- must NOT claim.
+-- Step 4: the underlying condition goes bad again (a NEW shift, same shop).
+-- Shift 1 (Step 3) was never actually closed -- only a shift.closed EVENT
+-- was inserted to drive the resolve trigger, so cashier_shifts row 1 is
+-- still status='open' on device ...002 and uq_cashier_shifts_one_open_per_device
+-- forbids a second open shift on that same device. Use the shop's second
+-- device (...005) for this new shift instead -- still while disabled,
+-- must NOT claim.
 INSERT INTO public.cashier_shifts (id, shop_id, device_id, opened_at, opening_cash_usd, status)
 VALUES (
   'eeeeeeee-ffff-0000-1111-000000000004',
   'eeeeeeee-ffff-0000-1111-000000000001',
-  'eeeeeeee-ffff-0000-1111-000000000002',
+  'eeeeeeee-ffff-0000-1111-000000000005',
   now() - interval '10 hours',
   0, 'open'
 );

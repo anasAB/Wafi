@@ -15,7 +15,7 @@
 -- behavior holds under real overlap.
 
 BEGIN;
-SELECT plan(27);
+SELECT plan(31);
 
 -- ========================================================================
 -- Fixture: one shop.
@@ -261,6 +261,7 @@ SELECT throws_ok(
        'overdue_shift', 't', 'm', 'NOT_A_VALID_SEVERITY'
      ) $$,
   '23514',
+  NULL,
   'an invalid severity fails the notification insert inside claim_health_alert_transition'
 );
 SELECT is(

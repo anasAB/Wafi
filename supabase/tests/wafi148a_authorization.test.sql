@@ -31,6 +31,7 @@ SELECT throws_ok(
        5, 'sync_failures', 't', 'm'
      ) $$,
   '42501',
+  NULL,
   'authenticated cannot call claim_health_alert_period (no EXECUTE grant)'
 );
 
@@ -40,6 +41,7 @@ SELECT throws_ok(
        'stale_device', 't', 'm'
      ) $$,
   '42501',
+  NULL,
   'authenticated cannot call claim_health_alert_transition (no EXECUTE grant)'
 );
 
@@ -48,6 +50,7 @@ SELECT throws_ok(
        'd0000000-0000-0000-0000-000000000010'::uuid, 'stale_device', 'aaaaaaaa-0000-0000-0000-000000000001'::uuid
      ) $$,
   '42501',
+  NULL,
   'authenticated cannot call resolve_health_alert_transition (no EXECUTE grant)'
 );
 
@@ -62,6 +65,7 @@ SELECT throws_ok(
        5, 'sync_failures', 't', 'm'
      ) $$,
   '42501',
+  NULL,
   'anon cannot call claim_health_alert_period (no EXECUTE grant)'
 );
 
@@ -71,6 +75,7 @@ SELECT throws_ok(
        'stale_device', 't', 'm'
      ) $$,
   '42501',
+  NULL,
   'anon cannot call claim_health_alert_transition (no EXECUTE grant)'
 );
 
@@ -79,6 +84,7 @@ SELECT throws_ok(
        'd0000000-0000-0000-0000-000000000010'::uuid, 'stale_device', 'aaaaaaaa-0000-0000-0000-000000000001'::uuid
      ) $$,
   '42501',
+  NULL,
   'anon cannot call resolve_health_alert_transition (no EXECUTE grant)'
 );
 

@@ -27,8 +27,8 @@ SET LOCAL role postgres;
 ALTER TABLE public.shops ALTER COLUMN features
   SET DEFAULT jsonb_build_object('rollout', jsonb_build_object('health_alerting', true));
 
-INSERT INTO public.shops (id, name, timezone) VALUES
-  ('22222222-3333-4444-5555-666666666666', 'Shop K', 'Asia/Damascus');
+INSERT INTO public.shops (id, name, timezone, timezone_confirmed_at) VALUES
+  ('22222222-3333-4444-5555-666666666666', 'Shop K', 'Asia/Damascus', now());
 
 -- Threshold config: enabled, threshold = 2. Chosen so that the FIRST
 -- shift.closed event (bringing today's drawer_mismatch_count to 1) does NOT
