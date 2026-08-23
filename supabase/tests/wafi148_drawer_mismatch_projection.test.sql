@@ -2,8 +2,8 @@ BEGIN;
 SELECT plan(3);
 
 SET LOCAL role postgres;
-INSERT INTO public.shops (id, name, timezone) VALUES
-  ('77777777-7777-7777-7777-777777777777', 'Shop E', 'Asia/Damascus');
+INSERT INTO public.shops (id, name, timezone, timezone_confirmed_at) VALUES
+  ('77777777-7777-7777-7777-777777777777', 'Shop E', 'Asia/Damascus', now());
 
 -- Simulate a shift.closed event with a mismatch over the existing $15 threshold.
 -- public.events' event-kind column is `type` (migration 074), not `event_type`,

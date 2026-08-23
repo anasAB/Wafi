@@ -9,6 +9,10 @@ SELECT plan(4);
 -- auth_shop_id()/shop_id claim involved) -- the "ordinary session" here just
 -- needs a sub claim for a real, non-admin user.
 SET LOCAL role postgres;
+INSERT INTO auth.users (instance_id, id, email, encrypted_password, email_confirmed_at, created_at, updated_at, aud, role)
+VALUES ('00000000-0000-0000-0000-000000000000', 'e0000000-0000-0000-0000-000000000005', 'owner-wafi148-g@test', crypt('x', gen_salt('bf')), now(), now(), now(), 'authenticated', 'authenticated')
+ON CONFLICT (id) DO NOTHING;
+DELETE FROM public.shops WHERE owner_user_id = 'e0000000-0000-0000-0000-000000000005';
 INSERT INTO public.shops (id, name, timezone, owner_user_id) VALUES
   ('99999999-9999-9999-9999-999999999999', 'Shop G', 'Asia/Damascus', 'e0000000-0000-0000-0000-000000000005');
 INSERT INTO public.health_metrics (shop_id, device_id, metric_key, period_start, value)

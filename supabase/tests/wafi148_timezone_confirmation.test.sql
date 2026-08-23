@@ -5,9 +5,13 @@
 -- that the two event-sourced projections bucket by event_projection_day
 -- (immutable) rather than the shop's current timezone.
 BEGIN;
-SELECT plan(9);
+SELECT plan(10);
 
 SET LOCAL role postgres;
+INSERT INTO auth.users (instance_id, id, email, encrypted_password, email_confirmed_at, created_at, updated_at, aud, role)
+VALUES ('00000000-0000-0000-0000-000000000000', 'e0000000-0000-0000-0000-000000000010', 'owner-wafi148-k@test', crypt('x', gen_salt('bf')), now(), now(), now(), 'authenticated', 'authenticated')
+ON CONFLICT (id) DO NOTHING;
+DELETE FROM public.shops WHERE owner_user_id = 'e0000000-0000-0000-0000-000000000010';
 INSERT INTO public.shops (id, name, owner_user_id) VALUES
   ('22222222-3333-4444-5555-666666666666', 'Shop K', 'e0000000-0000-0000-0000-000000000010');
 INSERT INTO public.devices (id, shop_id, code, is_active) VALUES
@@ -98,7 +102,10 @@ SELECT ok(
 
 SELECT set_config('request.jwt.claims', '{"sub":"e0000000-0000-0000-0000-000000000010","active_role":"owner"}', true);
 SET LOCAL role authenticated;
-SELECT public.confirm_shop_timezone('America/New_York');
+SELECT is(
+  public.confirm_shop_timezone('America/New_York'), 'ok',
+  'the owner can re-confirm the shop to a different real IANA timezone'
+);
 SET LOCAL role postgres;
 
 -- Rebuild AFTER the timezone change -- if the apply function recomputed from

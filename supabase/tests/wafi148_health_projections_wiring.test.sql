@@ -8,8 +8,8 @@ BEGIN;
 SELECT plan(7);
 
 SET LOCAL role postgres;
-INSERT INTO public.shops (id, name, timezone) VALUES
-  ('11111111-2222-3333-4444-555555555555', 'Shop J', 'Asia/Damascus');
+INSERT INTO public.shops (id, name, timezone, timezone_confirmed_at) VALUES
+  ('11111111-2222-3333-4444-555555555555', 'Shop J', 'Asia/Damascus', now());
 
 -- Test A: a single INSERT with no manual apply call updates BOTH metrics.
 INSERT INTO public.events (id, shop_id, type, entity_id, payload, staff_id, occurred_at)
@@ -91,6 +91,18 @@ SELECT is(
        AND metric_key = 'drawer_mismatch_count'
        AND period_start = (now() AT TIME ZONE 'Asia/Damascus')::date),
   2::bigint, 'rebuild clears the corrupted value, resets the ledger, and re-derives the correct count from both source events'
+);
+-- 2026-08-23: this file's header/comment claimed Test D proves BOTH the
+-- metric AND the ledger reset, but only ever asserted the metric (plan(7)
+-- vs 6 actual assertions -- a real pre-existing bug). Add the missing
+-- ledger assertion: both source events must be present in the ledger
+-- exactly once each after rebuild, proving the rebuild actually reset and
+-- re-populated projection_processed_events rather than leaving it stale.
+SELECT is(
+  (SELECT count(*)::int FROM public.projection_processed_events
+     WHERE projection_name = 'drawer_mismatch_count'
+       AND event_id IN ('11111111-2222-3333-4444-000000000001', '11111111-2222-3333-4444-000000000002')),
+  2, 'rebuild re-populates the idempotency ledger with exactly one entry per source event'
 );
 
 SELECT * FROM finish();

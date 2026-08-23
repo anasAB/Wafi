@@ -169,11 +169,18 @@ and the next `evaluation_source='foreground'` log row, per shop.
 be near-instant, bounded by shift-close transaction latency — it is not
 really a "freshness" concern and is not part of this KPI's target-setting.
 
-**Target:** Pending — depends on the chosen `pg_cron` interval and typical
-shop foreground-check cadence, neither of which product has weighed in on
-yet. This is Gate 3 of the WAFI-148A design spec, still open. Do not
-invent a number here; this section stays "instrumented, target pending
-product sign-off" until product supplies one.
+**Target (confirmed 2026-08-23 — Gate 3 closed):** scheduled evaluators
+(`event`/`scheduled` sources — #3 dead-letter, #7 stale device, #8 overdue
+shift) target median freshness within the `pg_cron` interval itself,
+**15 minutes** (matches the `*/15 * * * *` schedule already in migration
+120 — no migration change needed, the cadence was already set at the
+value now being confirmed as the target). p95 target: 20 minutes (allows
+for cron scheduler jitter/lock contention without treating occasional
+slippage as a regression). Foreground-check freshness (#1/#2/#5/#6) has no
+fixed numeric target — it is bounded by how often an owner actually
+opens the app, which is a usage pattern, not something the product can
+set a target for; track median/p95 per shop as an observability signal
+only, not a pass/fail KPI.
 
 **Measurement:** now available via `health_alert_evaluation_log`
 (migration 124, WAFI-148A Task 14) — one row per evaluator invocation

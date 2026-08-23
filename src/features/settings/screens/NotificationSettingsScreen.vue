@@ -115,6 +115,25 @@ const HEALTH_THRESHOLD_UNIT: Record<HealthAlertType, string> = {
   [HEALTH_ALERT_OVERDUE_SHIFT]:        'عدد الساعات ≥',
 }
 
+// WAFI-148A Gate 2 -- product-approved suggested defaults (2026-08-23), shown
+// as placeholder ghost text only. Deliberately NOT auto-filled into
+// row.threshold/inputValue: every evaluator (migrations 119/120/122) and
+// getHealthAlertSetting() treat a missing/null threshold_json as "not
+// configured, skip" (Option A) -- pre-filling this value would silently
+// enable-by-default the instant an owner toggles the switch on, which is
+// exactly the invented-default behavior Gate 2 forbids. The owner must still
+// type a number (or accept the suggestion) themselves.
+const HEALTH_THRESHOLD_SUGGESTED_DEFAULT: Record<HealthAlertType, number> = {
+  [HEALTH_ALERT_SYNC_FAILURES]:        5,
+  [HEALTH_ALERT_OFFLINE_DURATION]:     14400, // 4 hours, in seconds
+  [HEALTH_ALERT_DEAD_LETTER_COUNT]:    1,
+  [HEALTH_ALERT_DRAWER_MISMATCHES]:    1,
+  [HEALTH_ALERT_DEFERRED_JOB_FAILURES]: 5,
+  [HEALTH_ALERT_APP_ERRORS]:           10,
+  [HEALTH_ALERT_STALE_DEVICE]:         24,
+  [HEALTH_ALERT_OVERDUE_SHIFT]:        12,
+}
+
 interface HealthRow {
   type: HealthAlertType
   enabled: boolean
@@ -414,7 +433,7 @@ onMounted(async () => {
             min="1"
             step="1"
             class="field-input field-input--small"
-            placeholder="غير مُهيّأ"
+            :placeholder="`${HEALTH_THRESHOLD_SUGGESTED_DEFAULT[row.type]}?`"
             :value="row.inputValue"
             :data-testid="`health-threshold-input-${row.type}`"
             @change="updateHealthThreshold(row, ($event.target as HTMLInputElement).value)"

@@ -5,8 +5,12 @@ SELECT plan(9 + 1);
 -- reading the JWT's `sub` claim -- not a shop_id claim (established pattern per
 -- supabase/tests/wafi156_execute_rule_action.test.sql).
 SET LOCAL role postgres;
-INSERT INTO public.shops (id, name, timezone, owner_user_id) VALUES
-  ('33333333-3333-3333-3333-333333333333', 'Shop C', 'Asia/Damascus', 'e0000000-0000-0000-0000-000000000003');
+INSERT INTO auth.users (instance_id, id, email, encrypted_password, email_confirmed_at, created_at, updated_at, aud, role)
+VALUES ('00000000-0000-0000-0000-000000000000', 'e0000000-0000-0000-0000-000000000003', 'owner-wafi148-c@test', crypt('x', gen_salt('bf')), now(), now(), now(), 'authenticated', 'authenticated')
+ON CONFLICT (id) DO NOTHING;
+DELETE FROM public.shops WHERE owner_user_id = 'e0000000-0000-0000-0000-000000000003';
+INSERT INTO public.shops (id, name, timezone, owner_user_id, timezone_confirmed_at) VALUES
+  ('33333333-3333-3333-3333-333333333333', 'Shop C', 'Asia/Damascus', 'e0000000-0000-0000-0000-000000000003', now());
 INSERT INTO public.devices (id, shop_id, code, is_active) VALUES
   ('44444444-4444-4444-4444-444444444444', '33333333-3333-3333-3333-333333333333', 'DEV1', true);
 
@@ -105,8 +109,12 @@ SELECT throws_ok(
 
 -- 7. A device belonging to a different shop cannot be reported against.
 SET LOCAL role postgres;
-INSERT INTO public.shops (id, name, timezone, owner_user_id) VALUES
-  ('55555555-5555-5555-5555-555555555555', 'Shop D', 'Asia/Damascus', 'e0000000-0000-0000-0000-000000000004');
+INSERT INTO auth.users (instance_id, id, email, encrypted_password, email_confirmed_at, created_at, updated_at, aud, role)
+VALUES ('00000000-0000-0000-0000-000000000000', 'e0000000-0000-0000-0000-000000000004', 'owner-wafi148-d@test', crypt('x', gen_salt('bf')), now(), now(), now(), 'authenticated', 'authenticated')
+ON CONFLICT (id) DO NOTHING;
+DELETE FROM public.shops WHERE owner_user_id = 'e0000000-0000-0000-0000-000000000004';
+INSERT INTO public.shops (id, name, timezone, owner_user_id, timezone_confirmed_at) VALUES
+  ('55555555-5555-5555-5555-555555555555', 'Shop D', 'Asia/Damascus', 'e0000000-0000-0000-0000-000000000004', now());
 INSERT INTO public.devices (id, shop_id, code, is_active) VALUES
   ('66666666-6666-6666-6666-666666666666', '55555555-5555-5555-5555-555555555555', 'DEV2', true);
 SELECT set_config('request.jwt.claims', '{"sub":"e0000000-0000-0000-0000-000000000003","active_role":"owner"}', true);

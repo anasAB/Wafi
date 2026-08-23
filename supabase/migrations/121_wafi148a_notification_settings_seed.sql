@@ -102,6 +102,31 @@
 -- 120. That catches a typo in one of these 8 identifiers without touching
 -- the database schema or any other notification type in the app.
 --
+-- ============================================================================
+-- Gate 2 resolved (2026-08-23)
+-- ============================================================================
+-- Product signed off on suggested default thresholds. Per everything above,
+-- these are NOT written into notification_settings by this or any migration
+-- -- they are surfaced to the owner as placeholder ghost text in the
+-- Settings UI (src/features/settings/screens/NotificationSettingsScreen.vue,
+-- HEALTH_THRESHOLD_SUGGESTED_DEFAULT) so an owner enabling a type for the
+-- first time sees a sane number to accept or override, without the type
+-- being silently enabled or defaulted server-side:
+--
+--   health_alert_sync_failures          >= 5   (count/day)
+--   health_alert_offline_duration       >= 14400 (seconds/day, i.e. 4h)
+--   health_alert_dead_letter_count      >= 1   (gauge)
+--   health_alert_drawer_mismatches      >= 1   (count/day)
+--   health_alert_deferred_job_failures  >= 5   (count/day)
+--   health_alert_app_errors             >= 10  (count/day)
+--   health_alert_stale_device           >= 24  (hours)
+--   health_alert_overdue_shift          >= 12  (hours; stays below WAFI-065's
+--                                                18h force-close window)
+--
+-- Every shop still ships with these 8 types entirely OFF (no
+-- notification_settings row) until the owner explicitly enables each one and
+-- confirms/edits the suggested number -- Option A behavior, unchanged.
+--
 -- No SQL statements follow. This migration file exists so the plan's
 -- file-numbering and Gate 2 decision are recorded in migration history, not
 -- to change the database.

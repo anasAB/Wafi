@@ -7,8 +7,8 @@ SELECT plan(3);
 -- same correction already applied in Task 4's migration 109/test, matched here
 -- exactly: sentinel staff_id, entity_id = the shop id as text).
 SET LOCAL role postgres;
-INSERT INTO public.shops (id, name, timezone) VALUES
-  ('88888888-8888-8888-8888-888888888888', 'Shop F', 'Asia/Damascus');
+INSERT INTO public.shops (id, name, timezone, timezone_confirmed_at) VALUES
+  ('88888888-8888-8888-8888-888888888888', 'Shop F', 'Asia/Damascus', now());
 
 -- A force-closed (zombie) shift.closed event.
 INSERT INTO public.events (id, shop_id, type, entity_id, payload, staff_id, occurred_at)

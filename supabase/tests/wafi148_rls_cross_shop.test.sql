@@ -2,6 +2,12 @@ BEGIN;
 SELECT plan(4);
 
 SET LOCAL role postgres;
+INSERT INTO auth.users (instance_id, id, email, encrypted_password, email_confirmed_at, created_at, updated_at, aud, role)
+VALUES
+  ('00000000-0000-0000-0000-000000000000', 'e0000000-0000-0000-0000-000000000006', 'owner-wafi148-h@test', crypt('x', gen_salt('bf')), now(), now(), now(), 'authenticated', 'authenticated'),
+  ('00000000-0000-0000-0000-000000000000', 'e0000000-0000-0000-0000-000000000007', 'owner-wafi148-i@test', crypt('x', gen_salt('bf')), now(), now(), now(), 'authenticated', 'authenticated')
+ON CONFLICT (id) DO NOTHING;
+DELETE FROM public.shops WHERE owner_user_id IN ('e0000000-0000-0000-0000-000000000006', 'e0000000-0000-0000-0000-000000000007');
 INSERT INTO public.shops (id, name, timezone, owner_user_id) VALUES
   ('cccccccc-cccc-cccc-cccc-cccccccccccc', 'Shop H', 'Asia/Damascus', 'e0000000-0000-0000-0000-000000000006'),
   ('dddddddd-dddd-dddd-dddd-dddddddddddd', 'Shop I', 'Asia/Damascus', 'e0000000-0000-0000-0000-000000000007');
