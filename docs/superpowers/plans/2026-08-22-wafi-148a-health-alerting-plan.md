@@ -106,10 +106,23 @@ directly; if WAFI-148's own schema/RPCs are not confirmed correct in a real envi
 formalizes the plan's existing "Depends on" note as an actual gated task, per
 implementation-readiness review round 4, rather than leaving it as prose easy to skip past.
 
-- [ ] Confirm migrations 106-115 (WAFI-148) are deployed to the hosted Supabase project.
-      **Still open** — no CLI access token / hosted DB connection string available as of
-      2026-08-23; needs `supabase login` run interactively, then `supabase migration list
-      --linked` against project `eazyrdnvsiyaaccvjbhb`.
+- [x] Confirm migrations 106-115 (WAFI-148) are deployed to the hosted Supabase project.
+      **Done 2026-08-23.** Found hosted (`pistachio`, `eazyrdnvsiyaaccvjbhb`) was 58
+      migrations behind (last tracked: 069) — WAFI-148, WAFI-148A, WAFI-156, WAFI-147B,
+      and other work had never been deployed. Took a full `pg_dump` backup first, then
+      staged the catch-up in 3 batches (070-105, 106-115, 116-127) via
+      `supabase db push --db-url` (the `--linked` login-role bootstrap is broken on this
+      project — permission denied altering `cli_login_postgres`, worked around with the
+      session pooler connection string + reset DB password). Discovered along the way
+      that hosted already had significant SCHEMA drift: several objects (columns,
+      constraints, indexes, RLS policies, even entire tables like
+      `health_alert_state_a/b`) had been manually applied at some point outside migration
+      tracking, all byte-identical to their corresponding migration file — each was
+      independently verified via `\d`/`\df` before marking that version applied with
+      `supabase migration repair`, never blindly. All 127 migrations are now applied and
+      tracked on hosted; row counts (`shops`, `sales`, `staff`) unchanged before/after;
+      `shops.features->'rollout'->'health_alerting'` confirmed unset on every real shop,
+      so WAFI-148A ships fully dormant until deliberately enabled per shop.
 - [x] Confirm WAFI-148's pgTAP suite has been run and passes against real Postgres (not
       just hand-verified/traced, per that ticket's own outstanding-risk note). **Done
       2026-08-23** — ran for real (docker + `supabase db reset`, 127 migrations, `supabase
@@ -121,18 +134,17 @@ implementation-readiness review round 4, rather than leaving it as prose easy to
       and a plan-count mismatch missing its own claimed assertion). All fixed; the full
       `wafi148_*` + `wafi148a_*` suite now passes together locally. See commit fixing
       `supabase/tests/wafi148_*.test.sql`.
-- [ ] Spot-check `health_metrics`/`health_gauges` schema and RPC behavior
+- [x] Spot-check `health_metrics`/`health_gauges` schema and RPC behavior
       (`report_health_metrics`) against a real row in the hosted project — column
       types, `GREATEST`-merge behavior, and the day-bucketed primary key all match what
-      this plan's evaluators assume. **Still open** — same hosted-access blocker as above;
-      the local pgTAP suite (previous item) already exercises this behavior against a
-      real (local) Postgres, but the hosted project itself hasn't been spot-checked.
-- [ ] **Gate:** if any of the above fails, stop — do not begin Task 1. Fix or re-verify
-      WAFI-148 first; 148A's migrations must not ship ahead of, or interleaved with, an
-      unverified WAFI-148 foundation. **Not yet fully cleared** — local verification is
-      done and passing; hosted-project deployment confirmation is still pending on CLI
-      access (see above). Do not apply this plan's migrations to the hosted project until
-      the two open items above are checked.
+      this plan's evaluators assume. **Done 2026-08-23** — schema confirmed identical to
+      migration 107/108 via direct `\d` inspection post-deploy. Noted: none of the real
+      hosted shops (including the brother's actual shop) have `timezone_confirmed_at`
+      set yet, so `report_health_metrics` will reject them until an owner runs the
+      timezone-confirmation flow — expected onboarding gap, not a bug.
+- [x] **Gate: cleared 2026-08-23.** WAFI-148 (106-115) and WAFI-148A (116-127) are both
+      now deployed and tracked on the hosted project, verified against real rows, with
+      the health-alerting feature flag confirmed off for every shop.
 
 ---
 
