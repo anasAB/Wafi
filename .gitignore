@@ -33,3 +33,6 @@ ruvector.db
 
 # Local-only DB backups (may contain PII) - never commit
 .backups/
+
+# Supabase CLI local scratch state - regenerated every 'supabase start', may contain local dev secrets
+supabase/.temp/
