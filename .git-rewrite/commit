@@ -1,0 +1,6 @@
+tree 4d026ad086adcf07df7e02cd64ecbb259c6f1982
+parent 4284cf9ed0f0d448e58fe5626c15666a41bdc6da
+author Anas Baaj <anas.222@hotmail.com> 1780221667 +0200
+committer Anas Baaj <anas.222@hotmail.com> 1780221667 +0200
+
+feat(settings): add LuxuryTheme type and luxuryTheme store field with persistence
