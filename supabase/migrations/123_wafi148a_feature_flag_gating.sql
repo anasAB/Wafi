@@ -135,7 +135,16 @@ GRANT EXECUTE ON FUNCTION public.set_rollout_flag(uuid, text, boolean) TO authen
 -- ============================================================================
 -- Part 1b: list_shops_for_rollout_admin -- add health_alerting output column,
 -- same fail-closed pattern as the existing 3 flags.
+--
+-- Postgres does not allow CREATE OR REPLACE FUNCTION to change the row type
+-- defined by OUT parameters / RETURNS TABLE -- it requires DROP FUNCTION
+-- first, confirmed by a real `supabase db reset` run (SQLSTATE 42P13,
+-- "cannot change return type of existing function"). The DROP is safe here:
+-- the function has no dependent views/triggers, and its replacement below
+-- restores it (widened by one column) in the same statement batch/transaction.
 -- ============================================================================
+DROP FUNCTION IF EXISTS public.list_shops_for_rollout_admin(text);
+
 CREATE OR REPLACE FUNCTION public.list_shops_for_rollout_admin(p_query text DEFAULT NULL)
 RETURNS TABLE (
   shop_id         uuid,
